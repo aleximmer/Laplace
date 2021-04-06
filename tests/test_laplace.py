@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch import nn
 
-from laplace import Laplace
+from laplace.laplace import Laplace
 
 
 @pytest.fixture

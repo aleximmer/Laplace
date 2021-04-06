@@ -27,4 +27,3 @@ def Jacobians_naive(model, data):
         Jacs.append(jacs)
     Jacs = torch.stack(Jacs).transpose(1, 2)
     return Jacs.detach(), f.detach()
-

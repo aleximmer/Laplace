@@ -1,11 +1,17 @@
+from abc import ABC, abstractmethod
+import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.utils import parameters_per_layer
+from laplace.utils import parameters_per_layer, invsqrt_precision
+from laplace.matrix import BlockDiag, Kron
 
 
-class Laplace:
-    """Laplace approximation for a pytorch neural network
+class Laplace(ABC):
+    """Laplace approximation for a pytorch neural network.
+    The Laplace approximation is a Gaussian distribution but can have different
+    sparsity structures. Further, it provides an approximation to the marginal
+    likelihood. 
 
     Parameters
     ----------
@@ -15,24 +21,20 @@ class Laplace:
     likelihood : str
         'classification' or 'regression' are supported
 
+    sigma_noise : float
+        observation noise for likelihood = 'regression'
+
     prior_precision : one-dimensional torch.Tensor, str, default='auto'
         prior precision of a Gaussian prior corresponding to weight decay
         'auto' determines the prior automatically during fitting
-
-    cov_type : str
-        type of covariance/precision approximation
-        choices = ['full', 'kron', 'diag']
-
-    cov_closure : method
-        closure to call after the forward-pass which can modify the
-        backward path and returns a Hessian approximation matching the
-        cov_type.
-        cov_closure: model, X, y -> log_lik, batch_hessian
 
     temperature : float, default=1
         posterior temperature scaling affects the posterior covariance as
         `Sigma' = temperature * Sigma`, so low temperatures lead to a more
         concentrated posterior.
+
+    backend : CurvatureInterface
+        provides access to curvature/second-order quantities.
 
     Attributes
     ----------
@@ -44,20 +46,20 @@ class Laplace:
     -----
     """
 
-    def __init__(self, model, likelihood, prior_precision='auto', cov_type='full',
-                 cov_closure=None, temperature=1.):
-        # TODO: add other options for priors?
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision='auto', 
+                 temperature=1., backend=None):
         # TODO: add automatic determination of prior precision
-        # TODO: not sure about the case where we don't have the cov_closure...
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
         self.model = model
         self.prior_precision = prior_precision
+        if sigma_noise != 1 and likelihood != 'regression':
+            raise ValueError('Sigma noise only available for regression.')
         self.likelihood = likelihood
+        self.sigma_noise = sigma_noise
         self.temperature = temperature
-        self.cov_type = cov_type
-        self.cov_closure = cov_closure
+        self.backend = backend
         self._fit = False
         self._device = next(model.parameters()).device
 
@@ -66,23 +68,10 @@ class Laplace:
         self.mean = parameters_to_vector(self.model.parameters()).detach()
         self.n_params = len(self.mean)
         self.n_layers = len(list(self.model.parameters()))
-        # log likelihood
-        self.log_lik = 0.
-        # Hessian
-        # NOTE: I think having classes Laplace, DiagLaplace, KFACLaplace
-        # would be better actually. Especially, looking into the posterior_det methods etc.
-        if cov_type == 'full':
-            self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
-        elif cov_type == 'diag':
-            self.H = torch.zeros(self.n_params, device=self._device)
-        elif cov_type == 'kron':
-            # TODO: Kron class for this?
-            # @aleximmer could provide it
-            raise NotImplementedError()
-        else:
-            raise ValueError(f'Invalid cov_type {cov_type}!')
+        # log likelihood = g(loss)
+        self.loss = 0.
 
-    def fit(self, train_loader):
+    def fit(self, train_loader, compute_covariance=True):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -95,45 +84,48 @@ class Laplace:
 
         self.model.eval()
 
-        # TODO: make sure we can parallelize this in the future
-        # TODO: make sure we can differentiate wrt noise in Gaussian lh!
         for X, y in train_loader:
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
-            log_lik_batch, H_batch = self.cov_closure(self.model, X, y)
-            self.log_lik += log_lik_batch
+            loss_batch, H_batch = self.cov_closure(self.model, X, y)
+            self.loss += loss_batch
             self.H += H_batch
 
-        if self.cov_type == 'diag':
-            self.cov_sqrt = self.posterior_precision.sqrt()
-        elif self.cov_type == 'full':
-            self.cov_sqrt = torch.cholesky(self.posterior_precision)
-        elif self.cov_type == 'kron':
-            raise NotImplementedError
+        # invert posterior precision (not always necessary for marglik e.g.)
+        if compute_covariance:
+            self.compute_covariance()
 
         self._fit = True
 
+    def compute_covariance(self):
+        raise NotImplementedError()
+
     @property
-    def marginal_likelihood(self):
+    def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the marginal likelihood.
         The resulting value is differentiable in differentiable likelihood
         and prior parameters.
         """
+        # make sure we can differentiate wrt prior and sigma_noise for regression
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
+        # update prior precision (useful when iterating on marglik)
+        if prior_precision is not None:
+            self.prior_precision = prior_precision
+
+        # update sigma_noise (useful when iterating on marglik)
+        if sigma_noise is not None:
+            if self.likelihood != 'regression':
+                raise ValueError('Can only change sigma_noise for regression.')
+            self.sigma_noise = sigma_noise
+
         return self.log_lik - 0.5 * (self.log_det_ratio + self.scatter)
 
-    def posterior_samples(self, n_samples=100):
+    def samples(self, n_samples=100):
         """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
-        samples = torch.randn(n_samples, self.P, device=self._device)
-        if self.cov_type == 'diag':
-            return self.mean + (samples * self.cov_sqrt)
-        elif self.cov_type == 'full':
-            return self.mean + (samples @ self.cov_sqrt)
-        elif self.cov_type == 'kron':
-            raise NotImplementedError()
-
+        raise NotImplementedError()
+    
     def predictive(self, X, n_samples=100, pred_type='lin'):
         """Compute the posterior predictive on input data `X`.
 
@@ -197,25 +189,17 @@ class Laplace:
         """
         return self.prior_precision_diag.log().sum()
 
-    @property
-    def posterior_precision(self):
-        if self.cov_type == 'diag':
-            return self.H + self.prior_precision_diag
-        elif self.cov_type == 'full':
-            return self.H + torch.diag(self.prior_precision_diag)
-        elif self.cov_type == 'kron':
-            raise NotImplementedError()
+    def functional_variance(self, Jacs):
+        """Compute functional variance for the predictive:
+        `f_var[i] = Jacs[i] @ Sigma @ Jacs[i].T`, which is a output x output
+        predictive covariance matrix.
 
-    @property
-    def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
+        Parameters
+        ----------
+        Jacs : torch.Tensor batch x outputs x parameters
+            Jacobians of model output wrt parameters.
         """
-        if self.cov_type == 'diag':
-            return self.posterior_precision.log().sum()
-        elif self.cov_type == 'full':
-            return self.posterior_precision.logdet()
-        elif self.cov_type == 'kron':
-            raise NotImplementedError()
+        raise NotImplementedError()
 
     @property
     def log_det_ratio(self):
@@ -223,6 +207,12 @@ class Laplace:
         `log (det P / det P_0) = log det P - log det P_0`
         """
         return self.log_det_posterior_precision - self.log_det_prior_precision
+
+    @property
+    def log_det_posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        raise NotImplementedError()
 
     @property
     def prior_precision_diag(self):
@@ -240,11 +230,201 @@ class Laplace:
         else:
             raise ValueError('Mismatch of prior and model. Diagonal, scalar, or per-layer prior.')
 
+    # TODO: protect prior precision and sigma updates when covariance computed/update covariance?
     @property
     def prior_precision(self):
         return self._prior_precision
 
     @prior_precision.setter
     def prior_precision(self, prior_precision):
+        if np.isscalar(prior_precision):
+            prior_precision = torch.tensor([prior_precision])
+        if isinstance(prior_precision, torch.Tensor) and prior_precision.ndim != 1:
+            raise ValueError('Prior precision needs to be one-dimensional tensor.')
+
         self._prior_precision = prior_precision
+
+    @property
+    def sigma_noise(self):
+        return self._sigma_noise
+    
+    @sigma_noise.setter
+    def sigma_noise(self, sigma_noise):
+        if not np.isscalar(sigma_noise) or sigma_noise.ndim == 1:
+            raise ValueError('Sigma noise needs to be scalar (float or torch.Tensor).')
+
+        self._sigma_noise = sigma_noise
+
+    @property
+    def H_factor(self):
+        sigma2 = self.sigma_noise.square()
+        return 1 / sigma2 * self.temperature
+
+
+class FullLaplace(Laplace):
+    # TODO list additional attributes
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 temperature=1., backend=None):
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         temperature, backend)
+        self.H = torch.zeros(self.n_params, self.n_params, device=self.device)
+
+    def compute_covariance(self):
+        self.posterior_scale = invsqrt_precision(self.posterior_precision)
+
+    @property
+    def posterior_covariance(self):
+        return self.posterior_scale @ self.posterior_scale.T
+
+    @property
+    def posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+
+        return self.H_factor * self.H + torch.diag(self.prior_precision_diag)
+
+    @property
+    def log_det_posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        return self.posterior_precision.logdet()
+
+    def functional_variance(self, Js):
+        return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
+
+    def samples(self, n_samples=100):
+        samples = torch.randn(self.P, n_samples, device=self._device)
+        return self.mean + (self.posterior_scale @ samples)
+
+
+class BlockLaplace(Laplace):
+    # TODO list additional attributes
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 temperature=1., backend=None):
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         temperature, backend)
+        self.H = BlockDiag.init_from_model(self.model, self._device)
+
+    def compute_covariance(self):
+        self.posterior_scale = self.posterior_precision.invsqrt()
+
+    @property
+    def posterior_covariance(self):
+        return self.posterior_scale.square() 
+
+    @property
+    def posterior_precision(self):
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+
+        return self.H * self.H_factor + self.prior_precision_block_diag
+
+    @property
+    def log_det_posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        return self.posterior_precision.logdet()
+
+    def functional_variance(self, Js):
+        n, c, p = Js.shape
+        fvar = torch.zeros(n, c, c)
+        ix = 0
+        for Si in self.posterior_covariance.blocks:
+            P = Si.size(0)
+            Jsi = Js[:, :, ix:ix+P]
+            fvar += torch.einsum('ncp,pq,nkq->nck', Jsi, Si, Jsi)
+            ix += P
+        return fvar
+
+    def samples(self, n_samples=100):
+        samples = torch.randn(self.P, n_samples, device=self._device)
+        samples_list = list()
+        ix = 0
+        for Si in self.posterior_scale.blocks:
+            P = Si.size(0)
+            samples_i = samples[ix:ix+P]
+            samples_list.append(Si @ samples_i)
+        return self.mean + torch.cat(samples_list, dim=0)
+
+    @property
+    def prior_precision_block_diag(self):
+        prior_prec_diag = self.prior_precision_diag
+        n_params_per_param = [np.prod(p.shape) for p in self.model.parameters()]
+        ix = 0
+        blocks = list()
+        for p in n_params_per_param:
+            blocks.append(torch.diag(prior_prec_diag[ix:ix+p]))
+            ix += p
+        return BlockDiag(blocks)
+
+
+class KronLaplace(Laplace):
+    # TODO list additional attributes
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 temperature=1., backend=None):
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         temperature, backend)
+        raise NotImplementedError
+
+    @property
+    def posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+        
+        raise NotImplementedError
+
+    @property
+    def log_det_posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        raise NotImplementedError()
+
+    def samples(self, n_samples=100):
+        raise NotImplementedError()
+
+
+class DiagLaplace(Laplace):
+    # TODO list additional attributes
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 temperature=1., backend=None):
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         temperature, backend)
+        self.H = torch.zeros(self.n_params, device=self.device)
+
+    @property
+    def posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+
+        return self.H_factor * self.H + self.prior_precision_diag
+
+    def compute_covariance(self):
+        self.posterior_scale = 1 / self.posterior_precision.sqrt()
+
+    @property
+    def posterior_variance(self):
+        return self.posterior_scale.square()
+
+    @property
+    def log_det_posterior_precision(self):
+        """Computes log determinant of the posterior precision `log det P`
+        """
+        return self.posterior_precision.log().sum()
+
+    def functional_variance(self, Js):
+        return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
+
+    def samples(self, n_samples=100):
+        samples = torch.randn(n_samples, self.P, device=self._device)
+        return self.mean + samples * self.posterior_scale
 
