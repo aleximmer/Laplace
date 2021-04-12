@@ -5,6 +5,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import BlockDiag, Kron
+from laplace.curvature import BackPackGGN
 
 
 class Laplace(ABC):
@@ -47,8 +48,7 @@ class Laplace(ABC):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1., 
-                 temperature=1., backend=None):
-        # TODO: add automatic determination of prior precision
+                 temperature=1., backend=BackPackGGN, **backend_kwargs):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -60,11 +60,11 @@ class Laplace(ABC):
         self.n_layers = len(list(self.model.parameters()))
         self.prior_precision = prior_precision
         if sigma_noise != 1 and likelihood != 'regression':
-            raise ValueError('Sigma noise only available for regression.')
+            raise ValueError('Sigma noise != 1 only available for regression.')
         self.likelihood = likelihood
         self.sigma_noise = sigma_noise
         self.temperature = temperature
-        # self.backend = backend(self.model)
+        self.backend = backend(self.model, self.likelihood, **backend_kwargs)
         self._fit = False
         self._device = next(model.parameters()).device
 
@@ -104,7 +104,7 @@ class Laplace(ABC):
 
     @abstractmethod
     def compute_covariance(self):
-        raise NotImplementedError()
+        pass
 
     def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the marginal likelihood.
@@ -127,9 +127,10 @@ class Laplace(ABC):
 
         return self.log_lik - 0.5 * (self.log_det_ratio + self.scatter)
 
+    @abstractmethod
     def samples(self, n_samples=100):
         """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
-        raise NotImplementedError()
+        pass
     
     def predictive(self, X, n_samples=100, pred_type='lin'):
         """Compute the posterior predictive on input data `X`.
@@ -145,10 +146,7 @@ class Laplace(ABC):
             type of posterior predictive, linearized GLM predictive or
             neural network sampling predictive.
         """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
-        raise NotImplementedError()
+        pass
 
     def predictive_samples(self, X, n_samples, pred_type='lin'):
         """Compute the posterior predictive on input data `X`.
@@ -194,6 +192,7 @@ class Laplace(ABC):
         """
         return self.prior_precision_diag.log().sum()
 
+    @abstractmethod
     def functional_variance(self, Jacs):
         """Compute functional variance for the predictive:
         `f_var[i] = Jacs[i] @ Sigma @ Jacs[i].T`, which is a output x output
@@ -204,7 +203,7 @@ class Laplace(ABC):
         Jacs : torch.Tensor batch x outputs x parameters
             Jacobians of model output wrt parameters.
         """
-        raise NotImplementedError()
+        pass
 
     @property
     def log_det_ratio(self):
@@ -287,7 +286,7 @@ class FullLaplace(Laplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=None):
+                 temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
@@ -329,7 +328,7 @@ class BlockLaplace(Laplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=None):
+                 temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
         self.H = BlockDiag.init_from_model(self.model, self._device)
@@ -394,7 +393,7 @@ class KronLaplace(Laplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=None):
+                 temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
 
@@ -427,7 +426,7 @@ class DiagLaplace(Laplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=None):
+                 temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
         self.H = torch.zeros(self.n_params, device=self._device)

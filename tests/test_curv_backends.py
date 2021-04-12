@@ -9,6 +9,7 @@ from laplace.jacobians import Jacobians
 
 @pytest.fixture
 def model():
+    torch.manual_seed(711)
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
@@ -31,24 +32,42 @@ def reg_Xy():
     return X, y
 
 
-def test_diag_ggn_backpack(class_Xy, model):
-    X, y = class_Xy
-    backend = BackPackGGN(model, 'classification', stochastic=False)
-    loss, dggn = backend.diag(X, y)
-    assert len(dggn) == model.n_params
+def test_full_ggn_backpack_reg_integration(reg_Xy, model):
+    X, y = reg_Xy
+    backend = BackPackGGN(model, 'regression', stochastic=True)
+    with pytest.raises(ValueError):
+        loss, fggn = backend.full(X, y)
 
+    # cannot test, its implemented based on Jacobians.
+    backend = BackPackGGN(model, 'regression', stochastic=False)
+    loss, H_ggn = backend.full(X, y)
+    assert H_ggn.size() == torch.Size((model.n_params, model.n_params))
     
+
+def test_full_ggn_backpack_cls_integration(class_Xy, model):
+    X, y = class_Xy
+    backend = BackPackGGN(model, 'classification', stochastic=True)
+    with pytest.raises(ValueError):
+        loss, fggn = backend.full(X, y)
+
+    # cannot test, its implemented based on Jacobians.
+    backend = BackPackGGN(model, 'classification', stochastic=False)
+    loss, H_ggn = backend.full(X, y)
+    assert H_ggn.size() == torch.Size((model.n_params, model.n_params))
+    
+
 def test_diag_ggn_cls_backpack(class_Xy, model):
     X, y = class_Xy
     backend = BackPackGGN(model, 'classification', stochastic=False)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
-    Js, f = Jacobians(model, X)
-    ps = torch.softmax(f, dim=-1)
-    H = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
-    full_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H, Js)
-    assert torch.allclose(dggn, full_ggn.diagonal())
+
+    # check against manually computed full GGN:
+    backend = BackPackGGN(model, 'classification', stochastic=False)
+    loss_f, H_ggn = backend.full(X, y)
+    assert loss == loss_f
+    assert torch.allclose(dggn, H_ggn.diagonal())
 
 
 def test_diag_ggn_reg_backpack(reg_Xy, model):
@@ -57,11 +76,12 @@ def test_diag_ggn_reg_backpack(reg_Xy, model):
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
-    # compare to naive computation of ggn
-    Js, f = Jacobians(model, X)
-    # factor 2 since backpack uses MSE, log N has factor 1/2 
-    full_ggn = 2 * torch.einsum('mkp,mkq->pq', Js, Js)
-    assert torch.allclose(dggn, full_ggn.diagonal())
+
+    # check against manually computed full GGN:
+    backend = BackPackGGN(model, 'regression', stochastic=False)
+    loss_f, H_ggn = backend.full(X, y)
+    assert loss == loss_f
+    assert torch.allclose(dggn, H_ggn.diagonal())
 
 
 def test_diag_ggn_stoch_cls_backpack(class_Xy, model):
@@ -70,11 +90,12 @@ def test_diag_ggn_stoch_cls_backpack(class_Xy, model):
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
-    Js, f = Jacobians(model, X)
-    ps = torch.softmax(f, dim=-1)
-    H = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
-    full_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H, Js)
-    assert torch.allclose(dggn, full_ggn.diagonal(), atol=1e-8, rtol=1e1)
+
+    # same order of magnitude os non-stochastic.
+    backend = BackPackGGN(model, 'classification', stochastic=False)
+    loss_ns, dggn_ns = backend.diag(X, y)
+    assert loss_ns == loss
+    assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)
 
 
 def test_diag_ggn_stoch_reg_backpack(reg_Xy, model):
@@ -83,9 +104,9 @@ def test_diag_ggn_stoch_reg_backpack(reg_Xy, model):
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
-    # compare to naive computation of ggn
-    Js, f = Jacobians(model, X)
-    # factor 2 since backpack uses MSE, log N has factor 1/2 
-    full_ggn = 2 * torch.einsum('mkp,mkq->pq', Js, Js)
-    # stochastic so only require same order of magnitude 
-    assert torch.allclose(dggn, full_ggn.diagonal(), atol=1e-8, rtol=1e1)
+
+    # same order of magnitude os non-stochastic.
+    backend = BackPackGGN(model, 'regression', stochastic=False)
+    loss_ns, dggn_ns = backend.diag(X, y)
+    assert loss_ns == loss
+    assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)

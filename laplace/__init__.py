@@ -1,0 +1,2 @@
+REGRESSION = 'regression'
+CLASSIFICATION = 'classification'
