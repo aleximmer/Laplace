@@ -11,7 +11,7 @@ class Laplace(ABC):
     """Laplace approximation for a pytorch neural network.
     The Laplace approximation is a Gaussian distribution but can have different
     sparsity structures. Further, it provides an approximation to the marginal
-    likelihood. 
+    likelihood.
 
     Parameters
     ----------
@@ -46,30 +46,34 @@ class Laplace(ABC):
     -----
     """
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision='auto', 
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1., 
                  temperature=1., backend=None):
         # TODO: add automatic determination of prior precision
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
         self.model = model
+        # initialize state #
+        # posterior mean/mode
+        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.n_params = len(self.mean)
+        self.n_layers = len(list(self.model.parameters()))
         self.prior_precision = prior_precision
         if sigma_noise != 1 and likelihood != 'regression':
             raise ValueError('Sigma noise only available for regression.')
         self.likelihood = likelihood
         self.sigma_noise = sigma_noise
         self.temperature = temperature
-        self.backend = backend
+        # self.backend = backend(self.model)
         self._fit = False
         self._device = next(model.parameters()).device
 
-        # initialize state #
-        # posterior mean/mode
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
-        self.n_params = len(self.mean)
-        self.n_layers = len(list(self.model.parameters()))
         # log likelihood = g(loss)
         self.loss = 0.
+
+    @abstractmethod
+    def _curv_closure(self, X, y, N):
+        pass
 
     def fit(self, train_loader, compute_covariance=True):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -84,10 +88,11 @@ class Laplace(ABC):
 
         self.model.eval()
 
+        N = len(train_loader.dataset)
         for X, y in train_loader:
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
-            loss_batch, H_batch = self.cov_closure(self.model, X, y)
+            loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
             self.H += H_batch
 
@@ -97,10 +102,10 @@ class Laplace(ABC):
 
         self._fit = True
 
+    @abstractmethod
     def compute_covariance(self):
         raise NotImplementedError()
 
-    @property
     def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the marginal likelihood.
         The resulting value is differentiable in differentiable likelihood
@@ -237,23 +242,40 @@ class Laplace(ABC):
 
     @prior_precision.setter
     def prior_precision(self, prior_precision):
-        if np.isscalar(prior_precision):
-            prior_precision = torch.tensor([prior_precision])
-        if isinstance(prior_precision, torch.Tensor) and prior_precision.ndim != 1:
-            raise ValueError('Prior precision needs to be one-dimensional tensor.')
-
-        self._prior_precision = prior_precision
+        if np.isscalar(prior_precision) and np.isreal(prior_precision):
+            self._prior_precision = torch.tensor([prior_precision])
+        elif torch.is_tensor(prior_precision):
+            if prior_precision.ndim == 0:
+                # make dimensional
+                self._prior_precision = prior_precision.reshape(-1)
+            elif prior_precision.ndim == 1:
+                if len(prior_precision) not in [1, self.n_layers, self.n_params]:
+                    raise ValueError('Length of prior precision does not align with architecture.')
+                self._prior_precision = prior_precision
+            else:
+                raise ValueError('Prior precision needs to be at most one-dimensional tensor.')
+        else:
+            raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
     @property
     def sigma_noise(self):
         return self._sigma_noise
-    
+
     @sigma_noise.setter
     def sigma_noise(self, sigma_noise):
-        if not np.isscalar(sigma_noise) or sigma_noise.ndim == 1:
-            raise ValueError('Sigma noise needs to be scalar (float or torch.Tensor).')
-
-        self._sigma_noise = sigma_noise
+        if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
+            self._sigma_noise = sigma_noise
+        elif torch.is_tensor(sigma_noise):
+            if sigma_noise.ndim == 0:
+                self._sigma_noise = sigma_noise
+            elif sigma_noise.ndim == 1:
+                if len(sigma_noise) > 1:
+                    raise ValueError('Only homoscedastic output noise supported.')
+                self._sigma_noise = sigma_noise
+            else:
+                raise ValueError('Sigma noise needs to be scalar or 1-dimensional.')
+        else:
+            raise ValueError('Invalid type: sigma noise needs to be torch.Tensor or scalar.')
 
     @property
     def H_factor(self):
@@ -268,7 +290,10 @@ class FullLaplace(Laplace):
                  temperature=1., backend=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
-        self.H = torch.zeros(self.n_params, self.n_params, device=self.device)
+        self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
+
+    def _curv_closure(self, X, y, N):
+        return self.backend.full(X, y, N)
 
     def compute_covariance(self):
         self.posterior_scale = invsqrt_precision(self.posterior_precision)
@@ -308,6 +333,9 @@ class BlockLaplace(Laplace):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
         self.H = BlockDiag.init_from_model(self.model, self._device)
+
+    def _curv_closure(self, X, y, N):
+        return self.backend.block(X, y, N)
 
     def compute_covariance(self):
         self.posterior_scale = self.posterior_precision.invsqrt()
@@ -369,7 +397,12 @@ class KronLaplace(Laplace):
                  temperature=1., backend=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
-        raise NotImplementedError
+
+    def _curv_closure(self, X, y, N):
+        return self.backend.kron(X, y, N)
+
+    def compute_covariance(self):
+        pass
 
     @property
     def posterior_precision(self):
@@ -397,7 +430,10 @@ class DiagLaplace(Laplace):
                  temperature=1., backend=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
-        self.H = torch.zeros(self.n_params, device=self.device)
+        self.H = torch.zeros(self.n_params, device=self._device)
+
+    def _curv_closure(self, X, y, N):
+        return self.backend.diag(X, y, N)
 
     @property
     def posterior_precision(self):

@@ -40,4 +40,3 @@ def Jacobians(model, data):
         return torch.stack(to_stack, dim=2).transpose(1, 2), f
     else:
         return Jk.unsqueeze(-1).transpose(1, 2), f
-
