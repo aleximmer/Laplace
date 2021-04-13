@@ -3,9 +3,10 @@ import torch
 from torch.nn import MSELoss, CrossEntropyLoss
 
 from backpack import backpack, extend
-from backpack.extensions import DiagGGNExact, DiagGGNMC
+from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR
 
 from laplace.jacobians import Jacobians
+from laplace.matrix import Kron, BlockDiag
 
 
 class CurvatureInterface(ABC):
@@ -57,9 +58,9 @@ class BackPackGGN(BackPackInterface):
 
     def _get_kron_factors(self):
         if self.stochastic:
-            return [p.kfac for p in self.model.parameters()]
+            return Kron([p.kfac for p in self.model.parameters()])
         else:
-            return [p.kflr for p in self.model.parameters()]
+            return Kron([p.kflr for p in self.model.parameters()])
 
     def diag(self, X, y, **kwargs):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
@@ -72,7 +73,14 @@ class BackPackGGN(BackPackInterface):
         return self.factor * loss, self.factor * dggn
 
     def kron(self, X, y, **wkwargs):
-        pass
+        context = KFAC if self.stochastic else KFLR
+        f = self.model(X)
+        loss = self.lossfunc(f, y)
+        with backpack(context()):
+            loss.backward()
+        kron = self._get_kron_factors()
+
+        return self.factor * loss, self.factor * kron
 
     def full(self, X, y, **kwargs):
         if self.stochastic:

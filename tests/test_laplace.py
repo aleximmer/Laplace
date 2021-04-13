@@ -2,10 +2,11 @@ import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
+from torch.utils.data import DataLoader, TensorDataset
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace, BlockLaplace
+from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
 
-flavors = [FullLaplace, KronLaplace, DiagLaplace, BlockLaplace]
+flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 
 @pytest.fixture
@@ -18,14 +19,29 @@ def model():
     return model
 
 
+@pytest.fixture
+def class_loader():
+    X = torch.randn(10, 3)
+    y = torch.randint(2, (10,))
+    return DataLoader(TensorDataset(X, y))
+
+
+@pytest.fixture
+def reg_loader():
+    X = torch.randn(10, 3)
+    y = torch.randn(10, 2)
+    return DataLoader(TensorDataset(X, y))
+
+
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init(laplace, model):
-    laplace = laplace(model, 'classification')
+    lap = laplace(model, 'classification')
 
 
-def test_laplace_invalid_likelihood(model):
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_invalid_likelihood(laplace, model):
     with pytest.raises(ValueError):
-        laplace = FullLaplace(model, 'otherlh')
+        lap = laplace(model, 'otherlh')
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -94,3 +110,10 @@ def test_laplace_init_precision(laplace, model):
     # valid float
     T = 1.1
     lap = laplace(model, likelihood='classification', temperature=T)
+    assert lap.temperature == T
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_fit(laplace, model, reg_loader):
+    lap = laplace(model, 'regression')
+    lap.fit(reg_loader)

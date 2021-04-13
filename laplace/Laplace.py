@@ -75,7 +75,7 @@ class Laplace(ABC):
     def _curv_closure(self, X, y, N):
         pass
 
-    def fit(self, train_loader, compute_covariance=True):
+    def fit(self, train_loader, compute_scale=True):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -96,14 +96,13 @@ class Laplace(ABC):
             self.loss += loss_batch
             self.H += H_batch
 
-        # invert posterior precision (not always necessary for marglik e.g.)
-        if compute_covariance:
-            self.compute_covariance()
-
         self._fit = True
+        # compute optimal representation of posterior Cov/Prec.
+        if compute_scale:
+            self.compute_scale()
 
     @abstractmethod
-    def compute_covariance(self):
+    def compute_scale(self):
         pass
 
     def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
@@ -126,6 +125,20 @@ class Laplace(ABC):
             self.sigma_noise = sigma_noise
 
         return self.log_lik - 0.5 * (self.log_det_ratio + self.scatter)
+
+    @property
+    def log_lik(self):
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run fit() first.')
+
+        factor = self.H_factor
+        if self.likelihood == 'regression':
+            # Hessian factor for Gaussian likelihood is 2x, so halve loglik
+            c = 0
+            return factor * 0.5 * self.loss + c
+        else:
+            # for classification Xent == log Cat
+            return factor * self.loss
 
     @abstractmethod
     def samples(self, n_samples=100):
@@ -263,7 +276,7 @@ class Laplace(ABC):
     @sigma_noise.setter
     def sigma_noise(self, sigma_noise):
         if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
-            self._sigma_noise = sigma_noise
+            self._sigma_noise = torch.tensor(sigma_noise)
         elif torch.is_tensor(sigma_noise):
             if sigma_noise.ndim == 0:
                 self._sigma_noise = sigma_noise
@@ -292,9 +305,9 @@ class FullLaplace(Laplace):
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.full(X, y, N)
+        return self.backend.full(X, y, N=N)
 
-    def compute_covariance(self):
+    def compute_scale(self):
         self.posterior_scale = invsqrt_precision(self.posterior_precision)
 
     @property
@@ -314,6 +327,7 @@ class FullLaplace(Laplace):
     def log_det_posterior_precision(self):
         """Computes log determinant of the posterior precision `log det P`
         """
+        # TODO: could make more efficient for scalar prior precision.
         return self.posterior_precision.logdet()
 
     def functional_variance(self, Js):
@@ -324,31 +338,41 @@ class FullLaplace(Laplace):
         return self.mean + (self.posterior_scale @ samples)
 
 
-class BlockLaplace(Laplace):
+class KronLaplace(Laplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
-        self.H = BlockDiag.init_from_model(self.model, self._device)
+        self.H = Kron.init_from_model(self.model, self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.block(X, y, N)
+        return self.backend.kron(X, y, N=N)
 
-    def compute_covariance(self):
+    def fit(self, train_loader):
+        super().fit(train_loader, compute_scale=False)
+
+    def compute_scale(self):
         self.posterior_scale = self.posterior_precision.invsqrt()
 
     @property
     def posterior_covariance(self):
-        return self.posterior_scale.square() 
+        return self.posterior_scale.square()
 
     @property
     def posterior_precision(self):
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
 
-        return self.H * self.H_factor + self.prior_precision_block_diag
+        return self.H * self.H_factor + self.prior_precision_kron
+
+    @Laplace.prior_precision.setter
+    def prior_precision(self, prior_precision):
+        # Extend setter from Laplace to restrict prior precision structure.
+        super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
+        if len(self.prior_precision) not in [1, self.n_layers]:
+            raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
     @property
     def log_det_posterior_precision(self):
@@ -378,48 +402,8 @@ class BlockLaplace(Laplace):
         return self.mean + torch.cat(samples_list, dim=0)
 
     @property
-    def prior_precision_block_diag(self):
-        prior_prec_diag = self.prior_precision_diag
-        n_params_per_param = [np.prod(p.shape) for p in self.model.parameters()]
-        ix = 0
-        blocks = list()
-        for p in n_params_per_param:
-            blocks.append(torch.diag(prior_prec_diag[ix:ix+p]))
-            ix += p
-        return BlockDiag(blocks)
-
-
-class KronLaplace(Laplace):
-    # TODO list additional attributes
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend)
-
-    def _curv_closure(self, X, y, N):
-        return self.backend.kron(X, y, N)
-
-    def compute_covariance(self):
-        pass
-
-    @property
-    def posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-        
-        raise NotImplementedError
-
-    @property
-    def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        raise NotImplementedError()
-
-    def samples(self, n_samples=100):
-        raise NotImplementedError()
+    def prior_precision_kron(self):
+        return Kron.init_from_model(self.model, self._device)
 
 
 class DiagLaplace(Laplace):
@@ -432,7 +416,7 @@ class DiagLaplace(Laplace):
         self.H = torch.zeros(self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.diag(X, y, N)
+        return self.backend.diag(X, y, N=N)
 
     @property
     def posterior_precision(self):
@@ -443,8 +427,13 @@ class DiagLaplace(Laplace):
 
         return self.H_factor * self.H + self.prior_precision_diag
 
-    def compute_covariance(self):
-        self.posterior_scale = 1 / self.posterior_precision.sqrt()
+    def compute_scale(self):
+        # For diagonal this is implemented lazily since computing is for free.
+        pass
+
+    @property
+    def posterior_scale(self):
+        return 1 / self.posterior_precision.sqrt()
 
     @property
     def posterior_variance(self):
@@ -462,4 +451,3 @@ class DiagLaplace(Laplace):
     def samples(self, n_samples=100):
         samples = torch.randn(n_samples, self.P, device=self._device)
         return self.mean + samples * self.posterior_scale
-
