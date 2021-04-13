@@ -4,7 +4,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from laplace.utils import parameters_per_layer, invsqrt_precision
-from laplace.matrix import BlockDiag, Kron
+from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 
 
@@ -351,10 +351,12 @@ class KronLaplace(Laplace):
         return self.backend.kron(X, y, N=N)
 
     def fit(self, train_loader):
-        super().fit(train_loader, compute_scale=False)
+        # Kron requires postprocessing as all quantities depend on the decomposition.
+        super().fit(train_loader, compute_scale=True)
 
     def compute_scale(self):
-        self.posterior_scale = self.posterior_precision.invsqrt()
+        pass
+        # self.posterior_scale = self.posterior_precision.invsqrt()
 
     @property
     def posterior_covariance(self):

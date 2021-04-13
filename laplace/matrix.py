@@ -1,86 +1,17 @@
-from abc import ABC, abstractmethod
+from math import pow
 import torch
 import numpy as np
 
-from laplace.utils import invsqrt_precision, _is_valid_scalar, symeig
+from laplace.utils import _is_valid_scalar, symeig
 
 
-class Hessian(ABC):
+class Kron:
 
-    @abstractmethod
-    def __add__(self, other):
-        pass
-
-    @abstractmethod
-    def __iadd__(self, other):
-        pass
-
-    @abstractmethod
-    def __mul__(self, scalar):
-        pass
-
-
-class BlockDiag(Hessian):
-    """Block diagonal Hessian approximation. May be used for a Block
-    diagonal Laplace later.
-    """
-
-    def __init__(self, blocks):
-        self.blocks = blocks
-
-    @classmethod
-    def init_from_model(cls, model, device):
-        n_params_per_param = [np.prod(p.shape) for p in model.parameters()]
-        blocks = [torch.zeros(P, P, device=device) for P in n_params_per_param]
-        return cls(blocks)
-
-    def __add__(self, other):
-        self._check_args_add(other)
-        return BlockDiag([Hi.add(Hj) for Hi, Hj in zip(self.blocks, other.blocks)])
-
-    def __iadd__(self, other):
-        self._check_args_add(other)
-        self.blocks = [Hi.add(Hj) for Hi, Hj in zip(self.blocks, other.blocks)]
-        return self
-
-    def __mul__(self, scalar):
-        self.blocks = [scalar * Hi for Hi in self.blocks]
-        return self
-
-    def logdet(self):
-        return sum([Hi.logdet() for Hi in self.blocks])
-
-    def invsqrt(self):
-        return BlockDiag([invsqrt_precision(Hi) for Hi in self.blocks])
-
-    def square(self):
-        return BlockDiag([Hi @ Hi.T for Hi in self.blocks])
-
-    def _check_args_add(self, other):
-        if len(self.blocks) != len(other.blocks):
-            raise ValueError('Unmatched number of blocks.')
-
-        for Hi, Hj in zip(self.blocks, other.blocks):
-            if Hi.shape != Hj.shape:
-                raise ValueError('Unmatched individual blocks.')
-            if Hi.device != Hj.device:
-                raise ValueError('Individual blocks on different devices.')
-
-
-class Kron(Hessian):
-    """[summary]
-
-    Args:
-        Hessian ([type]): [description]
-
-    Attributes:
-        kfacs : list[lists]
-            inner lists are Kronecker factors or a single PxP GGN (e.g. for biases)
-    """
     def __init__(self, kfacs):
         self.kfacs = kfacs
-        self.eigenbases = None
-        self.eigenvalues = None
+        self.eigvecs = None
+        self.eigvals = None
+        self._deltas = None
 
     @classmethod
     def init_from_model(cls, model, device):
@@ -106,17 +37,17 @@ class Kron(Hessian):
         return cls(kfacs)
 
     def decompose(self):
-        eigenbases, eigenvalues = list(), list()
+        eigvecs, eigvals = list(), list()
         for F in self.kfacs:
             Qs, ls = list(), list()
             for Hi in F:
                 l, Q = symeig(Hi)
-                Qs.append(q)
+                Qs.append(Q)
                 ls.append(l)
-            eigenbases.append(Qs)
-            eigenvalues.append(ls)
-        self.eigenvalues = eigenbases
-        self.eigenvalues = eigenvalues
+            eigvecs.append(Qs)
+            eigvals.append(ls)
+        self.eigvecs = eigvecs
+        self.eigvals = eigvals
 
     @staticmethod
     def add_kfacs(kfacs_a, kfacs_b):
@@ -124,18 +55,27 @@ class Kron(Hessian):
                 for Fi, Fj in zip(kfacs_a, kfacs_b)]
 
     def __add__(self, other):
+        if self.eigvals is not None:
+            raise ValueError('Unsupported operation.')
+
         self._check_args_add(other)
         if isinstance(other, torch.Tensor):
-            pass
+            if self.deltas is None:
+                self.deltas = other
+            else:
+                self.deltas += other
         elif isinstance(other, Kron):
             self.kfacs = self.add_kfacs(self.kfacs, other.kfacs)
         return self
 
     def __mul__(self, scalar):
+        if self.eigvals is not None:
+            raise ValueError('Unsupported operation.')
+
         if not _is_valid_scalar(scalar):
             raise ValueError('Invalid argument, can only multiply Kron with scalar.')
 
-        self.kfacs = [[scalar * Hi for Hi in F] for F in self.kfacs]
+        self.kfacs = [[pow(scalar, 1/len(F)) * Hi for Hi in F] for F in self.kfacs]
         return self
 
     def logdet(self):
@@ -154,7 +94,7 @@ class Kron(Hessian):
 
     def _check_args_add(self, other):
         if isinstance(other, torch.Tensor):
-            if self.eigenvalues is None:
+            if self.eigvals is None:
                 raise ValueError('Adding tensor only supported on decomposed. Call first.')
             if len(other) == len(self) or len(other) == 1:
                 return
@@ -172,6 +112,17 @@ class Kron(Hessian):
                     raise ValueError('Unmatched Kronecker factors.')
                 if Hi.device != Hj.device:
                     raise ValueError('Kronecker factors on different devices.')
+
+    @property
+    def deltas(self):
+        return self._deltas
+
+    @deltas.setter
+    def deltas(self, new_deltas):
+        if len(new_deltas) == 1:
+            self._deltas = new_deltas.repeat(len(self))
+        else:
+            self._deltas = new_deltas
 
     __rmul__ = __mul__
     __radd__ = __add__

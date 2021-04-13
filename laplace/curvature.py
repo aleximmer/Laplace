@@ -3,7 +3,7 @@ import torch
 from torch.nn import MSELoss, CrossEntropyLoss
 
 from backpack import backpack, extend
-from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR
+from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared
 
 from laplace.jacobians import Jacobians
 from laplace.matrix import Kron
@@ -96,3 +96,23 @@ class BackPackGGN(BackPackInterface):
             H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
             H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
         return loss, H_ggn
+
+
+class BackPackEF(BackPackInterface):
+
+    def diag(self, X, y, **kwargs):
+        f = self.model(X)
+        loss = self.lossfunc(f, y)
+        with backpack(SumGradSquared()):
+            loss.backward()
+        diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
+                             for p in self.model.parameters()])
+
+        # TODO: self.factor * 2 here? To get true grad * grad for regression
+        return self.factor * loss, self.factor * diag_EF
+
+    def kron(self, X, y, **kwargs):
+        raise NotImplementedError()
+
+    def full(self, X, y, **kwargs):
+        pass
