@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import torch
 import numpy as np
 
-from laplace.utils import invsqrt_precision, _is_valid_scalar
+from laplace.utils import invsqrt_precision, _is_valid_scalar, symeig
 
 
 class Hessian(ABC):
@@ -104,6 +104,19 @@ class Kron(Hessian):
             else:
                 raise ValueError('Invalid parameter shape in network.')
         return cls(kfacs)
+
+    def decompose(self):
+        eigenbases, eigenvalues = list(), list()
+        for F in self.kfacs:
+            Qs, ls = list(), list()
+            for Hi in F:
+                l, Q = symeig(Hi)
+                Qs.append(q)
+                ls.append(l)
+            eigenbases.append(Qs)
+            eigenvalues.append(ls)
+        self.eigenvalues = eigenbases
+        self.eigenvalues = eigenvalues
 
     @staticmethod
     def add_kfacs(kfacs_a, kfacs_b):

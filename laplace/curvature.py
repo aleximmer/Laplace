@@ -6,7 +6,7 @@ from backpack import backpack, extend
 from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR
 
 from laplace.jacobians import Jacobians
-from laplace.matrix import Kron, BlockDiag
+from laplace.matrix import Kron
 
 
 class CurvatureInterface(ABC):
@@ -86,11 +86,8 @@ class BackPackGGN(BackPackInterface):
         if self.stochastic:
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 
-        with torch.no_grad():
-            f = self.model(X)
-            loss = self.factor * self.lossfunc(f, y)
-
-        Js, f = Jacobians(self.model, X) 
+        Js, f = Jacobians(self.model, X)
+        loss = self.factor * self.lossfunc(f, y)
         if self.likelihood == 'regression':
             H_ggn = torch.einsum('mkp,mkq->pq', Js, Js)
         else:

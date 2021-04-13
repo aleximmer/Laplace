@@ -1,3 +1,4 @@
+import logging
 import numpy as np
 import torch
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
@@ -37,3 +38,42 @@ def kron(t1, t2):
     )
 
     return expanded_t1 * tiled_t2
+
+
+def diagonal_add_scalar(X, value):
+    if not X.device == torch.device('cpu'):
+        indices = torch.cuda.LongTensor([[i, i] for i in range(X.shape[0])])
+    else:
+        indices = torch.LongTensor([[i, i] for i in range(X.shape[0])])
+    values = X.new_ones(X.shape[0]).mul(value)
+    return X.index_put(tuple(indices.t()), values, accumulate=True)
+
+
+def symeig(M):
+    """Symetric eigendecomposition avoiding failure cases by
+    adding and removing jitter to the diagonal
+
+    returns eigenvalues (l) and eigenvectors (W)
+    """
+    # could make double to get more precise computation
+    # M = M.double()
+    # and then below return L.float(), W.float()
+    try:
+        L, W = torch.symeig(M, eigenvectors=True)
+    except RuntimeError:  # did not converge
+        logging.info('SYMEIG: adding jitter, did not converge.')
+        # use W L W^T + I = W (L + I) W^T
+        M = diagonal_add_scalar(M, value=1.)
+        try:
+            L, W = torch.symeig(M, eigenvectors=True)
+            L -= 1.
+        except RuntimeError:
+            stats = f'diag: {M.diagonal()}, max: {M.abs().max()}, '
+            stats = stats + f'min: {M.abs().min()}, mean: {M.abs().mean()}'
+            logging.info(f'SYMEIG: adding jitter failed. Stats: {stats}')
+            exit()
+    # eigenvalues of symeig at least 0
+    L = L.clamp(min=0.0)
+    L[torch.isnan(L)] = 0.0
+    W[torch.isnan(W)] = 0.0
+    return L, W
