@@ -134,6 +134,7 @@ class Laplace(ABC):
         factor = self.H_factor
         if self.likelihood == 'regression':
             # Hessian factor for Gaussian likelihood is 2x, so halve loglik
+            # TODO: compute offset constant c
             c = 0
             return factor * 0.5 * self.loss + c
         else:
@@ -218,6 +219,15 @@ class Laplace(ABC):
         """
         pass
 
+    def _check_jacobians(self, Js):
+        if not isinstance(Js, torch.Tensor):
+            raise ValueError('Jacobians have to be torch.Tensor.')
+        if not Js.device == self._device:
+            raise ValueError('Jacobians need to be on the same device as Laplace.')
+        m, k, p = Js.size()
+        if p != self.n_params:
+            raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
+
     @property
     def log_det_ratio(self):
         """Computes the log of the determinant ratios for the marginal likelihood
@@ -296,7 +306,9 @@ class Laplace(ABC):
 
 
 class FullLaplace(Laplace):
-    # TODO list additional attributes
+    # TODO: list additional attributes
+    # TODO: recompute scale once prior precision or sigma noise change?
+    #       do in lazy way with a flag probably.
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  temperature=1., backend=BackPackGGN):
@@ -355,8 +367,7 @@ class KronLaplace(Laplace):
         super().fit(train_loader, compute_scale=True)
 
     def compute_scale(self):
-        pass
-        # self.posterior_scale = self.posterior_precision.invsqrt()
+        self.H = self.H.decompose()
 
     @property
     def posterior_covariance(self):
@@ -367,7 +378,7 @@ class KronLaplace(Laplace):
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
 
-        return self.H * self.H_factor + self.prior_precision_kron
+        return self.H * self.H_factor + self.prior_precision
 
     @Laplace.prior_precision.setter
     def prior_precision(self, prior_precision):
@@ -383,33 +394,15 @@ class KronLaplace(Laplace):
         return self.posterior_precision.logdet()
 
     def functional_variance(self, Js):
-        n, c, p = Js.shape
-        fvar = torch.zeros(n, c, c)
-        ix = 0
-        for Si in self.posterior_covariance.blocks:
-            P = Si.size(0)
-            Jsi = Js[:, :, ix:ix+P]
-            fvar += torch.einsum('ncp,pq,nkq->nck', Jsi, Si, Jsi)
-            ix += P
-        return fvar
+        pass
 
     def samples(self, n_samples=100):
-        samples = torch.randn(self.P, n_samples, device=self._device)
-        samples_list = list()
-        ix = 0
-        for Si in self.posterior_scale.blocks:
-            P = Si.size(0)
-            samples_i = samples[ix:ix+P]
-            samples_list.append(Si @ samples_i)
-        return self.mean + torch.cat(samples_list, dim=0)
-
-    @property
-    def prior_precision_kron(self):
-        return Kron.init_from_model(self.model, self._device)
+        pass
 
 
 class DiagLaplace(Laplace):
-    # TODO list additional attributes
+    # TODO: list additional attributes
+    # TODO: caching prior_precision_diag for fast lazy computation?
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  temperature=1., backend=BackPackGGN):
@@ -447,7 +440,8 @@ class DiagLaplace(Laplace):
         """
         return self.posterior_precision.log().sum()
 
-    def functional_variance(self, Js):
+    def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
+        self._check_jacobians(Js)
         return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
 
     def samples(self, n_samples=100):

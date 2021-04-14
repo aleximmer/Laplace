@@ -1,4 +1,5 @@
 import logging
+from typing import Union
 import numpy as np
 import torch
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
@@ -12,10 +13,12 @@ def invsqrt_precision(M):
     return _precision_to_scale_tril(M)
 
 
-def _is_valid_scalar(scalar):
+def _is_valid_scalar(scalar: Union[float, int, torch.Tensor]) -> bool:
     if np.isscalar(scalar) and np.isreal(scalar):
         return True
     elif torch.is_tensor(scalar) and scalar.ndim <= 1:
+        if scalar.ndim == 1 and len(scalar) != 1:
+            return False
         return True
     return False
 
