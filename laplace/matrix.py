@@ -6,6 +6,8 @@ from laplace.utils import _is_valid_scalar, symeig
 
 
 class Kron:
+    # TODO: split up in Kron and KronEig
+    # Kron.decompose() -> KronEig
 
     def __init__(self, kfacs):
         self.kfacs = kfacs
