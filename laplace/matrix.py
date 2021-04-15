@@ -148,7 +148,8 @@ class KronDecomposed:
         for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
             if len(ls) == 1:
                 # just Q (Lambda + delta) Q^T W_p
-                Q, l, p = Qs[0], ls[0], len(l[0])
+                Q, l, p = Qs[0], ls[0], len(ls[0])
+                print(Q.mean(), l.mean(), delta)
                 ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
                 W_p = W[:, cur_p:cur_p+p].T
                 SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
@@ -156,12 +157,13 @@ class KronDecomposed:
                 # not so easy to explain...
                 Q1, Q2 = Qs
                 l1, l2 = ls
+                print(Q1.mean(), Q2.mean(), l1.mean(), l2.mean(), delta)
                 p = len(l1) * len(l2)
                 if self.dampen:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
                     ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
                 else:
-                    ldelta_exp = torch.pow(torch.ger(l1, l2 + delta)).unsqueeze(0)
+                    ldelta_exp = torch.pow(torch.ger(l1, l2) + delta, exponent).unsqueeze(0)
                 p_in, p_out = len(l1), len(l2)
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
                 W_p = (Q1.T @ W_p @ Q2) * ldelta_exp

@@ -370,22 +370,11 @@ class KronLaplace(Laplace):
         self.H = self.H.decompose()
 
     @property
-    def posterior_covariance(self):
-        return self.posterior_scale.square()
-
-    @property
     def posterior_precision(self):
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
 
         return self.H * self.H_factor + self.prior_precision
-
-    @Laplace.prior_precision.setter
-    def prior_precision(self, prior_precision):
-        # Extend setter from Laplace to restrict prior precision structure.
-        super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
-        if len(self.prior_precision) not in [1, self.n_layers]:
-            raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
     @property
     def log_det_posterior_precision(self):
@@ -394,10 +383,18 @@ class KronLaplace(Laplace):
         return self.posterior_precision.logdet()
 
     def functional_variance(self, Js):
-        pass
+        return self.posterior_precision.inv_square_form(Js)
 
     def samples(self, n_samples=100):
-        pass
+        samples = torch.randn(n_samples, self.n_params, device=self._device)
+        return self.mean + self.posterior_precision.bmm(samples, exponent=-1/2)
+
+    @Laplace.prior_precision.setter
+    def prior_precision(self, prior_precision):
+        # Extend setter from Laplace to restrict prior precision structure.
+        super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
+        if len(self.prior_precision) not in [1, self.n_layers]:
+            raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
 
 class DiagLaplace(Laplace):
