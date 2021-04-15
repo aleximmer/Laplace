@@ -1,0 +1,16 @@
+language: python
+python:
+- '3.5'
+- '3.6'
+- '3.7'
+- '3.8'
+install:
+- pip install -r requirements.txt
+- pip install -r tests/requirements.txt
+- pip install -e .
+cache:
+- pip
+script:
+- pytest -vx --cov=laplace/
+after_success:
+- coveralls
