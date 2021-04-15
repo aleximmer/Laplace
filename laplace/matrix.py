@@ -138,11 +138,56 @@ class KronDecomposed:
                 raise ValueError('Too many Kronecker factors. Something went wrong.')
         return logdet
 
-    def _bmm(self, W: torch.Tensor, exponent: float = 1) -> torch.Tensor:
-        # compute (Kron + delta)^exponent @ W with typically exponent = -1 or -1/2
+    def _bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
+        # self @ W[batch, k, params]
+        assert len(W.size()) == 3
+        B, K, P = W.size()
+        W = W.reshape(B * K, P)
+        cur_p = 0
+        SW = list()
+        for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
+            if len(ls) == 1:
+                # just Q (Lambda + delta) Q^T W_p
+                Q, l, p = Qs[0], ls[0], len(l[0])
+                ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
+                W_p = W[:, cur_p:cur_p+p].T
+                SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
+            elif len(ls) == 2:
+                # not so easy to explain...
+                Q1, Q2 = Qs
+                l1, l2 = ls
+                p = len(l1) * len(l2)
+                if self.dampen:
+                    l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
+                    ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
+                else:
+                    ldelta_exp = torch.pow(torch.ger(l1, l2 + delta)).unsqueeze(0)
+                p_in, p_out = len(l1), len(l2)
+                W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
+                W_p = (Q1.T @ W_p @ Q2) * ldelta_exp
+                W_p = Q1 @ W_p @ Q2.T
+                SW.append(W_p.reshape(B * K, p_in * p_out))
+                cur_p += p
+            else:
+                raise AttributeError('Shape mismatch')
+        SW = torch.cat(SW, dim=1).reshape(B, K, P)
+        return SW
 
-        pass
-            
+    def inv_square_form(self, W: torch.Tensor) -> torch.Tensor:
+        # W either Batch x K x params or Batch x params
+        SW = self._bmm(W, exponent=-1)
+        return torch.bmm(W, SW.transpose(1, 2))
+
+    def bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
+        # self @ W with W[params], W[batch, params], W[batch, classes, params]
+        # returns SW[batch, classes, params]
+        if len(W) == 1:
+            return self._bmm(W.unsqueeze(0).unsqueeze(0)).squeeze()
+        elif len(W) == 2:
+            return self._bmm(W.unsqueeze(1)).squeeze()
+        elif len(W) == 3:
+            return self._bmm(W)
+
     # FIXME: iadd imul should change mutable types in principle.
     __radd__ = __add__
     __iadd__ = __add__
