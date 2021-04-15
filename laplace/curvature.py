@@ -42,7 +42,7 @@ class BackPackGGN(BackPackInterface):
     """[summary]
 
     MSELoss = |y-f|_2^2 -> d/df = -2(y-f)
-    log N(y|f,1) \propto 1/2|y-f|_2^2 -> d/df = -(y-f)
+    log N(y|f,1) propto 1/2|y-f|_2^2 -> d/df = -(y-f)
     --> factor for regression is 0.5 for loss and ggn
     """
 
