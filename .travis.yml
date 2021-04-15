@@ -8,6 +8,6 @@ install:
 cache:
 - pip
 script:
-- pytest -vx --cov=laplace/
+- pytest -vx --cov=laplace/ tests/
 after_success:
 - coveralls
