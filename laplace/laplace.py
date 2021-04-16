@@ -50,7 +50,7 @@ class Laplace(ABC):
     -----
     """
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1., 
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  temperature=1., backend=BackPackGGN, **backend_kwargs):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
@@ -148,7 +148,7 @@ class Laplace(ABC):
     def samples(self, n_samples=100):
         """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
         pass
-    
+
     def predictive(self, X, n_samples=100, pred_type='lin'):
         """Compute the posterior predictive on input data `X`.
 
