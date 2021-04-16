@@ -96,7 +96,7 @@ def test_bmm(small_model):
     X = torch.randn(5, 3)
     y = torch.randn(5, 2)
     backend = BackPackGGN(model, 'regression', stochastic=False)
-    loss, kron = backend.kron(X, y)
+    loss, kron = backend.kron(X, y, N=5)
     kron_decomp = kron.decompose()
     Js, f = Jacobians(model, X)
     print(Js.shape)

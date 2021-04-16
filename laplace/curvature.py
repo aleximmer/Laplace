@@ -62,6 +62,15 @@ class BackPackGGN(BackPackInterface):
         else:
             return Kron([p.kflr for p in self.model.parameters()])
 
+    @staticmethod
+    def _rescale_kron_factors(kron, M, N):
+        # Renormalize Kronecker factor to sum up correctly over N data points with batches of M
+        # for M=N (full-batch) just M/N=1
+        for F in kron.kfacs:
+            if len(F) == 2:
+                F[1] *= M/N
+        return kron
+
     def diag(self, X, y, **kwargs):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(X)
@@ -72,13 +81,14 @@ class BackPackGGN(BackPackInterface):
 
         return self.factor * loss, self.factor * dggn
 
-    def kron(self, X, y, **wkwargs) -> [torch.Tensor, Kron]:
+    def kron(self, X, y, N, **wkwargs) -> [torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
         kron = self._get_kron_factors()
+        kron = self._rescale_kron_factors(kron, len(y), N)
 
         return self.factor * loss, self.factor * kron
 
