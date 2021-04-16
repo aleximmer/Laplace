@@ -108,6 +108,7 @@ def test_bmm(small_model):
             blocks.append(kron_prod(*F))
     S = block_diag(blocks)
     assert torch.allclose(S, S.T)
+    assert torch.allclose(S.diagonal(), kron.diag())
 
     # test J @ Kron @ Jt (square form)
     JS = kron_decomp.bmm(Js, exponent=1)

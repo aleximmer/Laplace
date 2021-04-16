@@ -110,3 +110,14 @@ def test_diag_ggn_stoch_reg_backpack(reg_Xy, model):
     loss_ns, dggn_ns = backend.diag(X, y)
     assert loss_ns == loss
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)
+
+
+def test_kron_ggn_reg_backpack_vs_diag(reg_Xy, model):
+    # For a single data point, Kron is exact and should equal diag GGN
+    X, y = reg_Xy
+    backend = BackPackGGN(model, 'regression', stochastic=False)
+    loss, dggn = backend.diag(X[:1], y[:1])
+    # sanity check size of diag ggn
+    assert len(dggn) == model.n_params
+    loss, kron = backend.kron(X[:1], y[:1])
+    assert torch.allclose(kron.diag(), dggn)

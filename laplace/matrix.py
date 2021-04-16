@@ -76,6 +76,15 @@ class Kron:
                 logdet += p_out * Hi.logdet() + p_in * Hj.logdet()
         return logdet
 
+    def diag(self) -> torch.Tensor:
+        diags = list()
+        for F in self.kfacs:
+            if len(F) == 1:
+                diags.append(F[0].diagonal())
+            else:
+                diags.append(torch.ger(F[0].diagonal(), F[1].diagonal()).flatten())
+        return torch.cat(diags)
+
     # inplace and permuted operations
     __radd__ = __add__
     __iadd__ = __add__
