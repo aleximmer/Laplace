@@ -6,7 +6,12 @@ from torch.nn.utils import parameters_to_vector
 
 from laplace.matrix import Kron, KronDecomposed
 from laplace.utils import kron as kron_prod
-from tests.utils import get_psd_matrix
+from laplace.curvature import BackPackGGN
+from laplace.jacobians import Jacobians
+from tests.utils import get_psd_matrix, block_diag
+
+
+torch.set_default_tensor_type(torch.DoubleTensor)
 
 
 @pytest.fixture
@@ -16,6 +21,13 @@ def model():
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups
     setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
+def small_model():
+    model = torch.nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
+    setattr(model, 'output_size', 2)
     return model
 
 
@@ -78,7 +90,54 @@ def test_logdet_consistent():
     assert torch.allclose(kron.logdet(), kron_decomp.logdet())
     
 
-# def test_bmm():
-#     # TODO: test bmm
-#     # assert False
-#     pass
+def test_bmm(small_model):
+    model = small_model
+    # model = single_output_model
+    X = torch.randn(5, 3)
+    y = torch.randn(5, 2)
+    backend = BackPackGGN(model, 'regression', stochastic=False)
+    loss, kron = backend.kron(X, y)
+    kron_decomp = kron.decompose()
+    Js, f = Jacobians(model, X)
+    print(Js.shape)
+    blocks = list()
+    for F in kron.kfacs:
+        if len(F) == 1:
+            blocks.append(F[0])
+        else:
+            blocks.append(kron_prod(*F))
+    S = block_diag(blocks)
+    assert torch.allclose(S, S.T)
+
+    # test J @ Kron @ Jt (square form)
+    JS = kron_decomp.bmm(Js, exponent=1)
+    JS_true = Js @ S
+    JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
+    JSJ = torch.bmm(JS, Js.transpose(1,2))
+    assert torch.allclose(JSJ, JSJ)
+    assert torch.allclose(JS, JS_true)
+
+    # test J @ S_inv @ J (funcitonal variance)
+    JSJ = kron_decomp.inv_square_form(Js)
+    S_inv = S.inverse()
+    JSJ_true = torch.bmm(Js @ S_inv, Js.transpose(1,2))
+    assert torch.allclose(JSJ, JSJ_true)
+
+    # test J @ S^-1/2  (sampling)
+    JS = kron_decomp.bmm(Js, exponent=-1/2)
+    JSJ = torch.bmm(JS, Js.transpose(1,2))
+    l, Q = S_inv.symeig(eigenvectors=True)
+    JS_true = Js @ Q @ torch.diag(torch.sqrt(l)) @ Q.T
+    JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
+    assert torch.allclose(JS, JS_true)
+    assert torch.allclose(JSJ, JSJ_true)
+
+    # test different Js shapes:
+    # 2 - dimensional
+    JS = kron_decomp.bmm(Js[:, 0, :].squeeze(), exponent=1)
+    JS_true = Js[:, 0, :].squeeze() @ S
+    assert torch.allclose(JS, JS_true)
+    # 1 - dimensional
+    JS = kron_decomp.bmm(Js[0, 0, :].squeeze(), exponent=1)
+    JS_true = Js[0, 0, :].squeeze() @ S
+    assert torch.allclose(JS, JS_true)

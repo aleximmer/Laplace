@@ -72,7 +72,7 @@ class BackPackGGN(BackPackInterface):
 
         return self.factor * loss, self.factor * dggn
 
-    def kron(self, X, y, **wkwargs):
+    def kron(self, X, y, **wkwargs) -> [torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         loss = self.lossfunc(f, y)

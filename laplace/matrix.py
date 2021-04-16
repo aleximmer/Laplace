@@ -153,6 +153,7 @@ class KronDecomposed:
                 ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
                 W_p = W[:, cur_p:cur_p+p].T
                 SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
+                cur_p += p
             elif len(ls) == 2:
                 # not so easy to explain...
                 Q1, Q2 = Qs
@@ -183,12 +184,14 @@ class KronDecomposed:
     def bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
         # self @ W with W[params], W[batch, params], W[batch, classes, params]
         # returns SW[batch, classes, params]
-        if len(W) == 1:
-            return self._bmm(W.unsqueeze(0).unsqueeze(0)).squeeze()
-        elif len(W) == 2:
-            return self._bmm(W.unsqueeze(1)).squeeze()
-        elif len(W) == 3:
-            return self._bmm(W)
+        if W.ndim == 1:
+            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).squeeze()
+        elif W.ndim == 2:
+            return self._bmm(W.unsqueeze(1), exponent).squeeze()
+        elif W.ndim == 3:
+            return self._bmm(W, exponent)
+        else:
+            raise ValueError('Invalid shape for W')
 
     # FIXME: iadd imul should change mutable types in principle.
     __radd__ = __add__

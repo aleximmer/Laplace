@@ -8,6 +8,9 @@ from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 
 
+__all__ = ['FullLaplace', 'KronLaplace', 'DiagLaplace']
+
+
 class Laplace(ABC):
     """Laplace approximation for a pytorch neural network.
     The Laplace approximation is a Gaussian distribution but can have different
