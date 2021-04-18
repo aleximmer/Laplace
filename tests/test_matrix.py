@@ -99,7 +99,6 @@ def test_bmm(small_model):
     loss, kron = backend.kron(X, y, N=5)
     kron_decomp = kron.decompose()
     Js, f = Jacobians(model, X)
-    print(Js.shape)
     blocks = list()
     for F in kron.kfacs:
         if len(F) == 1:

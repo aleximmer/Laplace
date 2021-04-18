@@ -125,4 +125,4 @@ class BackPackEF(BackPackInterface):
         raise NotImplementedError()
 
     def full(self, X, y, **kwargs):
-        pass
+        raise NotImplementedError()
