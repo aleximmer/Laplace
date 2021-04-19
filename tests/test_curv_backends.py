@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import BackPackGGN
+from laplace.curvature import BackPackGGN, BackPackEF
 from laplace.jacobians import Jacobians
 
 
@@ -183,3 +183,30 @@ def test_kron_summing_up_vs_diag_class(class_Xy, model):
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
     
+
+def test_full_vs_diag_ef_cls_backpack(class_Xy, model):
+    X, y = class_Xy
+    backend = BackPackEF(model, 'classification')
+    loss, diag_ef = backend.diag(X, y)
+    # sanity check size of diag ggn
+    assert len(diag_ef) == model.n_params
+
+    # check against manually computed full GGN:
+    backend = BackPackEF(model, 'classification')
+    loss_f, H_ef = backend.full(X, y)
+    assert loss == loss_f
+    assert torch.allclose(diag_ef, H_ef.diagonal())
+
+
+def test_full_vs_diag_ef_reg_backpack(reg_Xy, model):
+    X, y = reg_Xy
+    backend = BackPackEF(model, 'regression')
+    loss, diag_ef = backend.diag(X, y)
+    # sanity check size of diag ggn
+    assert len(diag_ef) == model.n_params
+
+    # check against manually computed full GGN:
+    backend = BackPackEF(model, 'regression')
+    loss_f, H_ef = backend.full(X, y)
+    assert loss == loss_f
+    assert torch.allclose(diag_ef, H_ef.diagonal())

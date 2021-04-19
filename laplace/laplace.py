@@ -232,7 +232,7 @@ class Laplace(ABC):
     def glm_predictive_distribution(self, X):
         Js, f_mu = Jacobians(self.model, X)
         f_var = self.functional_variance(Js)
-        return f_mu, f_var
+        return f_mu.detach(), f_var.detach()
     
     def nn_predictive_samples(self, X, n_samples=100):
         fs = list()
@@ -486,7 +486,7 @@ class DiagLaplace(Laplace):
 
     @property
     def posterior_variance(self):
-        return self.posterior_scale.square()
+        return 1 / self.posterior_precision
 
     @property
     def log_det_posterior_precision(self):
