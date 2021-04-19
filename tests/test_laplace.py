@@ -136,6 +136,7 @@ def test_laplace_fit(laplace, lh, model, reg_loader, class_loader):
     y = loader.dataset.tensors[1]
     assert f.shape == torch.Size([10, 2])
 
+    # Test log likelihood (Train)
     log_lik = lap.log_lik
     # compute true log lik
     if lh == 'classification':
@@ -145,4 +146,25 @@ def test_laplace_fit(laplace, lh, model, reg_loader, class_loader):
         assert y.size() == f.size()
         log_lik_true = Normal(loc=f, scale=sigma_noise).log_prob(y).sum()
         assert torch.allclose(log_lik, log_lik_true)
+        # change likelihood and test again
+        lap.sigma_noise = 0.72
+        log_lik = lap.log_lik
+        log_lik_true = Normal(loc=f, scale=0.72).log_prob(y).sum()
+        assert torch.allclose(log_lik, log_lik_true)
 
+    # Test marginal likelihood
+    # lml = log p(y|f) - 1/2 theta @ prior_prec @ theta 
+    #       + 1/2 logdet prior_prec - 1/2 log det post_prec
+    lml = log_lik_true
+    theta = parameters_to_vector(model.parameters()).detach()
+    assert torch.allclose(theta, lap.mean)
+    prior_prec = torch.diag(lap.prior_precision_diag)
+    assert prior_prec.shape == torch.Size([len(theta), len(theta)])
+    lml = lml - 1/2 * theta @ prior_prec @ theta
+    Sigma_0 = torch.inverse(prior_prec)
+    if laplace == DiagLaplace:
+        log_det_post_prec = lap.posterior_precision.log().sum()
+    else:
+        log_det_post_prec = lap.posterior_precision.logdet()
+    lml = lml + 1/2 * (prior_prec.logdet() - log_det_post_prec)
+    assert torch.allclose(lml, lap.marginal_likelihood())

@@ -143,7 +143,7 @@ class Laplace(ABC):
 
         factor = - self.H_factor
         if self.likelihood == 'regression':
-            # Hessian factor for Gaussian likelihood is 2x, so halve loglik
+            # loss used is just MSE, need to add normalizer for gaussian likelihood
             c = self.n_data * self.n_outputs * torch.log(self.sigma_noise * sqrt(2 * pi))
             return factor * self.loss - c
         else:
