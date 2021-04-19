@@ -3,6 +3,7 @@ from math import sqrt, log, pi
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
+from torch.distributions import MultivariateNormal
 
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
@@ -150,8 +151,22 @@ class Laplace(ABC):
             # for classification Xent == log Cat
             return factor * self.loss
 
+    def __call__(self, X, pred_type='glm', link_approx='mc'):
+        if self.likelihood == 'regression':
+            if pred_type == 'glm':
+                Js, f = jacobians(self.model, X)
+                mu_f, sigma_f = self.functional_variance(Js)
+                return mu_f, sigma_f, self.sigma_noise.detach() ** 2
+            elif pred_type == 'nn':
+                predictions = list()
+                for sample in self.posterior_samples(n_samples):
+                    vector_to_parameters(sample, self.model.parameters())
+                    predictions.append(self.model(X.to(self._device)).detach())
+                vector_to_parameters(self.mean, self.model.parameters())
+                return torch.stack(predictions)
+
     @abstractmethod
-    def samples(self, n_samples=100):
+    def sample(self, n_samples=100):
         """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
         pass
 
@@ -192,12 +207,11 @@ class Laplace(ABC):
             raise ValueError('Invalid pred_type parameter.')
 
         if pred_type == 'nn':
-            prev_param = parameters_to_vector(self.model.parameters())
             predictions = list()
             for sample in self.posterior_samples(n_samples):
                 vector_to_parameters(sample, self.model.parameters())
                 predictions.append(self.model(X.to(self._device)).detach())
-            vector_to_parameters(prev_param, self.model.parameters())
+            vector_to_parameters(self.mean, self.model.parameters())
             return torch.stack(predictions)
 
         elif pred_type == 'lin':
@@ -354,9 +368,9 @@ class FullLaplace(Laplace):
     def functional_variance(self, Js):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
 
-    def samples(self, n_samples=100):
-        samples = torch.randn(self.P, n_samples, device=self._device)
-        return self.mean + (self.posterior_scale @ samples)
+    def sample(self, n_samples=100):
+        dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
+        return dist.sample((n_samples,))
 
 
 class KronLaplace(Laplace):
@@ -394,9 +408,10 @@ class KronLaplace(Laplace):
     def functional_variance(self, Js):
         return self.posterior_precision.inv_square_form(Js)
 
-    def samples(self, n_samples=100):
+    def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
-        return self.mean + self.posterior_precision.bmm(samples, exponent=-1/2)
+        samples = self.posterior_precision.bmm(samples, exponent=-0.5)
+        return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
 
     @Laplace.prior_precision.setter
     def prior_precision(self, prior_precision):
@@ -450,6 +465,7 @@ class DiagLaplace(Laplace):
         self._check_jacobians(Js)
         return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
 
-    def samples(self, n_samples=100):
-        samples = torch.randn(n_samples, self.P, device=self._device)
-        return self.mean + samples * self.posterior_scale
+    def sample(self, n_samples=100):
+        samples = torch.randn(n_samples, self.n_params, device=self._device)
+        samples = samples * self.posterior_scale.reshape(1, self.n_params)
+        return self.mean.reshape(1, self.n_params) + samples

@@ -25,14 +25,14 @@ def model():
 def class_loader():
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
-    return DataLoader(TensorDataset(X, y))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
 @pytest.fixture
 def reg_loader():
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
-    return DataLoader(TensorDataset(X, y))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -168,3 +168,14 @@ def test_laplace_fit(laplace, lh, model, reg_loader, class_loader):
         log_det_post_prec = lap.posterior_precision.logdet()
     lml = lml + 1/2 * (prior_prec.logdet() - log_det_post_prec)
     assert torch.allclose(lml, lap.marginal_likelihood())
+
+    # test sampling
+    torch.manual_seed(61)
+    samples = lap.sample(n_samples=1)
+    assert samples.shape == torch.Size([1, len(theta)])
+    samples = lap.sample(n_samples=1000000)
+    assert samples.shape == torch.Size([1000000, len(theta)])
+    mu_comp = samples.mean(dim=0)
+    mu_true = lap.mean
+    assert torch.allclose(mu_comp, mu_true, rtol=1)
+
