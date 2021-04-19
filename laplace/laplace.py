@@ -8,6 +8,7 @@ from torch.distributions import MultivariateNormal
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
+from laplace.jacobians import Jacobians
 
 
 __all__ = ['FullLaplace', 'KronLaplace', 'DiagLaplace']
@@ -151,71 +152,103 @@ class Laplace(ABC):
             # for classification Xent == log Cat
             return factor * self.loss
 
-    def __call__(self, X, pred_type='glm', link_approx='mc'):
-        if self.likelihood == 'regression':
-            if pred_type == 'glm':
-                Js, f = Jacobians(self.model, X)
-                mu_f, sigma_f = self.functional_variance(Js)
-                return mu_f, sigma_f, self.sigma_noise.detach() ** 2
-            elif pred_type == 'nn':
-                predictions = list()
-                for sample in self.posterior_samples(n_samples):
-                    vector_to_parameters(sample, self.model.parameters())
-                    predictions.append(self.model(X.to(self._device)).detach())
-                vector_to_parameters(self.mean, self.model.parameters())
-                return torch.stack(predictions)
+    def __call__(self, X, pred_type='glm', link_approx='mc', n_samples=100):
+        """Compute the posterior predictive on input data `X`.
+
+        Parameters
+        ----------
+        X : torch.Tensor (batch_size, *input_size)
+
+        pred_type : str 'lin' or 'nn'
+            type of posterior predictive, linearized GLM predictive or
+            neural network sampling predictive.
+
+        link_approx : str 'mc' or 'probit'
+            how to approximate the classification link function for GLM.
+            For NN, only 'mc' is possible.
+
+        n_samples : int
+            number of samples in case necessary
+        """
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+
+        if pred_type not in ['glm', 'nn']:
+            raise ValueError('Only glm and nn supported as prediction types.')
+
+        if pred_type == 'glm':
+            f_mu, f_var = self.glm_predictive_distribution(X)
+            # regression
+            if self.likelihood == 'regression':
+                return f_mu, f_var
+            # classification
+            if link_approx == 'mc':
+                dist = MultivariateNormal(f_mu, f_var)
+                return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
+            elif link_approx == 'probit':
+                kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
+                return torch.softmax(kappa * f_mu, dim=-1)
+        else:
+            samples = self.nn_predictive_samples(X, n_samples)
+            if self.likelihood == 'regression':
+                return samples.mean(dim=0), samples.var(dim=0)
+            return samples.mean(dim=0)
+
+    def predictive(self, X, pred_type='glm', link_approx='mc', n_samples=100):
+        return self(X, pred_type, link_approx, n_samples)
+
+    def predictive_samples(self, X, pred_type='glm', n_samples=100):
+        """Compute the posterior predictive on input data `X`.
+
+        Parameters
+        ----------
+        X : torch.Tensor (batch_size, *input_size)
+
+        pred_type : str 'lin' or 'nn'
+            type of posterior predictive, linearized GLM predictive or
+            neural network sampling predictive.
+
+        n_samples : int
+            number of samples
+        """
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+
+        if pred_type not in ['glm', 'nn']:
+            raise ValueError('Only glm and nn supported as prediction types.')
+
+        if pred_type == 'glm':
+            f_mu, f_var = self.glm_predictive_distribution(X)
+            assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+            dist = MultivariateNormal(f_mu, f_var)
+            samples = dist.sample((n_samples,))
+            if self.likelihood == 'regression':
+                return samples
+            return torch.softmax(samples, dim=-1)
+        
+        else:  # 'nn'
+            return self.nn_predictive_samples(X, n_samples)
+
+    def glm_predictive_distribution(self, X):
+        Js, f_mu = Jacobians(self.model, X)
+        f_var = self.functional_variance(Js)
+        return f_mu, f_var
+    
+    def nn_predictive_samples(self, X, n_samples=100):
+        fs = list()
+        for sample in self.sample(n_samples):
+            vector_to_parameters(sample, self.model.parameters())
+            fs.append(self.model(X.to(self._device)).detach())
+        vector_to_parameters(self.mean, self.model.parameters())
+        fs = torch.stack(fs)
+        if self.likelihood == 'classification':
+            fs = torch.softmax(fs, dim=-1)
+        return fs
 
     @abstractmethod
     def sample(self, n_samples=100):
         """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
         pass
-
-    def predictive(self, X, n_samples=100, pred_type='lin'):
-        """Compute the posterior predictive on input data `X`.
-
-        Parameters
-        ----------
-        X : torch.Tensor (batch_size, *input_size)
-
-        n_samples : int
-            number of samples in case necessary
-
-        pred_type : str 'lin' or 'nn'
-            type of posterior predictive, linearized GLM predictive or
-            neural network sampling predictive.
-        """
-        pass
-
-    def predictive_samples(self, X, n_samples, pred_type='lin'):
-        """Compute the posterior predictive on input data `X`.
-
-        Parameters
-        ----------
-        X : torch.Tensor (batch_size, *input_size)
-
-        n_samples : int
-            number of samples
-
-        pred_type : str 'lin' or 'nn'
-            type of posterior predictive, linearized GLM predictive or
-            neural network sampling predictive.
-        """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
-        if pred_type not in ['lin', 'nn']:
-            raise ValueError('Invalid pred_type parameter.')
-
-        if pred_type == 'nn':
-            predictions = list()
-            for sample in self.posterior_samples(n_samples):
-                vector_to_parameters(sample, self.model.parameters())
-                predictions.append(self.model(X.to(self._device)).detach())
-            vector_to_parameters(self.mean, self.model.parameters())
-            return torch.stack(predictions)
-
-        elif pred_type == 'lin':
-            raise NotImplementedError()
 
     @property
     def scatter(self):
