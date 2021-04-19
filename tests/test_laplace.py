@@ -179,3 +179,5 @@ def test_laplace_fit(laplace, lh, model, reg_loader, class_loader):
     mu_true = lap.mean
     assert torch.allclose(mu_comp, mu_true, rtol=1)
 
+    # test functional variance
+    

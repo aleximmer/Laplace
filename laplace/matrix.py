@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from typing import Union
 
-from laplace.utils import _is_valid_scalar, symeig
+from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
 
 
 class Kron:
@@ -84,6 +84,15 @@ class Kron:
             else:
                 diags.append(torch.ger(F[0].diagonal(), F[1].diagonal()).flatten())
         return torch.cat(diags)
+
+    def to_matrix(self) -> torch.Tensor:
+        blocks = list()
+        for F in self.kfacs:
+            if len(F) == 1:
+                blocks.append(F[0])
+            else:
+                blocks.append(kron(F[0], F[1]))
+        return block_diag(blocks)
 
     # inplace and permuted operations
     __radd__ = __add__
@@ -199,6 +208,21 @@ class KronDecomposed:
             return self._bmm(W, exponent)
         else:
             raise ValueError('Invalid shape for W')
+
+    def to_matrix(self, exponent: float = 1) -> torch.Tensor:
+        blocks = list()
+        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.deltas):
+            if len(ls) == 1:
+                Q, l = Qs[0], ls[0]
+                blocks.append(Q @ torch.diag(torch.pow(l + delta, exponent)) @ Q.T)
+            else:
+                Q1, Q2 = Qs
+                l1, l2 = ls
+                Q = kron(Q1, Q2)
+                l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                L = torch.diag(l.flatten())
+                blocks.append(Q @ L @ Q.T)
+        return block_diag(blocks)
 
     # FIXME: iadd imul should change mutable types in principle.
     __radd__ = __add__

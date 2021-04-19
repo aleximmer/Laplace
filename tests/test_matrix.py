@@ -8,7 +8,8 @@ from laplace.matrix import Kron, KronDecomposed
 from laplace.utils import kron as kron_prod
 from laplace.curvature import BackPackGGN
 from laplace.jacobians import Jacobians
-from tests.utils import get_psd_matrix, block_diag
+from laplace.utils import block_diag
+from tests.utils import get_psd_matrix
 
 
 torch.set_default_tensor_type(torch.DoubleTensor)
@@ -141,3 +142,17 @@ def test_bmm(small_model):
     JS = kron_decomp.bmm(Js[0, 0, :].squeeze(), exponent=1)
     JS_true = Js[0, 0, :].squeeze() @ S
     assert torch.allclose(JS, JS_true)
+
+
+def test_matrix_consistent():
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    torch.manual_seed(7171)
+    kfacs = [[get_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
+    kron = Kron(kfacs)
+    kron_decomp = kron.decompose()
+    assert torch.allclose(kron.to_matrix(), kron_decomp.to_matrix(exponent=1))
+    assert torch.allclose(kron.to_matrix().inverse(), kron_decomp.to_matrix(exponent=-1))
+    M_true = kron.to_matrix()
+    M_true.diagonal().add_(3.4)
+    kron_decomp += torch.tensor(3.4)
+    assert torch.allclose(M_true, kron_decomp.to_matrix(exponent=1))

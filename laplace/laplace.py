@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from math import sqrt, log, pi
+from math import sqrt, pi
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
@@ -154,7 +154,7 @@ class Laplace(ABC):
     def __call__(self, X, pred_type='glm', link_approx='mc'):
         if self.likelihood == 'regression':
             if pred_type == 'glm':
-                Js, f = jacobians(self.model, X)
+                Js, f = Jacobians(self.model, X)
                 mu_f, sigma_f = self.functional_variance(Js)
                 return mu_f, sigma_f, self.sigma_noise.detach() ** 2
             elif pred_type == 'nn':

@@ -80,3 +80,15 @@ def symeig(M):
     L[torch.isnan(L)] = 0.0
     W[torch.isnan(W)] = 0.0
     return L, W
+
+
+def block_diag(blocks):
+    P = sum([b.shape[0] for b in blocks])
+    M = torch.zeros(P, P)
+    p_cur = 0
+    for block in blocks:
+        p_block = block.shape[0]
+        M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
+        p_cur += p_block
+    return M
+    return M
