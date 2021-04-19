@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 
 from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from tests.utils import Jacobians_naive
 
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
@@ -121,7 +122,7 @@ def test_laplace_init_temperature(laplace, model):
 
 
 @pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
-def test_laplace_fit(laplace, lh, model, reg_loader, class_loader):
+def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     if lh == 'classification':
         loader = class_loader
         sigma_noise = 1.
@@ -180,4 +181,13 @@ def test_laplace_fit(laplace, lh, model, reg_loader, class_loader):
     assert torch.allclose(mu_comp, mu_true, rtol=1)
 
     # test functional variance
-    
+    if laplace == FullLaplace:
+        Sigma = lap.posterior_covariance
+    elif laplace == KronLaplace:
+        Sigma = lap.posterior_precision.to_matrix(exponent=-1)
+    elif laplace == DiagLaplace:
+        Sigma = torch.diag(lap.posterior_variance)
+    Js, f = Jacobians_naive(model, loader.dataset.tensors[0])
+    true_f_var = torch.einsum('mkp,pq,mcq->mkc', Js, Sigma, Js)
+    comp_f_var = lap.functional_variance(Js)
+    assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
