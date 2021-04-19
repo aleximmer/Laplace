@@ -1,8 +1,10 @@
 import pytest
+from itertools import product
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
+from torch.distributions import Normal, Categorical
 
 from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
 
@@ -85,7 +87,12 @@ def test_laplace_init_precision(laplace, model):
     lap = laplace(model, likelihood='regression', prior_precision=precision)
     # torch.tensor 1-dim param-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
-    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    if laplace == KronLaplace:
+        # Kron should not accept per parameter prior precision
+        with pytest.raises(ValueError):
+            lap = laplace(model, likelihood='regression', prior_precision=precision)
+    else:
+        lap = laplace(model, likelihood='regression', prior_precision=precision)
     # torch.tensor 1-dim layer-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
     lap = laplace(model, likelihood='regression', prior_precision=precision)
@@ -106,14 +113,36 @@ def test_laplace_init_precision(laplace, model):
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_laplace_init_precision(laplace, model):
+def test_laplace_init_temperature(laplace, model):
     # valid float
     T = 1.1
     lap = laplace(model, likelihood='classification', temperature=T)
     assert lap.temperature == T
 
 
-@pytest.mark.parametrize('laplace', flavors)
-def test_laplace_fit(laplace, model, reg_loader):
-    lap = laplace(model, 'regression')
-    lap.fit(reg_loader)
+@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+def test_laplace_fit(laplace, lh, model, reg_loader, class_loader):
+    if lh == 'classification':
+        loader = class_loader
+        sigma_noise = 1.
+    else:
+        loader = reg_loader
+        sigma_noise = 0.3
+    lap = laplace(model, lh, sigma_noise=sigma_noise, prior_precision=0.7)
+    lap.fit(loader)
+    assert lap.n_data == len(loader.dataset)
+    assert lap.n_outputs == model.output_size
+    f = model(loader.dataset.tensors[0])
+    y = loader.dataset.tensors[1]
+    assert f.shape == torch.Size([10, 2])
+
+    log_lik = lap.log_lik
+    # compute true log lik
+    if lh == 'classification':
+        log_lik_true = Categorical(logits=f).log_prob(y).sum()
+        assert torch.allclose(log_lik, log_lik_true)
+    else:
+        assert y.size() == f.size()
+        log_lik_true = Normal(loc=f, scale=sigma_noise).log_prob(y).sum()
+        assert torch.allclose(log_lik, log_lik_true)
+

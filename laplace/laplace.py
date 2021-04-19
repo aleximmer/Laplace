@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from math import sqrt, log, pi
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
@@ -73,6 +74,8 @@ class Laplace(ABC):
 
         # log likelihood = g(loss)
         self.loss = 0.
+        self.n_outputs = None
+        self.n_data = None
 
     @abstractmethod
     def _curv_closure(self, X, y, N):
@@ -98,6 +101,10 @@ class Laplace(ABC):
             loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
             self.H += H_batch
+
+        with torch.no_grad():
+            self.n_outputs = self.model(X[:1]).shape[-1]
+        self.n_data = N
 
         self._fit = True
         # compute optimal representation of posterior Cov/Prec.
@@ -134,12 +141,11 @@ class Laplace(ABC):
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-        factor = self.H_factor
+        factor = - self.H_factor
         if self.likelihood == 'regression':
             # Hessian factor for Gaussian likelihood is 2x, so halve loglik
-            # TODO: compute offset constant c
-            c = 0
-            return factor * 0.5 * self.loss + c
+            c = self.n_data * self.n_outputs * torch.log(self.sigma_noise * sqrt(2 * pi))
+            return factor * self.loss - c
         else:
             # for classification Xent == log Cat
             return factor * self.loss
