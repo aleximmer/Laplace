@@ -172,14 +172,14 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     assert torch.allclose(lml, lap.marginal_likelihood())
 
     # test sampling
-    # torch.manual_seed(61)
-    # samples = lap.sample(n_samples=1)
-    # assert samples.shape == torch.Size([1, len(theta)])
-    # samples = lap.sample(n_samples=1000000)
-    # assert samples.shape == torch.Size([1000000, len(theta)])
-    # mu_comp = samples.mean(dim=0)
-    # mu_true = lap.mean
-    # assert torch.allclose(mu_comp, mu_true, rtol=1)
+    torch.manual_seed(61)
+    samples = lap.sample(n_samples=1)
+    assert samples.shape == torch.Size([1, len(theta)])
+    samples = lap.sample(n_samples=1000000)
+    assert samples.shape == torch.Size([1000000, len(theta)])
+    mu_comp = samples.mean(dim=0)
+    mu_true = lap.mean
+    assert torch.allclose(mu_comp, mu_true, rtol=1)
 
     # test functional variance
     if laplace == FullLaplace:
