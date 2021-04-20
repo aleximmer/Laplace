@@ -6,7 +6,7 @@ from torch.nn import MSELoss, CrossEntropyLoss
 from backpack import backpack, extend
 from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared, BatchGrad
 
-from laplace.jacobians import Jacobians, LLJacobians
+from laplace.jacobians import jacobians, last_layer_jacobians
 from laplace.matrix import Kron
 
 
@@ -60,7 +60,7 @@ class LastLayer(CurvatureInterface):
         return self.backend.kron(X, y, **kwargs)
 
     def full(self, X, y, **kwargs):
-        Js, f = LLJacobians(self.model, X)
+        Js, f = last_layer_jacobians(self.model, X)
         loss, H = self._get_full_ggn(Js, f, y)
 
         return loss, H
@@ -141,7 +141,7 @@ class BackPackGGN(BackPackInterface):
         if self.stochastic:
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 
-        Js, f = Jacobians(self.model, X)
+        Js, f = jacobians(self.model, X)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn

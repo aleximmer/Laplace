@@ -9,8 +9,7 @@ def get_psd_matrix(dim):
 def grad(model):
     return torch.cat([p.grad.data.flatten() for p in model.parameters()]).detach()
 
-
-def Jacobians_naive(model, data):
+def jacobians_naive(model, data):
     model.zero_grad()
     f = model(data)
     Jacs = list()

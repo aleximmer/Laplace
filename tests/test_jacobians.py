@@ -2,8 +2,8 @@ import pytest
 import torch
 from torch import nn
 
-from laplace.jacobians import Jacobians
-from tests.utils import Jacobians_naive
+from laplace.jacobians import jacobians
+from tests.utils import jacobians_naive
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def X():
 
 def test_linear_jacobians(linear_model, X):
     # jacobian of linear model is input X.
-    Js, f = Jacobians(linear_model, X)
+    Js, f = jacobians(linear_model, X)
     # into Jacs shape (batch_size, output_size, params)
     true_Js = X.reshape(len(X), 1, -1)
     assert true_Js.shape == Js.shape
@@ -45,8 +45,8 @@ def test_linear_jacobians(linear_model, X):
 
 def test_jacobians_singleoutput(singleoutput_model, X):
     model = singleoutput_model
-    Js, f = Jacobians(model, X)
-    Js_naive, f_naive = Jacobians_naive(model, X)
+    Js, f = jacobians(model, X)
+    Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
     assert torch.allclose(model(X), f_naive)
@@ -55,8 +55,8 @@ def test_jacobians_singleoutput(singleoutput_model, X):
 
 def test_jacobians_multioutput(multioutput_model, X):
     model = multioutput_model
-    Js, f = Jacobians(model, X)
-    Js_naive, f_naive = Jacobians_naive(model, X)
+    Js, f = jacobians(model, X)
+    Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
     assert torch.allclose(model(X), f_naive)

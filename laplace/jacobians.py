@@ -12,7 +12,7 @@ def cleanup(module):
     memory_cleanup(module)
 
 
-def Jacobians(model, data):
+def jacobians(model, data):
     # Jacobians are batch x output x params
     model = extend(model)
     to_stack = []
@@ -42,7 +42,7 @@ def Jacobians(model, data):
         return Jk.unsqueeze(-1).transpose(1, 2), f
 
 
-def LLJacobians(model, data):
+def last_layer_jacobians(model, data):
     f, phi = model.forward_with_features(data)
     bsize = len(data)
     output_size = f.shape[-1]

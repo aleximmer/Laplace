@@ -8,7 +8,7 @@ from torch.distributions import MultivariateNormal
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
-from laplace.jacobians import Jacobians
+from laplace.jacobians import jacobians
 
 
 __all__ = ['FullLaplace', 'KronLaplace', 'DiagLaplace']
@@ -225,15 +225,15 @@ class Laplace(ABC):
             if self.likelihood == 'regression':
                 return samples
             return torch.softmax(samples, dim=-1)
-        
+
         else:  # 'nn'
             return self.nn_predictive_samples(X, n_samples)
 
     def glm_predictive_distribution(self, X):
-        Js, f_mu = Jacobians(self.model, X)
+        Js, f_mu = jacobians(self.model, X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
-    
+
     def nn_predictive_samples(self, X, n_samples=100):
         fs = list()
         for sample in self.sample(n_samples):

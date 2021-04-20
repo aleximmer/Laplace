@@ -10,7 +10,7 @@ from laplace.feature_extractor import FeatureExtractor
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
 from laplace.curvature import LastLayer, BackPackGGN
-from laplace.jacobians import LLJacobians
+from laplace.jacobians import last_layer_jacobians
 
 
 __all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
@@ -226,7 +226,7 @@ class LLLaplace(Laplace):
             return self.nn_predictive_samples(X, n_samples)
 
     def glm_predictive_distribution(self, X):
-        Js, f_mu = LLJacobians(self.model, X)
+        Js, f_mu = last_layer_jacobians(self.model, X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 

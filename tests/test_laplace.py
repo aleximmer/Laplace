@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 
 from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
-from tests.utils import Jacobians_naive
+from tests.utils import jacobians_naive
 
 
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
@@ -189,7 +189,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
         Sigma = lap.posterior_precision.to_matrix(exponent=-1)
     elif laplace == DiagLaplace:
         Sigma = torch.diag(lap.posterior_variance)
-    Js, f = Jacobians_naive(model, loader.dataset.tensors[0])
+    Js, f = jacobians_naive(model, loader.dataset.tensors[0])
     true_f_var = torch.einsum('mkp,pq,mcq->mkc', Js, Sigma, Js)
     comp_f_var = lap.functional_variance(Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
