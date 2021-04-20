@@ -83,7 +83,7 @@ class Laplace(ABC):
     def _curv_closure(self, X, y, N):
         pass
 
-    def fit(self, train_loader, compute_scale=True):
+    def fit(self, train_loader):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -109,13 +109,6 @@ class Laplace(ABC):
         self.n_data = N
 
         self._fit = True
-        # compute optimal representation of posterior Cov/Prec.
-        if compute_scale:
-            self.compute_scale()
-
-    @abstractmethod
-    def compute_scale(self):
-        pass
 
     def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the marginal likelihood.
@@ -371,16 +364,24 @@ class FullLaplace(Laplace):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
+        self._posterior_scale = None
 
     def _curv_closure(self, X, y, N):
         return self.backend.full(X, y, N=N)
 
-    def compute_scale(self):
-        self.posterior_scale = invsqrt_precision(self.posterior_precision)
+    def _compute_scale(self):
+        self._posterior_scale = invsqrt_precision(self.posterior_precision)
+
+    @property
+    def posterior_scale(self):
+        if self._posterior_scale is None:
+            self._compute_scale()
+        return self._posterior_scale
 
     @property
     def posterior_covariance(self):
-        return self.posterior_scale @ self.posterior_scale.T
+        scale = self.posterior_scale
+        return scale @ scale.T
 
     @property
     def posterior_precision(self):
@@ -419,10 +420,8 @@ class KronLaplace(Laplace):
         return self.backend.kron(X, y, N=N)
 
     def fit(self, train_loader):
+        super().fit(train_loader)
         # Kron requires postprocessing as all quantities depend on the decomposition.
-        super().fit(train_loader, compute_scale=True)
-
-    def compute_scale(self):
         self.H = self.H.decompose()
 
     @property
@@ -475,10 +474,6 @@ class DiagLaplace(Laplace):
             raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
 
         return self.H_factor * self.H + self.prior_precision_diag
-
-    def compute_scale(self):
-        # For diagonal this is implemented lazily since computing is for free.
-        pass
 
     @property
     def posterior_scale(self):

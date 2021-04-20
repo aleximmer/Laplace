@@ -72,7 +72,7 @@ class LLLaplace(Laplace):
             self._backend = backend
             self._backend_kwargs = backend_kwargs
 
-    def fit(self, train_loader, compute_scale=True):
+    def fit(self, train_loader):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -93,22 +93,7 @@ class LLLaplace(Laplace):
             self.backend = self._backend(self.model, self.likelihood, last_layer=True,
                                          **self._backend_kwargs)
 
-        N = len(train_loader.dataset)
-        for X, y in train_loader:
-            self.model.zero_grad()
-            X, y = X.to(self._device), y.to(self._device)
-            loss_batch, H_batch = self._curv_closure(X, y, N)
-            self.loss += loss_batch
-            self.H += H_batch
-
-        with torch.no_grad():
-            self.n_outputs = self.model(X[:1]).shape[-1]
-        self.n_data = N
-
-        self._fit = True
-        # compute optimal representation of posterior Cov/Prec.
-        if compute_scale:
-            self.compute_scale()
+        super().fit(train_loader)
 
     @abstractmethod
     def _init_H(self):
