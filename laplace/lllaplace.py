@@ -66,7 +66,7 @@ class LLLaplace(Laplace):
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self._init_H()
-            self.llbackend = LastLayer(self.model, self.likelihood, backend, **backend_kwargs)
+            self.backend = LastLayer(self.model, self.likelihood, backend, **backend_kwargs)
         else:
             self._backend = backend
             self._backend_kwargs = backend_kwargs
@@ -89,8 +89,8 @@ class LLLaplace(Laplace):
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self._init_H()
-            self.llbackend = LastLayer(self.model, self.likelihood, self._backend,
-                                       **self._backend_kwargs)
+            self.backend = LastLayer(self.model, self.likelihood, self._backend,
+                                     **self._backend_kwargs)
 
         N = len(train_loader.dataset)
         for X, y in train_loader:
@@ -153,7 +153,7 @@ class FullLLLaplace(LLLaplace):
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.llbackend.full(X, y, N=N)
+        return self.backend.full(X, y, N=N)
 
     def compute_scale(self):
         self.posterior_scale = invsqrt_precision(self.posterior_precision)
@@ -198,7 +198,7 @@ class KronLLLaplace(LLLaplace):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.llbackend.kron(X, y, N=N)
+        return self.backend.kron(X, y, N=N)
 
     def fit(self, train_loader):
         # Kron requires postprocessing as all quantities depend on the decomposition.
@@ -248,7 +248,7 @@ class DiagLLLaplace(LLLaplace):
         self.H = torch.zeros(self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.llbackend.diag(X, y, N=N)
+        return self.backend.diag(X, y, N=N)
 
     @property
     def posterior_precision(self):
