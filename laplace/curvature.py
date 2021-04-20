@@ -47,25 +47,6 @@ class CurvatureInterface(ABC):
         return loss.detach(), H_ggn
 
 
-class LastLayer(CurvatureInterface):
-
-    def __init__(self, model, likelihood, backend, **kwargs):
-        super().__init__(model, likelihood)
-        self.backend = backend(self.model, self.likelihood, last_layer=True, **kwargs)
-
-    def diag(self, X, y, **kwargs):
-        return self.backend.diag(X, y, **kwargs)
-
-    def kron(self, X, y, **kwargs):
-        return self.backend.kron(X, y, **kwargs)
-
-    def full(self, X, y, **kwargs):
-        Js, f = last_layer_jacobians(self.model, X)
-        loss, H = self._get_full_ggn(Js, f, y)
-
-        return loss, H
-
-
 class BackPackInterface(CurvatureInterface):
 
     def __init__(self, model, likelihood, last_layer=False):
@@ -141,7 +122,10 @@ class BackPackGGN(BackPackInterface):
         if self.stochastic:
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 
-        Js, f = jacobians(self.model, X)
+        if self.last_layer:
+            Js, f = last_layer_jacobians(self.model, X)
+        else:
+            Js, f = jacobians(self.model, X)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn

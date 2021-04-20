@@ -9,7 +9,7 @@ from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.feature_extractor import FeatureExtractor
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
-from laplace.curvature import LastLayer, BackPackGGN
+from laplace.curvature import BackPackGGN
 from laplace.jacobians import last_layer_jacobians
 
 
@@ -66,7 +66,8 @@ class LLLaplace(Laplace):
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self._init_H()
-            self.backend = LastLayer(self.model, self.likelihood, backend, **backend_kwargs)
+            self.backend = backend(self.model, self.likelihood, last_layer=True,
+                                   **backend_kwargs)
         else:
             self._backend = backend
             self._backend_kwargs = backend_kwargs
@@ -89,8 +90,8 @@ class LLLaplace(Laplace):
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self._init_H()
-            self.backend = LastLayer(self.model, self.likelihood, self._backend,
-                                     **self._backend_kwargs)
+            self.backend = self._backend(self.model, self.likelihood, last_layer=True,
+                                         **self._backend_kwargs)
 
         N = len(train_loader.dataset)
         for X, y in train_loader:
