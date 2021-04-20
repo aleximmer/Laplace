@@ -156,7 +156,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
         assert torch.allclose(log_lik, log_lik_true)
 
     # Test marginal likelihood
-    # lml = log p(y|f) - 1/2 theta @ prior_prec @ theta 
+    # lml = log p(y|f) - 1/2 theta @ prior_prec @ theta
     #       + 1/2 logdet prior_prec - 1/2 log det post_prec
     lml = log_lik_true
     theta = parameters_to_vector(model.parameters()).detach()
@@ -195,7 +195,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
 
 
-@pytest.mark.parametrize('laplace', flavors) 
+@pytest.mark.parametrize('laplace', flavors)
 def test_regression_predictive(laplace, model, reg_loader):
     lap = laplace(model, 'regression', sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
@@ -219,7 +219,7 @@ def test_regression_predictive(laplace, model, reg_loader):
     assert len(f_mu) == len(X)
 
 
-@pytest.mark.parametrize('laplace', flavors) 
+@pytest.mark.parametrize('laplace', flavors)
 def test_classification_predictive(laplace, model, class_loader):
     lap = laplace(model, 'classification', prior_precision=0.7)
     lap.fit(class_loader)
@@ -233,18 +233,19 @@ def test_classification_predictive(laplace, model, class_loader):
     # GLM predictive
     f_pred = lap(X, pred_type='glm', link_approx='mc', n_samples=100)
     assert f_pred.shape == f.shape
-    assert f_pred.sum() == len(f_pred)  # sum up to 1
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
     f_pred = lap(X, pred_type='glm', link_approx='probit')
     assert f_pred.shape == f.shape
-    assert f_pred.sum() == len(f_pred)  # sum up to 1
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+
 
     # NN predictive
     f_pred = lap(X, pred_type='nn', n_samples=100)
     assert f_pred.shape == f.shape
-    assert f_pred.sum() == len(f_pred)  # sum up to 1
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
 
-@pytest.mark.parametrize('laplace', flavors) 
+@pytest.mark.parametrize('laplace', flavors)
 def test_regression_predictive_samples(laplace, model, reg_loader):
     lap = laplace(model, 'regression', sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
@@ -264,7 +265,7 @@ def test_regression_predictive_samples(laplace, model, reg_loader):
     assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
 
 
-@pytest.mark.parametrize('laplace', flavors) 
+@pytest.mark.parametrize('laplace', flavors)
 def test_classification_predictive_samples(laplace, model, class_loader):
     lap = laplace(model, 'classification', prior_precision=0.7)
     lap.fit(class_loader)
@@ -284,4 +285,3 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     f_pred = lap.predictive_samples(X, pred_type='nn', n_samples=100)
     assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
-

@@ -247,15 +247,15 @@ def test_classification_predictive(laplace, model, class_loader):
     # GLM predictive
     f_pred = lap(X, pred_type='glm', link_approx='mc', n_samples=100)
     assert f_pred.shape == f.shape
-    assert f_pred.sum() == len(f_pred)  # sum up to 1
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
     f_pred = lap(X, pred_type='glm', link_approx='probit')
     assert f_pred.shape == f.shape
-    assert f_pred.sum() == len(f_pred)  # sum up to 1
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
     # NN predictive
     f_pred = lap(X, pred_type='nn', n_samples=100)
     assert f_pred.shape == f.shape
-    assert f_pred.sum() == len(f_pred)  # sum up to 1
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
 
 @pytest.mark.parametrize('laplace', flavors)
