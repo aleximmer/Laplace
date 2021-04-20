@@ -6,7 +6,7 @@ from torch.nn import MSELoss, CrossEntropyLoss
 from backpack import backpack, extend
 from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared, BatchGrad
 
-from laplace.jacobians import Jacobians
+from laplace.jacobians import Jacobians, LLJacobians
 from laplace.matrix import Kron
 
 
@@ -60,16 +60,7 @@ class LastLayer(CurvatureInterface):
         return self.backend.kron(X, y, **kwargs)
 
     def full(self, X, y, **kwargs):
-        f, phi = self.model.forward_with_features(X)
-        bsize = len(X)
-        output_size = f.shape[-1]
-
-        # calculate Jacobians using the feature vector 'phi'
-        identity = torch.eye(output_size, device=X.device)
-        Js = torch.einsum('kp,ij->kijp', phi, identity).reshape(bsize, output_size, -1)
-        if self.model.last_layer.bias is not None:
-            Js = torch.cat([Js, identity.reshape(1, output_size, -1)], dim=2)
-
+        Js, f = LLJacobians(self.model, X)
         loss, H = self._get_full_ggn(Js, f, y)
 
         return loss, H

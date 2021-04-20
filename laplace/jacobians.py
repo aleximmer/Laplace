@@ -40,3 +40,18 @@ def Jacobians(model, data):
         return torch.stack(to_stack, dim=2).transpose(1, 2), f
     else:
         return Jk.unsqueeze(-1).transpose(1, 2), f
+
+
+def LLJacobians(model, data):
+    f, phi = model.forward_with_features(data)
+    bsize = len(data)
+    output_size = f.shape[-1]
+
+    # calculate Jacobians using the feature vector 'phi'
+    identity = torch.eye(output_size, device=data.device).unsqueeze(0).tile(bsize, 1, 1)
+    # Jacobians are batch x output x params
+    Js = torch.einsum('kp,kij->kijp', phi, identity).reshape(bsize, output_size, -1)
+    if model.last_layer.bias is not None:
+        Js = torch.cat([Js, identity], dim=2)
+
+    return Js, f
