@@ -1,4 +1,5 @@
 import logging
+from typing import Union
 import numpy as np
 import torch
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
@@ -12,10 +13,12 @@ def invsqrt_precision(M):
     return _precision_to_scale_tril(M)
 
 
-def _is_valid_scalar(scalar):
+def _is_valid_scalar(scalar: Union[float, int, torch.Tensor]) -> bool:
     if np.isscalar(scalar) and np.isreal(scalar):
         return True
     elif torch.is_tensor(scalar) and scalar.ndim <= 1:
+        if scalar.ndim == 1 and len(scalar) != 1:
+            return False
         return True
     return False
 
@@ -77,3 +80,15 @@ def symeig(M):
     L[torch.isnan(L)] = 0.0
     W[torch.isnan(W)] = 0.0
     return L, W
+
+
+def block_diag(blocks):
+    P = sum([b.shape[0] for b in blocks])
+    M = torch.zeros(P, P)
+    p_cur = 0
+    for block in blocks:
+        p_block = block.shape[0]
+        M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
+        p_cur += p_block
+    return M
+    return M

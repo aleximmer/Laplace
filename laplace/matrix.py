@@ -1,18 +1,16 @@
 from math import pow
 import torch
 import numpy as np
+from typing import Union
 
-from laplace.utils import _is_valid_scalar, symeig
+from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
 
 
 class Kron:
-
+    
     def __init__(self, kfacs):
         self.kfacs = kfacs
-        self.eigvecs = None
-        self.eigvals = None
-        self._deltas = None
-
+       
     @classmethod
     def init_from_model(cls, model, device):
         # FIXME: this does not work for BatchNorm!!
@@ -36,6 +34,25 @@ class Kron:
                 raise ValueError('Invalid parameter shape in network.')
         return cls(kfacs)
 
+    def __add__(self, other):
+        if not isinstance(other, Kron):
+            raise ValueError('Can only add Kron to Kron.')
+        
+        self.kfacs = [[Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
+                      for Fi, Fj in zip(self.kfacs, other.kfacs)]
+        return self
+
+    def __mul__(self, scalar: Union[float, torch.Tensor]):
+        if not _is_valid_scalar(scalar):
+            raise ValueError('Input not valid python or torch scalar.')
+        
+        # distribute factors evenly so that each group is multiplied by factor
+        self.kfacs = [[pow(scalar, 1/len(F)) * Hi for Hi in F] for F in self.kfacs]
+        return self
+
+    def __len__(self):
+        return len(self.kfacs)
+
     def decompose(self):
         eigvecs, eigvals = list(), list()
         for F in self.kfacs:
@@ -46,39 +63,9 @@ class Kron:
                 ls.append(l)
             eigvecs.append(Qs)
             eigvals.append(ls)
-        self.eigvecs = eigvecs
-        self.eigvals = eigvals
+        return KronDecomposed(eigvecs, eigvals)
 
-    @staticmethod
-    def add_kfacs(kfacs_a, kfacs_b):
-        return [[Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
-                for Fi, Fj in zip(kfacs_a, kfacs_b)]
-
-    def __add__(self, other):
-        if self.eigvals is not None:
-            raise ValueError('Unsupported operation.')
-
-        self._check_args_add(other)
-        if isinstance(other, torch.Tensor):
-            if self.deltas is None:
-                self.deltas = other
-            else:
-                self.deltas += other
-        elif isinstance(other, Kron):
-            self.kfacs = self.add_kfacs(self.kfacs, other.kfacs)
-        return self
-
-    def __mul__(self, scalar):
-        if self.eigvals is not None:
-            raise ValueError('Unsupported operation.')
-
-        if not _is_valid_scalar(scalar):
-            raise ValueError('Invalid argument, can only multiply Kron with scalar.')
-
-        self.kfacs = [[pow(scalar, 1/len(F)) * Hi for Hi in F] for F in self.kfacs]
-        return self
-
-    def logdet(self):
+    def logdet(self) -> torch.Tensor:
         logdet = 0
         for F in self.kfacs:
             if len(F) == 1:
@@ -89,41 +76,156 @@ class Kron:
                 logdet += p_out * Hi.logdet() + p_in * Hj.logdet()
         return logdet
 
-    def __len__(self):
-        return len(self.kfacs)
+    def diag(self) -> torch.Tensor:
+        diags = list()
+        for F in self.kfacs:
+            if len(F) == 1:
+                diags.append(F[0].diagonal())
+            else:
+                diags.append(torch.ger(F[0].diagonal(), F[1].diagonal()).flatten())
+        return torch.cat(diags)
 
-    def _check_args_add(self, other):
-        if isinstance(other, torch.Tensor):
-            if self.eigvals is None:
-                raise ValueError('Adding tensor only supported on decomposed. Call first.')
-            if len(other) == len(self) or len(other) == 1:
-                return
-            raise ValueError('Invalid tensor shape input.')
+    def to_matrix(self) -> torch.Tensor:
+        blocks = list()
+        for F in self.kfacs:
+            if len(F) == 1:
+                blocks.append(F[0])
+            else:
+                blocks.append(kron(F[0], F[1]))
+        return block_diag(blocks)
 
-        elif not isinstance(other, Kron):
-            raise ValueError('Can only add Kron or scalar')
-
-        if len(self.kfacs) != len(other.kfacs):
-            raise ValueError('Unmatched number of blocks.')
-
-        for Fi, Fj in zip(self.kfacs, other.kfacs):
-            for Hi, Hj in zip(Fi, Fj):
-                if Hi.shape != Hj.shape:
-                    raise ValueError('Unmatched Kronecker factors.')
-                if Hi.device != Hj.device:
-                    raise ValueError('Kronecker factors on different devices.')
-
-    @property
-    def deltas(self):
-        return self._deltas
-
-    @deltas.setter
-    def deltas(self, new_deltas):
-        if len(new_deltas) == 1:
-            self._deltas = new_deltas.repeat(len(self))
-        else:
-            self._deltas = new_deltas
-
-    __rmul__ = __mul__
+    # inplace and permuted operations
     __radd__ = __add__
     __iadd__ = __add__
+    __rmul__ = __mul__
+    __imul__ = __mul__
+
+
+class KronDecomposed:
+
+    def __init__(self, eigenvectors, eigenvalues, deltas=None, dampen=False):
+        self.eigenvectors = eigenvectors
+        self.eigenvalues = eigenvalues
+        device = eigenvectors[0][0].device
+        if deltas is None:
+            self.deltas = torch.zeros(len(self), device=device)
+        else:
+            self._check_deltas(deltas)
+            self.deltas = deltas
+        self.dampen = dampen
+
+    def _check_deltas(self, deltas: torch.Tensor):
+        if not isinstance(deltas, torch.Tensor):
+            raise ValueError('Can only add torch.Tensor to KronDecomposed.')
+
+        if (deltas.ndim == 0  # scalar
+            or (deltas.ndim == 1  # vector of length 1 or len(self)
+                and (len(deltas) == 1 or len(deltas) == len(self)))):
+            return
+        else:
+            raise ValueError('Invalid shape of delta added to KronDecomposed.')
+
+    def __add__(self, deltas: torch.Tensor):
+        self._check_deltas(deltas)
+        return KronDecomposed(self.eigenvectors, self.eigenvalues, self.deltas + deltas)
+
+    def __mul__(self, scalar):
+        if not _is_valid_scalar(scalar):
+            raise ValueError('Invalid argument, can only multiply Kron with scalar.')
+
+        eigenvalues = [[pow(scalar, 1/len(l)) * l for l in ls] for ls in self.eigenvalues]
+        return KronDecomposed(self.eigenvectors, eigenvalues, self.deltas)
+
+    def __len__(self) -> int:
+        return len(self.eigenvalues)
+    
+    def logdet(self) -> torch.Tensor:
+        # compute \sum_l log det (kron_l + delta I_l)
+        logdet = 0
+        for ls, delta in zip(self.eigenvalues, self.deltas):
+            if len(ls) == 1:  # not KFAC just full
+                logdet += torch.log(ls[0] + delta).sum()
+            elif len(ls) == 2:
+                l1, l2 = ls
+                if self.dampen:
+                    l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
+                    logdet += torch.log(torch.ger(l1d, l2d)).sum()
+                else:
+                    logdet += torch.log(torch.ger(l1, l2) + delta).sum()
+            else:
+                raise ValueError('Too many Kronecker factors. Something went wrong.')
+        return logdet
+
+    def _bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
+        # self @ W[batch, k, params]
+        assert len(W.size()) == 3
+        B, K, P = W.size()
+        W = W.reshape(B * K, P)
+        cur_p = 0
+        SW = list()
+        for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
+            if len(ls) == 1:
+                # just Q (Lambda + delta) Q^T W_p
+                Q, l, p = Qs[0], ls[0], len(ls[0])
+                ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
+                W_p = W[:, cur_p:cur_p+p].T
+                SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
+                cur_p += p
+            elif len(ls) == 2:
+                # not so easy to explain...
+                Q1, Q2 = Qs
+                l1, l2 = ls
+                p = len(l1) * len(l2)
+                if self.dampen:
+                    l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
+                    ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
+                else:
+                    ldelta_exp = torch.pow(torch.ger(l1, l2) + delta, exponent).unsqueeze(0)
+                p_in, p_out = len(l1), len(l2)
+                W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
+                W_p = (Q1.T @ W_p @ Q2) * ldelta_exp
+                W_p = Q1 @ W_p @ Q2.T
+                SW.append(W_p.reshape(B * K, p_in * p_out))
+                cur_p += p
+            else:
+                raise AttributeError('Shape mismatch')
+        SW = torch.cat(SW, dim=1).reshape(B, K, P)
+        return SW
+
+    def inv_square_form(self, W: torch.Tensor) -> torch.Tensor:
+        # W either Batch x K x params or Batch x params
+        SW = self._bmm(W, exponent=-1)
+        return torch.bmm(W, SW.transpose(1, 2))
+
+    def bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
+        # self @ W with W[params], W[batch, params], W[batch, classes, params]
+        # returns SW[batch, classes, params]
+        if W.ndim == 1:
+            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).squeeze()
+        elif W.ndim == 2:
+            return self._bmm(W.unsqueeze(1), exponent).squeeze()
+        elif W.ndim == 3:
+            return self._bmm(W, exponent)
+        else:
+            raise ValueError('Invalid shape for W')
+
+    def to_matrix(self, exponent: float = 1) -> torch.Tensor:
+        blocks = list()
+        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.deltas):
+            if len(ls) == 1:
+                Q, l = Qs[0], ls[0]
+                blocks.append(Q @ torch.diag(torch.pow(l + delta, exponent)) @ Q.T)
+            else:
+                Q1, Q2 = Qs
+                l1, l2 = ls
+                Q = kron(Q1, Q2)
+                l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                L = torch.diag(l.flatten())
+                blocks.append(Q @ L @ Q.T)
+        return block_diag(blocks)
+
+    # FIXME: iadd imul should change mutable types in principle.
+    __radd__ = __add__
+    __iadd__ = __add__
+    __rmul__ = __mul__
+    __imul__ = __mul__

@@ -2,6 +2,10 @@ import torch
 import numpy as np
 
 
+def get_psd_matrix(dim):
+    X = torch.randn(dim, dim*3)
+    return X @ X.T / (dim * 3)
+
 def grad(model):
     return torch.cat([p.grad.data.flatten() for p in model.parameters()]).detach()
 

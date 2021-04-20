@@ -1,11 +1,17 @@
 from abc import ABC, abstractmethod
+from math import sqrt, pi
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
+from torch.distributions import MultivariateNormal
 
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
+from laplace.jacobians import Jacobians
+
+
+__all__ = ['FullLaplace', 'KronLaplace', 'DiagLaplace']
 
 
 class Laplace(ABC):
@@ -47,7 +53,7 @@ class Laplace(ABC):
     -----
     """
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1., 
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  temperature=1., backend=BackPackGGN, **backend_kwargs):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
@@ -70,6 +76,8 @@ class Laplace(ABC):
 
         # log likelihood = g(loss)
         self.loss = 0.
+        self.n_outputs = None
+        self.n_data = None
 
     @abstractmethod
     def _curv_closure(self, X, y, N):
@@ -95,6 +103,10 @@ class Laplace(ABC):
             loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
             self.H += H_batch
+
+        with torch.no_grad():
+            self.n_outputs = self.model(X[:1]).shape[-1]
+        self.n_data = N
 
         self._fit = True
         # compute optimal representation of posterior Cov/Prec.
@@ -131,67 +143,112 @@ class Laplace(ABC):
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-        factor = self.H_factor
+        factor = - self.H_factor
         if self.likelihood == 'regression':
-            # Hessian factor for Gaussian likelihood is 2x, so halve loglik
-            c = 0
-            return factor * 0.5 * self.loss + c
+            # loss used is just MSE, need to add normalizer for gaussian likelihood
+            c = self.n_data * self.n_outputs * torch.log(self.sigma_noise * sqrt(2 * pi))
+            return factor * self.loss - c
         else:
             # for classification Xent == log Cat
             return factor * self.loss
 
-    @abstractmethod
-    def samples(self, n_samples=100):
-        """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
-        pass
-    
-    def predictive(self, X, n_samples=100, pred_type='lin'):
+    def __call__(self, X, pred_type='glm', link_approx='mc', n_samples=100):
         """Compute the posterior predictive on input data `X`.
 
         Parameters
         ----------
         X : torch.Tensor (batch_size, *input_size)
+
+        pred_type : str 'lin' or 'nn'
+            type of posterior predictive, linearized GLM predictive or
+            neural network sampling predictive.
+
+        link_approx : str 'mc' or 'probit'
+            how to approximate the classification link function for GLM.
+            For NN, only 'mc' is possible.
 
         n_samples : int
             number of samples in case necessary
-
-        pred_type : str 'lin' or 'nn'
-            type of posterior predictive, linearized GLM predictive or
-            neural network sampling predictive.
-        """
-        pass
-
-    def predictive_samples(self, X, n_samples, pred_type='lin'):
-        """Compute the posterior predictive on input data `X`.
-
-        Parameters
-        ----------
-        X : torch.Tensor (batch_size, *input_size)
-
-        n_samples : int
-            number of samples
-
-        pred_type : str 'lin' or 'nn'
-            type of posterior predictive, linearized GLM predictive or
-            neural network sampling predictive.
         """
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
 
-        if pred_type not in ['lin', 'nn']:
-            raise ValueError('Invalid pred_type parameter.')
+        if pred_type not in ['glm', 'nn']:
+            raise ValueError('Only glm and nn supported as prediction types.')
 
-        if pred_type == 'nn':
-            prev_param = parameters_to_vector(self.model.parameters())
-            predictions = list()
-            for sample in self.posterior_samples(n_samples):
-                vector_to_parameters(sample, self.model.parameters())
-                predictions.append(self.model(X.to(self._device)).detach())
-            vector_to_parameters(prev_param, self.model.parameters())
-            return torch.stack(predictions)
+        if pred_type == 'glm':
+            f_mu, f_var = self.glm_predictive_distribution(X)
+            # regression
+            if self.likelihood == 'regression':
+                return f_mu, f_var
+            # classification
+            if link_approx == 'mc':
+                dist = MultivariateNormal(f_mu, f_var)
+                return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
+            elif link_approx == 'probit':
+                kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
+                return torch.softmax(kappa * f_mu, dim=-1)
+        else:
+            samples = self.nn_predictive_samples(X, n_samples)
+            if self.likelihood == 'regression':
+                return samples.mean(dim=0), samples.var(dim=0)
+            return samples.mean(dim=0)
 
-        elif pred_type == 'lin':
-            raise NotImplementedError()
+    def predictive(self, X, pred_type='glm', link_approx='mc', n_samples=100):
+        return self(X, pred_type, link_approx, n_samples)
+
+    def predictive_samples(self, X, pred_type='glm', n_samples=100):
+        """Compute the posterior predictive on input data `X`.
+
+        Parameters
+        ----------
+        X : torch.Tensor (batch_size, *input_size)
+
+        pred_type : str 'lin' or 'nn'
+            type of posterior predictive, linearized GLM predictive or
+            neural network sampling predictive.
+
+        n_samples : int
+            number of samples
+        """
+        if not self._fit:
+            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+
+        if pred_type not in ['glm', 'nn']:
+            raise ValueError('Only glm and nn supported as prediction types.')
+
+        if pred_type == 'glm':
+            f_mu, f_var = self.glm_predictive_distribution(X)
+            assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+            dist = MultivariateNormal(f_mu, f_var)
+            samples = dist.sample((n_samples,))
+            if self.likelihood == 'regression':
+                return samples
+            return torch.softmax(samples, dim=-1)
+        
+        else:  # 'nn'
+            return self.nn_predictive_samples(X, n_samples)
+
+    def glm_predictive_distribution(self, X):
+        Js, f_mu = Jacobians(self.model, X)
+        f_var = self.functional_variance(Js)
+        return f_mu.detach(), f_var.detach()
+    
+    def nn_predictive_samples(self, X, n_samples=100):
+        fs = list()
+        for sample in self.sample(n_samples):
+            vector_to_parameters(sample, self.model.parameters())
+            fs.append(self.model(X.to(self._device)).detach())
+        vector_to_parameters(self.mean, self.model.parameters())
+        fs = torch.stack(fs)
+        if self.likelihood == 'classification':
+            fs = torch.softmax(fs, dim=-1)
+        return fs
+
+    @abstractmethod
+    def sample(self, n_samples=100):
+        """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
+        pass
 
     @property
     def scatter(self):
@@ -217,6 +274,15 @@ class Laplace(ABC):
             Jacobians of model output wrt parameters.
         """
         pass
+
+    def _check_jacobians(self, Js):
+        if not isinstance(Js, torch.Tensor):
+            raise ValueError('Jacobians have to be torch.Tensor.')
+        if not Js.device == self._device:
+            raise ValueError('Jacobians need to be on the same device as Laplace.')
+        m, k, p = Js.size()
+        if p != self.n_params:
+            raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
 
     @property
     def log_det_ratio(self):
@@ -296,7 +362,9 @@ class Laplace(ABC):
 
 
 class FullLaplace(Laplace):
-    # TODO list additional attributes
+    # TODO: list additional attributes
+    # TODO: recompute scale once prior precision or sigma noise change?
+    #       do in lazy way with a flag probably.
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  temperature=1., backend=BackPackGGN):
@@ -333,9 +401,9 @@ class FullLaplace(Laplace):
     def functional_variance(self, Js):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
 
-    def samples(self, n_samples=100):
-        samples = torch.randn(self.P, n_samples, device=self._device)
-        return self.mean + (self.posterior_scale @ samples)
+    def sample(self, n_samples=100):
+        dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
+        return dist.sample((n_samples,))
 
 
 class KronLaplace(Laplace):
@@ -355,26 +423,14 @@ class KronLaplace(Laplace):
         super().fit(train_loader, compute_scale=True)
 
     def compute_scale(self):
-        pass
-        # self.posterior_scale = self.posterior_precision.invsqrt()
-
-    @property
-    def posterior_covariance(self):
-        return self.posterior_scale.square()
+        self.H = self.H.decompose()
 
     @property
     def posterior_precision(self):
         if not self._fit:
             raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
 
-        return self.H * self.H_factor + self.prior_precision_kron
-
-    @Laplace.prior_precision.setter
-    def prior_precision(self, prior_precision):
-        # Extend setter from Laplace to restrict prior precision structure.
-        super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
-        if len(self.prior_precision) not in [1, self.n_layers]:
-            raise ValueError('Prior precision for Kron either scalar or per-layer.')
+        return self.H * self.H_factor + self.prior_precision
 
     @property
     def log_det_posterior_precision(self):
@@ -383,33 +439,24 @@ class KronLaplace(Laplace):
         return self.posterior_precision.logdet()
 
     def functional_variance(self, Js):
-        n, c, p = Js.shape
-        fvar = torch.zeros(n, c, c)
-        ix = 0
-        for Si in self.posterior_covariance.blocks:
-            P = Si.size(0)
-            Jsi = Js[:, :, ix:ix+P]
-            fvar += torch.einsum('ncp,pq,nkq->nck', Jsi, Si, Jsi)
-            ix += P
-        return fvar
+        return self.posterior_precision.inv_square_form(Js)
 
-    def samples(self, n_samples=100):
-        samples = torch.randn(self.P, n_samples, device=self._device)
-        samples_list = list()
-        ix = 0
-        for Si in self.posterior_scale.blocks:
-            P = Si.size(0)
-            samples_i = samples[ix:ix+P]
-            samples_list.append(Si @ samples_i)
-        return self.mean + torch.cat(samples_list, dim=0)
+    def sample(self, n_samples=100):
+        samples = torch.randn(n_samples, self.n_params, device=self._device)
+        samples = self.posterior_precision.bmm(samples, exponent=-0.5)
+        return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
 
-    @property
-    def prior_precision_kron(self):
-        return Kron.init_from_model(self.model, self._device)
+    @Laplace.prior_precision.setter
+    def prior_precision(self, prior_precision):
+        # Extend setter from Laplace to restrict prior precision structure.
+        super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
+        if len(self.prior_precision) not in [1, self.n_layers]:
+            raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
 
 class DiagLaplace(Laplace):
-    # TODO list additional attributes
+    # TODO: list additional attributes
+    # TODO: caching prior_precision_diag for fast lazy computation?
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  temperature=1., backend=BackPackGGN):
@@ -439,7 +486,7 @@ class DiagLaplace(Laplace):
 
     @property
     def posterior_variance(self):
-        return self.posterior_scale.square()
+        return 1 / self.posterior_precision
 
     @property
     def log_det_posterior_precision(self):
@@ -447,9 +494,11 @@ class DiagLaplace(Laplace):
         """
         return self.posterior_precision.log().sum()
 
-    def functional_variance(self, Js):
+    def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
+        self._check_jacobians(Js)
         return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
 
-    def samples(self, n_samples=100):
-        samples = torch.randn(n_samples, self.P, device=self._device)
-        return self.mean + samples * self.posterior_scale
+    def sample(self, n_samples=100):
+        samples = torch.randn(n_samples, self.n_params, device=self._device)
+        samples = samples * self.posterior_scale.reshape(1, self.n_params)
+        return self.mean.reshape(1, self.n_params) + samples

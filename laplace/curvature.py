@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+from math import sqrt
 import torch
 from torch.nn import MSELoss, CrossEntropyLoss
 
 from backpack import backpack, extend
-from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared
+from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared, BatchGrad
 
 from laplace.jacobians import Jacobians
 from laplace.matrix import Kron
@@ -43,7 +44,7 @@ class CurvatureInterface(ABC):
             ps = torch.softmax(f, dim=-1)
             H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
             H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
-        return loss, H_ggn
+        return loss.detach(), H_ggn
 
 
 class LastLayer(CurvatureInterface):
@@ -87,7 +88,7 @@ class BackPackGGN(BackPackInterface):
     """[summary]
 
     MSELoss = |y-f|_2^2 -> d/df = -2(y-f)
-    log N(y|f,1) \propto 1/2|y-f|_2^2 -> d/df = -(y-f)
+    log N(y|f,1) propto 1/2|y-f|_2^2 -> d/df = -(y-f)
     --> factor for regression is 0.5 for loss and ggn
     """
 
@@ -115,6 +116,15 @@ class BackPackGGN(BackPackInterface):
         else:
             return Kron([p.kflr for p in model.parameters()])
 
+    @staticmethod
+    def _rescale_kron_factors(kron, M, N):
+        # Renormalize Kronecker factor to sum up correctly over N data points with batches of M
+        # for M=N (full-batch) just M/N=1
+        for F in kron.kfacs:
+            if len(F) == 2:
+                F[1] *= M/N
+        return kron
+
     def diag(self, X, y, **kwargs):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(X)
@@ -123,17 +133,18 @@ class BackPackGGN(BackPackInterface):
             loss.backward()
         dggn = self._get_diag_ggn()
 
-        return self.factor * loss, self.factor * dggn
+        return self.factor * loss.detach(), self.factor * dggn
 
-    def kron(self, X, y, **wkwargs):
+    def kron(self, X, y, N, **wkwargs) -> [torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
         kron = self._get_kron_factors()
+        kron = self._rescale_kron_factors(kron, len(y), N)
 
-        return self.factor * loss, self.factor * kron
+        return self.factor * loss.detach(), self.factor * kron
 
     def full(self, X, y, **kwargs):
         if self.stochastic:
@@ -147,6 +158,10 @@ class BackPackGGN(BackPackInterface):
 
 class BackPackEF(BackPackInterface):
 
+    def _get_individual_gradients(self):
+        return torch.cat([p.grad_batch.data.flatten(start_dim=1)
+                          for p in self.model.parameters()], dim=1)
+
     def diag(self, X, y, **kwargs):
         f = self.model(X)
         loss = self.lossfunc(f, y)
@@ -155,11 +170,16 @@ class BackPackEF(BackPackInterface):
         diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
                              for p in self.model.parameters()])
 
-        # TODO: self.factor * 2 here? To get true grad * grad for regression
-        return self.factor * loss, self.factor * diag_EF
+        return self.factor * loss.detach(), self.factor ** 2 * diag_EF
 
     def kron(self, X, y, **kwargs):
         raise NotImplementedError()
 
     def full(self, X, y, **kwargs):
-        pass
+        f = self.model(X)
+        loss = self.lossfunc(f, y)
+        with backpack(BatchGrad()):
+            loss.backward()
+        Gs = self.factor * self._get_individual_gradients()
+        H_ef = Gs.T @ Gs
+        return self.factor * loss.detach(), H_ef
