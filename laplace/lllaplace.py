@@ -141,7 +141,7 @@ class LLLaplace(Laplace):
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
 
 
-class FullLLLaplace(LLLaplace):
+class FullLLLaplace(LLLaplace, FullLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
@@ -152,41 +152,8 @@ class FullLLLaplace(LLLaplace):
     def _init_H(self):
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
 
-    def _curv_closure(self, X, y, N):
-        return self.backend.full(X, y, N=N)
 
-    def compute_scale(self):
-        self.posterior_scale = invsqrt_precision(self.posterior_precision)
-
-    @property
-    def posterior_covariance(self):
-        return self.posterior_scale @ self.posterior_scale.T
-
-    @property
-    def posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
-        return self.H_factor * self.H + torch.diag(self.prior_precision_diag)
-
-    @property
-    def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        # TODO: could make more efficient for scalar prior precision.
-        return self.posterior_precision.logdet()
-
-    def functional_variance(self, Js):
-        return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
-
-    def sample(self, n_samples=100):
-        dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
-        return dist.sample((n_samples,))
-
-
-class KronLLLaplace(LLLaplace):
+class KronLLLaplace(LLLaplace, KronLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
@@ -197,46 +164,8 @@ class KronLLLaplace(LLLaplace):
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
-    def _curv_closure(self, X, y, N):
-        return self.backend.kron(X, y, N=N)
 
-    def fit(self, train_loader):
-        # Kron requires postprocessing as all quantities depend on the decomposition.
-        super().fit(train_loader, compute_scale=True)
-
-    def compute_scale(self):
-        self.H = self.H.decompose()
-
-    @property
-    def posterior_precision(self):
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
-        return self.H * self.H_factor + self.prior_precision
-
-    @property
-    def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        return self.posterior_precision.logdet()
-
-    def functional_variance(self, Js):
-        return self.posterior_precision.inv_square_form(Js)
-
-    def sample(self, n_samples=100):
-        samples = torch.randn(n_samples, self.n_params, device=self._device)
-        samples = self.posterior_precision.bmm(samples, exponent=-0.5)
-        return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
-
-    @Laplace.prior_precision.setter
-    def prior_precision(self, prior_precision):
-        # Extend setter from Laplace to restrict prior precision structure.
-        super(KronLLLaplace, type(self)).prior_precision.fset(self, prior_precision)
-        if len(self.prior_precision) not in [1, self.n_layers]:
-            raise ValueError('Prior precision for Kron either scalar or per-layer.')
-
-
-class DiagLLLaplace(LLLaplace):
+class DiagLLLaplace(LLLaplace, DiagLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
@@ -246,42 +175,3 @@ class DiagLLLaplace(LLLaplace):
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params, device=self._device)
-
-    def _curv_closure(self, X, y, N):
-        return self.backend.diag(X, y, N=N)
-
-    @property
-    def posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
-        return self.H_factor * self.H + self.prior_precision_diag
-
-    def compute_scale(self):
-        # For diagonal this is implemented lazily since computing is for free.
-        pass
-
-    @property
-    def posterior_scale(self):
-        return 1 / self.posterior_precision.sqrt()
-
-    @property
-    def posterior_variance(self):
-        return 1 / self.posterior_precision
-
-    @property
-    def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        return self.posterior_precision.log().sum()
-
-    def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
-        self._check_jacobians(Js)
-        return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
-
-    def sample(self, n_samples=100):
-        samples = torch.randn(n_samples, self.n_params, device=self._device)
-        samples = samples * self.posterior_scale.reshape(1, self.n_params)
-        return self.mean.reshape(1, self.n_params) + samples
