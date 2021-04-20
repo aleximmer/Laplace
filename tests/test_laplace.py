@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.Laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
 
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
@@ -95,7 +95,7 @@ def test_laplace_init_precision(laplace, model):
     precision = torch.tensor(10.6).reshape(1, 1)
     with pytest.raises(ValueError):
         lap = laplace(model, likelihood='regression', prior_precision=precision)
-    # unmatched dim 
+    # unmatched dim
     precision = torch.tensor(10.6).reshape(-1).repeat(17)
     with pytest.raises(ValueError):
         lap = laplace(model, likelihood='regression', prior_precision=precision)
@@ -114,6 +114,12 @@ def test_laplace_init_precision(laplace, model):
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_laplace_fit(laplace, model, reg_loader):
+def test_laplace_fit_reg(laplace, model, reg_loader):
     lap = laplace(model, 'regression')
     lap.fit(reg_loader)
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_fit_class(laplace, model, class_loader):
+    lap = laplace(model, 'classification')
+    lap.fit(class_loader)
