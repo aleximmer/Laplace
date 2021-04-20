@@ -52,8 +52,12 @@ class BackPackInterface(CurvatureInterface):
     def __init__(self, model, likelihood, last_layer=False):
         super().__init__(model, likelihood)
         self.last_layer = last_layer
-        extend(self.model.last_layer) if last_layer else extend(self.model)
+        extend(self._model)
         extend(self.lossfunc)
+
+    @property
+    def _model(self):
+        return self.model.last_layer if self.last_layer else self.model
 
 
 class BackPackGGN(BackPackInterface):
@@ -69,24 +73,16 @@ class BackPackGGN(BackPackInterface):
         self.stochastic = stochastic
 
     def _get_diag_ggn(self):
-        if self.last_layer:
-            model = self.model.last_layer
-        else:
-            model = self.model
         if self.stochastic:
-            return torch.cat([p.diag_ggn_mc.data.flatten() for p in model.parameters()])
+            return torch.cat([p.diag_ggn_mc.data.flatten() for p in self._model.parameters()])
         else:
-            return torch.cat([p.diag_ggn_exact.data.flatten() for p in model.parameters()])
+            return torch.cat([p.diag_ggn_exact.data.flatten() for p in self._model.parameters()])
 
     def _get_kron_factors(self):
-        if self.last_layer:
-            model = self.model.last_layer
-        else:
-            model = self.model
         if self.stochastic:
-            return Kron([p.kfac for p in model.parameters()])
+            return Kron([p.kfac for p in self._model.parameters()])
         else:
-            return Kron([p.kflr for p in model.parameters()])
+            return Kron([p.kflr for p in self._model.parameters()])
 
     @staticmethod
     def _rescale_kron_factors(kron, M, N):
@@ -135,7 +131,7 @@ class BackPackEF(BackPackInterface):
 
     def _get_individual_gradients(self):
         return torch.cat([p.grad_batch.data.flatten(start_dim=1)
-                          for p in self.model.parameters()], dim=1)
+                          for p in self._model.parameters()], dim=1)
 
     def diag(self, X, y, **kwargs):
         f = self.model(X)
@@ -143,7 +139,7 @@ class BackPackEF(BackPackInterface):
         with backpack(SumGradSquared()):
             loss.backward()
         diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
-                             for p in self.model.parameters()])
+                             for p in self._model.parameters()])
 
         return self.factor * loss.detach(), self.factor ** 2 * diag_EF
 
