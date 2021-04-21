@@ -27,6 +27,7 @@ def jacobians(model, data):
             to_cat = []
             for param in model.parameters():
                 to_cat.append(param.grad_batch.detach().reshape(data.shape[0], -1))
+                delattr(param, 'grad_batch')
             Jk = torch.cat(to_cat, dim=1)
         to_stack.append(Jk)
         if i == 0:
