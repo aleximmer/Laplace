@@ -141,7 +141,7 @@ class BackPackEF(BackPackInterface):
         diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
                              for p in self._model.parameters()])
 
-        return self.factor * loss.detach(), self.factor ** 2 * diag_EF
+        return self.factor * loss.detach(), self.factor * diag_EF
 
     def kron(self, X, y, **kwargs):
         raise NotImplementedError()
@@ -151,6 +151,6 @@ class BackPackEF(BackPackInterface):
         loss = self.lossfunc(f, y)
         with backpack(BatchGrad()):
             loss.backward()
-        Gs = self.factor * self._get_individual_gradients()
+        Gs = self._get_individual_gradients()
         H_ef = Gs.T @ Gs
-        return self.factor * loss.detach(), H_ef
+        return self.factor * loss.detach(), self.factor * H_ef
