@@ -7,7 +7,7 @@ from torch.nn.utils import parameters_to_vector
 from laplace.matrix import Kron, KronDecomposed
 from laplace.utils import kron as kron_prod
 from laplace.curvature import BackPackGGN
-from laplace.jacobians import Jacobians
+from laplace.jacobians import jacobians
 from laplace.utils import block_diag
 from tests.utils import get_psd_matrix
 
@@ -63,7 +63,7 @@ def test_multiplication():
             exp = 1.5 * kron_prod(*exp_facs)
             facs = kron_prod(*facs)
             assert torch.allclose(exp, facs)
-    
+
 def test_decompose():
     expected_sizes = [[20, 3], [20], [2, 20], [2]]
     torch.manual_seed(7171)
@@ -89,7 +89,7 @@ def test_logdet_consistent():
     kron = Kron(kfacs)
     kron_decomp = kron.decompose()
     assert torch.allclose(kron.logdet(), kron_decomp.logdet())
-    
+
 
 def test_bmm(small_model):
     model = small_model
@@ -99,7 +99,7 @@ def test_bmm(small_model):
     backend = BackPackGGN(model, 'regression', stochastic=False)
     loss, kron = backend.kron(X, y, N=5)
     kron_decomp = kron.decompose()
-    Js, f = Jacobians(model, X)
+    Js, f = jacobians(model, X)
     blocks = list()
     for F in kron.kfacs:
         if len(F) == 1:

@@ -7,20 +7,18 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
+from laplace.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive
 
 
-flavors = [FullLaplace, KronLaplace, DiagLaplace]
+flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 
 
 @pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     setattr(model, 'output_size', 2)
-    model_params = list(model.parameters())
-    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
-    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
     return model
 
 
@@ -40,86 +38,100 @@ def reg_loader():
 
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init(laplace, model):
-    lap = laplace(model, 'classification')
+    lap = laplace(model, 'classification', last_layer_name='1')
 
 
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_invalid_likelihood(laplace, model):
     with pytest.raises(ValueError):
-        lap = laplace(model, 'otherlh')
+        lap = laplace(model, 'otherlh', last_layer_name='1')
 
 
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init_noise(laplace, model):
     # float
     sigma_noise = 1.2
-    lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise)
+    lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise,
+                  last_layer_name='1')
     # torch.tensor 0-dim
     sigma_noise = torch.tensor(1.2)
-    lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise)
+    lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise,
+                  last_layer_name='1')
     # torch.tensor 1-dim
     sigma_noise = torch.tensor(1.2).reshape(-1)
-    lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise)
+    lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise,
+                  last_layer_name='1')
 
     # for classification should fail
     sigma_noise = 1.2
     with pytest.raises(ValueError):
-        lap = laplace(model, likelihood='classification', sigma_noise=sigma_noise)
+        lap = laplace(model, likelihood='classification',
+                      sigma_noise=sigma_noise, last_layer_name='1')
 
     # other than that should fail
     # higher dim
     sigma_noise = torch.tensor(1.2).reshape(1, 1)
     with pytest.raises(ValueError):
-        lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise)
+        lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise,
+                      last_layer_name='1')
     # other datatype, only reals supported
     sigma_noise = '1.2'
     with pytest.raises(ValueError):
-        lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise)
+        lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise,
+                      last_layer_name='1')
 
 
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init_precision(laplace, model):
+    feature_extractor = FeatureExtractor(model, last_layer_name='1')
+    model_params = list(feature_extractor.last_layer.parameters())
+    setattr(model, 'n_layers', 1)  # number of parameter groups
+    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
     # float
     precision = 10.6
-    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    lap = laplace(model, likelihood='regression', prior_precision=precision,
+                  last_layer_name='1')
     # torch.tensor 0-dim
     precision = torch.tensor(10.6)
-    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    lap = laplace(model, likelihood='regression', prior_precision=precision,
+                  last_layer_name='1')
     # torch.tensor 1-dim
     precision = torch.tensor(10.7).reshape(-1)
-    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    lap = laplace(model, likelihood='regression', prior_precision=precision,
+                  last_layer_name='1')
     # torch.tensor 1-dim param-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
-    if laplace == KronLaplace:
-        # Kron should not accept per parameter prior precision
-        with pytest.raises(ValueError):
-            lap = laplace(model, likelihood='regression', prior_precision=precision)
-    else:
-        lap = laplace(model, likelihood='regression', prior_precision=precision)
+    lap = laplace(model, likelihood='regression', prior_precision=precision,
+                  last_layer_name='1')
     # torch.tensor 1-dim layer-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
-    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    lap = laplace(model, likelihood='regression', prior_precision=precision,
+                  last_layer_name='1')
 
     # other than that should fail
     # higher dim
     precision = torch.tensor(10.6).reshape(1, 1)
     with pytest.raises(ValueError):
-        lap = laplace(model, likelihood='regression', prior_precision=precision)
+        lap = laplace(model, likelihood='regression', prior_precision=precision,
+                      last_layer_name='1')
     # unmatched dim
     precision = torch.tensor(10.6).reshape(-1).repeat(17)
     with pytest.raises(ValueError):
-        lap = laplace(model, likelihood='regression', prior_precision=precision)
+        lap = laplace(model, likelihood='regression', prior_precision=precision,
+                      last_layer_name='1')
     # other datatype, only reals supported
     precision = '1.5'
     with pytest.raises(ValueError):
-        lap = laplace(model, likelihood='regression', prior_precision=precision)
+        lap = laplace(model, likelihood='regression', prior_precision=precision,
+                      last_layer_name='1')
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_laplace_init_temperature(laplace, model):
+def test_laplace_init_precision(laplace, model):
     # valid float
     T = 1.1
-    lap = laplace(model, likelihood='classification', temperature=T)
+    lap = laplace(model, likelihood='classification', temperature=T,
+                  last_layer_name='1')
     assert lap.temperature == T
 
 
@@ -159,13 +171,14 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     # lml = log p(y|f) - 1/2 theta @ prior_prec @ theta
     #       + 1/2 logdet prior_prec - 1/2 log det post_prec
     lml = log_lik_true
-    theta = parameters_to_vector(model.parameters()).detach()
+    feature_extractor = FeatureExtractor(model, last_layer_name='1')
+    theta = parameters_to_vector(feature_extractor.last_layer.parameters()).detach()
     assert torch.allclose(theta, lap.mean)
     prior_prec = torch.diag(lap.prior_precision_diag)
     assert prior_prec.shape == torch.Size([len(theta), len(theta)])
     lml = lml - 1/2 * theta @ prior_prec @ theta
     Sigma_0 = torch.inverse(prior_prec)
-    if laplace == DiagLaplace:
+    if laplace == DiagLLLaplace:
         log_det_post_prec = lap.posterior_precision.log().sum()
     else:
         log_det_post_prec = lap.posterior_precision.logdet()
@@ -183,13 +196,14 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     assert torch.allclose(mu_comp, mu_true, rtol=1)
 
     # test functional variance
-    if laplace == FullLaplace:
+    if laplace == FullLLLaplace:
         Sigma = lap.posterior_covariance
-    elif laplace == KronLaplace:
+    elif laplace == KronLLLaplace:
         Sigma = lap.posterior_precision.to_matrix(exponent=-1)
-    elif laplace == DiagLaplace:
+    elif laplace == DiagLLLaplace:
         Sigma = torch.diag(lap.posterior_variance)
-    Js, f = jacobians_naive(model, loader.dataset.tensors[0])
+    _, phi = feature_extractor.forward_with_features(loader.dataset.tensors[0])
+    Js, f = jacobians_naive(feature_extractor.last_layer, phi)
     true_f_var = torch.einsum('mkp,pq,mcq->mkc', Js, Sigma, Js)
     comp_f_var = lap.functional_variance(Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
@@ -237,7 +251,6 @@ def test_classification_predictive(laplace, model, class_loader):
     f_pred = lap(X, pred_type='glm', link_approx='probit')
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
-
 
     # NN predictive
     f_pred = lap(X, pred_type='nn', n_samples=100)

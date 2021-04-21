@@ -6,11 +6,22 @@ from torch.nn import MSELoss, CrossEntropyLoss
 from backpack import backpack, extend
 from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared, BatchGrad
 
-from laplace.jacobians import Jacobians
+from laplace.jacobians import jacobians, last_layer_jacobians
 from laplace.matrix import Kron
 
 
 class CurvatureInterface(ABC):
+
+    def __init__(self, model, likelihood):
+        assert likelihood in ['regression', 'classification']
+        self.likelihood = likelihood
+        self.model = model
+        if likelihood == 'regression':
+            self.lossfunc = MSELoss(reduction='sum')
+            self.factor = 0.5  # convert to standard Gauss. log N(y|f,1)
+        else:
+            self.lossfunc = CrossEntropyLoss(reduction='sum')
+            self.factor = 1.
 
     @abstractmethod
     def full(self, X, y, **kwargs):
@@ -24,19 +35,29 @@ class CurvatureInterface(ABC):
     def diag(self, X, y, **kwargs):
         pass
 
+    def _get_full_ggn(self, Js, f, y):
+        loss = self.factor * self.lossfunc(f, y)
+        if self.likelihood == 'regression':
+            H_ggn = torch.einsum('mkp,mkq->pq', Js, Js)
+        else:
+            # second derivative of log lik is diag(p) - pp^T
+            ps = torch.softmax(f, dim=-1)
+            H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
+            H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
+        return loss.detach(), H_ggn
+
 
 class BackPackInterface(CurvatureInterface):
 
-    def __init__(self, model, likelihood):
-        assert likelihood in ['regression', 'classification']
-        self.likelihood = likelihood
-        self.model = extend(model)
-        if likelihood == 'regression':
-            self.lossfunc = extend(MSELoss(reduction='sum'))
-            self.factor = 0.5  # convert to standard Gauss. log N(y|f,1)
-        else:
-            self.lossfunc = extend(CrossEntropyLoss(reduction='sum'))
-            self.factor = 1.
+    def __init__(self, model, likelihood, last_layer=False):
+        super().__init__(model, likelihood)
+        self.last_layer = last_layer
+        extend(self._model)
+        extend(self.lossfunc)
+
+    @property
+    def _model(self):
+        return self.model.last_layer if self.last_layer else self.model
 
 
 class BackPackGGN(BackPackInterface):
@@ -47,21 +68,21 @@ class BackPackGGN(BackPackInterface):
     --> factor for regression is 0.5 for loss and ggn
     """
 
-    def __init__(self, model, likelihood, stochastic=False):
-        super().__init__(model, likelihood)
+    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+        super().__init__(model, likelihood, last_layer)
         self.stochastic = stochastic
 
     def _get_diag_ggn(self):
         if self.stochastic:
-            return torch.cat([p.diag_ggn_mc.data.flatten() for p in self.model.parameters()])
+            return torch.cat([p.diag_ggn_mc.data.flatten() for p in self._model.parameters()])
         else:
-            return torch.cat([p.diag_ggn_exact.data.flatten() for p in self.model.parameters()])
+            return torch.cat([p.diag_ggn_exact.data.flatten() for p in self._model.parameters()])
 
     def _get_kron_factors(self):
         if self.stochastic:
-            return Kron([p.kfac for p in self.model.parameters()])
+            return Kron([p.kfac for p in self._model.parameters()])
         else:
-            return Kron([p.kflr for p in self.model.parameters()])
+            return Kron([p.kflr for p in self._model.parameters()])
 
     @staticmethod
     def _rescale_kron_factors(kron, M, N):
@@ -97,23 +118,20 @@ class BackPackGGN(BackPackInterface):
         if self.stochastic:
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 
-        Js, f = Jacobians(self.model, X)
-        loss = self.factor * self.lossfunc(f, y)
-        if self.likelihood == 'regression':
-            H_ggn = torch.einsum('mkp,mkq->pq', Js, Js)
+        if self.last_layer:
+            Js, f = last_layer_jacobians(self.model, X)
         else:
-            # second derivative of log lik is diag(p) - pp^T
-            ps = torch.softmax(f, dim=-1)
-            H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
-            H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
-        return loss.detach(), H_ggn
+            Js, f = jacobians(self.model, X)
+        loss, H_ggn = self._get_full_ggn(Js, f, y)
+
+        return loss, H_ggn
 
 
 class BackPackEF(BackPackInterface):
 
     def _get_individual_gradients(self):
         return torch.cat([p.grad_batch.data.flatten(start_dim=1)
-                          for p in self.model.parameters()], dim=1)
+                          for p in self._model.parameters()], dim=1)
 
     def diag(self, X, y, **kwargs):
         f = self.model(X)
@@ -121,7 +139,7 @@ class BackPackEF(BackPackInterface):
         with backpack(SumGradSquared()):
             loss.backward()
         diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
-                             for p in self.model.parameters()])
+                             for p in self._model.parameters()])
 
         return self.factor * loss.detach(), self.factor ** 2 * diag_EF
 

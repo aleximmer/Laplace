@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import BackPackGGN, BackPackEF
-from laplace.jacobians import Jacobians
+from laplace.jacobians import jacobians
 
 
 @pytest.fixture
@@ -42,7 +42,7 @@ def test_full_ggn_backpack_reg_integration(reg_Xy, model):
     backend = BackPackGGN(model, 'regression', stochastic=False)
     loss, H_ggn = backend.full(X, y)
     assert H_ggn.size() == torch.Size((model.n_params, model.n_params))
-    
+
 
 def test_full_ggn_backpack_cls_integration(class_Xy, model):
     X, y = class_Xy
@@ -54,7 +54,7 @@ def test_full_ggn_backpack_cls_integration(class_Xy, model):
     backend = BackPackGGN(model, 'classification', stochastic=False)
     loss, H_ggn = backend.full(X, y)
     assert H_ggn.size() == torch.Size((model.n_params, model.n_params))
-    
+
 
 def test_diag_ggn_cls_backpack(class_Xy, model):
     X, y = class_Xy
@@ -146,7 +146,7 @@ def test_kron_summing_up_vs_diag_reg(reg_Xy, model):
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
-    
+
 
 def test_kron_ggn_reg_backpack_vs_diag_class(class_Xy, model):
     # For a single data point, Kron is exact and should equal diag GGN
@@ -182,7 +182,7 @@ def test_kron_summing_up_vs_diag_class(class_Xy, model):
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
-    
+
 
 def test_full_vs_diag_ef_cls_backpack(class_Xy, model):
     X, y = class_Xy
