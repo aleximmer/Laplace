@@ -59,6 +59,7 @@ class Laplace(ABC):
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
         self.model = model
+        self._device = next(model.parameters()).device
         # initialize state #
         # posterior mean/mode
         self.mean = parameters_to_vector(self.model.parameters()).detach()
@@ -72,7 +73,6 @@ class Laplace(ABC):
         self.temperature = temperature
         self.backend = backend(self.model, self.likelihood, **backend_kwargs)
         self._fit = False
-        self._device = next(model.parameters()).device
 
         # log likelihood = g(loss)
         self.loss = 0.
@@ -314,15 +314,15 @@ class Laplace(ABC):
     @prior_precision.setter
     def prior_precision(self, prior_precision):
         if np.isscalar(prior_precision) and np.isreal(prior_precision):
-            self._prior_precision = torch.tensor([prior_precision])
+            self._prior_precision = torch.tensor([prior_precision]).to(self._device)
         elif torch.is_tensor(prior_precision):
             if prior_precision.ndim == 0:
                 # make dimensional
-                self._prior_precision = prior_precision.reshape(-1)
+                self._prior_precision = prior_precision.reshape(-1).to(self._device)
             elif prior_precision.ndim == 1:
                 if len(prior_precision) not in [1, self.n_layers, self.n_params]:
                     raise ValueError('Length of prior precision does not align with architecture.')
-                self._prior_precision = prior_precision
+                self._prior_precision = prior_precision.to(self._device)
             else:
                 raise ValueError('Prior precision needs to be at most one-dimensional tensor.')
         else:
@@ -335,14 +335,14 @@ class Laplace(ABC):
     @sigma_noise.setter
     def sigma_noise(self, sigma_noise):
         if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
-            self._sigma_noise = torch.tensor(sigma_noise)
+            self._sigma_noise = torch.tensor(sigma_noise).to(self._device)
         elif torch.is_tensor(sigma_noise):
             if sigma_noise.ndim == 0:
-                self._sigma_noise = sigma_noise
+                self._sigma_noise = sigma_noise.to(self._device)
             elif sigma_noise.ndim == 1:
                 if len(sigma_noise) > 1:
                     raise ValueError('Only homoscedastic output noise supported.')
-                self._sigma_noise = sigma_noise
+                self._sigma_noise = sigma_noise[0].to(self._device)
             else:
                 raise ValueError('Sigma noise needs to be scalar or 1-dimensional.')
         else:
