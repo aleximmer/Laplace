@@ -86,7 +86,8 @@ class LLLaplace(Laplace):
         self.model.eval()
 
         if not self.model._found:
-            self.model.find_last_layer(train_loader.dataset[0][0].unsqueeze(0))
+            X, _ = next(iter(train_loader))
+            self.model.find_last_layer(X)
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self._init_H()
