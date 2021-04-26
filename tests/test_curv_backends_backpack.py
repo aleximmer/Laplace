@@ -20,6 +20,7 @@ def model():
 
 @pytest.fixture
 def class_Xy():
+    torch.manual_seed(711)
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
     return X, y
@@ -27,6 +28,7 @@ def class_Xy():
 
 @pytest.fixture
 def reg_Xy():
+    torch.manual_seed(711)
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
     return X, y
