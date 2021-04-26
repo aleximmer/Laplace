@@ -72,7 +72,7 @@ class Laplace(ABC):
         self.sigma_noise = sigma_noise
         self.temperature = temperature
         self.backend = backend(self.model, self.likelihood, **backend_kwargs)
-        self._fit = False
+        self.H = None
 
         # log likelihood = g(loss)
         self.loss = 0.
@@ -80,8 +80,16 @@ class Laplace(ABC):
         self.n_data = None
 
     @abstractmethod
+    def _init_H(self):
+        pass
+
+    @abstractmethod
     def _curv_closure(self, X, y, N):
         pass
+
+    def _check_fit(self):
+        if self.H is None:
+            raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def fit(self, train_loader):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -91,8 +99,10 @@ class Laplace(ABC):
         train_loader : iterator
             each iterate is a training batch (X, y)
         """
-        if self._fit:
+        if self.H is not None:
             raise ValueError('Already fit.')
+
+        self._init_H()
 
         self.model.eval()
 
@@ -108,16 +118,13 @@ class Laplace(ABC):
             self.n_outputs = self.model(X[:1]).shape[-1]
         self.n_data = N
 
-        self._fit = True
-
     def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the marginal likelihood.
         The resulting value is differentiable in differentiable likelihood
         and prior parameters.
         """
         # make sure we can differentiate wrt prior and sigma_noise for regression
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run fit() first.')
+        self._check_fit()
 
         # update prior precision (useful when iterating on marglik)
         if prior_precision is not None:
@@ -133,8 +140,7 @@ class Laplace(ABC):
 
     @property
     def log_lik(self):
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run fit() first.')
+        self._check_fit()
 
         factor = - self.H_factor
         if self.likelihood == 'regression':
@@ -163,8 +169,7 @@ class Laplace(ABC):
         n_samples : int
             number of samples in case necessary
         """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+        self._check_fit()
 
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
@@ -204,8 +209,7 @@ class Laplace(ABC):
         n_samples : int
             number of samples
         """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
+        self._check_fit()
 
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
@@ -363,8 +367,10 @@ class FullLaplace(Laplace):
                  temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
-        self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
         self._posterior_scale = None
+
+    def _init_H(self):
+        self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
         return self.backend.full(X, y, N=N)
@@ -387,9 +393,7 @@ class FullLaplace(Laplace):
     def posterior_precision(self):
         """Computes log determinant of the posterior precision `log det P`
         """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
+        self._check_fit()
         return self.H_factor * self.H + torch.diag(self.prior_precision_diag)
 
     @property
@@ -414,6 +418,8 @@ class KronLaplace(Laplace):
                  temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
+
+    def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
 
     def _curv_closure(self, X, y, N):
@@ -426,9 +432,7 @@ class KronLaplace(Laplace):
 
     @property
     def posterior_precision(self):
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
+        self._check_fit()
         return self.H * self.H_factor + self.prior_precision
 
     @property
@@ -461,6 +465,8 @@ class DiagLaplace(Laplace):
                  temperature=1., backend=BackPackGGN):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend)
+
+    def _init_H(self):
         self.H = torch.zeros(self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
@@ -470,9 +476,7 @@ class DiagLaplace(Laplace):
     def posterior_precision(self):
         """Computes log determinant of the posterior precision `log det P`
         """
-        if not self._fit:
-            raise AttributeError('Laplace not fitted. Run Laplace.fit() first')
-
+        self._check_fit()
         return self.H_factor * self.H + self.prior_precision_diag
 
     @property

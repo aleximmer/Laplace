@@ -65,10 +65,12 @@ class LLLaplace(Laplace):
         if self.model._found:
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
-            self._init_H()
             self.backend = backend(self.model, self.likelihood, last_layer=True,
                                    **backend_kwargs)
         else:
+            self.mean = None
+            self.n_params = None
+            self.backend = None
             self._backend = backend
             self._backend_kwargs = backend_kwargs
 
@@ -80,7 +82,7 @@ class LLLaplace(Laplace):
         train_loader : iterator
             each iterate is a training batch (X, y)
         """
-        if self._fit:
+        if self.H is not None:
             raise ValueError('Already fit.')
 
         self.model.eval()
@@ -90,15 +92,10 @@ class LLLaplace(Laplace):
             self.model.find_last_layer(X)
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
-            self._init_H()
             self.backend = self._backend(self.model, self.likelihood, last_layer=True,
                                          **self._backend_kwargs)
 
         super().fit(train_loader)
-
-    @abstractmethod
-    def _init_H(self):
-        pass
 
     def glm_predictive_distribution(self, X):
         Js, f_mu = last_layer_jacobians(self.model, X)
@@ -136,9 +133,6 @@ class FullLLLaplace(LLLaplace, FullLaplace):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend, last_layer_name)
 
-    def _init_H(self):
-        self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
-
 
 class KronLLLaplace(LLLaplace, KronLaplace):
     # TODO list additional attributes
@@ -159,6 +153,3 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
                  temperature=1., backend=BackPackGGN, last_layer_name=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          temperature, backend, last_layer_name)
-
-    def _init_H(self):
-        self.H = torch.zeros(self.n_params, device=self._device)
