@@ -12,8 +12,12 @@ pip install -e .
 # for "production"
 pip install .
 
+# for Kazuki's backend
+cd dependencies
+pip install asdfghjkl-0.0.1-py3-none-any.whl
 
-# run tests (once we have them..)
+
+# run tests
 pip install pytest
 pytest tests/
 ```
