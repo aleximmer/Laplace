@@ -59,7 +59,7 @@ class LLLaplace(Laplace):
                  temperature=1., backend=BackPackGGN, last_layer_name=None,
                  **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend)
+                         temperature, backend, **backend_kwargs)
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
         self.n_layers = 1
         if self.model._found:
@@ -124,18 +124,20 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, last_layer_name=None):
+                 temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, last_layer_name)
+                         temperature, backend, last_layer_name, **backend_kwargs)
 
 
 class KronLLLaplace(LLLaplace, KronLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, last_layer_name=None):
+                 temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, last_layer_name)
+                         temperature, backend, last_layer_name, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
@@ -145,6 +147,7 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, last_layer_name=None):
+                 temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, last_layer_name)
+                         temperature, backend, last_layer_name, **backend_kwargs)
