@@ -65,14 +65,10 @@ class LLLaplace(Laplace):
         if self.model._found:
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
-            self.backend = backend(self.model, self.likelihood, last_layer=True,
-                                   **backend_kwargs)
         else:
             self.mean = None
             self.n_params = None
-            self.backend = None
-            self._backend = backend
-            self._backend_kwargs = backend_kwargs
+        self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -89,11 +85,10 @@ class LLLaplace(Laplace):
 
         if not self.model._found:
             X, _ = next(iter(train_loader))
-            self.model.find_last_layer(X)
+            with torch.no_grad():
+                self.model.find_last_layer(X)
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
-            self.backend = self._backend(self.model, self.likelihood, last_layer=True,
-                                         **self._backend_kwargs)
 
         super().fit(train_loader)
 

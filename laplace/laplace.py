@@ -71,13 +71,22 @@ class Laplace(ABC):
         self.likelihood = likelihood
         self.sigma_noise = sigma_noise
         self.temperature = temperature
-        self.backend = backend(self.model, self.likelihood, **backend_kwargs)
+        self._backend = None
+        self._backend_cls = backend
+        self._backend_kwargs = backend_kwargs
         self.H = None
 
         # log likelihood = g(loss)
         self.loss = 0.
         self.n_outputs = None
         self.n_data = None
+
+    @property
+    def backend(self):
+        if self._backend is None:
+            self._backend =  self._backend_cls(self.model, self.likelihood,
+                                               **self._backend_kwargs)
+        return self._backend
 
     @abstractmethod
     def _init_H(self):
