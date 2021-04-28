@@ -1,11 +1,19 @@
 import torch
 
-from backpack import backpack, extend
+from backpack import backpack, extend, memory_cleanup
 from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared, BatchGrad
+from backpack.context import CTX
 
 from laplace.curvature import CurvatureInterface
-from laplace.jacobians import jacobians, last_layer_jacobians
 from laplace.matrix import Kron
+
+
+def cleanup(module):
+    for child in module.children():
+        cleanup(child)
+
+    setattr(module, "_backpack_extend", False)
+    memory_cleanup(module)
 
 
 class BackPackInterface(CurvatureInterface):
@@ -19,6 +27,37 @@ class BackPackInterface(CurvatureInterface):
     @property
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
+
+    @staticmethod
+    def jacobians(model, X):
+        # Jacobians are batch x output x params
+        model = extend(model)
+        to_stack = []
+        for i in range(model.output_size):
+            model.zero_grad()
+            out = model(X)
+            with backpack(BatchGrad()):
+                if model.output_size > 1:
+                    out[:, i].sum().backward()
+                else:
+                    out.sum().backward()
+                to_cat = []
+                for param in model.parameters():
+                    to_cat.append(param.grad_batch.detach().reshape(X.shape[0], -1))
+                    delattr(param, 'grad_batch')
+                Jk = torch.cat(to_cat, dim=1)
+            to_stack.append(Jk)
+            if i == 0:
+                f = out.detach()
+
+        # cleanup
+        model.zero_grad()
+        CTX.remove_hooks()
+        cleanup(model)
+        if model.output_size > 1:
+            return torch.stack(to_stack, dim=2).transpose(1, 2), f
+        else:
+            return Jk.unsqueeze(-1).transpose(1, 2), f
 
 
 class BackPackGGN(BackPackInterface):
@@ -76,13 +115,14 @@ class BackPackGGN(BackPackInterface):
         return self.factor * loss.detach(), self.factor * kron
 
     def full(self, X, y, **kwargs):
+        # TODO: put in shared GGN interaface for both backends
         if self.stochastic:
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 
         if self.last_layer:
-            Js, f = last_layer_jacobians(self.model, X)
+            Js, f = self.last_layer_jacobians(self.model, X)
         else:
-            Js, f = jacobians(self.model, X)
+            Js, f = self.jacobians(self.model, X)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn
@@ -108,10 +148,12 @@ class BackPackEF(BackPackInterface):
         raise NotImplementedError()
 
     def full(self, X, y, **kwargs):
+        # TODO: put in shared EF interface for both kazuki and backpack
         f = self.model(X)
         loss = self.lossfunc(f, y)
         with backpack(BatchGrad()):
             loss.backward()
+        # TODO: implement similarly to jacobians as staticmethod
         Gs = self._get_individual_gradients()
         H_ef = Gs.T @ Gs
         return self.factor * loss.detach(), self.factor * H_ef

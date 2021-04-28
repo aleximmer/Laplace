@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, abstractstaticmethod
 import torch
 from torch.nn import MSELoss, CrossEntropyLoss
 
@@ -15,6 +15,25 @@ class CurvatureInterface(ABC):
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.
+
+    @abstractstaticmethod
+    def jacobians(model, X):
+        raise NotImplementedError()
+
+    @staticmethod
+    def last_layer_jacobians(model, X):
+        f, phi = model.forward_with_features(X)
+        bsize = len(X)
+        output_size = f.shape[-1]
+
+        # calculate Jacobians using the feature vector 'phi'
+        identity = torch.eye(output_size, device=X.device).unsqueeze(0).tile(bsize, 1, 1)
+        # Jacobians are batch x output x params
+        Js = torch.einsum('kp,kij->kijp', phi, identity).reshape(bsize, output_size, -1)
+        if model.last_layer.bias is not None:
+            Js = torch.cat([Js, identity], dim=2)
+
+        return Js, f
 
     @abstractmethod
     def full(self, X, y, **kwargs):

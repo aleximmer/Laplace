@@ -1,16 +1,11 @@
-from abc import ABC, abstractmethod
-from math import sqrt, pi
-import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.distributions import MultivariateNormal
 
 from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.feature_extractor import FeatureExtractor
-from laplace.utils import parameters_per_layer, invsqrt_precision
+
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
-from laplace.jacobians import last_layer_jacobians
 
 
 __all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
@@ -93,7 +88,7 @@ class LLLaplace(Laplace):
         super().fit(train_loader)
 
     def glm_predictive_distribution(self, X):
-        Js, f_mu = last_layer_jacobians(self.model, X)
+        Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 

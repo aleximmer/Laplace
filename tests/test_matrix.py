@@ -7,9 +7,8 @@ from torch.nn.utils import parameters_to_vector
 from laplace.matrix import Kron, KronDecomposed
 from laplace.utils import kron as kron_prod
 from laplace.curvature import BackPackGGN
-from laplace.jacobians import jacobians
 from laplace.utils import block_diag
-from tests.utils import get_psd_matrix
+from tests.utils import get_psd_matrix, jacobians_naive
 
 
 torch.set_default_tensor_type(torch.DoubleTensor)
@@ -99,7 +98,7 @@ def test_bmm(small_model):
     backend = BackPackGGN(model, 'regression', stochastic=False)
     loss, kron = backend.kron(X, y, N=5)
     kron_decomp = kron.decompose()
-    Js, f = jacobians(model, X)
+    Js, f = jacobians_naive(model, X)
     blocks = list()
     for F in kron.kfacs:
         if len(F) == 1:

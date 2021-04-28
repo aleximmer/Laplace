@@ -1,8 +1,10 @@
 import pytest
 import torch
 from torch import nn
+from torch.nn.utils import parameters_to_vector
 
-from laplace.jacobians import jacobians
+from laplace.curvature import KazukiInterface
+from laplace.curvature import BackPackInterface
 from tests.utils import jacobians_naive
 
 
@@ -33,9 +35,10 @@ def X():
     return torch.randn(200, 3)
 
 
-def test_linear_jacobians(linear_model, X):
+@pytest.mark.parametrize('backend', [KazukiInterface, BackPackInterface])
+def test_linear_jacobians(linear_model, X, backend):
     # jacobian of linear model is input X.
-    Js, f = jacobians(linear_model, X)
+    Js, f = backend.jacobians(linear_model, X)
     # into Jacs shape (batch_size, output_size, params)
     true_Js = X.reshape(len(X), 1, -1)
     assert true_Js.shape == Js.shape
@@ -43,9 +46,10 @@ def test_linear_jacobians(linear_model, X):
     assert torch.allclose(f, linear_model(X), atol=1e-5)
 
 
-def test_jacobians_singleoutput(singleoutput_model, X):
+@pytest.mark.parametrize('backend', [KazukiInterface, BackPackInterface])
+def test_jacobians_singleoutput(singleoutput_model, X, backend):
     model = singleoutput_model
-    Js, f = jacobians(model, X)
+    Js, f = backend.jacobians(model, X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
@@ -53,9 +57,11 @@ def test_jacobians_singleoutput(singleoutput_model, X):
     assert torch.allclose(f, f_naive)
 
 
-def test_jacobians_multioutput(multioutput_model, X):
+@pytest.mark.parametrize('backend', [KazukiInterface, BackPackInterface])
+def test_jacobians_multioutput(multioutput_model, X, backend):
     model = multioutput_model
-    Js, f = jacobians(model, X)
+    print(len(parameters_to_vector(model.parameters())))
+    Js, f = backend.jacobians(model, X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6

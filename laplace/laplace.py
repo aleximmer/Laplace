@@ -8,7 +8,6 @@ from torch.distributions import MultivariateNormal
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
-from laplace.jacobians import jacobians
 
 
 __all__ = ['FullLaplace', 'KronLaplace', 'DiagLaplace']
@@ -84,8 +83,8 @@ class Laplace(ABC):
     @property
     def backend(self):
         if self._backend is None:
-            self._backend =  self._backend_cls(self.model, self.likelihood,
-                                               **self._backend_kwargs)
+            self._backend = self._backend_cls(self.model, self.likelihood,
+                                              **self._backend_kwargs)
         return self._backend
 
     @abstractmethod
@@ -236,7 +235,7 @@ class Laplace(ABC):
             return self.nn_predictive_samples(X, n_samples)
 
     def glm_predictive_distribution(self, X):
-        Js, f_mu = jacobians(self.model, X)
+        Js, f_mu = self.backend.jacobians(self.model, X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 

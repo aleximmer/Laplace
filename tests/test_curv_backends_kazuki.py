@@ -6,7 +6,6 @@ from torch.nn.utils import parameters_to_vector
 from asdfghjkl.operations import Bias, Scale
 
 from laplace.curvature import KazukiGGN, KazukiEF, BackPackGGN, BackPackEF
-from laplace.jacobians import jacobians
 
 
 @pytest.fixture
@@ -159,7 +158,7 @@ def test_complex_kron_kazuki_vs_diag_kazuki(complex_class_Xy, complex_model, Bac
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
     loss, kron = backend.kron(X[:1], y[:1], N=1)
-    assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
+    assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
 
 
 @pytest.mark.parametrize('Backend', [KazukiEF, KazukiGGN])

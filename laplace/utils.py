@@ -2,6 +2,7 @@ import logging
 from typing import Union
 import numpy as np
 import torch
+from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 
 
@@ -11,6 +12,14 @@ def parameters_per_layer(model):
 
 def invsqrt_precision(M):
     return _precision_to_scale_tril(M)
+
+
+def is_batchnorm(module):
+    if isinstance(module, BatchNorm1d) or \
+        isinstance(module, BatchNorm2d) or \
+            isinstance(module, BatchNorm3d):
+        return True
+    return False
 
 
 def _is_valid_scalar(scalar: Union[float, int, torch.Tensor]) -> bool:

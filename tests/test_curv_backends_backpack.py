@@ -4,7 +4,6 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import BackPackGGN, BackPackEF
-from laplace.jacobians import jacobians
 
 
 @pytest.fixture
