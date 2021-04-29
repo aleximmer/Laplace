@@ -237,6 +237,9 @@ def test_classification_predictive(laplace, model, class_loader):
     f_pred = lap(X, pred_type='glm', link_approx='probit')
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    f_pred = lap(X, pred_type='glm', link_approx='bridge')
+    assert f_pred.shape == f.shape
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
 
     # NN predictive

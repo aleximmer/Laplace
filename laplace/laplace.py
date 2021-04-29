@@ -3,7 +3,7 @@ from math import sqrt, pi
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.distributions import MultivariateNormal
+from torch.distributions import MultivariateNormal, Dirichlet
 
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
@@ -194,6 +194,13 @@ class Laplace(ABC):
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
                 return torch.softmax(kappa * f_mu, dim=-1)
+            elif link_approx == 'bridge':
+                _, K = f_mu.size(0), f_mu.size(-1)
+                f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
+                sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
+                alpha = 1/f_var_diag * (1 - 2/K + torch.exp(f_mu)/(K**2) * sum_exp)
+                dist = Dirichlet(alpha)
+                return dist.mean
         else:
             samples = self.nn_predictive_samples(X, n_samples)
             if self.likelihood == 'regression':
