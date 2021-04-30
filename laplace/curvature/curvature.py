@@ -33,7 +33,7 @@ class CurvatureInterface(ABC):
         if model.last_layer.bias is not None:
             Js = torch.cat([Js, identity], dim=2)
 
-        return Js, f
+        return Js, f.detach()
 
     @abstractmethod
     def full(self, X, y, **kwargs):

@@ -347,6 +347,25 @@ class Laplace(ABC):
         else:
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
+    def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
+                                 init_prior_prec=1., verbose=False):
+        if method == 'marglik':
+            self.prior_precision = init_prior_prec
+            log_prior_prec = self.prior_precision.log()
+            log_prior_prec.requires_grad = True
+            optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
+            for _ in range(n_steps):
+                optimizer.zero_grad()
+                prior_prec = log_prior_prec.exp()
+                neg_marglik = -self.marginal_likelihood(prior_precision=prior_prec)
+                neg_marglik.backward()
+                optimizer.step()
+            self.prior_precision = log_prior_prec.detach().exp()
+        else:
+            raise ValueError('For now only marglik is implemented.')
+        if verbose:
+            print(f'Optimized prior precision is {self.prior_precision}.')
+
     @property
     def sigma_noise(self):
         return self._sigma_noise
