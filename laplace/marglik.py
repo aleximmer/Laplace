@@ -137,7 +137,7 @@ def marglik_optimization(model, train_loader, likelihood='classification',
         if margliks[-1] < best_marglik:
             best_model = deepcopy(model)
             best_precision = deepcopy(prior_prec.detach())
-            best_sigma = deepcopy(sigma_noise.detach())
+            best_sigma = 1 if likelihood == 'classification' else deepcopy(sigma_noise.detach())
             best_marglik = margliks[-1]
             logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik}. '
                          + 'Saving new best model.')
