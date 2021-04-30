@@ -241,6 +241,7 @@ class Laplace(ABC):
         else:  # 'nn'
             return self.nn_predictive_samples(X, n_samples)
 
+    @torch.enable_grad()
     def glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(self.model, X)
         f_var = self.functional_variance(Js)
@@ -312,7 +313,7 @@ class Laplace(ABC):
     @property
     def prior_precision_diag(self):
         if len(self.prior_precision) == 1:  # scalar
-            return self.prior_precision * torch.ones_like(self.mean)
+            return self.prior_precision * torch.ones_like(self.mean, device=self._device)
 
         elif len(self.prior_precision) == self.n_params:  # diagonal
             return self.prior_precision
@@ -333,7 +334,7 @@ class Laplace(ABC):
     @prior_precision.setter
     def prior_precision(self, prior_precision):
         if np.isscalar(prior_precision) and np.isreal(prior_precision):
-            self._prior_precision = torch.tensor([prior_precision]).to(self._device)
+            self._prior_precision = torch.tensor([prior_precision], device=self._device)
         elif torch.is_tensor(prior_precision):
             if prior_precision.ndim == 0:
                 # make dimensional
@@ -373,7 +374,7 @@ class Laplace(ABC):
     @sigma_noise.setter
     def sigma_noise(self, sigma_noise):
         if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
-            self._sigma_noise = torch.tensor(sigma_noise).to(self._device)
+            self._sigma_noise = torch.tensor(sigma_noise, device=self._device)
         elif torch.is_tensor(sigma_noise):
             if sigma_noise.ndim == 0:
                 self._sigma_noise = sigma_noise.to(self._device)
