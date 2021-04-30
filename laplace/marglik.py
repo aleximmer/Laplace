@@ -68,7 +68,6 @@ def marglik_optimization(model, train_loader, likelihood='classification',
     # set up loss
     if likelihood == 'classification':
         criterion = CrossEntropyLoss(reduction='sum')
-        log_sigma_noise = torch.zeros(1, requires_grad=False, device=device)
     elif likelihood == 'regression':
         criterion = MSELoss(reduction='sum')
         log_sigma_noise = torch.zeros(1, requires_grad=True, device=device)
@@ -116,14 +115,17 @@ def marglik_optimization(model, train_loader, likelihood='classification',
         if (epoch % marglik_frequency) != 0:
             continue
 
-        sigma_noise = torch.exp(log_sigma_noise)  # == 1 (off) for classification 
+        sigma_noise = 1 if likelihood == 'classification' else torch.exp(log_sigma_noise)
         prior_prec = torch.exp(log_prior_prec)
         lap = laplace(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_prec,
                       backend=backend, **backend_kwargs)
         lap.fit(train_loader)
         for _ in range(n_hypersteps):
             hyper_optimizer.zero_grad()
-            sigma_noise = torch.exp(log_sigma_noise)
+            if likelihood == 'classification':
+                sigma_noise = None
+            elif likelihood == 'regression':
+                sigma_noise = torch.exp(log_sigma_noise)
             prior_prec = torch.exp(log_prior_prec)
             marglik = -lap.marginal_likelihood(prior_prec, sigma_noise)
             marglik.backward()
