@@ -92,6 +92,7 @@ def marglik_optimization(model, train_loader, likelihood='classification',
     for epoch in range(1, n_epochs + 1):
         epoch_loss = 0
         for X, y in train_loader:
+            X, y = X.to(device), y.to(device)
             M = len(y)
             optimizer.zero_grad()
             theta = parameters_to_vector(model.parameters())
