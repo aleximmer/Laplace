@@ -91,6 +91,7 @@ def marglik_optimization(model, train_loader, likelihood='classification',
 
     for epoch in range(1, n_epochs + 1):
         epoch_loss = 0
+        epoch_perf = 0
         for X, y in train_loader:
             X, y = X.to(device), y.to(device)
             M = len(y)
@@ -103,14 +104,19 @@ def marglik_optimization(model, train_loader, likelihood='classification',
                 crit_factor = 1
             prior_prec = torch.exp(log_prior_prec).detach()
             delta = expand_prior_precision(prior_prec, model)
-            loss = N / M * crit_factor * criterion(model(X), y) + 0.5 * (delta * theta) @ theta
+            f = model(X)
+            loss = N / M * crit_factor * criterion(f, y) + 0.5 * (delta * theta) @ theta
             loss.backward()
             optimizer.step()
             epoch_loss += loss.cpu().item() / len(train_loader)
+            if likelihood == 'regression':
+                epoch_perf += criterion(f.detach(), y).item() / len(train_loader)
+            else:
+                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item() / M / len(train_loader)
         losses.append(epoch_loss)
         scheduler.step()
 
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; lr={scheduler.get_last_lr()}')
+        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; Perf={epoch_perf}; lr={scheduler.get_last_lr()}')
 
         # only update hyperparameters every "Frequency" steps
         if (epoch % marglik_frequency) != 0:
