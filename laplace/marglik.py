@@ -8,7 +8,8 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
 import logging
 
-from laplace import DiagLaplace, KronLaplace, FullLaplace
+from laplace import (DiagLaplace, KronLaplace, FullLaplace,
+                     DiagLLLaplace, KronLLLaplace, FullLLLaplace)
 from laplace.curvature import KazukiGGN
 
 
@@ -52,6 +53,9 @@ def marglik_optimization(model, train_loader, likelihood='classification',
     H = len(list(model.parameters()))
     P = len(parameters_to_vector(model.parameters()))
     N = len(train_loader.dataset)
+
+    if laplace in [DiagLLLaplace, KronLLLaplace, FullLLLaplace]:
+        assert prior_structure == 'scalar'
 
     hyperparameters = list()
     # set up prior precision
