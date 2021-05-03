@@ -132,8 +132,6 @@ def marglik_optimization(model, train_loader, likelihood='classification',
             hyper_optimizer.step()
             margliks.append(marglik.item())
 
-        logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]}')
-
         if margliks[-1] < best_marglik:
             best_model = deepcopy(model)
             best_precision = deepcopy(prior_prec.detach())
