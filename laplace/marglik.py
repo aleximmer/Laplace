@@ -134,8 +134,8 @@ def marglik_optimization(model, train_loader, likelihood='classification',
         losses.append(epoch_loss)
         scheduler.step()
 
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]};' 
-                     + f'lr={scheduler.get_last_lr()}')
+        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; ' 
+                     + f'Perf={epoch_perf}; lr={scheduler.get_last_lr()}')
 
         # only update hyperparameters every "Frequency" steps
         if (epoch % marglik_frequency) != 0:
