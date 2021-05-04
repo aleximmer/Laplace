@@ -412,7 +412,6 @@ class Laplace(ABC):
     @property
     def H_factor(self):
         sigma2 = self.sigma_noise.square()
-        print(sigma2, self.temperature)
         return 1 / sigma2 * self.temperature
 
 
@@ -422,9 +421,9 @@ class FullLaplace(Laplace):
     #       do in lazy way with a flag probably.
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, **backend_kwargs):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, **backend_kwargs)
+                         prior_mean, temperature, backend, **backend_kwargs)
         self._posterior_scale = None
 
     def _init_H(self):
@@ -473,9 +472,9 @@ class KronLaplace(Laplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, **backend_kwargs):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, **backend_kwargs)
+                         prior_mean, temperature, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
@@ -520,9 +519,9 @@ class DiagLaplace(Laplace):
     # TODO: caching prior_precision_diag for fast lazy computation?
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, **backend_kwargs):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, **backend_kwargs)
+                         prior_mean, temperature, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params, device=self._device)
