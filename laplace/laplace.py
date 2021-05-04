@@ -53,7 +53,7 @@ class Laplace(ABC):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, **backend_kwargs):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -65,6 +65,7 @@ class Laplace(ABC):
         self.n_params = len(self.mean)
         self.n_layers = len(list(self.model.parameters()))
         self.prior_precision = prior_precision
+        self.prior_mean = prior_mean
         if sigma_noise != 1 and likelihood != 'regression':
             raise ValueError('Sigma noise != 1 only available for regression.')
         self.likelihood = likelihood
@@ -267,7 +268,8 @@ class Laplace(ABC):
     def scatter(self):
         """Computes the scatter used for the marginal likelihood `m^T P_0 m`
         """
-        return (self.mean * self.prior_precision_diag) @ self.mean
+        delta = (self.mean - self.prior_mean)
+        return (delta * self.prior_precision_diag) @ delta
 
     @property
     def log_det_prior_precision(self):
@@ -325,6 +327,26 @@ class Laplace(ABC):
 
         else:
             raise ValueError('Mismatch of prior and model. Diagonal, scalar, or per-layer prior.')
+
+    @property
+    def prior_mean(self):
+        return self._prior_mean
+
+    @prior_mean.setter
+    def prior_mean(self, prior_mean):
+        if np.isscalar(prior_mean) and np.isreal(prior_mean):
+            self._prior_mean = torch.tensor(prior_mean, device=self._device)
+        elif torch.is_tensor(prior_mean):
+            if prior_mean.ndim == 0:
+                self._prior_mean = prior_mean.reshape(-1).to(self._device)
+            elif prior_mean.ndim == 1:
+                if not len(prior_mean) in [1, self.n_params]:
+                    raise ValueError('Invalid length of prior mean.')
+                self._prior_mean = prior_mean
+            else:
+                raise ValueError('Prior mean has too many dimensions!')
+        else:
+            raise ValueError('Invalid argument type of prior mean.')
 
     # TODO: protect prior precision and sigma updates when covariance computed/update covariance?
     @property
@@ -390,6 +412,7 @@ class Laplace(ABC):
     @property
     def H_factor(self):
         sigma2 = self.sigma_noise.square()
+        print(sigma2, self.temperature)
         return 1 / sigma2 * self.temperature
 
 
