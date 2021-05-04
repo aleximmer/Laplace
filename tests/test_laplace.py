@@ -11,6 +11,7 @@ from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
 from tests.utils import jacobians_naive
 
 
+torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 

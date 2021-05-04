@@ -12,6 +12,7 @@ from laplace.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive
 
 
+torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 
 
