@@ -50,12 +50,22 @@ def marglik_optimization(model, train_loader, likelihood='classification',
     if backend_kwargs is None:
         backend_kwargs = dict()
     device = parameters_to_vector(model.parameters()).device
-    H = len(list(model.parameters()))
-    P = len(parameters_to_vector(model.parameters()))
     N = len(train_loader.dataset)
 
-    if laplace in [DiagLLLaplace, KronLLLaplace, FullLLLaplace]:
-        assert prior_structure == 'scalar'
+    last_layer = laplace in [DiagLLLaplace, KronLLLaplace, FullLLLaplace]
+    if last_layer:  # specific to last layer
+        assert prior_structure != 'layerwise', 'Not supported'
+        lap = laplace(model, likelihood, sigma_noise=1., prior_precision=1.,
+                      backend=backend, **backend_kwargs)
+        X, _ = next(iter(train_loader))
+        with torch.no_grad():
+            lap.model.find_last_layer(X.to(device))
+        last_layer_model = lap.model.last_layer
+        H = len(list(last_layer_model.parameters()))
+        P = len(parameters_to_vector(last_layer_model.parameters()))
+    else:
+        H = len(list(model.parameters()))
+        P = len(parameters_to_vector(model.parameters()))
 
     hyperparameters = list()
     # set up prior precision
@@ -100,14 +110,18 @@ def marglik_optimization(model, train_loader, likelihood='classification',
             X, y = X.to(device), y.to(device)
             M = len(y)
             optimizer.zero_grad()
-            theta = parameters_to_vector(model.parameters())
             if likelihood == 'regression':
                 sigma_noise = torch.exp(log_sigma_noise).detach()
                 crit_factor = 1 / (2 * sigma_noise.square())
             else:
                 crit_factor = 1
             prior_prec = torch.exp(log_prior_prec).detach()
-            delta = expand_prior_precision(prior_prec, model)
+            if last_layer:
+                theta = parameters_to_vector(last_layer_model.parameters())
+                delta = expand_prior_precision(prior_prec, last_layer_model)
+            else:
+                theta = parameters_to_vector(model.parameters())
+                delta = expand_prior_precision(prior_prec, model)
             f = model(X)
             loss = N / M * crit_factor * criterion(f, y) + 0.5 * (delta * theta) @ theta
             loss.backward()
@@ -120,7 +134,8 @@ def marglik_optimization(model, train_loader, likelihood='classification',
         losses.append(epoch_loss)
         scheduler.step()
 
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; Perf={epoch_perf}; lr={scheduler.get_last_lr()}')
+        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]};' 
+                     + f'lr={scheduler.get_last_lr()}')
 
         # only update hyperparameters every "Frequency" steps
         if (epoch % marglik_frequency) != 0:
