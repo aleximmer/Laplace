@@ -174,7 +174,7 @@ def marglik_optimization(model, train_loader, likelihood='classification',
     lap = laplace(model, likelihood, sigma_noise=best_sigma, prior_precision=best_precision,
                   backend=backend, **backend_kwargs)
     lap.fit(train_loader)
-    return lap, margliks, losses
+    return lap, model, margliks, losses
 
 
 def expand_prior_precision(prior_prec, model):
