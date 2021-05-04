@@ -61,7 +61,6 @@ def marglik_optimization(model, train_loader, likelihood='classification',
         with torch.no_grad():
             lap.model.find_last_layer(X.to(device))
         last_layer_model = lap.model.last_layer
-        H = len(list(last_layer_model.parameters()))
         P = len(parameters_to_vector(last_layer_model.parameters()))
     else:
         H = len(list(model.parameters()))
@@ -184,7 +183,7 @@ def expand_prior_precision(prior_prec, model):
     if len(prior_prec) == 1:  # scalar
         return torch.ones(P, device=device) * prior_prec
     elif len(prior_prec) == P:  # full diagonal
-        return prior_prec
+        return prior_prec.to(device)
     else:
         return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
                           in zip(prior_prec, model.parameters())])
