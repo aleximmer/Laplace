@@ -11,6 +11,7 @@ from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
 from tests.utils import jacobians_naive
 
 
+torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
@@ -114,6 +115,48 @@ def test_laplace_init_precision(laplace, model):
     precision = '1.5'
     with pytest.raises(ValueError):
         lap = laplace(model, likelihood='regression', prior_precision=precision)
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_init_prior_mean_and_scatter(laplace, model):
+    mean = parameters_to_vector(model.parameters())
+    P = len(mean)
+    lap_scalar_mean = laplace(model, 'classification', 
+                              prior_precision=1e-2, prior_mean=1.)
+    assert torch.allclose(lap_scalar_mean.prior_mean, torch.tensor([1.]))
+    lap_tensor_mean = laplace(model, 'classification', 
+                              prior_precision=1e-2, prior_mean=torch.ones(1))
+    assert torch.allclose(lap_tensor_mean.prior_mean, torch.tensor([1.]))
+    lap_tensor_scalar_mean = laplace(model, 'classification', 
+                                     prior_precision=1e-2, prior_mean=torch.ones(1)[0])
+    assert torch.allclose(lap_tensor_scalar_mean.prior_mean, torch.tensor(1.))
+    lap_tensor_full_mean = laplace(model, 'classification', 
+                                   prior_precision=1e-2, prior_mean=torch.ones(P))
+    assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(P))
+    expected = ((mean - 1) * 1e-2) @ (mean - 1)
+    assert expected.ndim == 0 
+    assert torch.allclose(lap_scalar_mean.scatter, expected)
+    assert lap_scalar_mean.scatter.shape == expected.shape
+    assert torch.allclose(lap_tensor_mean.scatter, expected)
+    assert lap_tensor_mean.scatter.shape == expected.shape
+    assert torch.allclose(lap_tensor_scalar_mean.scatter, expected)
+    assert lap_tensor_scalar_mean.scatter.shape == expected.shape
+    assert torch.allclose(lap_tensor_full_mean.scatter, expected)
+    assert lap_tensor_full_mean.scatter.shape == expected.shape
+
+    # too many dims
+    with pytest.raises(ValueError):
+        prior_mean = torch.ones(P).unsqueeze(-1)
+        laplace(model, 'classification', prior_precision=1e-2, prior_mean=prior_mean)
+
+    # unmatched dim
+    with pytest.raises(ValueError):
+        prior_mean = torch.ones(P-3)
+        laplace(model, 'classification', prior_precision=1e-2, prior_mean=prior_mean)
+
+    # invalid argument type
+    with pytest.raises(ValueError):
+        laplace(model, 'classification', prior_precision=1e-2, prior_mean='72')
 
 
 @pytest.mark.parametrize('laplace', flavors)

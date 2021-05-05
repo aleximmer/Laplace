@@ -66,8 +66,9 @@ class LLLaplace(Laplace):
             self.mean = None
             self.n_params = None
             self.n_layers = None
-            self._cached_prior_precision = prior_precision
-            self._cached_prior_mean = prior_mean
+            # ignore checks of prior mean setter temporarily, check on .fit()
+            self._prior_precision = prior_precision
+            self._prior_mean = prior_mean
         self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader):
@@ -90,8 +91,9 @@ class LLLaplace(Laplace):
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self.n_layers = len(list(self.model.last_layer.parameters()))
-            self.prior_precision = self._cached_prior_precision
-            del self._cached_prior_precision
+            # here, check the already set prior precision again
+            self.prior_precision = self._prior_precision
+            self.prior_mean = self._prior_mean
 
         super().fit(train_loader)
 

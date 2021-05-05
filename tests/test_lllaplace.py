@@ -12,6 +12,7 @@ from laplace.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive
 
 
+torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 
@@ -86,7 +87,7 @@ def test_laplace_init_noise(laplace, model):
 def test_laplace_init_precision(laplace, model):
     feature_extractor = FeatureExtractor(model, last_layer_name='1')
     model_params = list(feature_extractor.last_layer.parameters())
-    setattr(model, 'n_layers', 1)  # number of parameter groups
+    setattr(model, 'n_layers', 2)  # number of parameter groups
     setattr(model, 'n_params', len(parameters_to_vector(model_params)))
     # float
     precision = 10.6
@@ -101,9 +102,15 @@ def test_laplace_init_precision(laplace, model):
     lap = laplace(model, likelihood='regression', prior_precision=precision,
                   last_layer_name='1')
     # torch.tensor 1-dim param-shape
-    precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
-    lap = laplace(model, likelihood='regression', prior_precision=precision,
-                  last_layer_name='1')
+    if laplace == KronLLLaplace:  # kron only supports per layer
+        with pytest.raises(ValueError):
+            precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
+            lap = laplace(model, likelihood='regression', prior_precision=precision,
+                        last_layer_name='1')
+    else:
+        precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
+        lap = laplace(model, likelihood='regression', prior_precision=precision,
+                    last_layer_name='1')
     # torch.tensor 1-dim layer-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
     lap = laplace(model, likelihood='regression', prior_precision=precision,
@@ -128,7 +135,48 @@ def test_laplace_init_precision(laplace, model):
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_laplace_init_precision(laplace, model):
+def test_laplace_init_prior_mean_and_scatter(laplace, model):
+    lap_scalar_mean = laplace(model, 'classification', last_layer_name='1', 
+                              prior_precision=1e-2, prior_mean=1.)
+    assert torch.allclose(lap_scalar_mean.prior_mean, torch.tensor([1.]))
+    lap_tensor_mean = laplace(model, 'classification', last_layer_name='1',
+                              prior_precision=1e-2, prior_mean=torch.ones(1))
+    assert torch.allclose(lap_tensor_mean.prior_mean, torch.tensor([1.]))
+    lap_tensor_scalar_mean = laplace(model, 'classification', last_layer_name='1',
+                                     prior_precision=1e-2, prior_mean=torch.ones(1)[0])
+    assert torch.allclose(lap_tensor_scalar_mean.prior_mean, torch.tensor(1.))
+    lap_tensor_full_mean = laplace(model, 'classification', last_layer_name='1',
+                                   prior_precision=1e-2, prior_mean=torch.ones(20*2+2))
+    assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(20*2+2))
+    expected = lap_scalar_mean.scatter
+    assert expected.ndim == 0 
+    assert torch.allclose(lap_tensor_mean.scatter, expected)
+    assert lap_tensor_mean.scatter.shape == expected.shape
+    assert torch.allclose(lap_tensor_scalar_mean.scatter, expected)
+    assert lap_tensor_scalar_mean.scatter.shape == expected.shape
+    assert torch.allclose(lap_tensor_full_mean.scatter, expected)
+    assert lap_tensor_full_mean.scatter.shape == expected.shape
+
+    # too many dims
+    with pytest.raises(ValueError):
+        prior_mean = torch.ones(20*2+2).unsqueeze(-1)
+        laplace(model, 'classification', last_layer_name='1',
+                prior_precision=1e-2, prior_mean=prior_mean)
+
+    # unmatched dim
+    with pytest.raises(ValueError):
+        prior_mean = torch.ones(20*2-3)
+        laplace(model, 'classification', last_layer_name='1',
+                prior_precision=1e-2, prior_mean=prior_mean)
+
+    # invalid argument type
+    with pytest.raises(ValueError):
+        laplace(model, 'classification', last_layer_name='1',
+                prior_precision=1e-2, prior_mean='72')
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_init_temperature(laplace, model):
     # valid float
     T = 1.1
     lap = laplace(model, likelihood='classification', temperature=T,
