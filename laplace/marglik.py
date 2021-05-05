@@ -1,8 +1,8 @@
 from copy import deepcopy
 import numpy as np
 import torch
-from torch.optim import Adam
-from torch.optim.lr_scheduler import ExponentialLR
+from torch.optim import Adam, SGD
+from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingLR
 from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
@@ -13,11 +13,16 @@ from laplace import (DiagLaplace, KronLaplace, FullLaplace,
 from laplace.curvature import KazukiGGN
 
 
-def marglik_optimization(model, train_loader, likelihood='classification',
+def marglik_optimization(model,
+                         train_loader,
+                         likelihood='classification',
                          prior_structure='layerwise',
+                         temperature=1.,
                          n_epochs=500,
                          lr=1e-3,
                          lr_min=None,
+                         optimizer='Adam',
+                         scheduler='exp',
                          n_epochs_burnin=0,
                          n_hypersteps=100,
                          marglik_frequency=1,
@@ -37,12 +42,19 @@ def marglik_optimization(model, train_loader, likelihood='classification',
         'classification' or 'regression'
     prior_structure : str
         'scalar', 'layerwise', 'diagonal'
+    temperature : float default=1
+        factor for the likelihood for 'overcounting' data.
+        Often required when using data augmentation.
     lr : float
         learning rate for model optimizer
     lr_min : float
         minimum learning rate, defaults to lr and hence no decay
         to have the learning rate decay from 1e-3 to 1e-6, set
         lr=1e-3 and lr_min=1e-6.
+    optimizer : str
+        either 'Adam' or 'SGD'
+    scheduler : str
+        either 'exp' for exponential and 'cos' for cosine decay towards lr_min
     """
     # TODO: track deltas and sigmas
     if lr_min is None:
@@ -88,10 +100,24 @@ def marglik_optimization(model, train_loader, likelihood='classification',
 
     # set up model optimizer
     # stochastic optimizers has exponentially decaying learning rate to min_lr
+    if optimizer == 'Adam':
+        optimizer = Adam(model.parameters(), lr=lr)
+    elif optimizer == 'SGD':
+        lr = lr / (N * temperature)  # sgd does not normalize internally
+        lr_min = lr_min / (N * temperature)
+        optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
+    else:
+        raise ValueError(f'Invalid optimizer {optimizer}')
+
+    n_steps = n_epochs * len(train_loader)
     min_lr_factor = lr / lr_min
-    gamma = np.exp(np.log(min_lr_factor) / n_epochs)
-    optimizer = Adam(model.parameters(), lr=lr)
-    scheduler = ExponentialLR(optimizer, gamma=gamma)
+    if scheduler == 'exp':
+        gamma = np.exp(np.log(min_lr_factor) / n_steps)
+        scheduler = ExponentialLR(optimizer, gamma=gamma)
+    elif scheduler == 'cos':
+        scheduler = CosineAnnealingLR(optimizer, n_steps, eta_min=lr_min)
+    else:
+        raise ValueError(f'Invalid scheduler {scheduler}')
 
     # set up hyperparameter optimizer
     hyper_optimizer = Adam(hyperparameters, lr=lr_hyp)
@@ -111,9 +137,9 @@ def marglik_optimization(model, train_loader, likelihood='classification',
             optimizer.zero_grad()
             if likelihood == 'regression':
                 sigma_noise = torch.exp(log_sigma_noise).detach()
-                crit_factor = 1 / (2 * sigma_noise.square())
+                crit_factor = temperature / (2 * sigma_noise.square())
             else:
-                crit_factor = 1
+                crit_factor = temperature
             prior_prec = torch.exp(log_prior_prec).detach()
             if last_layer:
                 theta = parameters_to_vector(last_layer_model.parameters())
@@ -130,8 +156,8 @@ def marglik_optimization(model, train_loader, likelihood='classification',
                 epoch_perf += criterion(f.detach(), y).item() / len(train_loader)
             else:
                 epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item() / M / len(train_loader)
+            scheduler.step()
         losses.append(epoch_loss)
-        scheduler.step()
 
         logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; ' 
                      + f'Perf={epoch_perf}; lr={scheduler.get_last_lr()}')
@@ -143,7 +169,7 @@ def marglik_optimization(model, train_loader, likelihood='classification',
         sigma_noise = 1 if likelihood == 'classification' else torch.exp(log_sigma_noise)
         prior_prec = torch.exp(log_prior_prec)
         lap = laplace(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_prec,
-                      backend=backend, **backend_kwargs)
+                      temperature=temperature, backend=backend, **backend_kwargs)
         lap.fit(train_loader)
         for _ in range(n_hypersteps):
             hyper_optimizer.zero_grad()
