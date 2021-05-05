@@ -105,15 +105,22 @@ class KazukiEF(KazukiInterface):
         return COV
 
 
+def flatten_after_batch(tensor: torch.Tensor):
+    if tensor.ndim == 1:
+        return tensor
+    else:
+        return tensor.flatten(start_dim=1)
+
+
 def _get_batch_grad(model):
     batch_grads = list()
     for module in model.modules():
         if hasattr(module, 'op_results'):
             res = module.op_results['batch_grads']
             if 'weight' in res:
-                batch_grads.append(res['weight'].flatten(start_dim=1))
+                batch_grads.append(flatten_after_batch(res['weight']))
             if 'bias' in res:
-                batch_grads.append(res['bias'].flatten(start_dim=1))
+                batch_grads.append(flatten_after_batch(res['bias']))
             if len(set(res.keys()) - {'weight', 'bias'}) > 0:
                 raise ValueError(f'Invalid parameter keys {res.keys()}')
     return torch.cat(batch_grads, dim=1)
