@@ -110,8 +110,8 @@ def marglik_optimization(model,
         raise ValueError(f'Invalid optimizer {optimizer}')
 
     n_steps = n_epochs * len(train_loader)
-    min_lr_factor = lr / lr_min
     if scheduler == 'exp':
+        min_lr_factor = lr_min / lr
         gamma = np.exp(np.log(min_lr_factor) / n_steps)
         scheduler = ExponentialLR(optimizer, gamma=gamma)
     elif scheduler == 'cos':
@@ -159,7 +159,7 @@ def marglik_optimization(model,
             scheduler.step()
         losses.append(epoch_loss)
 
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; ' 
+        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; '
                      + f'Perf={epoch_perf}; lr={scheduler.get_last_lr()}')
 
         # only update hyperparameters every "Frequency" steps
