@@ -51,21 +51,24 @@ class LLLaplace(Laplace):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         temperature=temperature, backend=backend, **backend_kwargs)
+                         prior_mean=0., temperature=temperature, backend=backend, **backend_kwargs)
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
         if self.model._found:
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
+            self.prior_mean = prior_mean
         else:
             self.mean = None
             self.n_params = None
             self.n_layers = None
-            self._cached_prior_precision = prior_precision
+            # ignore checks of prior mean setter temporarily, check on .fit()
+            self._prior_precision = prior_precision
+            self._prior_mean = prior_mean
         self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader):
@@ -88,8 +91,9 @@ class LLLaplace(Laplace):
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self.n_layers = len(list(self.model.last_layer.parameters()))
-            self.prior_precision = self._cached_prior_precision
-            del self._cached_prior_precision
+            # here, check the already set prior precision again
+            self.prior_precision = self._prior_precision
+            self.prior_mean = self._prior_mean
 
         super().fit(train_loader)
 
@@ -125,20 +129,20 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, last_layer_name, **backend_kwargs)
+                         prior_mean, temperature, backend, last_layer_name, **backend_kwargs)
 
 
 class KronLLLaplace(LLLaplace, KronLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, last_layer_name, **backend_kwargs)
+                         prior_mean, temperature, backend, last_layer_name, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
@@ -148,7 +152,7 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     # TODO list additional attributes
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  **backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         temperature, backend, last_layer_name, **backend_kwargs)
+                         prior_mean, temperature, backend, last_layer_name, **backend_kwargs)
