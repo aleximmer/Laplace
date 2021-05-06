@@ -3,7 +3,7 @@ from math import sqrt, pi
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.distributions import MultivariateNormal, Dirichlet
+from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
 from laplace.utils import parameters_per_layer, invsqrt_precision
 from laplace.matrix import Kron
@@ -190,7 +190,10 @@ class Laplace(ABC):
                 return f_mu, f_var
             # classification
             if link_approx == 'mc':
-                dist = MultivariateNormal(f_mu, f_var)
+                try:
+                    dist = MultivariateNormal(f_mu, f_var)
+                except:
+                    dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2))
                 return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))

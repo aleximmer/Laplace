@@ -107,7 +107,7 @@ class KazukiEF(KazukiInterface):
 
 def flatten_after_batch(tensor: torch.Tensor):
     if tensor.ndim == 1:
-        return tensor
+        return tensor.unsqueeze(-1)
     else:
         return tensor.flatten(start_dim=1)
 
