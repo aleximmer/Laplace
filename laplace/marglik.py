@@ -105,7 +105,7 @@ def marglik_optimization(model,
     elif optimizer == 'SGD':
         lr = lr / (N * temperature)  # sgd does not normalize internally
         lr_min = lr_min / (N * temperature)
-        optimizer = SGD(model.parameters(), lr=lr, momentum=0.9)
+        optimizer = SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True)
     else:
         raise ValueError(f'Invalid optimizer {optimizer}')
 
