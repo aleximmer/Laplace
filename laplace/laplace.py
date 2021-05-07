@@ -115,6 +115,11 @@ class Laplace(ABC):
 
         self.model.eval()
 
+        X, _ = next(iter(train_loader))
+        with torch.no_grad():
+            self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
+        setattr(self.model, 'output_size', self.n_outputs)
+
         N = len(train_loader.dataset)
         for X, y in train_loader:
             self.model.zero_grad()
@@ -123,8 +128,6 @@ class Laplace(ABC):
             self.loss += loss_batch
             self.H += H_batch
 
-        with torch.no_grad():
-            self.n_outputs = self.model(X[:1]).shape[-1]
         self.n_data = N
 
     def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
