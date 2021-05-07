@@ -87,7 +87,7 @@ class LLLaplace(Laplace):
         if not self.model._found:
             X, _ = next(iter(train_loader))
             with torch.no_grad():
-                self.model.find_last_layer(X.to(self._device))
+                self.model.find_last_layer(X[:1].to(self._device))
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self.n_layers = len(list(self.model.last_layer.parameters()))
