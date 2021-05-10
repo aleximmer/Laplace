@@ -15,8 +15,11 @@ from laplace.curvature import KazukiGGN
 
 def marglik_optimization(model,
                          train_loader,
+                         valid_loader=None,
                          likelihood='classification',
                          prior_structure='layerwise',
+                         prior_prec_init=1.,
+                         sigma_noise_init=1.,
                          temperature=1.,
                          n_epochs=500,
                          lr=1e-3,
@@ -80,22 +83,27 @@ def marglik_optimization(model,
 
     hyperparameters = list()
     # set up prior precision
+    log_prior_prec_init = np.log(prior_prec_init)
     if prior_structure == 'scalar':
-        log_prior_prec = torch.zeros(1, requires_grad=True, device=device)
+        log_prior_prec = log_prior_prec_init * torch.ones(1, device=device)
     elif prior_structure == 'layerwise':
-        log_prior_prec = torch.zeros(H, requires_grad=True, device=device)
+        log_prior_prec = log_prior_prec_init * torch.ones(H, device=device)
     elif prior_structure == 'diagonal':
-        log_prior_prec = torch.zeros(P, requires_grad=True, device=device)
+        log_prior_prec = log_prior_prec_init * torch.ones(P, device=device)
     else:
         raise ValueError(f'Invalid prior structure {prior_structure}')
+    log_prior_prec.requires_grad = True
     hyperparameters.append(log_prior_prec)
+    print(log_prior_prec)
 
     # set up loss
     if likelihood == 'classification':
         criterion = CrossEntropyLoss(reduction='sum')
     elif likelihood == 'regression':
         criterion = MSELoss(reduction='sum')
-        log_sigma_noise = torch.zeros(1, requires_grad=True, device=device)
+        log_sigma_noise_init = np.log(sigma_noise_init)
+        log_sigma_noise = log_sigma_noise_init * torch.ones(1, device=device)
+        log_sigma_noise.requires_grad = True
         hyperparameters.append(log_sigma_noise)
 
     # set up model optimizer
@@ -159,11 +167,17 @@ def marglik_optimization(model,
             scheduler.step()
         losses.append(epoch_loss)
 
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; '
-                     + f'Perf={epoch_perf}; lr={scheduler.get_last_lr()}')
+        if valid_loader is not None:
+            with torch.no_grad():
+                valid_perf = valid_performance(model, valid_loader, likelihood, device)
+            logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; '
+                         + f'Perf={epoch_perf}; Valid perf={valid_perf}; lr={scheduler.get_last_lr()[0]}')
+        else:
+            logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; '
+                         + f'Perf={epoch_perf}; lr={scheduler.get_last_lr()[0]}')
 
         # only update hyperparameters every "Frequency" steps
-        if (epoch % marglik_frequency) != 0:
+        if (epoch % marglik_frequency) != 0 or epoch < n_epochs_burnin:
             continue
 
         sigma_noise = 1 if likelihood == 'classification' else torch.exp(log_sigma_noise)
@@ -213,3 +227,16 @@ def expand_prior_precision(prior_prec, model):
     else:
         return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
                           in zip(prior_prec, model.parameters())])
+
+
+def valid_performance(model, test_loader, likelihood, device):
+    N = len(test_loader.dataset)
+    perf = 0
+    for X, y in test_loader:
+        X, y = X.to(device), y.to(device)
+        if likelihood == 'classification':
+            perf += (torch.argmax(model(X), dim=-1) == y).sum() / N
+        else:
+            perf += (model(X) - y).square().sum().sqrt() / N
+    return perf.item()
+
