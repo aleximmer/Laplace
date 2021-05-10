@@ -94,7 +94,6 @@ def marglik_optimization(model,
         raise ValueError(f'Invalid prior structure {prior_structure}')
     log_prior_prec.requires_grad = True
     hyperparameters.append(log_prior_prec)
-    print(log_prior_prec)
 
     # set up loss
     if likelihood == 'classification':
