@@ -19,14 +19,9 @@ def cleanup(module):
 class BackPackInterface(CurvatureInterface):
 
     def __init__(self, model, likelihood, last_layer=False):
-        super().__init__(model, likelihood)
-        self.last_layer = last_layer
+        super().__init__(model, likelihood, last_layer)
         extend(self._model)
         extend(self.lossfunc)
-
-    @property
-    def _model(self):
-        return self.model.last_layer if self.last_layer else self.model
 
     @staticmethod
     def jacobians(model, X):

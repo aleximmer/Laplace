@@ -17,8 +17,7 @@ class KazukiInterface(CurvatureInterface):
     def __init__(self, model, likelihood, last_layer=False):
         if likelihood != 'classification':
             raise ValueError('This backend does only support classification currently.')
-        self.last_layer = last_layer
-        super().__init__(model, likelihood)
+        super().__init__(model, likelihood, last_layer)
 
     @staticmethod
     def jacobians(model, X):
@@ -68,19 +67,27 @@ class KazukiInterface(CurvatureInterface):
         return kron
 
     def diag(self, X, y, **kwargs):
-        curv = fisher_for_cross_entropy(self.model, self.ggn_type, SHAPE_DIAG, inputs=X, targets=y)
-        diag_ggn = curv.matrices_to_vector(None)
         with torch.no_grad():
-            loss = self.lossfunc(self.model(X), y)
+            if self.last_layer:
+                f, X = self.model.forward_with_features(X)
+            else:
+                f = self.model(X)
+            loss = self.lossfunc(f, y)
+        curv = fisher_for_cross_entropy(self._model, self.ggn_type, SHAPE_DIAG, inputs=X, targets=y)
+        diag_ggn = curv.matrices_to_vector(None)
         return self.factor * loss, self.factor * diag_ggn
 
     def kron(self, X, y, N, **wkwargs) -> [torch.Tensor, Kron]:
+        with torch.no_grad():
+            if self.last_layer:
+                f, X = self.model.forward_with_features(X)
+            else:
+                f = self.model(X)
+            loss = self.lossfunc(f, y)
+        curv = fisher_for_cross_entropy(self._model, self.ggn_type, SHAPE_KRON, inputs=X, targets=y)
         M = len(y)
-        curv = fisher_for_cross_entropy(self.model, self.ggn_type, SHAPE_KRON, inputs=X, targets=y)
         kron = Kron(self._get_kron_factors(curv, M))
         kron = self._rescale_kron_factors(kron, N)
-        with torch.no_grad():
-            loss = self.lossfunc(self.model(X), y)
         return self.factor * loss, self.factor * kron
 
     def full(self, X, y, **kwargs):

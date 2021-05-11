@@ -5,16 +5,21 @@ from torch.nn import MSELoss, CrossEntropyLoss
 
 class CurvatureInterface(ABC):
 
-    def __init__(self, model, likelihood):
+    def __init__(self, model, likelihood, last_layer=False):
         assert likelihood in ['regression', 'classification']
         self.likelihood = likelihood
         self.model = model
+        self.last_layer = last_layer
         if likelihood == 'regression':
             self.lossfunc = MSELoss(reduction='sum')
             self.factor = 0.5  # convert to standard Gauss. log N(y|f,1)
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.
+
+    @property
+    def _model(self):
+        return self.model.last_layer if self.last_layer else self.model
 
     @abstractstaticmethod
     def jacobians(model, X):
