@@ -5,7 +5,6 @@ from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import ExponentialLR, CosineAnnealingLR
 from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
-from torch.utils.data import DataLoader
 import logging
 
 from laplace import (DiagLaplace, KronLaplace, FullLaplace,
@@ -83,7 +82,7 @@ def marglik_optimization(model,
 
     hyperparameters = list()
     # set up prior precision
-    log_prior_prec_init = np.log(prior_prec_init)
+    log_prior_prec_init = np.log(temperature * prior_prec_init)
     if prior_structure == 'scalar':
         log_prior_prec = log_prior_prec_init * torch.ones(1, device=device)
     elif prior_structure == 'layerwise':
@@ -97,9 +96,9 @@ def marglik_optimization(model,
 
     # set up loss
     if likelihood == 'classification':
-        criterion = CrossEntropyLoss(reduction='sum')
+        criterion = CrossEntropyLoss(reduction='mean')
     elif likelihood == 'regression':
-        criterion = MSELoss(reduction='sum')
+        criterion = MSELoss(reduction='mean')
         log_sigma_noise_init = np.log(sigma_noise_init)
         log_sigma_noise = log_sigma_noise_init * torch.ones(1, device=device)
         log_sigma_noise.requires_grad = True
@@ -110,8 +109,6 @@ def marglik_optimization(model,
     if optimizer == 'Adam':
         optimizer = Adam(model.parameters(), lr=lr)
     elif optimizer == 'SGD':
-        lr = lr / (N * temperature)  # sgd does not normalize internally
-        lr_min = lr_min / (N * temperature)
         optimizer = SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True)
     else:
         raise ValueError(f'Invalid optimizer {optimizer}')
@@ -130,7 +127,7 @@ def marglik_optimization(model,
     hyper_optimizer = Adam(hyperparameters, lr=lr_hyp)
 
     best_marglik = np.inf
-    best_model = None
+    best_model_dict = None
     best_precision = None
     losses = list()
     margliks = list()
@@ -140,7 +137,6 @@ def marglik_optimization(model,
         epoch_perf = 0
         for X, y in train_loader:
             X, y = X.to(device), y.to(device)
-            M = len(y)
             optimizer.zero_grad()
             if likelihood == 'regression':
                 sigma_noise = torch.exp(log_sigma_noise).detach()
@@ -155,14 +151,14 @@ def marglik_optimization(model,
                 theta = parameters_to_vector(model.parameters())
                 delta = expand_prior_precision(prior_prec, model)
             f = model(X)
-            loss = N / M * crit_factor * criterion(f, y) + 0.5 * (delta * theta) @ theta
+            loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()
             optimizer.step()
             epoch_loss += loss.cpu().item() / len(train_loader)
             if likelihood == 'regression':
-                epoch_perf += criterion(f.detach(), y).item() / len(train_loader)
+                epoch_perf += (f.detach() - y).square().sum() / N
             else:
-                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item() / M / len(train_loader)
+                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item() / N
             scheduler.step()
         losses.append(epoch_loss)
 
@@ -197,7 +193,7 @@ def marglik_optimization(model,
             margliks.append(marglik.item())
 
         if margliks[-1] < best_marglik:
-            best_model = deepcopy(model)
+            best_model_dict = deepcopy(model.state_dict())
             best_precision = deepcopy(prior_prec.detach())
             best_sigma = 1 if likelihood == 'classification' else deepcopy(sigma_noise.detach())
             best_marglik = margliks[-1]
@@ -208,7 +204,7 @@ def marglik_optimization(model,
                          + f'No improvement over {best_marglik}')
 
     logging.info('MARGLIK: finished training. Recover best model and fit Lapras.')
-    model.load_state_dict(best_model.state_dict())
+    model.load_state_dict(best_model_dict)
     lap = laplace(model, likelihood, sigma_noise=best_sigma, prior_precision=best_precision,
                   backend=backend, **backend_kwargs)
     lap.fit(train_loader)
@@ -236,6 +232,5 @@ def valid_performance(model, test_loader, likelihood, device):
         if likelihood == 'classification':
             perf += (torch.argmax(model(X), dim=-1) == y).sum() / N
         else:
-            perf += (model(X) - y).square().sum().sqrt() / N
+            perf += (model(X) - y).square().sum() / N
     return perf.item()
-
