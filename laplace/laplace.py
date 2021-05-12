@@ -207,7 +207,7 @@ class Laplace(ABC):
                 sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
                 alpha = 1/f_var_diag * (1 - 2/K + torch.exp(f_mu)/(K**2) * sum_exp)
                 dist = Dirichlet(alpha)
-                return dist.mean
+                return torch.nan_to_num(dist.mean, nan=1.0)
         else:
             samples = self.nn_predictive_samples(X, n_samples)
             if self.likelihood == 'regression':

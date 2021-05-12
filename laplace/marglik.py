@@ -97,6 +97,7 @@ def marglik_optimization(model,
     # set up loss
     if likelihood == 'classification':
         criterion = CrossEntropyLoss(reduction='mean')
+        sigma_noise = 1.
     elif likelihood == 'regression':
         criterion = MSELoss(reduction='mean')
         log_sigma_noise_init = np.log(sigma_noise_init)
@@ -210,8 +211,11 @@ def marglik_optimization(model,
                          + f'No improvement over {best_marglik:.2f}')
 
     logging.info('MARGLIK: finished training. Recover best model and fit Lapras.')
-    model.load_state_dict(best_model_dict)
-    lap = laplace(model, likelihood, sigma_noise=best_sigma, prior_precision=best_precision,
+    if best_model_dict is not None:
+        model.load_state_dict(best_model_dict)
+        sigma_noise = best_sigma
+        prior_prec = best_precision
+    lap = laplace(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_prec,
                   backend=backend, **backend_kwargs)
     lap.fit(train_loader)
     return lap, model, margliks, losses
