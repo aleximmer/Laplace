@@ -109,7 +109,12 @@ def marglik_optimization(model,
     if optimizer == 'Adam':
         optimizer = Adam(model.parameters(), lr=lr)
     elif optimizer == 'SGD':
-        optimizer = SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True)
+        # fixup parameters should have 10x smaller learning rate
+        is_fixup = lambda param: param.size() == torch.Size([1])  # scalars
+        fixup_params = [p for p in model.parameters() if is_fixup(p)]
+        wrn_params = [p for p in model.parameters() if not is_fixup(p)]
+        params = [{'params': wrn_params}, {'params': fixup_params, 'lr': lr / 10.}]
+        optimizer = SGD(params, lr=lr, momentum=0.9, nesterov=True)
     else:
         raise ValueError(f'Invalid optimizer {optimizer}')
 
@@ -165,11 +170,12 @@ def marglik_optimization(model,
         if valid_loader is not None:
             with torch.no_grad():
                 valid_perf = valid_performance(model, valid_loader, likelihood, device)
-            logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; '
-                         + f'Perf={epoch_perf}; Valid perf={valid_perf}; lr={scheduler.get_last_lr()[0]}')
+            logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}; '
+                         + f'Perf={epoch_perf:.3f}; Valid perf={valid_perf:.3f}; '
+                         + f'lr={scheduler.get_last_lr()[0]:.7f}')
         else:
-            logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]}; '
-                         + f'Perf={epoch_perf}; lr={scheduler.get_last_lr()[0]}')
+            logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}; '
+                         + f'Perf={epoch_perf:.3f}; lr={scheduler.get_last_lr()[0]:.7f}')
 
         # only update hyperparameters every "Frequency" steps
         if (epoch % marglik_frequency) != 0 or epoch < n_epochs_burnin:
@@ -197,11 +203,11 @@ def marglik_optimization(model,
             best_precision = deepcopy(prior_prec.detach())
             best_sigma = 1 if likelihood == 'classification' else deepcopy(sigma_noise.detach())
             best_marglik = margliks[-1]
-            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik}. '
+            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '
                          + 'Saving new best model.')
         else:
-            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]}.'
-                         + f'No improvement over {best_marglik}')
+            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}.'
+                         + f'No improvement over {best_marglik:.2f}')
 
     logging.info('MARGLIK: finished training. Recover best model and fit Lapras.')
     model.load_state_dict(best_model_dict)
