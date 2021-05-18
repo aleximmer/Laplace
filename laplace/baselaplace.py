@@ -13,7 +13,7 @@ from laplace.curvature import BackPackGGN
 __all__ = ['FullLaplace', 'KronLaplace', 'DiagLaplace']
 
 
-class Laplace(ABC):
+class BaseLaplace(ABC):
     """Laplace approximation for a pytorch neural network.
     The Laplace approximation is a Gaussian distribution but can have different
     sparsity structures. Further, it provides an approximation to the marginal
@@ -421,10 +421,13 @@ class Laplace(ABC):
         return 1 / sigma2 * self.temperature
 
 
-class FullLaplace(Laplace):
+class FullLaplace(BaseLaplace):
     # TODO: list additional attributes
     # TODO: recompute scale once prior precision or sigma noise change?
     #       do in lazy way with a flag probably.
+
+    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    id = ('all', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
@@ -474,8 +477,11 @@ class FullLaplace(Laplace):
         return dist.sample((n_samples,))
 
 
-class KronLaplace(Laplace):
+class KronLaplace(BaseLaplace):
     # TODO list additional attributes
+
+    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    id = ('all', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
@@ -512,7 +518,7 @@ class KronLaplace(Laplace):
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
         return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
 
-    @Laplace.prior_precision.setter
+    @BaseLaplace.prior_precision.setter
     def prior_precision(self, prior_precision):
         # Extend setter from Laplace to restrict prior precision structure.
         super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
@@ -520,9 +526,12 @@ class KronLaplace(Laplace):
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
 
-class DiagLaplace(Laplace):
+class DiagLaplace(BaseLaplace):
     # TODO: list additional attributes
     # TODO: caching prior_precision_diag for fast lazy computation?
+
+    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    id = ('all', 'diag')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
