@@ -129,7 +129,7 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     # TODO list additional attributes
 
     # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('last-layer', 'full')
+    id = ('last_layer', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
@@ -142,7 +142,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     # TODO list additional attributes
 
     # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('last-layer', 'kron')
+    id = ('last_layer', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
@@ -158,7 +158,7 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     # TODO list additional attributes
 
     # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('last-layer', 'diag')
+    id = ('last_layer', 'diag')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,

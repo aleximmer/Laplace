@@ -2,7 +2,7 @@ from laplace.baselaplace import BaseLaplace
 from laplace import *
 
 
-def Laplace(model, likelihood, weights='last-layer', cov_structure='kron', *args, **kwargs):
+def Laplace(model, likelihood, weights='last_layer', cov_structure='kron', *args, **kwargs):
     laplace_map = {subclass.id: subclass for subclass in _all_subclasses(BaseLaplace)
                    if hasattr(subclass, 'id')}
     laplace_class = laplace_map[(weights, cov_structure)]

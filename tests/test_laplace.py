@@ -13,7 +13,7 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLaplace, KronLaplace, DiagLaplace,
            FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 ids = [('all', 'full'), ('all', 'kron'), ('all', 'diag'),
-       ('last-layer', 'full'), ('last-layer', 'kron'), ('last-layer', 'diag')]
+       ('last_layer', 'full'), ('last_layer', 'kron'), ('last_layer', 'diag')]
 
 
 @pytest.fixture
