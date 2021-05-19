@@ -196,7 +196,7 @@ class Laplace(ABC):
                 try:
                     dist = MultivariateNormal(f_mu, f_var)
                 except:
-                    dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2))
+                    dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
                 return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
