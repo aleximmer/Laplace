@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from math import sqrt, pi
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
@@ -197,7 +198,7 @@ class Laplace(ABC):
                     dist = MultivariateNormal(f_mu, f_var)
                 except:
                     dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
-                return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
+                return torch.softmax(dist.rsample((n_samples,)), dim=-1).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
                 return torch.softmax(kappa * f_mu, dim=-1)
@@ -240,7 +241,7 @@ class Laplace(ABC):
             f_mu, f_var = self.glm_predictive_distribution(X)
             assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
             dist = MultivariateNormal(f_mu, f_var)
-            samples = dist.sample((n_samples,))
+            samples = dist.rsample((n_samples,))
             if self.likelihood == 'regression':
                 return samples
             return torch.softmax(samples, dim=-1)
@@ -252,13 +253,13 @@ class Laplace(ABC):
     def glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(self.model, X)
         f_var = self.functional_variance(Js)
-        return f_mu.detach(), f_var.detach()
+        return f_mu.detach(), f_var
 
     def nn_predictive_samples(self, X, n_samples=100):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.parameters())
-            fs.append(self.model(X.to(self._device)).detach())
+            fs.append(self.model(X.to(self._device)))
         vector_to_parameters(self.mean, self.model.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
@@ -377,21 +378,35 @@ class Laplace(ABC):
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
-                                 init_prior_prec=1., verbose=False):
-        if method == 'marglik':
-            self.prior_precision = init_prior_prec
-            log_prior_prec = self.prior_precision.log()
-            log_prior_prec.requires_grad = True
-            optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
-            for _ in range(n_steps):
+                                 init_prior_prec=1., val_loader=None, pred_type='glm',
+                                 link_approx='mc', n_samples=100, verbose=False):
+        if (method == 'nll') and (val_loader is None):
+            raise ValueError('A validation DataLoader is needed to optimize the NLL.')
+        self.prior_precision = init_prior_prec
+        log_prior_prec = self.prior_precision.log()
+        log_prior_prec.requires_grad = True
+        optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
+        for _ in range(n_steps):
+            if method == 'marglik':
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
                 neg_marglik = -self.marginal_likelihood(prior_precision=prior_prec)
                 neg_marglik.backward()
                 optimizer.step()
-            self.prior_precision = log_prior_prec.detach().exp()
-        else:
-            raise ValueError('For now only marglik is implemented.')
+            elif method == 'nll':
+                for X, y in val_loader:
+                    optimizer.zero_grad()
+                    prior_prec = log_prior_prec.exp()
+                    self.prior_precision = prior_prec
+                    self._posterior_scale = None
+                    out = self(X.to(self._device), pred_type=pred_type,
+                               link_approx=link_approx, n_samples=n_samples)
+                    nll = F.nll_loss(out, y.to(self._device))
+                    nll.backward()
+                    optimizer.step()
+            else:
+                raise ValueError('Only marglik and nll are supported.')
+        self.prior_precision = log_prior_prec.detach().exp()
         if verbose:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
@@ -471,7 +486,7 @@ class FullLaplace(Laplace):
 
     def sample(self, n_samples=100):
         dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
-        return dist.sample((n_samples,))
+        return dist.rsample((n_samples,))
 
 
 class KronLaplace(Laplace):

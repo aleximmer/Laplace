@@ -100,13 +100,13 @@ class LLLaplace(Laplace):
     def glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
         f_var = self.functional_variance(Js)
-        return f_mu.detach(), f_var.detach()
+        return f_mu.detach(), f_var
 
     def nn_predictive_samples(self, X, n_samples=100):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            fs.append(self.model(X.to(self._device)).detach())
+            fs.append(self.model(X.to(self._device)))
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
