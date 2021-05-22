@@ -426,8 +426,8 @@ class FullLaplace(BaseLaplace):
     # TODO: recompute scale once prior precision or sigma noise change?
     #       do in lazy way with a flag probably.
 
-    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('all', 'full')
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('all', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
@@ -480,8 +480,8 @@ class FullLaplace(BaseLaplace):
 class KronLaplace(BaseLaplace):
     # TODO list additional attributes
 
-    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('all', 'kron')
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('all', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
@@ -530,8 +530,8 @@ class DiagLaplace(BaseLaplace):
     # TODO: list additional attributes
     # TODO: caching prior_precision_diag for fast lazy computation?
 
-    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('all', 'diag')
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('all', 'diag')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):

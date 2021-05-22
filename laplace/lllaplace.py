@@ -128,8 +128,8 @@ class LLLaplace(BaseLaplace):
 class FullLLLaplace(LLLaplace, FullLaplace):
     # TODO list additional attributes
 
-    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('last_layer', 'full')
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('last_layer', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
@@ -141,8 +141,8 @@ class FullLLLaplace(LLLaplace, FullLaplace):
 class KronLLLaplace(LLLaplace, KronLaplace):
     # TODO list additional attributes
 
-    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('last_layer', 'kron')
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('last_layer', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
@@ -157,8 +157,8 @@ class KronLLLaplace(LLLaplace, KronLaplace):
 class DiagLLLaplace(LLLaplace, DiagLaplace):
     # TODO list additional attributes
 
-    # ID to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    id = ('last_layer', 'diag')
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('last_layer', 'diag')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
