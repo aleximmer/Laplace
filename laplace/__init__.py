@@ -1,5 +1,6 @@
 REGRESSION = 'regression'
 CLASSIFICATION = 'classification'
 
-from laplace.laplace import *
+from laplace.baselaplace import *
 from laplace.lllaplace import *
+from laplace.laplace import Laplace

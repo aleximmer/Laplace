@@ -1,7 +1,7 @@
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import BaseLaplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.feature_extractor import FeatureExtractor
 
 from laplace.matrix import Kron
@@ -11,7 +11,7 @@ from laplace.curvature import BackPackGGN
 __all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
 
-class LLLaplace(Laplace):
+class LLLaplace(BaseLaplace):
     """Last-Layer Laplace approximation for a pytorch neural network.
     The Laplace approximation is a Gaussian distribution but can have different
     sparsity structures. Further, it provides an approximation to the marginal
@@ -128,6 +128,9 @@ class LLLaplace(Laplace):
 class FullLLLaplace(LLLaplace, FullLaplace):
     # TODO list additional attributes
 
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('last_layer', 'full')
+
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  **backend_kwargs):
@@ -137,6 +140,9 @@ class FullLLLaplace(LLLaplace, FullLaplace):
 
 class KronLLLaplace(LLLaplace, KronLaplace):
     # TODO list additional attributes
+
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('last_layer', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
@@ -150,6 +156,9 @@ class KronLLLaplace(LLLaplace, KronLaplace):
 
 class DiagLLLaplace(LLLaplace, DiagLaplace):
     # TODO list additional attributes
+
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    key = ('last_layer', 'diag')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
