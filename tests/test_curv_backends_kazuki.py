@@ -186,3 +186,31 @@ def test_complex_kron_summing_up_vs_diag_class_kazuki(complex_class_Xy, complex_
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
+
+
+def test_kron_normalization_ggn_class(class_Xy, model):
+    X, y = class_Xy
+    xi, yi = X[:1], y[:1]
+    backend = KazukiGGN(model, 'classification', stochastic=False)
+    loss, kron = backend.kron(xi, yi, N=1)
+    kron_true = 7 * kron
+    loss_true = 7 * loss
+    X = torch.repeat_interleave(xi, 7, 0)
+    y = torch.repeat_interleave(yi, 7, 0)
+    loss_test, kron_test  = backend.kron(X, y, N=7)
+    assert torch.allclose(kron_true.diag(), kron_test.diag())
+    assert torch.allclose(loss_true, loss_test)
+
+
+def test_kron_normalization_ef_class(class_Xy, model):
+    X, y = class_Xy
+    xi, yi = X[:1], y[:1]
+    backend = KazukiEF(model, 'classification')
+    loss, kron = backend.kron(xi, yi, N=1)
+    kron_true = 7 * kron
+    loss_true = 7 * loss
+    X = torch.repeat_interleave(xi, 7, 0)
+    y = torch.repeat_interleave(yi, 7, 0)
+    loss_test, kron_test  = backend.kron(X, y, N=7)
+    assert torch.allclose(kron_true.diag(), kron_test.diag())
+    assert torch.allclose(loss_true, loss_test)
