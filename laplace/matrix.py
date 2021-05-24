@@ -53,7 +53,7 @@ class Kron:
     def __len__(self):
         return len(self.kfacs)
 
-    def decompose(self):
+    def decompose(self, damping=False):
         eigvecs, eigvals = list(), list()
         for F in self.kfacs:
             Qs, ls = list(), list()
@@ -63,7 +63,7 @@ class Kron:
                 ls.append(l)
             eigvecs.append(Qs)
             eigvals.append(ls)
-        return KronDecomposed(eigvecs, eigvals)
+        return KronDecomposed(eigvecs, eigvals, dampen=damping)
 
     def logdet(self) -> torch.Tensor:
         logdet = 0
@@ -219,7 +219,11 @@ class KronDecomposed:
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 Q = kron(Q1, Q2)
-                l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                if self.dampen:
+                    delta_sqrt = torch.sqrt(delta)
+                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                else:
+                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
                 L = torch.diag(l.flatten())
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)

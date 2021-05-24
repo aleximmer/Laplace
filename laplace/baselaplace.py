@@ -484,7 +484,9 @@ class KronLaplace(BaseLaplace):
     key = ('all', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, damping=False,
+                 **backend_kwargs):
+        self.damping = damping
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, **backend_kwargs)
 
@@ -497,7 +499,7 @@ class KronLaplace(BaseLaplace):
     def fit(self, train_loader):
         super().fit(train_loader)
         # Kron requires postprocessing as all quantities depend on the decomposition.
-        self.H = self.H.decompose()
+        self.H = self.H.decompose(damping=self.damping)
 
     @property
     def posterior_precision(self):
