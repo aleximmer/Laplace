@@ -265,6 +265,23 @@ class Laplace(ABC):
             fs = torch.softmax(fs, dim=-1)
         return fs
 
+    def predictive_uncertainties(self, X, n_samples=100):
+        """Return f_mu, epistemic_var, aleatoric_var. 
+
+        For classification, estimated using the method proposed in
+        Kwon et al.: 'Uncertainty quantification using Bayesian neural networks in classification'
+        """
+        if self.likelihood == 'regression':
+            f_mu, f_var = self.glm_predictive_distribution(X)
+            return f_mu, f_var, self.sigma_noise.square()
+        # ps is S x N x K
+        p_s = self.predictive_samples(X, pred_type='glm', n_samples=n_samples)
+        p_mean = p_s.mean(dim=0).unsqueeze(0)
+        diffs = p_s - p_mean
+        epistemic_var = 1 / n_samples * torch.einsum('snk,snc->nkc', diffs, diffs)
+        aleatoric_var = (torch.diag_embed(p_s) - torch.einsum('snk,snc->snck', p_s, p_s)).mean(dim=0)
+        return p_mean.squeeze(0), epistemic_var, aleatoric_var
+
     @abstractmethod
     def sample(self, n_samples=100):
         """Sample from the Laplace posterior torch.Tensor (n_samples, P)"""
