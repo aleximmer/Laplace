@@ -65,6 +65,7 @@ def test_multiplication():
 
 def test_decompose():
     expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    P = 20 * 3 + 20 + 2 * 20 + 2
     torch.manual_seed(7171)
     kfacs = [[get_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
     kron = Kron(kfacs)
@@ -80,6 +81,11 @@ def test_decompose():
             rec_2 = Qs[1] @ torch.diag(ls[1]) @ Qs[1].T
             reconstructed = kron_prod(rec_1, rec_2)
             assert torch.allclose(gtruth, reconstructed, rtol=1e-2)
+    W = torch.randn(P)
+    SW_kron = kron.bmm(W)
+    SW_kron_decomp = kron_decomp.bmm(W, exponent=1)
+    assert torch.allclose(SW_kron, SW_kron_decomp)
+
 
 def test_logdet_consistent():
     expected_sizes = [[20, 3], [20], [2, 20], [2]]
@@ -109,13 +115,19 @@ def test_bmm(small_model):
     assert torch.allclose(S, S.T)
     assert torch.allclose(S.diagonal(), kron.diag())
 
-    # test J @ Kron @ Jt (square form)
+    # test J @ Kron_decomp @ Jt (square form)
     JS = kron_decomp.bmm(Js, exponent=1)
     JS_true = Js @ S
     JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
     JSJ = torch.bmm(JS, Js.transpose(1,2))
-    assert torch.allclose(JSJ, JSJ)
+    assert torch.allclose(JSJ, JSJ_true)
     assert torch.allclose(JS, JS_true)
+
+    # test J @ Kron @ Jt (square form)
+    JS_nodecomp = kron.bmm(Js)
+    JSJ_nodecomp = torch.bmm(JS_nodecomp, Js.transpose(1,2))
+    assert torch.allclose(JSJ_nodecomp, JSJ)
+    assert torch.allclose(JS_nodecomp, JS)
 
     # test J @ S_inv @ J (funcitonal variance)
     JSJ = kron_decomp.inv_square_form(Js)
@@ -135,12 +147,16 @@ def test_bmm(small_model):
     # test different Js shapes:
     # 2 - dimensional
     JS = kron_decomp.bmm(Js[:, 0, :].squeeze(), exponent=1)
+    JS_nodecomp = kron.bmm(Js[:, 0, :].squeeze())
     JS_true = Js[:, 0, :].squeeze() @ S
     assert torch.allclose(JS, JS_true)
+    assert torch.allclose(JS, JS_nodecomp)
     # 1 - dimensional
     JS = kron_decomp.bmm(Js[0, 0, :].squeeze(), exponent=1)
+    JS_nodecomp = kron.bmm(Js[0, 0, :].squeeze())
     JS_true = Js[0, 0, :].squeeze() @ S
     assert torch.allclose(JS, JS_true)
+    assert torch.allclose(JS, JS_nodecomp)
 
 
 def test_matrix_consistent():
