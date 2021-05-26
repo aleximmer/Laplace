@@ -7,10 +7,10 @@ from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
 
 
 class Kron:
-    
+
     def __init__(self, kfacs):
         self.kfacs = kfacs
-       
+
     @classmethod
     def init_from_model(cls, model, device):
         # FIXME: this does not work for BatchNorm!!
@@ -37,7 +37,7 @@ class Kron:
     def __add__(self, other):
         if not isinstance(other, Kron):
             raise ValueError('Can only add Kron to Kron.')
-        
+
         self.kfacs = [[Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
                       for Fi, Fj in zip(self.kfacs, other.kfacs)]
         return self
@@ -45,7 +45,7 @@ class Kron:
     def __mul__(self, scalar: Union[float, torch.Tensor]):
         if not _is_valid_scalar(scalar):
             raise ValueError('Input not valid python or torch scalar.')
-        
+
         # distribute factors evenly so that each group is multiplied by factor
         self.kfacs = [[pow(scalar, 1/len(F)) * Hi for Hi in F] for F in self.kfacs]
         return self
@@ -65,6 +65,46 @@ class Kron:
             eigvals.append(ls)
         return KronDecomposed(eigvecs, eigvals)
 
+    def _bmm(self, W: torch.Tensor) -> torch.Tensor:
+        # self @ W[batch, k, params]
+        assert len(W.size()) == 3
+        B, K, P = W.size()
+        W = W.reshape(B * K, P)
+        cur_p = 0
+        SW = list()
+        for Fs in self.kfacs:
+            if len(Fs) == 1:
+                Q = Fs[0]
+                p = len(Q)
+                W_p = W[:, cur_p:cur_p+p].T
+                SW.append((Q @ W_p).T)
+                cur_p += p
+            elif len(Fs) == 2:
+                Q, H = Fs
+                p_in, p_out = len(Q), len(H)
+                p = p_in * p_out
+                W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
+                SW.append((Q @ W_p @ H.T).reshape(B * K, p_in * p_out))
+                cur_p += p
+            else:
+                raise AttributeError('Shape mismatch')
+        SW = torch.cat(SW, dim=1).reshape(B, K, P)
+        return SW
+
+    def bmm(self, W: torch.Tensor, exponent: float = 1) -> torch.Tensor:
+        # self @ W with W[params], W[batch, params], W[batch, classes, params]
+        # returns SW[batch, classes, params]
+        if exponent != 1:
+            raise ValueError('Only supported after decomposition.')
+        if W.ndim == 1:
+            return self._bmm(W.unsqueeze(0).unsqueeze(0)).squeeze()
+        elif W.ndim == 2:
+            return self._bmm(W.unsqueeze(1)).squeeze()
+        elif W.ndim == 3:
+            return self._bmm(W)
+        else:
+            raise ValueError('Invalid shape for W')
+
     def logdet(self) -> torch.Tensor:
         logdet = 0
         for F in self.kfacs:
@@ -72,7 +112,7 @@ class Kron:
                 logdet += F[0].logdet()
             else:  # len(F) == 2
                 Hi, Hj = F
-                p_in, p_out = len(Hi), len(Hj) 
+                p_in, p_out = len(Hi), len(Hj)
                 logdet += p_out * Hi.logdet() + p_in * Hj.logdet()
         return logdet
 
@@ -114,6 +154,10 @@ class KronDecomposed:
             self.deltas = deltas
         self.dampen = dampen
 
+    def detach(self):
+        self.deltas = self.deltas.detach()
+        return self
+
     def _check_deltas(self, deltas: torch.Tensor):
         if not isinstance(deltas, torch.Tensor):
             raise ValueError('Can only add torch.Tensor to KronDecomposed.')
@@ -138,7 +182,7 @@ class KronDecomposed:
 
     def __len__(self) -> int:
         return len(self.eigenvalues)
-    
+
     def logdet(self) -> torch.Tensor:
         # compute \sum_l log det (kron_l + delta I_l)
         logdet = 0
