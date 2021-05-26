@@ -494,9 +494,11 @@ class KronLaplace(BaseLaplace):
     def _curv_closure(self, X, y, N):
         return self.backend.kron(X, y, N=N)
 
-    def fit(self, train_loader):
+    def fit(self, train_loader, keep_factors=False):
         super().fit(train_loader)
         # Kron requires postprocessing as all quantities depend on the decomposition.
+        if keep_factors:
+            self.H_facs = self.H
         self.H = self.H.decompose()
 
     @property
