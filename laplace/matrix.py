@@ -38,17 +38,17 @@ class Kron:
         if not isinstance(other, Kron):
             raise ValueError('Can only add Kron to Kron.')
 
-        self.kfacs = [[Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
-                      for Fi, Fj in zip(self.kfacs, other.kfacs)]
-        return self
+        kfacs = [[Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
+                  for Fi, Fj in zip(self.kfacs, other.kfacs)]
+        return Kron(kfacs)
 
     def __mul__(self, scalar: Union[float, torch.Tensor]):
         if not _is_valid_scalar(scalar):
             raise ValueError('Input not valid python or torch scalar.')
 
         # distribute factors evenly so that each group is multiplied by factor
-        self.kfacs = [[pow(scalar, 1/len(F)) * Hi for Hi in F] for F in self.kfacs]
-        return self
+        kfacs = [[pow(scalar, 1/len(F)) * Hi for Hi in F] for F in self.kfacs]
+        return Kron(kfacs)
 
     def __len__(self):
         return len(self.kfacs)
