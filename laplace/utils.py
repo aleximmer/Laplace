@@ -2,8 +2,13 @@ import logging
 from typing import Union
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+
+
+def get_nll(out_dist, targets):
+    return F.nll_loss(torch.log(out_dist), targets)
 
 
 def parameters_per_layer(model):
