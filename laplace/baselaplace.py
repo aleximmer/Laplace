@@ -379,7 +379,7 @@ class BaseLaplace(ABC):
 
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, metric=get_nll,
-                                 interval=torch.logspace(-4, 4, 10), pred_type='glm',
+                                 interval=torch.logspace(-4, 4, 100), pred_type='glm',
                                  link_approx='probit', n_samples=100, verbose=False):
         if method == 'marglik':
             self.prior_precision = init_prior_prec
