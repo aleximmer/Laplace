@@ -5,6 +5,7 @@ from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import KazukiInterface
 from laplace.curvature import BackPackInterface
+from laplace.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive
 
 
@@ -60,9 +61,32 @@ def test_jacobians_singleoutput(singleoutput_model, X, backend):
 @pytest.mark.parametrize('backend', [KazukiInterface, BackPackInterface])
 def test_jacobians_multioutput(multioutput_model, X, backend):
     model = multioutput_model
-    print(len(parameters_to_vector(model.parameters())))
     Js, f = backend.jacobians(model, X)
     Js_naive, f_naive = jacobians_naive(model, X)
+    assert Js.shape == Js_naive.shape
+    assert torch.abs(Js-Js_naive).max() < 1e-6
+    assert torch.allclose(model(X), f_naive)
+    assert torch.allclose(f, f_naive)
+
+
+@pytest.mark.parametrize('backend', [KazukiInterface, BackPackInterface])
+def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend):
+    model = FeatureExtractor(singleoutput_model)
+    Js, f = backend.last_layer_jacobians(model, X)
+    _, phi = model.forward_with_features(X)
+    Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
+    assert Js.shape == Js_naive.shape
+    assert torch.abs(Js-Js_naive).max() < 1e-6
+    assert torch.allclose(model(X), f_naive)
+    assert torch.allclose(f, f_naive)
+
+
+@pytest.mark.parametrize('backend', [KazukiInterface, BackPackInterface])
+def test_last_layer_jacobians_multioutput(multioutput_model, X, backend):
+    model = FeatureExtractor(multioutput_model)
+    Js, f = backend.last_layer_jacobians(model, X)
+    _, phi = model.forward_with_features(X)
+    Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
     assert torch.allclose(model(X), f_naive)

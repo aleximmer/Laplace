@@ -136,7 +136,7 @@ def test_laplace_init_precision(laplace, model):
 
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init_prior_mean_and_scatter(laplace, model):
-    lap_scalar_mean = laplace(model, 'classification', last_layer_name='1', 
+    lap_scalar_mean = laplace(model, 'classification', last_layer_name='1',
                               prior_precision=1e-2, prior_mean=1.)
     assert torch.allclose(lap_scalar_mean.prior_mean, torch.tensor([1.]))
     lap_tensor_mean = laplace(model, 'classification', last_layer_name='1',
@@ -149,7 +149,7 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model):
                                    prior_precision=1e-2, prior_mean=torch.ones(20*2+2))
     assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(20*2+2))
     expected = lap_scalar_mean.scatter
-    assert expected.ndim == 0 
+    assert expected.ndim == 0
     assert torch.allclose(lap_tensor_mean.scatter, expected)
     assert lap_tensor_mean.scatter.shape == expected.shape
     assert torch.allclose(lap_tensor_scalar_mean.scatter, expected)
@@ -196,7 +196,8 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     lap.fit(loader)
     assert lap.n_data == len(loader.dataset)
     assert lap.n_outputs == model.output_size
-    f = model(loader.dataset.tensors[0])
+    X = loader.dataset.tensors[0]
+    f = model(X)
     y = loader.dataset.tensors[1]
     assert f.shape == torch.Size([10, 2])
 
@@ -251,10 +252,14 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
         Sigma = lap.posterior_precision.to_matrix(exponent=-1)
     elif laplace == DiagLLLaplace:
         Sigma = torch.diag(lap.posterior_variance)
-    _, phi = feature_extractor.forward_with_features(loader.dataset.tensors[0])
+    _, phi = feature_extractor.forward_with_features(X)
     Js, f = jacobians_naive(feature_extractor.last_layer, phi)
     true_f_var = torch.einsum('mkp,pq,mcq->mkc', Js, Sigma, Js)
-    comp_f_var = lap.functional_variance(Js)
+    # test last-layer Jacobians
+    comp_Js, comp_f = lap.backend.last_layer_jacobians(lap.model, X)
+    assert torch.allclose(Js, comp_Js)
+    assert torch.allclose(f, comp_f)
+    comp_f_var = lap.functional_variance(comp_Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
 
 
