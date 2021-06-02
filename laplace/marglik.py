@@ -9,7 +9,7 @@ import logging
 
 from laplace import (DiagLaplace, KronLaplace, FullLaplace,
                      DiagLLLaplace, KronLLLaplace, FullLLLaplace)
-from laplace.curvature import KazukiGGN
+from laplace.curvature import AsdfGGN
 
 
 def marglik_optimization(model,
@@ -30,7 +30,7 @@ def marglik_optimization(model,
                          marglik_frequency=1,
                          lr_hyp=1e-1,
                          laplace=KronLaplace,
-                         backend=KazukiGGN,
+                         backend=AsdfGGN,
                          backend_kwargs=None):
     """Runs marglik optimization training for a given model and training dataloader.
 

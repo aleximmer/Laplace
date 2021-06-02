@@ -5,7 +5,7 @@ from torch.nn.utils import parameters_to_vector
 
 from asdfghjkl.operations import Bias, Scale
 
-from laplace.curvature import KazukiGGN, KazukiEF, BackPackGGN, BackPackEF
+from laplace.curvature import AsdfGGN, AsdfEF, BackPackGGN, BackPackEF
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ def complex_class_Xy():
 
 def test_diag_ggn_cls_kazuki_against_backpack_full(class_Xy, model):
     X, y = class_Xy
-    backend = KazukiGGN(model, 'classification', stochastic=False)
+    backend = AsdfGGN(model, 'classification', stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -67,7 +67,7 @@ def test_diag_ggn_cls_kazuki_against_backpack_full(class_Xy, model):
 
 def test_diag_ef_cls_kazuki_against_backpack_full(class_Xy, model):
     X, y = class_Xy
-    backend = KazukiEF(model, 'classification')
+    backend = AsdfEF(model, 'classification')
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -85,19 +85,19 @@ def test_diag_ef_cls_kazuki_against_backpack_full(class_Xy, model):
 
 def test_diag_ggn_stoch_cls_kazuki(class_Xy, model):
     X, y = class_Xy
-    backend = KazukiGGN(model, 'classification', stochastic=True)
+    backend = AsdfGGN(model, 'classification', stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
 
     # same order of magnitude os non-stochastic.
-    backend = KazukiGGN(model, 'classification', stochastic=False)
+    backend = AsdfGGN(model, 'classification', stochastic=False)
     loss_ns, dggn_ns = backend.diag(X, y)
     assert loss_ns == loss
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)
 
 
-@pytest.mark.parametrize('Backend', [KazukiEF, KazukiGGN])
+@pytest.mark.parametrize('Backend', [AsdfEF, AsdfGGN])
 def test_kron_kazuki_vs_diag_class(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = class_Xy
@@ -109,7 +109,7 @@ def test_kron_kazuki_vs_diag_class(class_Xy, model, Backend):
     assert torch.allclose(kron.diag(), dggn)
 
 
-@pytest.mark.parametrize('Backend', [KazukiEF, KazukiGGN])
+@pytest.mark.parametrize('Backend', [AsdfEF, AsdfGGN])
 def test_kron_batching_correction_kazuki(class_Xy, model, Backend):
     X, y = class_Xy
     backend = Backend(model, 'classification')
@@ -126,7 +126,7 @@ def test_kron_batching_correction_kazuki(class_Xy, model, Backend):
     assert torch.allclose(loss, loss_two)
 
 
-@pytest.mark.parametrize('Backend', [KazukiGGN, KazukiEF])
+@pytest.mark.parametrize('Backend', [AsdfGGN, AsdfEF])
 def test_kron_summing_up_vs_diag_kazuki(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = class_Xy
@@ -138,7 +138,7 @@ def test_kron_summing_up_vs_diag_kazuki(class_Xy, model, Backend):
 
 def test_complex_diag_ggn_stoch_cls_kazuki(complex_class_Xy, complex_model):
     X, y = complex_class_Xy
-    backend = KazukiGGN(complex_model, 'classification', stochastic=True)
+    backend = AsdfGGN(complex_model, 'classification', stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -149,7 +149,7 @@ def test_complex_diag_ggn_stoch_cls_kazuki(complex_class_Xy, complex_model):
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1)
 
 
-@pytest.mark.parametrize('Backend', [KazukiEF, KazukiGGN])
+@pytest.mark.parametrize('Backend', [AsdfEF, AsdfGGN])
 def test_complex_kron_kazuki_vs_diag_kazuki(complex_class_Xy, complex_model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = complex_class_Xy
@@ -161,7 +161,7 @@ def test_complex_kron_kazuki_vs_diag_kazuki(complex_class_Xy, complex_model, Bac
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
 
 
-@pytest.mark.parametrize('Backend', [KazukiEF, KazukiGGN])
+@pytest.mark.parametrize('Backend', [AsdfEF, AsdfGGN])
 def test_complex_kron_batching_correction_kazuki(complex_class_Xy, complex_model, Backend):
     X, y = complex_class_Xy
     backend = Backend(complex_model, 'classification')
@@ -178,7 +178,7 @@ def test_complex_kron_batching_correction_kazuki(complex_class_Xy, complex_model
     assert torch.allclose(loss, loss_two)
 
 
-@pytest.mark.parametrize('Backend', [KazukiGGN, KazukiEF])
+@pytest.mark.parametrize('Backend', [AsdfGGN, AsdfEF])
 def test_complex_kron_summing_up_vs_diag_class_kazuki(complex_class_Xy, complex_model, Backend):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = complex_class_Xy
