@@ -5,7 +5,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
-from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll
+from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 
@@ -378,9 +378,10 @@ class BaseLaplace(ABC):
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
-                                 init_prior_prec=1., val_loader=None, metric=get_nll,
-                                 interval=torch.logspace(-4, 4, 100), pred_type='glm',
-                                 link_approx='probit', n_samples=100, verbose=False):
+                                 init_prior_prec=1., val_loader=None, loss=get_nll,
+                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=10,
+                                 pred_type='glm', link_approx='probit', n_samples=100,
+                                 verbose=False):
         if method == 'marglik':
             self.prior_precision = init_prior_prec
             log_prior_prec = self.prior_precision.log()
@@ -396,8 +397,11 @@ class BaseLaplace(ABC):
         elif method == 'CV':
             if val_loader is None:
                 raise ValueError('CV requires a validation set DataLoader')
+            interval = torch.logspace(
+                log_prior_prec_min, log_prior_prec_max, grid_size
+            )
             self.prior_precision = self._gridsearch(
-                metric, interval, val_loader, pred_type=pred_type,
+                loss, interval, val_loader, pred_type=pred_type,
                 link_approx=link_approx, n_samples=n_samples
             )
         else:
@@ -405,35 +409,23 @@ class BaseLaplace(ABC):
         if verbose:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
-    def _gridsearch(self, metric, interval, val_loader, pred_type='glm',
+    def _gridsearch(self, loss, interval, val_loader, pred_type='glm',
                     link_approx='probit', n_samples=100):
         results = list()
         prior_precs = list()
         for prior_prec in interval:
             self.prior_precision = prior_prec
             try:
-                out_dist, targets = self._validate(
-                    val_loader, pred_type=pred_type, link_approx=link_approx,
-                    n_samples=n_samples
+                out_dist, targets = validate(
+                    self, val_loader, pred_type=pred_type,
+                    link_approx=link_approx, n_samples=n_samples
                 )
-                result = metric(out_dist, targets)
+                result = loss(out_dist, targets)
             except RuntimeError:
                 result = np.inf
             results.append(result)
             prior_precs.append(prior_prec)
         return prior_precs[np.argmin(results)]
-
-    @torch.no_grad()
-    def _validate(self, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
-        self.model.eval()
-        outputs = list()
-        targets = list()
-        for X, y in val_loader:
-            X, y = X.to(self._device), y.to(self._device)
-            out = self(X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
-            outputs.append(out)
-            targets.append(y)
-        return torch.cat(outputs, dim=0), torch.cat(targets, dim=0)
 
     @property
     def sigma_noise(self):
