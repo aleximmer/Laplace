@@ -8,14 +8,6 @@ from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.matrix import Kron
 
 
-def cleanup(module):
-    for child in module.children():
-        cleanup(child)
-
-    setattr(module, "_backpack_extend", False)
-    memory_cleanup(module)
-
-
 class BackPackInterface(CurvatureInterface):
     """Interface for Backpack backend.
     """
@@ -63,7 +55,7 @@ class BackPackInterface(CurvatureInterface):
 
         model.zero_grad()
         CTX.remove_hooks()
-        cleanup(model)
+        _cleanup(model)
         if model.output_size > 1:
             return torch.stack(to_stack, dim=2).transpose(1, 2), f
         else:
@@ -160,3 +152,11 @@ class BackPackEF(BackPackInterface, EFInterface):
 
     def kron(self, X, y, **kwargs):
         raise NotImplementedError('Unavailable through Backpack.')
+
+
+def _cleanup(module):
+    for child in module.children():
+        _cleanup(child)
+
+    setattr(module, "_backpack_extend", False)
+    memory_cleanup(module)
