@@ -10,7 +10,7 @@ from asdfghjkl.gradient import batch_gradient
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.matrix import Kron
-from laplace.utils import is_batchnorm
+from laplace.utils import _is_batchnorm
 
 
 class AsdfInterface(CurvatureInterface):
@@ -77,7 +77,7 @@ class AsdfInterface(CurvatureInterface):
     def _get_kron_factors(self, curv, M):
         kfacs = list()
         for module in curv._model.modules():
-            if is_batchnorm(module):
+            if _is_batchnorm(module):
                 warnings.warn('BatchNorm unsupported for Kron, ignore.')
                 continue
 
