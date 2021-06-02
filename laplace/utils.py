@@ -11,6 +11,19 @@ def get_nll(out_dist, targets):
     return F.nll_loss(torch.log(out_dist), targets)
 
 
+@torch.no_grad()
+def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
+    laplace.model.eval()
+    outputs = list()
+    targets = list()
+    for X, y in val_loader:
+        X, y = X.to(laplace._device), y.to(laplace._device)
+        out = laplace(X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
+        outputs.append(out)
+        targets.append(y)
+    return torch.cat(outputs, dim=0), torch.cat(targets, dim=0)
+
+
 def parameters_per_layer(model):
     return [np.prod(p.shape) for p in model.parameters()]
 
