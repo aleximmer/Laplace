@@ -1,4 +1,5 @@
 from laplace.baselaplace import BaseLaplace
+from laplace import *
 
 
 def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure='kron', 
