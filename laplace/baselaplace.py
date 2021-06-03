@@ -119,7 +119,7 @@ class BaseLaplace(ABC):
 
         self.n_data = N
 
-    def marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the marginal likelihood.
         The resulting value is differentiable in differentiable likelihood
         and prior parameters.
@@ -375,7 +375,7 @@ class BaseLaplace(ABC):
             for _ in range(n_steps):
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
-                neg_marglik = -self.marginal_likelihood(prior_precision=prior_prec)
+                neg_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
                 neg_marglik.backward()
                 optimizer.step()
             self.prior_precision = log_prior_prec.detach().exp()
