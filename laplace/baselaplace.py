@@ -14,46 +14,34 @@ __all__ = ['FullLaplace', 'KronLaplace', 'DiagLaplace']
 
 
 class BaseLaplace(ABC):
-    """Laplace approximation for a pytorch neural network.
-    The Laplace approximation is a Gaussian distribution but can have different
-    sparsity structures. Further, it provides an approximation to the marginal
-    likelihood.
+    """Baseclass for all Laplace approximations in this library.
+    Subclasses need to specify how the Hessian approximation is initialized,
+    how to add up curvature over training data, how to sample from the 
+    Laplace approximation, and how to compute the functional variance.
 
     Parameters
     ----------
-    model : torch.nn.Module
-        torch model
-
-    likelihood : str
-        'classification' or 'regression' are supported
-
-    sigma_noise : float
-        observation noise for likelihood = 'regression'
-
-    prior_precision : one-dimensional torch.Tensor, str, default='auto'
-        prior precision of a Gaussian prior corresponding to weight decay
-        'auto' determines the prior automatically during fitting
-
+    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    likelihood : {'classification', 'regression'}
+        determines the log likelihood Hessian approximation 
+    sigma_noise : torch.Tensor or float, default=1
+        observation noise for the regression setting; must be 1 for classification
+    prior_precision : torch.Tensor or float, default=1
+        prior precision of a Gaussian prior (= weight decay);
+        can be scalar, per-layer, or diagonal in the most general case
+    prior_mean : torch.Tensor or float, default=0
+        prior mean of a Gaussian prior, useful for continual learning
     temperature : float, default=1
-        posterior temperature scaling affects the posterior covariance as
-        `Sigma' = temperature * Sigma`, so low temperatures lead to a more
-        concentrated posterior.
-
-    backend : CurvatureInterface
-        provides access to curvature/second-order quantities.
-
-    Attributes
-    ----------
-
-    Examples
-    --------
-
-    Notes
-    -----
+        temperature of the likelihood; lower temperature leads to more 
+        concentrated posterior and vice versa.
+    backend : subclasses of `laplace.curvature.CurvatureInterface`
+        backend for access to curvature/Hessian approximations
+    backend_kwargs : dict, default=None
+        arguments passed to the backend on initialization, for example to 
+        set the number of MC samples for stochastic approximations.
     """
-
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -73,7 +61,7 @@ class BaseLaplace(ABC):
         self.temperature = temperature
         self._backend = None
         self._backend_cls = backend
-        self._backend_kwargs = backend_kwargs
+        self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
         self.H = None
 
         # log likelihood = g(loss)
@@ -105,8 +93,9 @@ class BaseLaplace(ABC):
 
         Parameters
         ----------
-        train_loader : iterator
-            each iterate is a training batch (X, y)
+        train_loader : torch.data.utils.DataLoader
+            each iterate is a training batch (X, y);
+            `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
         """
         if self.H is not None:
             raise ValueError('Already fit.')

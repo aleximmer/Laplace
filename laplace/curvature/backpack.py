@@ -18,7 +18,7 @@ class BackPackInterface(CurvatureInterface):
 
     @staticmethod
     def jacobians(model, x):
-        """Compute Jacobians ``\\nabla_\\theta f(x;\\theta)`` at current parameter ``\\theta``
+        """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension.
 
         Parameters
@@ -62,8 +62,8 @@ class BackPackInterface(CurvatureInterface):
             return Jk.unsqueeze(-1).transpose(1, 2), f
 
     def gradients(self, x, y):
-        """Compute gradients ``\\nabla_\\theta \\ell(f(x;\\theta, y)`` at current parameter ``\\theta``
-        using Backpack's BatchGrad.
+        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
+        \\(\\theta\\) using Backpack's BatchGrad.
 
         Parameters
         ----------

@@ -23,7 +23,7 @@ class AsdfInterface(CurvatureInterface):
 
     @staticmethod
     def jacobians(model, x):
-        """Compute Jacobians ``\\nabla_\\theta f(x;\\theta)`` at current parameter ``\\theta``
+        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.
 
         Parameters
@@ -50,8 +50,8 @@ class AsdfInterface(CurvatureInterface):
         return Js, f
 
     def gradients(self, x, y):
-        """Compute gradients ``\\nabla_\\theta \\ell(f(x;\\theta, y)`` at current parameter ``\\theta``
-        using asdfghjkl's backend.
+        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter 
+        \\(\\theta\\) using asdfghjkl's backend.
 
         Parameters
         ----------
@@ -133,7 +133,7 @@ class AsdfInterface(CurvatureInterface):
 
 
 class AsdfGGN(AsdfInterface, GGNInterface):
-    """Implementation of the ``GGNInterface`` using asdfghjkl.
+    """Implementation of the `GGNInterface` using asdfghjkl.
     """
     def __init__(self, model, likelihood, last_layer=False, stochastic=False):
         super().__init__(model, likelihood, last_layer)
@@ -145,7 +145,7 @@ class AsdfGGN(AsdfInterface, GGNInterface):
 
 
 class AsdfEF(AsdfInterface, EFInterface):
-    """Implementation of the ``EFInterface`` using asdfghjkl.
+    """Implementation of the `EFInterface` using asdfghjkl.
     """
     
     @property

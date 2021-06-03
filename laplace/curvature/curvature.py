@@ -23,7 +23,7 @@ class CurvatureInterface(ABC):
     lossfunc : torch.nn.MSELoss or torch.nn.CrossEntropyLoss
     factor : float
         conversion factor between torch losses and base likelihoods
-        For example, ``\\frac{1}{2}`` to get to ``\\mathcal{N}(f, 1)`` from MSELoss.
+        For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
     def __init__(self, model, likelihood, last_layer=False):
         assert likelihood in ['regression', 'classification']
@@ -43,7 +43,7 @@ class CurvatureInterface(ABC):
 
     @abstractstaticmethod
     def jacobians(model, x):
-        """Compute Jacobians ``\\nabla_\\theta f(x;\\theta)`` at current parameter ``\\theta``.
+        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
         ----------
@@ -62,8 +62,8 @@ class CurvatureInterface(ABC):
 
     @staticmethod
     def last_layer_jacobians(model, x):
-        """Compute Jacobians ``\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})`` 
-        only at current last-layer parameter ``\\theta_{\\textrm{last}}``.
+        """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\) 
+        only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
         Parameters
         ----------
@@ -92,7 +92,7 @@ class CurvatureInterface(ABC):
 
     @abstractstaticmethod
     def gradients(self, x, y):
-        """Compute gradients ``\\nabla_\\theta \\ell(f(x;\\theta, y)`` at current parameter ``\\theta``.
+        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter \\(\\theta\\).
 
         Parameters
         ----------
@@ -110,8 +110,8 @@ class CurvatureInterface(ABC):
 
     @abstractmethod
     def full(self, x, y, **kwargs):
-        """Compute a dense curvature (approximation) in the form of a ``P \\times P`` matrix
-        ``H`` with respect to parameters ``\\theta \\in \\mathbb{R}^P``.
+        """Compute a dense curvature (approximation) in the form of a \\(P \\times P\\) matrix
+        \\(H\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
 
         Parameters
         ----------
@@ -131,11 +131,11 @@ class CurvatureInterface(ABC):
     @abstractmethod
     def kron(self, x, y, **kwargs):
         """Compute a Kronecker factored curvature approximation (such as KFAC).
-        The approximation to ``H`` takes the form of two Kronecker factors ``Q, H``,
-        i.e., ``H \\aprox Q \\kron H`` for each Module in the neural network permitting 
+        The approximation to \\(H\\) takes the form of two Kronecker factors \\(Q, H\\),
+        i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting 
         such curvature.
-        ``Q`` is quadratic in the input-dimension of a module ``p_{in} \times p_{in}``
-        and ``H~`` in the output-dimension ``p_{out} \\times p_{out}``.
+        \\(Q\\) is quadratic in the input-dimension of a module \\(p_{in} \\times p_{in}\\)
+        and \\(H\\) in the output-dimension \\(p_{out} \\times p_{out}\\).
 
         Parameters
         ----------
@@ -153,8 +153,8 @@ class CurvatureInterface(ABC):
 
     @abstractmethod
     def diag(self, x, y, **kwargs):
-        """Compute a diagonal Hessian approximation to ``H`` and is represented as a 
-        vector of the dimensionality of parameters ``\\theta``.
+        """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a 
+        vector of the dimensionality of parameters \\(\\theta\\).
 
         Parameters
         ----------
@@ -220,9 +220,9 @@ class GGNInterface(CurvatureInterface):
         return loss.detach(), H_ggn
 
     def full(self, x, y, **kwargs):
-        """Compute the full GGN ``P \\times P`` matrix as Hessian approximation
-        ``H_{ggn}`` with respect to parameters ``\\theta \\in \\mathbb{R}^P``.
-        For last-layer, reduced to ``\\theta_{last}``
+        """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
+        \\(H_{ggn}\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
+        For last-layer, reduced to \\(\\theta_{last}\\)
 
         Parameters
         ----------
@@ -266,13 +266,13 @@ class EFInterface(CurvatureInterface):
     lossfunc : torch.nn.MSELoss or torch.nn.CrossEntropyLoss
     factor : float
         conversion factor between torch losses and base likelihoods
-        For example, ``\\frac{1}{2}`` to get to ``\\mathcal{N}(f, 1)`` from MSELoss.
+        For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
 
     def full(self, x, y, **kwargs):
-        """Compute the full EF ``P \\times P`` matrix as Hessian approximation
-        ``H_{ef}`` with respect to parameters ``\\theta \\in \\mathbb{R}^P``.
-        For last-layer, reduced to ``\\theta_{last}``
+        """Compute the full EF \\(P \\times P\\) matrix as Hessian approximation
+        \\(H_{ef}\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
+        For last-layer, reduced to \\(\\theta_{last}\\)
 
         Parameters
         ----------

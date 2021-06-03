@@ -10,7 +10,7 @@ class Kron:
     """Kronecker factored approximate curvature representation for a corresponding
     neural network.
     Each element in `kfacs` is either a tuple or single matrix.
-    A tuple represents two Kronecker factors `Q`, and `H` and a single element
+    A tuple represents two Kronecker factors \\(Q\\), and \\(H\\) and a single element
     is just a full block Hessian approximation.
 
     Parameters
@@ -301,7 +301,7 @@ class KronDecomposed:
 
     def __mul__(self, scalar):
         """Multiply by a scalar by changing the eigenvalues.
-        Same as for the case of `Kron`. 
+        Same as for the case of `Kron`.
 
         Parameters
         ----------
@@ -403,7 +403,7 @@ class KronDecomposed:
         This is useful for computing the predictive or a regularization loss.
         Compared to `Kron.bmm`, a prior can be added here in form of `deltas`
         and the exponent can be other than just 1.
-        Computes ``H^{exponent} W``.
+        Computes \\(H^{exponent} W\\).
 
         Parameters
         ----------
@@ -427,7 +427,7 @@ class KronDecomposed:
 
     def to_matrix(self, exponent: float = 1) -> torch.Tensor:
         """Make the Kronecker factorization dense by computing the kronecker product.
-        Warning: this should only be used for testing purposes as it will allocate 
+        Warning: this should only be used for testing purposes as it will allocate
         large amounts of memory for big architectures.
 
         Returns
