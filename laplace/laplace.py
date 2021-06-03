@@ -2,7 +2,7 @@ from laplace.baselaplace import BaseLaplace
 from laplace import *
 
 
-def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure='kron', 
+def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure='kron',
             *args, **kwargs):
     """Simplified Laplace access using strings instead of different classes.
 
@@ -20,8 +20,8 @@ def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure
     laplace : BaseLaplace
         chosen subclass of BaseLaplace instantiated with additional arguments
     """
-    laplace_map = {subclass.key: subclass for subclass in _all_subclasses(BaseLaplace)
-                   if hasattr(subclass, 'key')}
+    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(BaseLaplace)
+                   if hasattr(subclass, '_key')}
     laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
     return laplace_class(model, likelihood, *args, **kwargs)
 

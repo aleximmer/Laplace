@@ -47,12 +47,12 @@ class BaseLaplace(ABC):
     prior_mean : torch.Tensor or float, default=0
         prior mean of a Gaussian prior, useful for continual learning
     temperature : float, default=1
-        temperature of the likelihood; lower temperature leads to more 
+        temperature of the likelihood; lower temperature leads to more
         concentrated posterior and vice versa.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     backend_kwargs : dict, default=None
-        arguments passed to the backend on initialization, for example to 
+        arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
@@ -140,7 +140,7 @@ class BaseLaplace(ABC):
         Requires that the Laplace approximation has been fit before.
         The resulting torch.Tensor is differentiable in `prior_precision` and
         `sigma_noise` if these have gradients enabled.
-        By passing `prior_precision` or `sigma_noise`, the current value is 
+        By passing `prior_precision` or `sigma_noise`, the current value is
         overwritten. This is useful for iterating on the log marginal likelihood.
 
         Parameters
@@ -173,7 +173,7 @@ class BaseLaplace(ABC):
     def log_likelihood(self):
         """Compute log likelihood on the training data after `.fit()` has been called.
         The log likelihood is computed on-demand based on the loss and, for example,
-        the observation noise which makes it differentiable in the latter for 
+        the observation noise which makes it differentiable in the latter for
         iterative updates.
 
         Returns
@@ -196,12 +196,12 @@ class BaseLaplace(ABC):
 
         Parameters
         ----------
-        x : torch.Tensor 
+        x : torch.Tensor
             `(batch_size, input_shape)`
 
         pred_type : {'glm', 'nn'}, default='glm'
-            type of posterior predictive, linearized GLM predictive or neural 
-            network sampling predictive. The GLM predictive is consistent with 
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive. The GLM predictive is consistent with
             the curvature approximations used here.
 
         link_approx : {'mc', 'probit', 'bridge'}
@@ -214,7 +214,7 @@ class BaseLaplace(ABC):
         Returns
         -------
         predictive: torch.Tensor or Tuple[torch.Tensor]
-            For `likelihood='classification'`, a torch.Tensor is returned with 
+            For `likelihood='classification'`, a torch.Tensor is returned with
             a distribution over classes (similar to a Softmax).
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
             with the mean and the predictive variance.
@@ -264,7 +264,7 @@ class BaseLaplace(ABC):
 
         Parameters
         ----------
-        x : torch.Tensor 
+        x : torch.Tensor
             input data `(batch_size, input_shape)`
 
         pred_type : {'glm', 'nn'}, default='glm'
@@ -319,17 +319,17 @@ class BaseLaplace(ABC):
         """Compute functional variance for the `'glm'` predictive:
         `f_var[i] = Jacs[i] @ P.inv() @ Jacs[i].T`, which is a output x output
         predictive covariance matrix.
-        Mathematically, we have for a single Jacobian 
+        Mathematically, we have for a single Jacobian
         \\(\\mathcal{J} = \\nabla_\\theta f(x;\\theta)\\vert_{\\theta_{MAP}}\\)
         the output covariance matrix
         \\( \\mathcal{J} P^{-1} \\mathcal{J}^T \\).
 
         Parameters
         ----------
-        Jacs : torch.Tensor 
+        Jacs : torch.Tensor
             Jacobians of model output wrt parameters
             `(batch, outputs, parameters)`
-        
+
         Returns
         -------
         f_var : torch.Tensor
@@ -374,7 +374,7 @@ class BaseLaplace(ABC):
 
     @property
     def log_det_prior_precision(self):
-        """Compute log determinant of the prior precision 
+        """Compute log determinant of the prior precision
         \\(\\log \\det P_0\\)
 
         Returns
@@ -478,6 +478,42 @@ class BaseLaplace(ABC):
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
                                  pred_type='glm', link_approx='probit', n_samples=100,
                                  verbose=False):
+        """Optimize the prior precision post-hoc using the `method`
+        specified by the user.
+
+        Parameters
+        ----------
+        method : {'marglik', 'CV'}, default='marglik'
+            specifies how the prior precision should be optimized.
+        n_steps : int, default=100
+            the number of gradient descent steps to take (if applicable).
+        lr : float, default=1e-1
+            the learning rate to use for gradient descent (if applicable).
+        init_prior_prec : float, default=1.
+            initial prior precision before the first optimization step (if applicable).
+        val_loader : torch.data.utils.DataLoader, default=None
+            DataLoader for the validation set; each iterate is a training batch (X, y).
+        loss : callable, default=get_nll
+            loss function to use for CV.
+        log_prior_prec_min : float, default=-4
+            lower bound of gridsearch interval for CV.
+        log_prior_prec_max : float, default=4
+            upper bound of gridsearch interval for CV.
+        grid_size : int, default=100
+            number of values to consider inside the gridsearch interval for CV.
+        pred_type : {'glm', 'nn'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive. The GLM predictive is consistent with
+            the curvature approximations used here.
+        link_approx : {'mc', 'probit', 'bridge'}
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only 'mc' is possible.
+        n_samples : int
+            number of samples for `link_approx='mc'`.
+        verbose : bool, default=False
+            if true, the optimized prior precision will be printed
+            (can be a large tensor if the prior has a diagonal covariance).
+        """
         if method == 'marglik':
             self.prior_precision = init_prior_prec
             log_prior_prec = self.prior_precision.log()
@@ -486,8 +522,8 @@ class BaseLaplace(ABC):
             for _ in range(n_steps):
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
-                neg_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
-                neg_marglik.backward()
+                neg_log_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
+                neg_log_marglik.backward()
                 optimizer.step()
             self.prior_precision = log_prior_prec.detach().exp()
         elif method == 'CV':
@@ -562,13 +598,13 @@ class BaseLaplace(ABC):
 
 class FullLaplace(BaseLaplace):
     """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
-    and hence posterior precision. Based on the chosen `backend` parameter, the full 
+    and hence posterior precision. Based on the chosen `backend` parameter, the full
     approximation can be, for example, a generalized Gauss-Newton matrix.
     Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
     See `BaseLaplace` for the full interface.
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    key = ('all', 'full')
+    _key = ('all', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
@@ -587,7 +623,7 @@ class FullLaplace(BaseLaplace):
 
     @property
     def posterior_scale(self):
-        """Posterior scale (square root of the covariance), i.e., 
+        """Posterior scale (square root of the covariance), i.e.,
         \\(P^{-\\frac{1}{2}}\\).
 
         Returns
@@ -647,7 +683,7 @@ class KronLaplace(BaseLaplace):
     and computing posterior covariances, marginal likelihood, etc.
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    key = ('all', 'kron')
+    _key = ('all', 'kron')
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
@@ -700,7 +736,7 @@ class DiagLaplace(BaseLaplace):
     See `BaseLaplace` for the full interface.
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    key = ('all', 'diag')
+    _key = ('all', 'diag')
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params, device=self._device)
