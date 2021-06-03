@@ -16,16 +16,16 @@ __all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace']
 class BaseLaplace(ABC):
     """Baseclass for all Laplace approximations in this library.
     Subclasses need to specify how the Hessian approximation is initialized,
-    how to add up curvature over training data, how to sample from the 
+    how to add up curvature over training data, how to sample from the
     Laplace approximation, and how to compute the functional variance.
 
     A Laplace approximation is represented by a MAP which is given by the
     `model` parameter and a posterior precision or covariance specifying
-    a Gaussian distribution \\(\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
+    a Gaussian distribution \\(\\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
     The goal of this class is to compute the posterior precision \\(P\\)
     which sums as
     \\[
-        P = \sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta) 
+        P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
         \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
     \\]
     Every subclass implements different approximations to the log likelihood Hessians,
@@ -182,7 +182,7 @@ class BaseLaplace(ABC):
         """
         self._check_fit()
 
-        factor = - self.H_factor
+        factor = - self._H_factor
         if self.likelihood == 'regression':
             # loss used is just MSE, need to add normalizer for gaussian likelihood
             c = self.n_data * self.n_outputs * torch.log(self.sigma_noise * sqrt(2 * pi))
@@ -410,6 +410,13 @@ class BaseLaplace(ABC):
 
     @property
     def prior_precision_diag(self):
+        """Obtain the diagonal prior precision \\(p_0\\) constructed from either
+        a scalar, layer-wise, or diagonal prior precision.
+
+        Returns
+        -------
+        prior_precision_diag : torch.Tensor
+        """
         if len(self.prior_precision) == 1:  # scalar
             return self.prior_precision * torch.ones_like(self.mean, device=self._device)
 
@@ -444,7 +451,6 @@ class BaseLaplace(ABC):
         else:
             raise ValueError('Invalid argument type of prior mean.')
 
-    # TODO: protect prior precision and sigma updates when covariance computed/update covariance?
     @property
     def prior_precision(self):
         return self._prior_precision
@@ -523,6 +529,7 @@ class BaseLaplace(ABC):
 
     @sigma_noise.setter
     def sigma_noise(self, sigma_noise):
+        self._posterior_scale = None
         if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
             self._sigma_noise = torch.tensor(sigma_noise, device=self._device)
         elif torch.is_tensor(sigma_noise):
@@ -538,27 +545,35 @@ class BaseLaplace(ABC):
             raise ValueError('Invalid type: sigma noise needs to be torch.Tensor or scalar.')
 
     @property
-    def H_factor(self):
+    def _H_factor(self):
         sigma2 = self.sigma_noise.square()
-        return 1 / sigma2 * self.temperature
+        return 1 / sigma2 / self.temperature
 
     @abstractproperty
     def posterior_precision(self):
+        """Compute or return the posterior precision \\(P\\).
+
+        Returns
+        -------
+        posterior_prec : torch.Tensor
+        """
         pass
 
 
 class FullLaplace(BaseLaplace):
-    # TODO: list additional attributes
-    # TODO: recompute scale once prior precision or sigma noise change?
-    #       do in lazy way with a flag probably.
-
+    """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
+    and hence posterior precision. Based on the chosen `backend` parameter, the full 
+    approximation can be, for example, a generalized Gauss-Newton matrix.
+    Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
+    See `BaseLaplace` for the full interface.
+    """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     key = ('all', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, **backend_kwargs)
+                         prior_mean, temperature, backend, backend_kwargs)
         self._posterior_scale = None
 
     def _init_H(self):
@@ -572,27 +587,44 @@ class FullLaplace(BaseLaplace):
 
     @property
     def posterior_scale(self):
+        """Posterior scale (square root of the covariance), i.e., 
+        \\(P^{-\\frac{1}{2}}\\).
+
+        Returns
+        -------
+        scale : torch.tensor
+            `(parameters, parameters)`
+        """
         if self._posterior_scale is None:
             self._compute_scale()
         return self._posterior_scale
 
     @property
     def posterior_covariance(self):
+        """Posterior covariance, i.e., \\(P^{-1}\\).
+
+        Returns
+        -------
+        covariance : torch.tensor
+            `(parameters, parameters)`
+        """
         scale = self.posterior_scale
         return scale @ scale.T
 
     @property
     def posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
+        """Posterior precision \\(P\\).
+
+        Returns
+        -------
+        precision : torch.tensor
+            `(parameters, parameters)`
         """
         self._check_fit()
-        return self.H_factor * self.H + torch.diag(self.prior_precision_diag)
+        return self._H_factor * self.H + torch.diag(self.prior_precision_diag)
 
     @property
     def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
-        # TODO: could make more efficient for scalar prior precision.
         return self.posterior_precision.logdet()
 
     def functional_variance(self, Js):
@@ -604,15 +636,14 @@ class FullLaplace(BaseLaplace):
 
 
 class KronLaplace(BaseLaplace):
-    # TODO list additional attributes
-
+    """Laplace approximation with Kronecker factored log likelihood Hessian approximation
+    and hence posterior precision.
+    Mathematically, we have for each parameter group, e.g., torch.nn.Module,
+    that \\P\\approx Q \\otimes H\\.
+    See `BaseLaplace` for the full interface.
+    """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     key = ('all', 'kron')
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
@@ -629,13 +660,17 @@ class KronLaplace(BaseLaplace):
 
     @property
     def posterior_precision(self):
+        """Kronecker factored Posterior precision \\(P\\).
+
+        Returns
+        -------
+        precision : `laplace.matrix.KronDecomposed`
+        """
         self._check_fit()
-        return self.H * self.H_factor + self.prior_precision
+        return self.H * self._H_factor + self.prior_precision
 
     @property
     def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
         return self.posterior_precision.logdet()
 
     def functional_variance(self, Js):
@@ -655,16 +690,13 @@ class KronLaplace(BaseLaplace):
 
 
 class DiagLaplace(BaseLaplace):
-    # TODO: list additional attributes
-    # TODO: caching prior_precision_diag for fast lazy computation?
-
+    """Laplace approximation with diagonal log likelihood Hessian approximation
+    and hence posterior precision.
+    Mathematically, we have \\(P \\approx \\textrm{diag}(P)\\).
+    See `BaseLaplace` for the full interface.
+    """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     key = ('all', 'diag')
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, **backend_kwargs):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params, device=self._device)
@@ -674,23 +706,40 @@ class DiagLaplace(BaseLaplace):
 
     @property
     def posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
+        """Diagonal posterior precision \\(p\\).
+
+        Returns
+        -------
+        precision : torch.tensor
+            `(parameters)`
         """
         self._check_fit()
-        return self.H_factor * self.H + self.prior_precision_diag
+        return self._H_factor * self.H + self.prior_precision_diag
 
     @property
     def posterior_scale(self):
+        """Diagonal posterior scale \\(\\sqrt{p^{-1}}\\).
+
+        Returns
+        -------
+        precision : torch.tensor
+            `(parameters)`
+        """
         return 1 / self.posterior_precision.sqrt()
 
     @property
     def posterior_variance(self):
+        """Diagonal posterior variance \\(p^{-1}\\).
+
+        Returns
+        -------
+        precision : torch.tensor
+            `(parameters)`
+        """
         return 1 / self.posterior_precision
 
     @property
     def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
-        """
         return self.posterior_precision.log().sum()
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
