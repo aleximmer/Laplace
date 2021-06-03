@@ -233,7 +233,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     else:
         log_det_post_prec = lap.posterior_precision.logdet()
     lml = lml + 1/2 * (prior_prec.logdet() - log_det_post_prec)
-    assert torch.allclose(lml, lap.marginal_likelihood())
+    assert torch.allclose(lml, lap.log_marginal_likelihood())
 
     # test sampling
     torch.manual_seed(61)
