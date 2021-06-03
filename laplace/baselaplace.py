@@ -250,15 +250,15 @@ class BaseLaplace(ABC):
                 dist = Dirichlet(alpha)
                 return torch.nan_to_num(dist.mean, nan=1.0)
         else:
-            samples = self.nn_predictive_samples(x, n_samples)
+            samples = self._nn_predictive_samples(x, n_samples)
             if self.likelihood == 'regression':
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
 
-    def predictive(self, X, pred_type='glm', link_approx='mc', n_samples=100):
-        return self(X, pred_type, link_approx, n_samples)
+    def predictive(self, x, pred_type='glm', link_approx='mc', n_samples=100):
+        return self(x, pred_type, link_approx, n_samples)
 
-    def predictive_samples(self, X, pred_type='glm', n_samples=100):
+    def predictive_samples(self, x, pred_type='glm', n_samples=100):
         """Sample from the posterior predictive on input data `x`.
         Can be used, for example, for Thompson sampling.
 
@@ -286,7 +286,7 @@ class BaseLaplace(ABC):
             raise ValueError('Only glm and nn supported as prediction types.')
 
         if pred_type == 'glm':
-            f_mu, f_var = self._glm_predictive_distribution(X)
+            f_mu, f_var = self._glm_predictive_distribution(x)
             assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
             dist = MultivariateNormal(f_mu, f_var)
             samples = dist.sample((n_samples,))
@@ -295,7 +295,7 @@ class BaseLaplace(ABC):
             return torch.softmax(samples, dim=-1)
 
         else:  # 'nn'
-            return self.nn_predictive_samples(X, n_samples)
+            return self._nn_predictive_samples(x, n_samples)
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X):
@@ -303,7 +303,7 @@ class BaseLaplace(ABC):
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
-    def nn_predictive_samples(self, X, n_samples=100):
+    def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.parameters())

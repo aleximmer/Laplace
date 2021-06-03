@@ -184,7 +184,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     assert f.shape == torch.Size([10, 2])
 
     # Test log likelihood (Train)
-    log_lik = lap.log_lik
+    log_lik = lap.log_likelihood
     # compute true log lik
     if lh == 'classification':
         log_lik_true = Categorical(logits=f).log_prob(y).sum()
@@ -195,7 +195,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
         assert torch.allclose(log_lik, log_lik_true)
         # change likelihood and test again
         lap.sigma_noise = 0.72
-        log_lik = lap.log_lik
+        log_lik = lap.log_likelihood
         log_lik_true = Normal(loc=f, scale=0.72).log_prob(y).sum()
         assert torch.allclose(log_lik, log_lik_true)
 

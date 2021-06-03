@@ -97,12 +97,12 @@ class LLLaplace(BaseLaplace):
 
         super().fit(train_loader)
 
-    def glm_predictive_distribution(self, X):
+    def _glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
-    def nn_predictive_samples(self, X, n_samples=100):
+    def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.last_layer.parameters())
