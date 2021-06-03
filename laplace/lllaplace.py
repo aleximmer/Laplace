@@ -49,12 +49,11 @@ class LLLaplace(BaseLaplace):
     Notes
     -----
     """
-
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 **backend_kwargs):
+                 backend_kwargs):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature, backend=backend, **backend_kwargs)
+                         prior_mean=0., temperature=temperature, backend=backend, backend_kwargs)
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
         if self.model._found:
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
@@ -133,9 +132,9 @@ class FullLLLaplace(LLLaplace, FullLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 **backend_kwargs):
+                 backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, **backend_kwargs)
+                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
 
 
 class KronLLLaplace(LLLaplace, KronLaplace):
@@ -146,9 +145,9 @@ class KronLLLaplace(LLLaplace, KronLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 **backend_kwargs):
+                 backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, **backend_kwargs)
+                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
@@ -162,6 +161,6 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 **backend_kwargs):
+                 backend_kwargs):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, **backend_kwargs)
+                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)

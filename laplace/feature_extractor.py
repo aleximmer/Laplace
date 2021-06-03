@@ -3,6 +3,9 @@ import torch.nn as nn
 from typing import Tuple, Callable, Optional
 
 
+__all__ = ['FeatureExtractor']
+
+
 class FeatureExtractor(nn.Module):
     """Feature extractor for a PyTorch neural network.
     A wrapper which returns the output of the penultimate layer in addition to

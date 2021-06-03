@@ -10,7 +10,7 @@ except ModuleNotFoundError:
 try:
     from laplace.curvature.asdf import AsdfGGN, AsdfEF, AsdfInterface
 except ModuleNotFoundError:
-    logging.info('Kazuki backend not available.')
+    logging.info('asdfghjkl backend not available.')
 
 __all__ = ['CurvatureInterface', 'GGNInterface', 'EFInterface',
            'BackPackInterface', 'BackPackGGN', 'BackPackEF',
