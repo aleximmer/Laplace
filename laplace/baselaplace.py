@@ -315,47 +315,25 @@ class BaseLaplace(ABC):
         return fs
 
     @abstractmethod
-    def sample(self, n_samples=100):
-        """Sample from the Laplace posterior approximation, i.e.,
-        \\( \\theta \\sim (\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
+    def functional_variance(self, Jacs):
+        """Compute functional variance for the `'glm'` predictive:
+        `f_var[i] = Jacs[i] @ P.inv() @ Jacs[i].T`, which is a output x output
+        predictive covariance matrix.
+        Mathematically, we have for a single Jacobian 
+        \\(\\mathcal{J} = \\nabla_\\theta f(x;\\theta)\\vert_{\\theta_{MAP}}\\)
+        the output covariance matrix
+        \\( \\mathcal{J} P^{-1} \\mathcal{J}^T \\).
 
         Parameters
         ----------
-        n_samples : int, default=100
-            number of samples
-        """
-        pass
-
-    @property
-    def scatter(self):
-        """Computes the _scatter_, a term of the log marginal likelihood that
-        corresponds to L-2 regularization:
-        `scatter` = \\((\\theta_{MAP} - \\mu_0)^\\top P_0 (\\theta_{MAP} - \\mu_0) \\).
-
+        Jacs : torch.Tensor 
+            Jacobians of model output wrt parameters
+            `(batch, outputs, parameters)`
+        
         Returns
         -------
-        [type]
-            [description]
-        """
-        delta = (self.mean - self.prior_mean)
-        return (delta * self.prior_precision_diag) @ delta
-
-    @property
-    def log_det_prior_precision(self):
-        """Computes log determinant of the prior precision `log det P_0`
-        """
-        return self.prior_precision_diag.log().sum()
-
-    @abstractmethod
-    def functional_variance(self, Jacs):
-        """Compute functional variance for the predictive:
-        `f_var[i] = Jacs[i] @ Sigma @ Jacs[i].T`, which is a output x output
-        predictive covariance matrix.
-
-        Parameters
-        ----------
-        Jacs : torch.Tensor batch x outputs x parameters
-            Jacobians of model output wrt parameters.
+        f_var : torch.Tensor
+            output covariance `(batch, outputs, outputs)`
         """
         pass
 
@@ -368,18 +346,67 @@ class BaseLaplace(ABC):
         if p != self.n_params:
             raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
 
-    @property
-    def log_det_ratio(self):
-        """Computes the log of the determinant ratios for the marginal likelihood
-        `log (det P / det P_0) = log det P - log det P_0`
+    @abstractmethod
+    def sample(self, n_samples=100):
+        """Sample from the Laplace posterior approximation, i.e.,
+        \\( \\theta \\sim \\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
+
+        Parameters
+        ----------
+        n_samples : int, default=100
+            number of samples
         """
-        return self.log_det_posterior_precision - self.log_det_prior_precision
+        pass
+
+    @property
+    def scatter(self):
+        """Computes the _scatter_, a term of the log marginal likelihood that
+        corresponds to L-2 regularization:
+        `scatter` = \\((\\theta_{MAP} - \\mu_0)^{T} P_0 (\\theta_{MAP} - \\mu_0) \\).
+
+        Returns
+        -------
+        [type]
+            [description]
+        """
+        delta = (self.mean - self.prior_mean)
+        return (delta * self.prior_precision_diag) @ delta
+
+    @property
+    def log_det_prior_precision(self):
+        """Compute log determinant of the prior precision 
+        \\(\\log \\det P_0\\)
+
+        Returns
+        -------
+        log_det : torch.Tensor
+        """
+        return self.prior_precision_diag.log().sum()
 
     @abstractproperty
     def log_det_posterior_precision(self):
-        """Computes log determinant of the posterior precision `log det P`
+        """Compute log determinant of the posterior precision
+        \\(\\log \\det P\\) which depends on the subclasses structure
+        used for the Hessian approximation.
+
+        Returns
+        -------
+        log_det : torch.Tensor
         """
         pass
+
+    @property
+    def log_det_ratio(self):
+        """Compute the log determinant ratio, a part of the log marginal likelihood.
+        \\[
+            \\log \\frac{\\det P}{\\det P_0} = \\log \\det P - \\log \\det P_0
+        \\]
+
+        Returns
+        -------
+        log_det_ratio : torch.Tensor
+        """
+        return self.log_det_posterior_precision - self.log_det_prior_precision
 
     @property
     def prior_precision_diag(self):
