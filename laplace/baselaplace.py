@@ -640,7 +640,11 @@ class KronLaplace(BaseLaplace):
     and hence posterior precision.
     Mathematically, we have for each parameter group, e.g., torch.nn.Module,
     that \\P\\approx Q \\otimes H\\.
-    See `BaseLaplace` for the full interface.
+    See `BaseLaplace` for the full interface and see
+    `laplace.matrix.Kron` and `laplace.matrix.KronDecomposed` for the structure of
+    the Kronecker factors. `Kron` is used to aggregate factors by summing up and
+    `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
+    and computing posterior covariances, marginal likelihood, etc.
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     key = ('all', 'kron')
