@@ -3,6 +3,8 @@
 Main: [![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
 Dev: [![Dev](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=dev)](https://travis-ci.com/AlexImmer/Laplace)
 
+The documentation is available at [https://d2ca8dae-c541-11eb-9203-acde48001122.github.io/lapras/index.html](https://d2ca8dae-c541-11eb-9203-acde48001122.github.io/lapras/index.html).
+
 ## Setup
 
 ```bash
@@ -20,7 +22,7 @@ pip install pytest
 pytest tests/
 ```
 
-## Documentation
+## [Documentation](https://d2ca8dae-c541-11eb-9203-acde48001122.github.io/lapras/index.html)
 
 ```bash
 pip install pdoc
