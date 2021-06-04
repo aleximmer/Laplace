@@ -27,16 +27,16 @@ the corresponding sparsity structures, for example, the diagonal GGN.
 Additionally, the package provies utilities for
 decomposing a neural network into feature extractor and last layer for `LLLaplace` (`laplace.feature_extractor`)
 and
-effectively dealing with Kronecker factors (`Kron` and `KronDecomposed`).
+effectively dealing with Kronecker factors (`matrix.Kron` and `matrix.KronDecomposed`).
 
 ## Extendability
 To extend the laplace package, new `BaseLaplace` subclasses can be designed, for example,
 a block-diagonal structure or subset-of-weights Laplace.
 Alternatively, extending or integrating backends allows to provide different Hessian
 approximations to the laplace approximations.
-For example, currently the `BackPackInterface` and `AsdfInterface` are available.
-The `AsdfInterface` provides a Kronecker factored empirical Fisher while the `BackPackInterface`
-does not, and only the `BackPackInterface` provides access to Hessian approximations
+For example, currently the `curvature.BackPackInterface` and `curvature.AsdfInterface` are available.
+The `curvature.AsdfInterface` provides a Kronecker factored empirical Fisher while the `curvature.BackPackInterface`
+does not, and only the `curvature.BackPackInterface` provides access to Hessian approximations
 for a regression (MSELoss) loss function.
 
 ## Example usage
