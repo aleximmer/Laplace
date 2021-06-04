@@ -37,62 +37,71 @@ __all__ = [&#39;FeatureExtractor&#39;]
 
 class FeatureExtractor(nn.Module):
     &#34;&#34;&#34;Feature extractor for a PyTorch neural network.
-    A wrapper which returns the output of the penultimate layer in addition to
-    the output of the last layer for each forward pass. It assumes that the
-    last layer is linear.
+    A wrapper which can return the output of the penultimate layer in addition to
+    the output of the last layer for each forward pass. If the name of the last
+    layer is not known, it can determine it automatically. It assumes that the
+    last layer is linear and that for every forward pass the last layer is the same.
+    If the name of the last layer is known, it can be passed as a parameter at
+    initilization; this is the safest way to use this class.
     Based on https://gist.github.com/fkodom/27ed045c9051a39102e8bcf4ce31df76.
 
-    Arguments
+    Parameters
     ----------
     model : torch.nn.Module
         PyTorch model
-
-    last_layer_name (optional) : str, default=None
-        If the user already knows the name of the last layer, otherwise it will
+    last_layer_name : str, default=None
+        if the name of the last layer is already known, otherwise it will
         be determined automatically.
-
-    Attributes
-    ----------
-    model : torch.nn.Module
-        The underlying PyTorch model.
-
-    last_layer : torch.nn.module
-        The torch module corresponding to the last layer (has to be instance
-        of torch.nn.Linear).
-
-    Examples
-    --------
-
-    Notes
-    -----
-    Limitations:
-        - Assumes that the last layer is always the same for any forward pass
-        - Assumes that the last layer is an instance of torch.nn.Linear
     &#34;&#34;&#34;
     def __init__(self, model: nn.Module, last_layer_name: Optional[str] = None) -&gt; None:
         super().__init__()
         self.model = model
         self._features = dict()
         if last_layer_name is None:
-            self._found = False
+            self.last_layer = None
         else:
             self.set_last_layer(last_layer_name)
 
     def forward(self, x: torch.Tensor) -&gt; torch.Tensor:
-        if self._found:
+        &#34;&#34;&#34;Forward pass. If the last layer is not known yet, it will be
+        determined when this function is called for the first time.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            one batch of data to use as input for the forward pass
+        &#34;&#34;&#34;
+        if self.last_layer is None:
+            # if this is the first forward pass and last layer is unknown
+            out = self.find_last_layer(x)
+        else:
             # if last and penultimate layers are already known
             out = self.model(x)
-        else:
-            # if this is the first forward pass
-            out = self.find_last_layer(x)
         return out
 
     def forward_with_features(self, x: torch.Tensor) -&gt; Tuple[torch.Tensor, torch.Tensor]:
+        &#34;&#34;&#34;Forward pass which returns the output of the penultimate layer along
+        with the output of the last layer. If the last layer is not known yet,
+        it will be determined when this function is called for the first time.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            one batch of data to use as input for the forward pass
+        &#34;&#34;&#34;
         out = self.forward(x)
         features = self._features[self._last_layer_name]
         return out, features
 
     def set_last_layer(self, last_layer_name: str) -&gt; None:
+        &#34;&#34;&#34;Set the last layer of the model by its name. This sets the forward
+        hook to get the output of the penultimate layer.
+
+        Parameters
+        ----------
+        last_layer_name : str
+            the name of the last layer (fixed in `model.named_modules()`).
+        &#34;&#34;&#34;
         # set last_layer attributes and check if it is linear
         self._last_layer_name = last_layer_name
         self.last_layer = dict(self.model.named_modules())[last_layer_name]
@@ -102,9 +111,6 @@ class FeatureExtractor(nn.Module):
         # set forward hook to extract features in future forward passes
         self.last_layer.register_forward_hook(self._get_hook(last_layer_name))
 
-        # last layer is now identified and hook is set
-        self._found = True
-
     def _get_hook(self, name: str) -&gt; Callable:
         def hook(_, input, __):
             # only accepts one input (expects linear layer)
@@ -112,7 +118,19 @@ class FeatureExtractor(nn.Module):
         return hook
 
     def find_last_layer(self, x: torch.Tensor) -&gt; torch.Tensor:
-        if self._found:
+        &#34;&#34;&#34;Automatically determines the last layer of the model with one
+        forward pass. It assumes that the last layer is the same for every
+        forward pass and that it is an instance of `torch.nn.Linear`.
+        Might not work with every architecture, but is tested with all PyTorch
+        torchvision classification models (besides SqueezeNet, which has no
+        linear last layer).
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            one batch of data to use as input for the forward pass
+        &#34;&#34;&#34;
+        if self.last_layer is not None:
             raise ValueError(&#39;Last layer is already known.&#39;)
 
         act_out = dict()
@@ -170,33 +188,21 @@ class FeatureExtractor(nn.Module):
 </code></dt>
 <dd>
 <div class="desc"><p>Feature extractor for a PyTorch neural network.
-A wrapper which returns the output of the penultimate layer in addition to
-the output of the last layer for each forward pass. It assumes that the
-last layer is linear.
+A wrapper which can return the output of the penultimate layer in addition to
+the output of the last layer for each forward pass. If the name of the last
+layer is not known, it can determine it automatically. It assumes that the
+last layer is linear and that for every forward pass the last layer is the same.
+If the name of the last layer is known, it can be passed as a parameter at
+initilization; this is the safest way to use this class.
 Based on <a href="https://gist.github.com/fkodom/27ed045c9051a39102e8bcf4ce31df76.">https://gist.github.com/fkodom/27ed045c9051a39102e8bcf4ce31df76.</a></p>
-<h2 id="arguments">Arguments</h2>
+<h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
 <dd>PyTorch model</dd>
+<dt><strong><code>last_layer_name</code></strong> :&ensp;<code>str</code>, default=<code>None</code></dt>
+<dd>if the name of the last layer is already known, otherwise it will
+be determined automatically.</dd>
 </dl>
-<p>last_layer_name (optional) : str, default=None
-If the user already knows the name of the last layer, otherwise it will
-be determined automatically.</p>
-<h2 id="attributes">Attributes</h2>
-<dl>
-<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
-<dd>The underlying PyTorch model.</dd>
-<dt><strong><code>last_layer</code></strong> :&ensp;<code>torch.nn.module</code></dt>
-<dd>The torch module corresponding to the last layer (has to be instance
-of torch.nn.Linear).</dd>
-</dl>
-<h2 id="examples">Examples</h2>
-<h2 id="notes">Notes</h2>
-<h2 id="limitations">Limitations</h2>
-<ul>
-<li>Assumes that the last layer is always the same for any forward pass</li>
-<li>Assumes that the last layer is an instance of torch.nn.Linear</li>
-</ul>
 <p>Initializes internal Module state, shared by both nn.Module and ScriptModule.</p></div>
 <details class="source">
 <summary>
@@ -204,62 +210,71 @@ of torch.nn.Linear).</dd>
 </summary>
 <pre><code class="python">class FeatureExtractor(nn.Module):
     &#34;&#34;&#34;Feature extractor for a PyTorch neural network.
-    A wrapper which returns the output of the penultimate layer in addition to
-    the output of the last layer for each forward pass. It assumes that the
-    last layer is linear.
+    A wrapper which can return the output of the penultimate layer in addition to
+    the output of the last layer for each forward pass. If the name of the last
+    layer is not known, it can determine it automatically. It assumes that the
+    last layer is linear and that for every forward pass the last layer is the same.
+    If the name of the last layer is known, it can be passed as a parameter at
+    initilization; this is the safest way to use this class.
     Based on https://gist.github.com/fkodom/27ed045c9051a39102e8bcf4ce31df76.
 
-    Arguments
+    Parameters
     ----------
     model : torch.nn.Module
         PyTorch model
-
-    last_layer_name (optional) : str, default=None
-        If the user already knows the name of the last layer, otherwise it will
+    last_layer_name : str, default=None
+        if the name of the last layer is already known, otherwise it will
         be determined automatically.
-
-    Attributes
-    ----------
-    model : torch.nn.Module
-        The underlying PyTorch model.
-
-    last_layer : torch.nn.module
-        The torch module corresponding to the last layer (has to be instance
-        of torch.nn.Linear).
-
-    Examples
-    --------
-
-    Notes
-    -----
-    Limitations:
-        - Assumes that the last layer is always the same for any forward pass
-        - Assumes that the last layer is an instance of torch.nn.Linear
     &#34;&#34;&#34;
     def __init__(self, model: nn.Module, last_layer_name: Optional[str] = None) -&gt; None:
         super().__init__()
         self.model = model
         self._features = dict()
         if last_layer_name is None:
-            self._found = False
+            self.last_layer = None
         else:
             self.set_last_layer(last_layer_name)
 
     def forward(self, x: torch.Tensor) -&gt; torch.Tensor:
-        if self._found:
+        &#34;&#34;&#34;Forward pass. If the last layer is not known yet, it will be
+        determined when this function is called for the first time.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            one batch of data to use as input for the forward pass
+        &#34;&#34;&#34;
+        if self.last_layer is None:
+            # if this is the first forward pass and last layer is unknown
+            out = self.find_last_layer(x)
+        else:
             # if last and penultimate layers are already known
             out = self.model(x)
-        else:
-            # if this is the first forward pass
-            out = self.find_last_layer(x)
         return out
 
     def forward_with_features(self, x: torch.Tensor) -&gt; Tuple[torch.Tensor, torch.Tensor]:
+        &#34;&#34;&#34;Forward pass which returns the output of the penultimate layer along
+        with the output of the last layer. If the last layer is not known yet,
+        it will be determined when this function is called for the first time.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            one batch of data to use as input for the forward pass
+        &#34;&#34;&#34;
         out = self.forward(x)
         features = self._features[self._last_layer_name]
         return out, features
 
     def set_last_layer(self, last_layer_name: str) -&gt; None:
+        &#34;&#34;&#34;Set the last layer of the model by its name. This sets the forward
+        hook to get the output of the penultimate layer.
+
+        Parameters
+        ----------
+        last_layer_name : str
+            the name of the last layer (fixed in `model.named_modules()`).
+        &#34;&#34;&#34;
         # set last_layer attributes and check if it is linear
         self._last_layer_name = last_layer_name
         self.last_layer = dict(self.model.named_modules())[last_layer_name]
@@ -269,9 +284,6 @@ of torch.nn.Linear).</dd>
         # set forward hook to extract features in future forward passes
         self.last_layer.register_forward_hook(self._get_hook(last_layer_name))
 
-        # last layer is now identified and hook is set
-        self._found = True
-
     def _get_hook(self, name: str) -&gt; Callable:
         def hook(_, input, __):
             # only accepts one input (expects linear layer)
@@ -279,7 +291,19 @@ of torch.nn.Linear).</dd>
         return hook
 
     def find_last_layer(self, x: torch.Tensor) -&gt; torch.Tensor:
-        if self._found:
+        &#34;&#34;&#34;Automatically determines the last layer of the model with one
+        forward pass. It assumes that the last layer is the same for every
+        forward pass and that it is an instance of `torch.nn.Linear`.
+        Might not work with every architecture, but is tested with all PyTorch
+        torchvision classification models (besides SqueezeNet, which has no
+        linear last layer).
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            one batch of data to use as input for the forward pass
+        &#34;&#34;&#34;
+        if self.last_layer is not None:
             raise ValueError(&#39;Last layer is already known.&#39;)
 
         act_out = dict()
@@ -342,26 +366,32 @@ of torch.nn.Linear).</dd>
 <span>def <span class="ident">forward</span></span>(<span>self, x: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Defines the computation performed at every call.</p>
-<p>Should be overridden by all subclasses.</p>
-<div class="admonition note">
-<p class="admonition-title">Note</p>
-<p>Although the recipe for forward pass needs to be defined within
-this function, one should call the :class:<code>Module</code> instance afterwards
-instead of this since the former takes care of running the
-registered hooks while the latter silently ignores them.</p>
-</div></div>
+<div class="desc"><p>Forward pass. If the last layer is not known yet, it will be
+determined when this function is called for the first time.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>one batch of data to use as input for the forward pass</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def forward(self, x: torch.Tensor) -&gt; torch.Tensor:
-    if self._found:
+    &#34;&#34;&#34;Forward pass. If the last layer is not known yet, it will be
+    determined when this function is called for the first time.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        one batch of data to use as input for the forward pass
+    &#34;&#34;&#34;
+    if self.last_layer is None:
+        # if this is the first forward pass and last layer is unknown
+        out = self.find_last_layer(x)
+    else:
         # if last and penultimate layers are already known
         out = self.model(x)
-    else:
-        # if this is the first forward pass
-        out = self.find_last_layer(x)
     return out</code></pre>
 </details>
 </dd>
@@ -369,12 +399,28 @@ registered hooks while the latter silently ignores them.</p>
 <span>def <span class="ident">forward_with_features</span></span>(<span>self, x: torch.Tensor) ‑> Tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Forward pass which returns the output of the penultimate layer along
+with the output of the last layer. If the last layer is not known yet,
+it will be determined when this function is called for the first time.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>one batch of data to use as input for the forward pass</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def forward_with_features(self, x: torch.Tensor) -&gt; Tuple[torch.Tensor, torch.Tensor]:
+    &#34;&#34;&#34;Forward pass which returns the output of the penultimate layer along
+    with the output of the last layer. If the last layer is not known yet,
+    it will be determined when this function is called for the first time.
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        one batch of data to use as input for the forward pass
+    &#34;&#34;&#34;
     out = self.forward(x)
     features = self._features[self._last_layer_name]
     return out, features</code></pre>
@@ -384,12 +430,26 @@ registered hooks while the latter silently ignores them.</p>
 <span>def <span class="ident">set_last_layer</span></span>(<span>self, last_layer_name: str) ‑> NoneType</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Set the last layer of the model by its name. This sets the forward
+hook to get the output of the penultimate layer.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>last_layer_name</code></strong> :&ensp;<code>str</code></dt>
+<dd>the name of the last layer (fixed in <code>model.named_modules()</code>).</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def set_last_layer(self, last_layer_name: str) -&gt; None:
+    &#34;&#34;&#34;Set the last layer of the model by its name. This sets the forward
+    hook to get the output of the penultimate layer.
+
+    Parameters
+    ----------
+    last_layer_name : str
+        the name of the last layer (fixed in `model.named_modules()`).
+    &#34;&#34;&#34;
     # set last_layer attributes and check if it is linear
     self._last_layer_name = last_layer_name
     self.last_layer = dict(self.model.named_modules())[last_layer_name]
@@ -397,23 +457,42 @@ registered hooks while the latter silently ignores them.</p>
         raise ValueError(&#39;Use model with a linear last layer.&#39;)
 
     # set forward hook to extract features in future forward passes
-    self.last_layer.register_forward_hook(self._get_hook(last_layer_name))
-
-    # last layer is now identified and hook is set
-    self._found = True</code></pre>
+    self.last_layer.register_forward_hook(self._get_hook(last_layer_name))</code></pre>
 </details>
 </dd>
 <dt id="laplace.feature_extractor.FeatureExtractor.find_last_layer"><code class="name flex">
 <span>def <span class="ident">find_last_layer</span></span>(<span>self, x: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Automatically determines the last layer of the model with one
+forward pass. It assumes that the last layer is the same for every
+forward pass and that it is an instance of <code>torch.nn.Linear</code>.
+Might not work with every architecture, but is tested with all PyTorch
+torchvision classification models (besides SqueezeNet, which has no
+linear last layer).</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>one batch of data to use as input for the forward pass</dd>
+</dl></div>
 <details class="source">
 <summary>
 <span>Expand source code</span>
 </summary>
 <pre><code class="python">def find_last_layer(self, x: torch.Tensor) -&gt; torch.Tensor:
-    if self._found:
+    &#34;&#34;&#34;Automatically determines the last layer of the model with one
+    forward pass. It assumes that the last layer is the same for every
+    forward pass and that it is an instance of `torch.nn.Linear`.
+    Might not work with every architecture, but is tested with all PyTorch
+    torchvision classification models (besides SqueezeNet, which has no
+    linear last layer).
+
+    Parameters
+    ----------
+    x : torch.Tensor
+        one batch of data to use as input for the forward pass
+    &#34;&#34;&#34;
+    if self.last_layer is not None:
         raise ValueError(&#39;Last layer is already known.&#39;)
 
     act_out = dict()

@@ -49,15 +49,15 @@ the corresponding sparsity structures, for example, the diagonal GGN.</li>
 <p>Additionally, the package provies utilities for
 decomposing a neural network into feature extractor and last layer for <code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code> (<code><a title="laplace.feature_extractor" href="feature_extractor.html">laplace.feature_extractor</a></code>)
 and
-effectively dealing with Kronecker factors (<code>Kron</code> and <code>KronDecomposed</code>).</p>
+effectively dealing with Kronecker factors (<code><a title="laplace.matrix.Kron" href="matrix.html#laplace.matrix.Kron">Kron</a></code> and <code><a title="laplace.matrix.KronDecomposed" href="matrix.html#laplace.matrix.KronDecomposed">KronDecomposed</a></code>).</p>
 <h2 id="extendability">Extendability</h2>
 <p>To extend the laplace package, new <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> subclasses can be designed, for example,
 a block-diagonal structure or subset-of-weights Laplace.
 Alternatively, extending or integrating backends allows to provide different Hessian
 approximations to the laplace approximations.
-For example, currently the <code>BackPackInterface</code> and <code>AsdfInterface</code> are available.
-The <code>AsdfInterface</code> provides a Kronecker factored empirical Fisher while the <code>BackPackInterface</code>
-does not, and only the <code>BackPackInterface</code> provides access to Hessian approximations
+For example, currently the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> and <code><a title="laplace.curvature.AsdfInterface" href="curvature/index.html#laplace.curvature.AsdfInterface">AsdfInterface</a></code> are available.
+The <code><a title="laplace.curvature.AsdfInterface" href="curvature/index.html#laplace.curvature.AsdfInterface">AsdfInterface</a></code> provides a Kronecker factored empirical Fisher while the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code>
+does not, and only the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> provides access to Hessian approximations
 for a regression (MSELoss) loss function.</p>
 <h2 id="example-usage">Example usage</h2>
 <h3 id="post-hoc-prior-precision-tuning-of-last-layer-la"><em>Post-hoc</em> prior precision tuning of last-layer LA</h3>
@@ -144,7 +144,7 @@ The <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code
 As default <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> returns a Kronecker factored LA.
 We fit the LA to the training data and initialize <code>log_prior</code> and <code>log_sigma</code>.
 Using Adam, we minimize the negative log marginal likelihood for <code>n_epochs</code>.</p>
-<pre><code class="language-python">la = Laplace(model, 'regression', subset_of_weights='all')
+<pre><code class="language-python">la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
 la.fit(train_loader)
 log_prior, log_sigma = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
 hyper_optimizer = torch.optim.Adam([log_prior, log_sigma], lr=1e-1)
@@ -154,9 +154,9 @@ for i in range(n_epochs):
     neg_marglik.backward()
     hyper_optimizer.step()
 </code></pre>
-<p>The obtained observation noise is close to the ground truth with a value of \(\sigma \approx 0.27\)
+<p>The obtained observation noise is close to the ground truth with a value of \(\sigma \approx 0.28\)
 without the need for any validation data.
-The resulting prior precision is \(\delta \approx 0.39\).</p>
+The resulting prior precision is \(\delta \approx 0.18\).</p>
 <h4 id="bayesian-predictive">Bayesian predictive</h4>
 <p>Lastly, we compare the MAP prediction to the obtained LA prediction.
 For LA, we have a closed-form predictive distribution on the output \(f\) which is a Gaussian
@@ -2222,22 +2222,22 @@ set the number of MC samples for stochastic approximations.</dd>
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature, backend=backend, 
+                         prior_mean=0., temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
-        if self.model._found:
-            self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
-            self.n_params = len(self.mean)
-            self.n_layers = len(list(self.model.last_layer.parameters()))
-            self.prior_precision = prior_precision
-            self.prior_mean = prior_mean
-        else:
+        if self.model.last_layer is None:
             self.mean = None
             self.n_params = None
             self.n_layers = None
             # ignore checks of prior mean setter temporarily, check on .fit()
             self._prior_precision = prior_precision
             self._prior_mean = prior_mean
+        else:
+            self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.n_params = len(self.mean)
+            self.n_layers = len(list(self.model.last_layer.parameters()))
+            self.prior_precision = prior_precision
+            self.prior_mean = prior_mean
         self._backend_kwargs[&#39;last_layer&#39;] = True
 
     def fit(self, train_loader):
@@ -2254,7 +2254,7 @@ set the number of MC samples for stochastic approximations.</dd>
 
         self.model.eval()
 
-        if not self.model._found:
+        if self.model.last_layer is None:
             X, _ = next(iter(train_loader))
             with torch.no_grad():
                 self.model.find_last_layer(X[:1].to(self._device))
