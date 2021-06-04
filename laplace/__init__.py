@@ -1,7 +1,7 @@
 """
 .. include:: ../documentation.md
 
-.. image:: ../regression_example.png
+.. include:: ../regression_example.md
 """
 REGRESSION = 'regression'
 CLASSIFICATION = 'classification'
