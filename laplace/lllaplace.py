@@ -60,22 +60,22 @@ class LLLaplace(BaseLaplace):
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature, backend=backend, 
+                         prior_mean=0., temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
-        if self.model._found:
-            self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
-            self.n_params = len(self.mean)
-            self.n_layers = len(list(self.model.last_layer.parameters()))
-            self.prior_precision = prior_precision
-            self.prior_mean = prior_mean
-        else:
+        if self.model.last_layer is None:
             self.mean = None
             self.n_params = None
             self.n_layers = None
             # ignore checks of prior mean setter temporarily, check on .fit()
             self._prior_precision = prior_precision
             self._prior_mean = prior_mean
+        else:
+            self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.n_params = len(self.mean)
+            self.n_layers = len(list(self.model.last_layer.parameters()))
+            self.prior_precision = prior_precision
+            self.prior_mean = prior_mean
         self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader):
@@ -92,7 +92,7 @@ class LLLaplace(BaseLaplace):
 
         self.model.eval()
 
-        if not self.model._found:
+        if self.model.last_layer is None:
             X, _ = next(iter(train_loader))
             with torch.no_grad():
                 self.model.find_last_layer(X[:1].to(self._device))
