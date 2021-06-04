@@ -23,42 +23,6 @@
 <h1 class="title">Module <code>laplace.laplace</code></h1>
 </header>
 <section id="section-intro">
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">from laplace.baselaplace import BaseLaplace
-from laplace import *
-
-
-def Laplace(model, likelihood, subset_of_weights=&#39;last_layer&#39;, hessian_structure=&#39;kron&#39;,
-            *args, **kwargs):
-    &#34;&#34;&#34;Simplified Laplace access using strings instead of different classes.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-    likelihood : {&#39;classification&#39;, &#39;regression&#39;}
-    subset_of_weights : {&#39;last_layer&#39;, &#39;all&#39;}, default=&#39;last_layer&#39;
-        subset of weights to consider for inference
-    hessian_structure : {&#39;diag&#39;, &#39;kron&#39;, &#39;full&#39;}, default=&#39;kron&#39;
-        structure of the Hessian approximation
-
-    Returns
-    -------
-    laplace : BaseLaplace
-        chosen subclass of BaseLaplace instantiated with additional arguments
-    &#34;&#34;&#34;
-    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(BaseLaplace)
-                   if hasattr(subclass, &#39;_key&#39;)}
-    laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
-    return laplace_class(model, likelihood, *args, **kwargs)
-
-
-def _all_subclasses(cls):
-    return set(cls.__subclasses__()).union(
-        [s for c in cls.__subclasses__() for s in _all_subclasses(c)])</code></pre>
-</details>
 </section>
 <section>
 </section>
@@ -88,33 +52,6 @@ def _all_subclasses(cls):
 <dt><strong><code>laplace</code></strong> :&ensp;<code>BaseLaplace</code></dt>
 <dd>chosen subclass of BaseLaplace instantiated with additional arguments</dd>
 </dl></div>
-<details class="source">
-<summary>
-<span>Expand source code</span>
-</summary>
-<pre><code class="python">def Laplace(model, likelihood, subset_of_weights=&#39;last_layer&#39;, hessian_structure=&#39;kron&#39;,
-            *args, **kwargs):
-    &#34;&#34;&#34;Simplified Laplace access using strings instead of different classes.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-    likelihood : {&#39;classification&#39;, &#39;regression&#39;}
-    subset_of_weights : {&#39;last_layer&#39;, &#39;all&#39;}, default=&#39;last_layer&#39;
-        subset of weights to consider for inference
-    hessian_structure : {&#39;diag&#39;, &#39;kron&#39;, &#39;full&#39;}, default=&#39;kron&#39;
-        structure of the Hessian approximation
-
-    Returns
-    -------
-    laplace : BaseLaplace
-        chosen subclass of BaseLaplace instantiated with additional arguments
-    &#34;&#34;&#34;
-    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(BaseLaplace)
-                   if hasattr(subclass, &#39;_key&#39;)}
-    laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
-    return laplace_class(model, likelihood, *args, **kwargs)</code></pre>
-</details>
 </dd>
 </dl>
 </section>
