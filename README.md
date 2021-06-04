@@ -22,3 +22,12 @@ pip install pytest
 pytest tests/
 ```
 
+## Documentation
+
+```bash
+pip install pdoc
+# create docs and write to html
+pdoc --html -o html --template-dir template laplace --force
+# .. or serve the docs directly
+pdoc --http 0.0.0.0:8080 laplace --template-dir template
+```
