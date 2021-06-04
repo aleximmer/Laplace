@@ -335,7 +335,7 @@ In particular, we assume a scalar, layer-wise, or diagonal prior precision so th
 all cases <span><span class="MathJax_Preview">P_0 = \textrm{diag}(p_0)</span><script type="math/tex">P_0 = \textrm{diag}(p_0)</script></span> and the structure of <span><span class="MathJax_Preview">p_0</span><script type="math/tex">p_0</script></span> can be varied.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code> or <code><a title="laplace.feature_extractor.FeatureExtractor" href="feature_extractor.html#laplace.feature_extractor.FeatureExtractor">FeatureExtractor</a></code></dt>
+<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
 <dd>&nbsp;</dd>
 <dt><strong><code>likelihood</code></strong> :&ensp;<code>{'classification', 'regression'}</code></dt>
 <dd>determines the log likelihood Hessian approximation</dd>
@@ -382,7 +382,7 @@ set the number of MC samples for stochastic approximations.</dd>
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module
     likelihood : {&#39;classification&#39;, &#39;regression&#39;}
         determines the log likelihood Hessian approximation
     sigma_noise : torch.Tensor or float, default=1

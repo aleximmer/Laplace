@@ -36,7 +36,7 @@ class BaseLaplace(ABC):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module
     likelihood : {'classification', 'regression'}
         determines the log likelihood Hessian approximation
     sigma_noise : torch.Tensor or float, default=1
