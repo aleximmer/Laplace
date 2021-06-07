@@ -7,6 +7,8 @@ The documentation is available at [https://d2ca8dae-c541-11eb-9203-acde48001122.
 
 ## Setup
 
+We assume `python3.8` since the package was developed with that version.
+
 ```bash
 pip install -r requirements.txt
 # for development
@@ -25,7 +27,7 @@ pytest tests/
 ## [Documentation](https://d2ca8dae-c541-11eb-9203-acde48001122.github.io/lapras/index.html)
 
 ```bash
-pip install pdoc
+pip install pdoc3 matplotlib
 # create docs and write to html
 bash update_docs.sh
 # .. or serve the docs directly
