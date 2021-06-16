@@ -53,7 +53,7 @@ class Kron:
     def __len__(self):
         return len(self.kfacs)
 
-    def decompose(self):
+    def decompose(self, damping=False):
         eigvecs, eigvals = list(), list()
         for F in self.kfacs:
             Qs, ls = list(), list()
@@ -63,7 +63,7 @@ class Kron:
                 ls.append(l)
             eigvecs.append(Qs)
             eigvals.append(ls)
-        return KronDecomposed(eigvecs, eigvals)
+        return KronDecomposed(eigvecs, eigvals, damping=damping)
 
     def _bmm(self, W: torch.Tensor) -> torch.Tensor:
         # self @ W[batch, k, params]
@@ -143,7 +143,7 @@ class Kron:
 
 class KronDecomposed:
 
-    def __init__(self, eigenvectors, eigenvalues, deltas=None, dampen=False):
+    def __init__(self, eigenvectors, eigenvalues, deltas=None, damping=False):
         self.eigenvectors = eigenvectors
         self.eigenvalues = eigenvalues
         device = eigenvectors[0][0].device
@@ -152,7 +152,7 @@ class KronDecomposed:
         else:
             self._check_deltas(deltas)
             self.deltas = deltas
-        self.dampen = dampen
+        self.damping = damping
 
     def detach(self):
         self.deltas = self.deltas.detach()
@@ -191,7 +191,7 @@ class KronDecomposed:
                 logdet += torch.log(ls[0] + delta).sum()
             elif len(ls) == 2:
                 l1, l2 = ls
-                if self.dampen:
+                if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
                     logdet += torch.log(torch.ger(l1d, l2d)).sum()
                 else:
@@ -220,7 +220,7 @@ class KronDecomposed:
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 p = len(l1) * len(l2)
-                if self.dampen:
+                if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
                     ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
                 else:
@@ -263,7 +263,11 @@ class KronDecomposed:
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 Q = kron(Q1, Q2)
-                l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                if self.damping:
+                    delta_sqrt = torch.sqrt(delta)
+                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                else:
+                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
                 L = torch.diag(l.flatten())
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)
