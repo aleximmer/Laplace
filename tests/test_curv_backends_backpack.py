@@ -211,3 +211,32 @@ def test_full_vs_diag_ef_reg_backpack(reg_Xy, model):
     loss_f, H_ef = backend.full(X, y)
     assert loss == loss_f
     assert torch.allclose(diag_ef, H_ef.diagonal())
+
+
+def test_kron_normalization_reg(reg_Xy, model):
+    X, y = reg_Xy
+    xi, yi = X[:1], y[:1]
+    backend = BackPackGGN(model, 'regression', stochastic=False)
+    loss, kron = backend.kron(xi, yi, N=1)
+    kron_true = 7 * kron
+    loss_true = 7 * loss
+    X = torch.repeat_interleave(xi, 7, 0)
+    y = torch.repeat_interleave(yi, 7, 0)
+    loss_test, kron_test  = backend.kron(X, y, N=7)
+    assert torch.allclose(kron_true.diag(), kron_test.diag())
+    assert torch.allclose(loss_true, loss_test)
+
+
+def test_kron_normalization_class(class_Xy, model):
+    X, y = class_Xy
+    xi, yi = X[:1], y[:1]
+    backend = BackPackGGN(model, 'classification', stochastic=False)
+    loss, kron = backend.kron(xi, yi, N=1)
+    kron_true = 7 * kron
+    loss_true = 7 * loss
+    X = torch.repeat_interleave(xi, 7, 0)
+    y = torch.repeat_interleave(yi, 7, 0)
+    loss_test, kron_test  = backend.kron(X, y, N=7)
+    assert torch.allclose(kron_true.diag(), kron_test.diag())
+    assert torch.allclose(loss_true, loss_test)
+

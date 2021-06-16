@@ -95,8 +95,12 @@ class Kron:
     def __len__(self):
         return len(self.kfacs)
 
-    def decompose(self):
+    def decompose(self, damping=False):
         """Eigendecompose Kronecker factors and turn into `KronDecomposed`.
+        Parameters
+        ----------
+        damping : bool
+            use damping
 
         Returns
         -------
@@ -111,7 +115,7 @@ class Kron:
                 ls.append(l)
             eigvecs.append(Qs)
             eigvals.append(ls)
-        return KronDecomposed(eigvecs, eigvals)
+        return KronDecomposed(eigvecs, eigvals, damping=damping)
 
     def _bmm(self, W: torch.Tensor) -> torch.Tensor:
         """Implementation of `bmm` which casts the parameters to the right shape.
@@ -216,7 +220,7 @@ class Kron:
 
     def to_matrix(self) -> torch.Tensor:
         """Make the Kronecker factorization dense by computing the kronecker product.
-        Warning: this should only be used for testing purposes as it will allocate 
+        Warning: this should only be used for testing purposes as it will allocate
         large amounts of memory for big architectures.
 
         Returns
@@ -237,12 +241,12 @@ class Kron:
 
 
 class KronDecomposed:
-    """Decomposed Kronecker factored approximate curvature representation 
+    """Decomposed Kronecker factored approximate curvature representation
     for a corresponding neural network.
     Each matrix in `Kron` is decomposed to obtain `KronDecomposed`.
-    Front-loading decomposition allows cheap repeated computation 
+    Front-loading decomposition allows cheap repeated computation
     of inverses and log determinants.
-    In contrast to `Kron`, we can add scalar or layerwise scalars but 
+    In contrast to `Kron`, we can add scalar or layerwise scalars but
     we cannot add other `Kron` or `KronDecomposed` anymore.
 
     Parameters
@@ -258,7 +262,7 @@ class KronDecomposed:
         use dampen approximation mixing prior and Kron partially multiplicatively
     """
 
-    def __init__(self, eigenvectors, eigenvalues, deltas=None, dampen=False):
+    def __init__(self, eigenvectors, eigenvalues, deltas=None, damping=False):
         self.eigenvectors = eigenvectors
         self.eigenvalues = eigenvalues
         device = eigenvectors[0][0].device
@@ -267,7 +271,7 @@ class KronDecomposed:
         else:
             self._check_deltas(deltas)
             self.deltas = deltas
-        self.dampen = dampen
+        self.damping = damping
 
     def detach(self):
         self.deltas = self.deltas.detach()
@@ -336,7 +340,7 @@ class KronDecomposed:
                 logdet += torch.log(ls[0] + delta).sum()
             elif len(ls) == 2:
                 l1, l2 = ls
-                if self.dampen:
+                if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
                     logdet += torch.log(torch.ger(l1d, l2d)).sum()
                 else:
@@ -377,7 +381,7 @@ class KronDecomposed:
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 p = len(l1) * len(l2)
-                if self.dampen:
+                if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
                     ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
                 else:
@@ -443,7 +447,11 @@ class KronDecomposed:
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 Q = kron(Q1, Q2)
-                l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                if self.damping:
+                    delta_sqrt = torch.sqrt(delta)
+                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                else:
+                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
                 L = torch.diag(l.flatten())
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)

@@ -681,9 +681,17 @@ class KronLaplace(BaseLaplace):
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
+    Damping can be enabled by setting `damping=True`.
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('all', 'kron')
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, damping=False,
+                 **backend_kwargs):
+        self.damping = damping
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         prior_mean, temperature, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
@@ -696,7 +704,7 @@ class KronLaplace(BaseLaplace):
         # Kron requires postprocessing as all quantities depend on the decomposition.
         if keep_factors:
             self.H_facs = self.H
-        self.H = self.H.decompose()
+        self.H = self.H.decompose(damping=self.damping)
 
     @property
     def posterior_precision(self):
