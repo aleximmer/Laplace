@@ -2,3 +2,4 @@ torch
 torchvision
 torchaudio
 backpack-for-pytorch
+scipy
