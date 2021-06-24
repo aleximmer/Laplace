@@ -73,10 +73,16 @@ or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.matrix.Kron.decompose"><code class="name flex">
-<span>def <span class="ident">decompose</span></span>(<span>self)</span>
+<span>def <span class="ident">decompose</span></span>(<span>self, damping=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Eigendecompose Kronecker factors and turn into <code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code>.</p>
+<div class="desc"><p>Eigendecompose Kronecker factors and turn into <code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code>.
+Parameters</p>
+<hr>
+<dl>
+<dt><strong><code>damping</code></strong> :&ensp;<code>bool</code></dt>
+<dd>use damping</dd>
+</dl>
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><strong><code>kron_decomposed</code></strong> :&ensp;<code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code></dt>
@@ -145,7 +151,7 @@ large amounts of memory for big architectures.</p>
 </dd>
 <dt id="laplace.matrix.KronDecomposed"><code class="flex name class">
 <span>class <span class="ident">KronDecomposed</span></span>
-<span>(</span><span>eigenvectors, eigenvalues, deltas=None, dampen=False)</span>
+<span>(</span><span>eigenvectors, eigenvalues, deltas=None, damping=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Decomposed Kronecker factored approximate curvature representation

@@ -30,11 +30,9 @@ pip install -e .
 # for &quot;production&quot;
 pip install .
 
-# for asdfghjkl backend
-pip install dependencies/asdfghjkl-0.0.1-py3-none-any.whl
 
 # run tests
-pip install pytest
+pip install -r tests/requirements.txt
 pytest tests/
 </code></pre>
 <h2 id="structure">Structure</h2>
@@ -54,9 +52,9 @@ effectively dealing with Kronecker factors (<code><a title="laplace.matrix.Kron"
 <p>To extend the laplace package, new <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> subclasses can be designed, for example,
 a block-diagonal structure or subset-of-weights Laplace.
 Alternatively, extending or integrating backends allows to provide different Hessian
-approximations to the laplace approximations.
-For example, currently the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> and <code><a title="laplace.curvature.AsdfInterface" href="curvature/index.html#laplace.curvature.AsdfInterface">AsdfInterface</a></code> are available.
-The <code><a title="laplace.curvature.AsdfInterface" href="curvature/index.html#laplace.curvature.AsdfInterface">AsdfInterface</a></code> provides a Kronecker factored empirical Fisher while the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code>
+approximations to the Laplace approximations.
+For example, currently the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> and <code><a title="laplace.curvature.AsdlInterface" href="curvature/index.html#laplace.curvature.AsdlInterface">AsdlInterface</a></code> are available.
+The <code><a title="laplace.curvature.AsdlInterface" href="curvature/index.html#laplace.curvature.AsdlInterface">AsdlInterface</a></code> provides a Kronecker factored empirical Fisher while the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code>
 does not, and only the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> provides access to Hessian approximations
 for a regression (MSELoss) loss function.</p>
 <h2 id="example-usage">Example usage</h2>
@@ -76,7 +74,7 @@ la = Laplace(model, 'classification',
              subset_of_weights='all', 
              hessian_structure='diag')
 la.fit(train_loader)
-la.optimize_prior_precision(method='CV')
+la.optimize_prior_precision(method='CV', val_loader=val_loader)
 
 # User-specified predictive approx.
 pred = la(x, link_approx='probit')
@@ -627,7 +625,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 </dd>
 <dt id="laplace.KronLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -638,7 +636,8 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 <code><a title="laplace.matrix.Kron" href="matrix.html#laplace.matrix.Kron">Kron</a></code> and <code><a title="laplace.matrix.KronDecomposed" href="matrix.html#laplace.matrix.KronDecomposed">KronDecomposed</a></code> for the structure of
 the Kronecker factors. <code>Kron</code> is used to aggregate factors by summing up and
 <code>KronDecomposed</code> is used to add the prior, a Hessian factor (e.g. temperature),
-and computing posterior covariances, marginal likelihood, etc.</p></div>
+and computing posterior covariances, marginal likelihood, etc.
+Damping can be enabled by setting <code>damping=True</code>.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
@@ -889,7 +888,7 @@ See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace
 </dd>
 <dt id="laplace.KronLLLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -900,7 +899,8 @@ See <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace
 <code><a title="laplace.matrix.Kron" href="matrix.html#laplace.matrix.Kron">Kron</a></code> and <code><a title="laplace.matrix.KronDecomposed" href="matrix.html#laplace.matrix.KronDecomposed">KronDecomposed</a></code> for the structure of
 the Kronecker factors. <code>Kron</code> is used to aggregate factors by summing up and
 <code>KronDecomposed</code> is used to add the prior, a Hessian factor (e.g. temperature),
-and computing posterior covariances, marginal likelihood, etc.</p></div>
+and computing posterior covariances, marginal likelihood, etc.
+Use of <code>damping</code> is possible by initializing or setting <code>damping=True</code>.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li>laplace.lllaplace.LLLaplace</li>

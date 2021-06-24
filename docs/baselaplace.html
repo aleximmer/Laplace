@@ -402,7 +402,7 @@ See <code><a title="laplace.baselaplace.BaseLaplace" href="#laplace.baselaplace.
 </dd>
 <dt id="laplace.baselaplace.KronLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -413,7 +413,8 @@ See <code><a title="laplace.baselaplace.BaseLaplace" href="#laplace.baselaplace.
 <code><a title="laplace.matrix.Kron" href="matrix.html#laplace.matrix.Kron">Kron</a></code> and <code><a title="laplace.matrix.KronDecomposed" href="matrix.html#laplace.matrix.KronDecomposed">KronDecomposed</a></code> for the structure of
 the Kronecker factors. <code>Kron</code> is used to aggregate factors by summing up and
 <code>KronDecomposed</code> is used to add the prior, a Hessian factor (e.g. temperature),
-and computing posterior covariances, marginal likelihood, etc.</p></div>
+and computing posterior covariances, marginal likelihood, etc.
+Damping can be enabled by setting <code>damping=True</code>.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="laplace.baselaplace.BaseLaplace" href="#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
