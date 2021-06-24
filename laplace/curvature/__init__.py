@@ -8,10 +8,10 @@ except ModuleNotFoundError:
     logging.info('Backpack not available.')
 
 try:
-    from laplace.curvature.asdf import AsdfGGN, AsdfEF, AsdfInterface
+    from laplace.curvature.asdl import AsdlGGN, AsdlEF, AsdlInterface
 except ModuleNotFoundError:
     logging.info('asdfghjkl backend not available.')
 
 __all__ = ['CurvatureInterface', 'GGNInterface', 'EFInterface',
            'BackPackInterface', 'BackPackGGN', 'BackPackEF',
-           'AsdfInterface', 'AsdfGGN', 'AsdfEF']
+           'AsdlInterface', 'AsdlGGN', 'AsdlEF']

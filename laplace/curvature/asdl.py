@@ -13,7 +13,7 @@ from laplace.matrix import Kron
 from laplace.utils import _is_batchnorm
 
 
-class AsdfInterface(CurvatureInterface):
+class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
     def __init__(self, model, likelihood, last_layer=False):
@@ -50,7 +50,7 @@ class AsdfInterface(CurvatureInterface):
         return Js, f
 
     def gradients(self, x, y):
-        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter 
+        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
         \\(\\theta\\) using asdfghjkl's backend.
 
         Parameters
@@ -132,7 +132,7 @@ class AsdfInterface(CurvatureInterface):
         return self.factor * loss, self.factor * kron
 
 
-class AsdfGGN(AsdfInterface, GGNInterface):
+class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
     def __init__(self, model, likelihood, last_layer=False, stochastic=False):
@@ -144,10 +144,10 @@ class AsdfGGN(AsdfInterface, GGNInterface):
         return FISHER_MC if self.stochastic else FISHER_EXACT
 
 
-class AsdfEF(AsdfInterface, EFInterface):
+class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl.
     """
-    
+
     @property
     def _ggn_type(self):
         return COV

@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import AsdfInterface, BackPackInterface
+from laplace.curvature import AsdlInterface, BackPackInterface
 from laplace.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive
 
@@ -35,7 +35,7 @@ def X():
     return torch.randn(200, 3)
 
 
-@pytest.mark.parametrize('backend', [AsdfInterface, BackPackInterface])
+@pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_linear_jacobians(linear_model, X, backend):
     # jacobian of linear model is input X.
     Js, f = backend.jacobians(linear_model, X)
@@ -46,7 +46,7 @@ def test_linear_jacobians(linear_model, X, backend):
     assert torch.allclose(f, linear_model(X), atol=1e-5)
 
 
-@pytest.mark.parametrize('backend', [AsdfInterface, BackPackInterface])
+@pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_jacobians_singleoutput(singleoutput_model, X, backend):
     model = singleoutput_model
     Js, f = backend.jacobians(model, X)
@@ -57,7 +57,7 @@ def test_jacobians_singleoutput(singleoutput_model, X, backend):
     assert torch.allclose(f, f_naive)
 
 
-@pytest.mark.parametrize('backend', [AsdfInterface, BackPackInterface])
+@pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_jacobians_multioutput(multioutput_model, X, backend):
     model = multioutput_model
     Js, f = backend.jacobians(model, X)
@@ -68,7 +68,7 @@ def test_jacobians_multioutput(multioutput_model, X, backend):
     assert torch.allclose(f, f_naive)
 
 
-@pytest.mark.parametrize('backend', [AsdfInterface, BackPackInterface])
+@pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend):
     model = FeatureExtractor(singleoutput_model)
     Js, f = backend.last_layer_jacobians(model, X)
@@ -80,7 +80,7 @@ def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend):
     assert torch.allclose(f, f_naive)
 
 
-@pytest.mark.parametrize('backend', [AsdfInterface, BackPackInterface])
+@pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_last_layer_jacobians_multioutput(multioutput_model, X, backend):
     model = FeatureExtractor(multioutput_model)
     Js, f = backend.last_layer_jacobians(model, X)
