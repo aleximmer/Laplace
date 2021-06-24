@@ -27,7 +27,7 @@
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
 <dl>
-<dt><code class="name"><a title="laplace.curvature.asdf" href="asdf.html">laplace.curvature.asdf</a></code></dt>
+<dt><code class="name"><a title="laplace.curvature.asdl" href="asdl.html">laplace.curvature.asdl</a></code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -81,7 +81,7 @@ For example, <span><span class="MathJax_Preview">\frac{1}{2}</span><script type=
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
-<li><a title="laplace.curvature.asdf.AsdfInterface" href="asdf.html#laplace.curvature.asdf.AsdfInterface">AsdfInterface</a></li>
+<li><a title="laplace.curvature.asdl.AsdlInterface" href="asdl.html#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></li>
 <li><a title="laplace.curvature.backpack.BackPackInterface" href="backpack.html#laplace.curvature.backpack.BackPackInterface">BackPackInterface</a></li>
 <li><a title="laplace.curvature.curvature.EFInterface" href="curvature.html#laplace.curvature.curvature.EFInterface">EFInterface</a></li>
 <li><a title="laplace.curvature.curvature.GGNInterface" href="curvature.html#laplace.curvature.curvature.GGNInterface">GGNInterface</a></li>
@@ -247,7 +247,7 @@ In addition to <code><a title="laplace.curvature.CurvatureInterface" href="#lapl
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
-<li><a title="laplace.curvature.asdf.AsdfGGN" href="asdf.html#laplace.curvature.asdf.AsdfGGN">AsdfGGN</a></li>
+<li><a title="laplace.curvature.asdl.AsdlGGN" href="asdl.html#laplace.curvature.asdl.AsdlGGN">AsdlGGN</a></li>
 <li><a title="laplace.curvature.backpack.BackPackGGN" href="backpack.html#laplace.curvature.backpack.BackPackGGN">BackPackGGN</a></li>
 </ul>
 <h3>Methods</h3>
@@ -319,7 +319,7 @@ For example, <span><span class="MathJax_Preview">\frac{1}{2}</span><script type=
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
-<li><a title="laplace.curvature.asdf.AsdfEF" href="asdf.html#laplace.curvature.asdf.AsdfEF">AsdfEF</a></li>
+<li><a title="laplace.curvature.asdl.AsdlEF" href="asdl.html#laplace.curvature.asdl.AsdlEF">AsdlEF</a></li>
 <li><a title="laplace.curvature.backpack.BackPackEF" href="backpack.html#laplace.curvature.backpack.BackPackEF">BackPackEF</a></li>
 </ul>
 <h3>Methods</h3>
@@ -490,8 +490,8 @@ using backpack's BatchGrad per output dimension.</p>
 </li>
 </ul>
 </dd>
-<dt id="laplace.curvature.AsdfInterface"><code class="flex name class">
-<span>class <span class="ident">AsdfInterface</span></span>
+<dt id="laplace.curvature.AsdlInterface"><code class="flex name class">
+<span>class <span class="ident">AsdlInterface</span></span>
 <span>(</span><span>model, likelihood, last_layer=False)</span>
 </code></dt>
 <dd>
@@ -503,12 +503,12 @@ using backpack's BatchGrad per output dimension.</p>
 </ul>
 <h3>Subclasses</h3>
 <ul class="hlist">
-<li><a title="laplace.curvature.asdf.AsdfEF" href="asdf.html#laplace.curvature.asdf.AsdfEF">AsdfEF</a></li>
-<li><a title="laplace.curvature.asdf.AsdfGGN" href="asdf.html#laplace.curvature.asdf.AsdfGGN">AsdfGGN</a></li>
+<li><a title="laplace.curvature.asdl.AsdlEF" href="asdl.html#laplace.curvature.asdl.AsdlEF">AsdlEF</a></li>
+<li><a title="laplace.curvature.asdl.AsdlGGN" href="asdl.html#laplace.curvature.asdl.AsdlGGN">AsdlGGN</a></li>
 </ul>
 <h3>Static methods</h3>
 <dl>
-<dt id="laplace.curvature.AsdfInterface.jacobians"><code class="name flex">
+<dt id="laplace.curvature.AsdlInterface.jacobians"><code class="name flex">
 <span>def <span class="ident">jacobians</span></span>(<span>model, x)</span>
 </code></dt>
 <dd>
@@ -532,7 +532,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dl>
 <h3>Methods</h3>
 <dl>
-<dt id="laplace.curvature.AsdfInterface.gradients"><code class="name flex">
+<dt id="laplace.curvature.AsdlInterface.gradients"><code class="name flex">
 <span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
 </code></dt>
 <dd>
@@ -566,56 +566,56 @@ using asdfghjkl's gradient per output dimension.</p>
 </li>
 </ul>
 </dd>
-<dt id="laplace.curvature.AsdfGGN"><code class="flex name class">
-<span>class <span class="ident">AsdfGGN</span></span>
+<dt id="laplace.curvature.AsdlGGN"><code class="flex name class">
+<span>class <span class="ident">AsdlGGN</span></span>
 <span>(</span><span>model, likelihood, last_layer=False, stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using asdfghjkl.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li><a title="laplace.curvature.asdf.AsdfInterface" href="asdf.html#laplace.curvature.asdf.AsdfInterface">AsdfInterface</a></li>
+<li><a title="laplace.curvature.asdl.AsdlInterface" href="asdl.html#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></li>
 <li><a title="laplace.curvature.curvature.GGNInterface" href="curvature.html#laplace.curvature.curvature.GGNInterface">GGNInterface</a></li>
 <li><a title="laplace.curvature.curvature.CurvatureInterface" href="curvature.html#laplace.curvature.curvature.CurvatureInterface">CurvatureInterface</a></li>
 <li>abc.ABC</li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
-<li><code><b><a title="laplace.curvature.asdf.AsdfInterface" href="asdf.html#laplace.curvature.asdf.AsdfInterface">AsdfInterface</a></b></code>:
+<li><code><b><a title="laplace.curvature.asdl.AsdlInterface" href="asdl.html#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.gradients" href="asdf.html#laplace.curvature.asdf.AsdfInterface.gradients">gradients</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.jacobians" href="asdf.html#laplace.curvature.asdf.AsdfInterface.jacobians">jacobians</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.last_layer_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians">last_layer_jacobians</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.gradients" href="asdl.html#laplace.curvature.asdl.AsdlInterface.gradients">gradients</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.jacobians" href="asdl.html#laplace.curvature.asdl.AsdlInterface.jacobians">jacobians</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.last_layer_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians">last_layer_jacobians</a></code></li>
 </ul>
 </li>
 </ul>
 </dd>
-<dt id="laplace.curvature.AsdfEF"><code class="flex name class">
-<span>class <span class="ident">AsdfEF</span></span>
+<dt id="laplace.curvature.AsdlEF"><code class="flex name class">
+<span>class <span class="ident">AsdlEF</span></span>
 <span>(</span><span>model, likelihood, last_layer=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using asdfghjkl.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li><a title="laplace.curvature.asdf.AsdfInterface" href="asdf.html#laplace.curvature.asdf.AsdfInterface">AsdfInterface</a></li>
+<li><a title="laplace.curvature.asdl.AsdlInterface" href="asdl.html#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></li>
 <li><a title="laplace.curvature.curvature.EFInterface" href="curvature.html#laplace.curvature.curvature.EFInterface">EFInterface</a></li>
 <li><a title="laplace.curvature.curvature.CurvatureInterface" href="curvature.html#laplace.curvature.curvature.CurvatureInterface">CurvatureInterface</a></li>
 <li>abc.ABC</li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
-<li><code><b><a title="laplace.curvature.asdf.AsdfInterface" href="asdf.html#laplace.curvature.asdf.AsdfInterface">AsdfInterface</a></b></code>:
+<li><code><b><a title="laplace.curvature.asdl.AsdlInterface" href="asdl.html#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.gradients" href="asdf.html#laplace.curvature.asdf.AsdfInterface.gradients">gradients</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.jacobians" href="asdf.html#laplace.curvature.asdf.AsdfInterface.jacobians">jacobians</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>
-<li><code><a title="laplace.curvature.asdf.AsdfInterface.last_layer_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians">last_layer_jacobians</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.gradients" href="asdl.html#laplace.curvature.asdl.AsdlInterface.gradients">gradients</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.jacobians" href="asdl.html#laplace.curvature.asdl.AsdlInterface.jacobians">jacobians</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.last_layer_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians">last_layer_jacobians</a></code></li>
 </ul>
 </li>
 </ul>
@@ -636,7 +636,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </li>
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
-<li><code><a title="laplace.curvature.asdf" href="asdf.html">laplace.curvature.asdf</a></code></li>
+<li><code><a title="laplace.curvature.asdl" href="asdl.html">laplace.curvature.asdl</a></code></li>
 <li><code><a title="laplace.curvature.backpack" href="backpack.html">laplace.curvature.backpack</a></code></li>
 <li><code><a title="laplace.curvature.curvature" href="curvature.html">laplace.curvature.curvature</a></code></li>
 </ul>
@@ -680,17 +680,17 @@ using asdfghjkl's gradient per output dimension.</p>
 <h4><code><a title="laplace.curvature.BackPackEF" href="#laplace.curvature.BackPackEF">BackPackEF</a></code></h4>
 </li>
 <li>
-<h4><code><a title="laplace.curvature.AsdfInterface" href="#laplace.curvature.AsdfInterface">AsdfInterface</a></code></h4>
+<h4><code><a title="laplace.curvature.AsdlInterface" href="#laplace.curvature.AsdlInterface">AsdlInterface</a></code></h4>
 <ul class="">
-<li><code><a title="laplace.curvature.AsdfInterface.jacobians" href="#laplace.curvature.AsdfInterface.jacobians">jacobians</a></code></li>
-<li><code><a title="laplace.curvature.AsdfInterface.gradients" href="#laplace.curvature.AsdfInterface.gradients">gradients</a></code></li>
+<li><code><a title="laplace.curvature.AsdlInterface.jacobians" href="#laplace.curvature.AsdlInterface.jacobians">jacobians</a></code></li>
+<li><code><a title="laplace.curvature.AsdlInterface.gradients" href="#laplace.curvature.AsdlInterface.gradients">gradients</a></code></li>
 </ul>
 </li>
 <li>
-<h4><code><a title="laplace.curvature.AsdfGGN" href="#laplace.curvature.AsdfGGN">AsdfGGN</a></code></h4>
+<h4><code><a title="laplace.curvature.AsdlGGN" href="#laplace.curvature.AsdlGGN">AsdlGGN</a></code></h4>
 </li>
 <li>
-<h4><code><a title="laplace.curvature.AsdfEF" href="#laplace.curvature.AsdfEF">AsdfEF</a></code></h4>
+<h4><code><a title="laplace.curvature.AsdlEF" href="#laplace.curvature.AsdlEF">AsdlEF</a></code></h4>
 </li>
 </ul>
 </li>

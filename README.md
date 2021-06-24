@@ -16,11 +16,9 @@ pip install -e .
 # for "production"
 pip install .
 
-# for asdfghjkl backend
-pip install dependencies/asdfghjkl-0.0.1-py3-none-any.whl
 
 # run tests
-pip install pytest
+pip install -r tests/requirements.txt
 pytest tests/
 ```
 
