@@ -4,10 +4,6 @@ python:
 install:
 - pip install -r requirements.txt
 - pip install -r tests/requirements.txt
-- python setup.py install 
-- git clone https://github.com/kazukiosawa/asdfghjkl.git tmp/asdfghjkl
-- cd tmp/asdfghjkl
-- pip install -r requirements.txt
 - python setup.py install
 script:
 - pytest -vx --cov=laplace/ tests/

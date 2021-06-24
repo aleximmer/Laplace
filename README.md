@@ -16,15 +16,9 @@ pip install -e .
 # for "production"
 pip install .
 
-# for the ASDL backend
-git clone https://github.com/kazukiosawa/asdfghjkl.git
-cd asdfghjkl
-pip install -r requirements.txt
-pip install .
-
 
 # run tests
-pip install pytest
+pip install -r tests/requirements.txt
 pytest tests/
 ```
 
