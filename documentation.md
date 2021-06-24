@@ -7,11 +7,9 @@ pip install -e .
 # for "production"
 pip install .
 
-# for asdfghjkl backend
-pip install dependencies/asdfghjkl-0.0.1-py3-none-any.whl
 
 # run tests
-pip install pytest
+pip install -r tests/requirements.txt
 pytest tests/
 ```
 
@@ -33,7 +31,7 @@ effectively dealing with Kronecker factors (`matrix.Kron` and `matrix.KronDecomp
 To extend the laplace package, new `BaseLaplace` subclasses can be designed, for example,
 a block-diagonal structure or subset-of-weights Laplace.
 Alternatively, extending or integrating backends allows to provide different Hessian
-approximations to the laplace approximations.
+approximations to the Laplace approximations.
 For example, currently the `curvature.BackPackInterface` and `curvature.AsdfInterface` are available.
 The `curvature.AsdfInterface` provides a Kronecker factored empirical Fisher while the `curvature.BackPackInterface`
 does not, and only the `curvature.BackPackInterface` provides access to Hessian approximations
@@ -60,7 +58,7 @@ la = Laplace(model, 'classification',
              subset_of_weights='all', 
              hessian_structure='diag')
 la.fit(train_loader)
-la.optimize_prior_precision(method='CV')
+la.optimize_prior_precision(method='CV', val_loader=val_loader)
 
 # User-specified predictive approx.
 pred = la(x, link_approx='probit')
