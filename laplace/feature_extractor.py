@@ -108,9 +108,9 @@ class FeatureExtractor(nn.Module):
         def get_act_hook(name):
             def act_hook(_, input, __):
                 # only accepts one input (expects linear layer)
-                if isinstance(input[0], torch.Tensor):
+                try:
                     act_out[name] = input[0].detach()
-                else:
+                except (IndexError, AttributeError):
                     act_out[name] = None
                 # remove hook
                 handles[name].remove()
