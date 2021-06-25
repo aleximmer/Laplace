@@ -32,7 +32,7 @@ To extend the laplace package, new `BaseLaplace` subclasses can be designed, for
 a block-diagonal structure or subset-of-weights Laplace.
 Alternatively, extending or integrating backends allows to provide different Hessian
 approximations to the Laplace approximations.
-For example, currently the `curvature.BackPackInterface` and `curvature.AsdlInterface` are available.
+For example, currently the `curvature.BackPackInterface` based on [BackPACK](https://github.com/f-dangel/backpack/) and `curvature.AsdlInterface` based on [ASDL](https://github.com/kazukiosawa/asdfghjkl) are available.
 The `curvature.AsdlInterface` provides a Kronecker factored empirical Fisher while the `curvature.BackPackInterface`
 does not, and only the `curvature.BackPackInterface` provides access to Hessian approximations
 for a regression (MSELoss) loss function.
