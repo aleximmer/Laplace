@@ -2,3 +2,4 @@ torch
 torchvision
 torchaudio
 backpack-for-pytorch
+asdfghjkl @ git+https://github.com/kazukiosawa/asdfghjkl.git

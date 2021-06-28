@@ -4,33 +4,41 @@ from backpack import backpack, extend, memory_cleanup
 from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared, BatchGrad
 from backpack.context import CTX
 
-from laplace.curvature import CurvatureInterface
+from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.matrix import Kron
 
 
-def cleanup(module):
-    for child in module.children():
-        cleanup(child)
-
-    setattr(module, "_backpack_extend", False)
-    memory_cleanup(module)
-
-
 class BackPackInterface(CurvatureInterface):
-
+    """Interface for Backpack backend.
+    """
     def __init__(self, model, likelihood, last_layer=False):
         super().__init__(model, likelihood, last_layer)
         extend(self._model)
         extend(self.lossfunc)
 
     @staticmethod
-    def jacobians(model, X):
-        # Jacobians are batch x output x params
+    def jacobians(model, x):
+        """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
+        using backpack's BatchGrad per output dimension.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+        x : torch.Tensor
+            input data `(batch, input_shape)` on compatible device with model.
+
+        Returns
+        -------
+        Js : torch.Tensor
+            Jacobians `(batch, parameters, outputs)`
+        f : torch.Tensor
+            output function `(batch, outputs)`
+        """
         model = extend(model)
         to_stack = []
         for i in range(model.output_size):
             model.zero_grad()
-            out = model(X)
+            out = model(x)
             with backpack(BatchGrad()):
                 if model.output_size > 1:
                     out[:, i].sum().backward()
@@ -38,31 +46,49 @@ class BackPackInterface(CurvatureInterface):
                     out.sum().backward()
                 to_cat = []
                 for param in model.parameters():
-                    to_cat.append(param.grad_batch.detach().reshape(X.shape[0], -1))
+                    to_cat.append(param.grad_batch.detach().reshape(x.shape[0], -1))
                     delattr(param, 'grad_batch')
                 Jk = torch.cat(to_cat, dim=1)
             to_stack.append(Jk)
             if i == 0:
                 f = out.detach()
 
-        # cleanup
         model.zero_grad()
         CTX.remove_hooks()
-        cleanup(model)
+        _cleanup(model)
         if model.output_size > 1:
             return torch.stack(to_stack, dim=2).transpose(1, 2), f
         else:
             return Jk.unsqueeze(-1).transpose(1, 2), f
 
+    def gradients(self, x, y):
+        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
+        \\(\\theta\\) using Backpack's BatchGrad.
 
-class BackPackGGN(BackPackInterface):
-    """[summary]
+        Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch, input_shape)` on compatible device with model.
+        y : torch.Tensor
 
-    MSELoss = |y-f|_2^2 -> d/df = -2(y-f)
-    log N(y|f,1) propto 1/2|y-f|_2^2 -> d/df = -(y-f)
-    --> factor for regression is 0.5 for loss and ggn
+        Returns
+        -------
+        loss : torch.Tensor
+        Gs : torch.Tensor
+            gradients `(batch, parameters)`
+        """
+        f = self.model(x)
+        loss = self.lossfunc(f, y)
+        with backpack(BatchGrad()):
+            loss.backward()
+        Gs = torch.cat([p.grad_batch.data.flatten(start_dim=1)
+                        for p in self._model.parameters()], dim=1)
+        return Gs, loss
+
+
+class BackPackGGN(BackPackInterface, GGNInterface):
+    """Implementation of the `GGNInterface` using Backpack.
     """
-
     def __init__(self, model, likelihood, last_layer=False, stochastic=False):
         super().__init__(model, likelihood, last_layer)
         self.stochastic = stochastic
@@ -98,7 +124,7 @@ class BackPackGGN(BackPackInterface):
 
         return self.factor * loss.detach(), self.factor * dggn
 
-    def kron(self, X, y, N, **wkwargs) -> [torch.Tensor, Kron]:
+    def kron(self, X, y, N, **kwargs) -> [torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         loss = self.lossfunc(f, y)
@@ -109,25 +135,10 @@ class BackPackGGN(BackPackInterface):
 
         return self.factor * loss.detach(), self.factor * kron
 
-    def full(self, X, y, **kwargs):
-        # TODO: put in shared GGN interaface for both backends
-        if self.stochastic:
-            raise ValueError('Stochastic approximation not implemented for full GGN.')
 
-        if self.last_layer:
-            Js, f = self.last_layer_jacobians(self.model, X)
-        else:
-            Js, f = self.jacobians(self.model, X)
-        loss, H_ggn = self._get_full_ggn(Js, f, y)
-
-        return loss, H_ggn
-
-
-class BackPackEF(BackPackInterface):
-
-    def _get_individual_gradients(self):
-        return torch.cat([p.grad_batch.data.flatten(start_dim=1)
-                          for p in self._model.parameters()], dim=1)
+class BackPackEF(BackPackInterface, EFInterface):
+    """Implementation of `EFInterface` using Backpack.
+    """
 
     def diag(self, X, y, **kwargs):
         f = self.model(X)
@@ -140,15 +151,12 @@ class BackPackEF(BackPackInterface):
         return self.factor * loss.detach(), self.factor * diag_EF
 
     def kron(self, X, y, **kwargs):
-        raise NotImplementedError()
+        raise NotImplementedError('Unavailable through Backpack.')
 
-    def full(self, X, y, **kwargs):
-        # TODO: put in shared EF interface for both kazuki and backpack
-        f = self.model(X)
-        loss = self.lossfunc(f, y)
-        with backpack(BatchGrad()):
-            loss.backward()
-        # TODO: implement similarly to jacobians as staticmethod
-        Gs = self._get_individual_gradients()
-        H_ef = Gs.T @ Gs
-        return self.factor * loss.detach(), self.factor * H_ef
+
+def _cleanup(module):
+    for child in module.children():
+        _cleanup(child)
+
+    setattr(module, "_backpack_extend", False)
+    memory_cleanup(module)

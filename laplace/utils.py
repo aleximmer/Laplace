@@ -25,14 +25,34 @@ def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_sampl
 
 
 def parameters_per_layer(model):
+    """Get number of parameters per layer.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+
+    Returns
+    -------
+    params_per_layer : list[int]
+    """
     return [np.prod(p.shape) for p in model.parameters()]
 
 
 def invsqrt_precision(M):
+    """Compute ``M^{-0.5}`` as a tridiagonal matrix.
+
+    Parameters
+    ----------
+    M : torch.Tensor
+
+    Returns
+    -------
+    M_invsqrt : torch.Tensor
+    """
     return _precision_to_scale_tril(M)
 
 
-def is_batchnorm(module):
+def _is_batchnorm(module):
     if isinstance(module, BatchNorm1d) or \
         isinstance(module, BatchNorm2d) or \
             isinstance(module, BatchNorm3d):
@@ -51,8 +71,16 @@ def _is_valid_scalar(scalar: Union[float, int, torch.Tensor]) -> bool:
 
 
 def kron(t1, t2):
-    """
-    Computes the Kronecker product between two tensors.
+    """Computes the Kronecker product between two tensors.
+
+    Parameters
+    ----------
+    t1 : torch.Tensor
+    t2 : torch.Tensor
+
+    Returns
+    -------
+    kron_product : torch.Tensor
     """
     t1_height, t1_width = t1.size()
     t2_height, t2_width = t2.size()
@@ -71,6 +99,17 @@ def kron(t1, t2):
 
 
 def diagonal_add_scalar(X, value):
+    """Add scalar value `value` to diagonal of `X`.
+
+    Parameters
+    ----------
+    X : torch.Tensor
+    value : torch.Tensor or float
+
+    Returns
+    -------
+    X_add_scalar : torch.Tensor
+    """
     if not X.device == torch.device('cpu'):
         indices = torch.cuda.LongTensor([[i, i] for i in range(X.shape[0])])
     else:
@@ -81,13 +120,19 @@ def diagonal_add_scalar(X, value):
 
 def symeig(M):
     """Symetric eigendecomposition avoiding failure cases by
-    adding and removing jitter to the diagonal
+    adding and removing jitter to the diagonal.
 
-    returns eigenvalues (l) and eigenvectors (W)
+    Parameters
+    ----------
+    M : torch.Tensor
+
+    Returns
+    -------
+    L : torch.Tensor
+        eigenvalues
+    W : torch.Tensor
+        eigenvectors
     """
-    # could make double to get more precise computation
-    # M = M.double()
-    # and then below return L.float(), W.float()
     try:
         L, W = torch.symeig(M, eigenvectors=True)
     except RuntimeError:  # did not converge
@@ -110,6 +155,16 @@ def symeig(M):
 
 
 def block_diag(blocks):
+    """Compose block-diagonal matrix of individual blocks.
+
+    Parameters
+    ----------
+    blocks : list[torch.Tensor]
+
+    Returns
+    -------
+    M : torch.Tensor
+    """
     P = sum([b.shape[0] for b in blocks])
     M = torch.zeros(P, P)
     p_cur = 0

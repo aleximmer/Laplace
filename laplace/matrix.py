@@ -7,14 +7,34 @@ from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
 
 
 class Kron:
+    """Kronecker factored approximate curvature representation for a corresponding
+    neural network.
+    Each element in `kfacs` is either a tuple or single matrix.
+    A tuple represents two Kronecker factors \\(Q\\), and \\(H\\) and a single element
+    is just a full block Hessian approximation.
 
+    Parameters
+    ----------
+    kfacs : list[Tuple]
+        each element in the list is a Tuple of two Kronecker factors Q, H
+        or a single matrix approximating the Hessian (in case of bias, for example)
+    """
     def __init__(self, kfacs):
         self.kfacs = kfacs
 
     @classmethod
     def init_from_model(cls, model, device):
-        # FIXME: this does not work for BatchNorm!!
-        # TODO: rewrite this functionality in terms of module types
+        """Initialize Kronecker factors based on a models architecture.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+        device : torch.device
+
+        Returns
+        -------
+        kron : Kron
+        """
         kfacs = list()
         for p in model.parameters():
             if p.ndim == 1:  # bias
@@ -35,14 +55,36 @@ class Kron:
         return cls(kfacs)
 
     def __add__(self, other):
+        """Add up Kronecker factors `self` and `other`.
+
+        Parameters
+        ----------
+        other : Kron
+
+        Returns
+        -------
+        kron : Kron
+        """
         if not isinstance(other, Kron):
             raise ValueError('Can only add Kron to Kron.')
 
         kfacs = [[Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
-                  for Fi, Fj in zip(self.kfacs, other.kfacs)]
+                 for Fi, Fj in zip(self.kfacs, other.kfacs)]
         return Kron(kfacs)
 
     def __mul__(self, scalar: Union[float, torch.Tensor]):
+        """Multiply all Kronecker factors by scalar.
+        The multiplication is distributed across the number of factors
+        using `pow(scalar, 1 / len(F))`. `len(F)` is either `1` or `2`.
+
+        Parameters
+        ----------
+        scalar : float, torch.Tensor
+
+        Returns
+        -------
+        kron : Kron
+        """
         if not _is_valid_scalar(scalar):
             raise ValueError('Input not valid python or torch scalar.')
 
@@ -54,6 +96,16 @@ class Kron:
         return len(self.kfacs)
 
     def decompose(self, damping=False):
+        """Eigendecompose Kronecker factors and turn into `KronDecomposed`.
+        Parameters
+        ----------
+        damping : bool
+            use damping
+
+        Returns
+        -------
+        kron_decomposed : KronDecomposed
+        """
         eigvecs, eigvals = list(), list()
         for F in self.kfacs:
             Qs, ls = list(), list()
@@ -66,6 +118,18 @@ class Kron:
         return KronDecomposed(eigvecs, eigvals, damping=damping)
 
     def _bmm(self, W: torch.Tensor) -> torch.Tensor:
+        """Implementation of `bmm` which casts the parameters to the right shape.
+
+        Parameters
+        ----------
+        W : torch.Tensor
+            matrix `(batch, classes, params)`
+
+        Returns
+        -------
+        SW : torch.Tensor
+            result `(batch, classes, params)`
+        """
         # self @ W[batch, k, params]
         assert len(W.size()) == 3
         B, K, P = W.size()
@@ -92,8 +156,24 @@ class Kron:
         return SW
 
     def bmm(self, W: torch.Tensor, exponent: float = 1) -> torch.Tensor:
-        # self @ W with W[params], W[batch, params], W[batch, classes, params]
-        # returns SW[batch, classes, params]
+        """Batched matrix multiplication with the Kronecker factors.
+        If Kron is `H`, we compute `H @ W`.
+        This is useful for computing the predictive or a regularization
+        based on Kronecker factors as in continual learning.
+
+        Parameters
+        ----------
+        W : torch.Tensor
+            matrix `(batch, classes, params)`
+        exponent: float, default=1
+            only can be `1` for Kron, requires `KronDecomposed` for other
+            exponent values of the Kronecker factors.
+
+        Returns
+        -------
+        SW : torch.Tensor
+            result `(batch, classes, params)`
+        """
         if exponent != 1:
             raise ValueError('Only supported after decomposition.')
         if W.ndim == 1:
@@ -106,6 +186,13 @@ class Kron:
             raise ValueError('Invalid shape for W')
 
     def logdet(self) -> torch.Tensor:
+        """Compute log determinant of the Kronecker factors and sums them up.
+        This corresponds to the log determinant of the entire Hessian approximation.
+
+        Returns
+        -------
+        logdet : torch.Tensor
+        """
         logdet = 0
         for F in self.kfacs:
             if len(F) == 1:
@@ -117,6 +204,12 @@ class Kron:
         return logdet
 
     def diag(self) -> torch.Tensor:
+        """Extract diagonal of the entire Kronecker factorization.
+
+        Returns
+        -------
+        diag : torch.Tensor
+        """
         diags = list()
         for F in self.kfacs:
             if len(F) == 1:
@@ -126,6 +219,14 @@ class Kron:
         return torch.cat(diags)
 
     def to_matrix(self) -> torch.Tensor:
+        """Make the Kronecker factorization dense by computing the kronecker product.
+        Warning: this should only be used for testing purposes as it will allocate
+        large amounts of memory for big architectures.
+
+        Returns
+        -------
+        block_diag : torch.Tensor
+        """
         blocks = list()
         for F in self.kfacs:
             if len(F) == 1:
@@ -134,14 +235,32 @@ class Kron:
                 blocks.append(kron(F[0], F[1]))
         return block_diag(blocks)
 
-    # inplace and permuted operations
+    # for commutative operations
     __radd__ = __add__
-    __iadd__ = __add__
     __rmul__ = __mul__
-    __imul__ = __mul__
 
 
 class KronDecomposed:
+    """Decomposed Kronecker factored approximate curvature representation
+    for a corresponding neural network.
+    Each matrix in `Kron` is decomposed to obtain `KronDecomposed`.
+    Front-loading decomposition allows cheap repeated computation
+    of inverses and log determinants.
+    In contrast to `Kron`, we can add scalar or layerwise scalars but
+    we cannot add other `Kron` or `KronDecomposed` anymore.
+
+    Parameters
+    ----------
+    eigenvectors : list[Tuple[torch.Tensor]]
+        eigenvectors corresponding to matrices in a corresponding `Kron`
+    eigenvalues : list[Tuple[torch.Tensor]]
+        eigenvalues corresponding to matrices in a corresponding `Kron`
+    deltas : torch.Tensor
+        addend for each group of Kronecker factors representing, for example,
+        a prior precision
+    dampen : bool, default=False
+        use dampen approximation mixing prior and Kron partially multiplicatively
+    """
 
     def __init__(self, eigenvectors, eigenvalues, deltas=None, damping=False):
         self.eigenvectors = eigenvectors
@@ -170,21 +289,51 @@ class KronDecomposed:
             raise ValueError('Invalid shape of delta added to KronDecomposed.')
 
     def __add__(self, deltas: torch.Tensor):
+        """Add scalar per layer or only scalar to Kronecker factors.
+
+        Parameters
+        ----------
+        deltas : torch.Tensor
+            either same length as `eigenvalues` or scalar.
+
+        Returns
+        -------
+        kron : KronDecomposed
+        """
         self._check_deltas(deltas)
         return KronDecomposed(self.eigenvectors, self.eigenvalues, self.deltas + deltas)
 
     def __mul__(self, scalar):
+        """Multiply by a scalar by changing the eigenvalues.
+        Same as for the case of `Kron`.
+
+        Parameters
+        ----------
+        scalar : torch.Tensor or float
+
+        Returns
+        -------
+        kron : KronDecomposed
+        """
         if not _is_valid_scalar(scalar):
             raise ValueError('Invalid argument, can only multiply Kron with scalar.')
 
-        eigenvalues = [[pow(scalar, 1/len(l)) * l for l in ls] for ls in self.eigenvalues]
+        eigenvalues = [[pow(scalar, 1/len(ls)) * l for l in ls] for ls in self.eigenvalues]
         return KronDecomposed(self.eigenvectors, eigenvalues, self.deltas)
 
     def __len__(self) -> int:
         return len(self.eigenvalues)
 
     def logdet(self) -> torch.Tensor:
-        # compute \sum_l log det (kron_l + delta I_l)
+        """Compute log determinant of the Kronecker factors and sums them up.
+        This corresponds to the log determinant of the entire Hessian approximation.
+        In contrast to `Kron.logdet()`, additive `deltas` corresponding to prior
+        precisions are added.
+
+        Returns
+        -------
+        logdet : torch.Tensor
+        """
         logdet = 0
         for ls, delta in zip(self.eigenvalues, self.deltas):
             if len(ls) == 1:  # not KFAC just full
@@ -201,6 +350,20 @@ class KronDecomposed:
         return logdet
 
     def _bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
+        """Implementation of `bmm`, i.e., `self ** exponent @ W`.
+
+        Parameters
+        ----------
+        W : torch.Tensor
+            matrix `(batch, classes, params)`
+        exponent : float
+            exponent on `self`
+
+        Returns
+        -------
+        SW : torch.Tensor
+            result `(batch, classes, params)`
+        """
         # self @ W[batch, k, params]
         assert len(W.size()) == 3
         B, K, P = W.size()
@@ -209,14 +372,12 @@ class KronDecomposed:
         SW = list()
         for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
             if len(ls) == 1:
-                # just Q (Lambda + delta) Q^T W_p
                 Q, l, p = Qs[0], ls[0], len(ls[0])
                 ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
                 W_p = W[:, cur_p:cur_p+p].T
                 SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
                 cur_p += p
             elif len(ls) == 2:
-                # not so easy to explain...
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 p = len(l1) * len(l2)
@@ -242,8 +403,23 @@ class KronDecomposed:
         return torch.bmm(W, SW.transpose(1, 2))
 
     def bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
-        # self @ W with W[params], W[batch, params], W[batch, classes, params]
-        # returns SW[batch, classes, params]
+        """Batched matrix multiplication with the decomposed Kronecker factors.
+        This is useful for computing the predictive or a regularization loss.
+        Compared to `Kron.bmm`, a prior can be added here in form of `deltas`
+        and the exponent can be other than just 1.
+        Computes \\(H^{exponent} W\\).
+
+        Parameters
+        ----------
+        W : torch.Tensor
+            matrix `(batch, classes, params)`
+        exponent: float, default=1
+
+        Returns
+        -------
+        SW : torch.Tensor
+            result `(batch, classes, params)`
+        """
         if W.ndim == 1:
             return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).squeeze()
         elif W.ndim == 2:
@@ -254,6 +430,14 @@ class KronDecomposed:
             raise ValueError('Invalid shape for W')
 
     def to_matrix(self, exponent: float = 1) -> torch.Tensor:
+        """Make the Kronecker factorization dense by computing the kronecker product.
+        Warning: this should only be used for testing purposes as it will allocate
+        large amounts of memory for big architectures.
+
+        Returns
+        -------
+        block_diag : torch.Tensor
+        """
         blocks = list()
         for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.deltas):
             if len(ls) == 1:
@@ -272,8 +456,6 @@ class KronDecomposed:
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)
 
-    # FIXME: iadd imul should change mutable types in principle.
+    # for commutative operations
     __radd__ = __add__
-    __iadd__ = __add__
     __rmul__ = __mul__
-    __imul__ = __mul__

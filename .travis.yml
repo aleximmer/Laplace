@@ -4,7 +4,6 @@ python:
 install:
 - pip install -r requirements.txt
 - pip install -r tests/requirements.txt
-- pip install dependencies/asdfghjkl-0.0.1-py3-none-any.whl
 - python setup.py install
 script:
 - pytest -vx --cov=laplace/ tests/
