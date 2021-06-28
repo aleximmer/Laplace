@@ -1,0 +1,4 @@
+pytest
+pytest-cov 
+coveralls
+scipy
