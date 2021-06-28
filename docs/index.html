@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.9.2" />
 <title>laplace API documentation</title>
-<meta name="description" content="Setup …" />
+<meta name="description" content="Laplace …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -23,7 +23,12 @@
 <h1 class="title">Package <code>laplace</code></h1>
 </header>
 <section id="section-intro">
+<h1 id="laplace">Laplace</h1>
+<p>Main: <a href="https://travis-ci.com/AlexImmer/Laplace"><img alt="Main" src="https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&amp;branch=main"></a>
+Dev: <a href="https://travis-ci.com/AlexImmer/Laplace"><img alt="Dev" src="https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&amp;branch=dev"></a></p>
+<p>The documentation is available at <a href="https://aleximmer.github.io/Laplace/index.html">https://aleximmer.github.io/Laplace/index.html</a>.</p>
 <h2 id="setup">Setup</h2>
+<p>We assume <code>python3.8</code> since the package was developed with that version.</p>
 <pre><code class="language-bash">pip install -r requirements.txt
 # for development
 pip install -e .
@@ -36,24 +41,23 @@ pip install -r tests/requirements.txt
 pytest tests/
 </code></pre>
 <h2 id="structure">Structure</h2>
-<p>The laplace package consists of two main-components: </p>
+<p>The laplace package consists of two main components: </p>
 <ol>
-<li>The subclasses of <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> that implement different sparsity structures
-(last-layer <code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code> vs. <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace</a></code> and <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code> vs. <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code>) all of which
-can be conveniently accessed with the method <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code>.</li>
-<li>The backends in <code><a title="laplace.curvature" href="curvature/index.html">laplace.curvature</a></code> which provide access to Hessian approximations of
+<li>The subclasses of <a href="laplace/baselaplace.py"><code>laplace.BaseLaplace</code></a> that implement different sparsity structures: different subsets of weights (<code>'all'</code> and <code>'last_layer'</code>) and different structures of the Hessian approximation (<code>'full'</code>, <code>'kron'</code>, and <code>'diag'</code>). This results in six currently available options: <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace</a></code>, <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code>, <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>, and the corresponding last-layer variations <code><a title="laplace.FullLLLaplace" href="#laplace.FullLLLaplace">FullLLLaplace</a></code>, <code><a title="laplace.KronLLLaplace" href="#laplace.KronLLLaplace">KronLLLaplace</a></code>,
+and <code><a title="laplace.DiagLLLaplace" href="#laplace.DiagLLLaplace">DiagLLLaplace</a></code>, which are all subclasses of <a href="laplace/lllaplace.py"><code>laplace.LLLaplace</code></a>. All of these can be conveniently accessed via the <a href="laplace/laplace.py"><code>laplace.Laplace</code></a> function.</li>
+<li>The backends in <a href="laplace/curvature/"><code>laplace.curvature</code></a> which provide access to Hessian approximations of
 the corresponding sparsity structures, for example, the diagonal GGN.</li>
 </ol>
-<p>Additionally, the package provies utilities for
-decomposing a neural network into feature extractor and last layer for <code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code> (<code><a title="laplace.feature_extractor" href="feature_extractor.html">laplace.feature_extractor</a></code>)
+<p>Additionally, the package provides utilities for
+decomposing a neural network into feature extractor and last layer for <code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code> subclasses (<a href="laplace/feature_extractor.py"><code>laplace.feature_extractor</code></a>)
 and
-effectively dealing with Kronecker factors (<code><a title="laplace.matrix.Kron" href="matrix.html#laplace.matrix.Kron">Kron</a></code> and <code><a title="laplace.matrix.KronDecomposed" href="matrix.html#laplace.matrix.KronDecomposed">KronDecomposed</a></code>).</p>
+effectively dealing with Kronecker factors (<a href="laplace/matrix.py"><code>laplace.matrix</code></a>).</p>
 <h2 id="extendability">Extendability</h2>
 <p>To extend the laplace package, new <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> subclasses can be designed, for example,
 a block-diagonal structure or subset-of-weights Laplace.
-Alternatively, extending or integrating backends allows to provide different Hessian
+Alternatively, extending or integrating backends (subclasses of <a href="laplace/curvature/curvature.py"><code>curvature.curvature</code></a>) allows to provide different Hessian
 approximations to the Laplace approximations.
-For example, currently the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> based on <a href="https://github.com/f-dangel/backpack/">BackPACK</a> and <code><a title="laplace.curvature.AsdlInterface" href="curvature/index.html#laplace.curvature.AsdlInterface">AsdlInterface</a></code> based on <a href="https://github.com/kazukiosawa/asdfghjkl">ASDL</a> are available.
+For example, currently the <a href="laplace/curvature/backpack.py"><code>curvature.BackPackInterface</code></a> based on <a href="https://github.com/f-dangel/backpack/">BackPACK</a> and <a href="laplace/curvature/asdl.py"><code>curvature.AsdlInterface</code></a> based on <a href="https://github.com/kazukiosawa/asdfghjkl">ASDL</a> are available.
 The <code><a title="laplace.curvature.AsdlInterface" href="curvature/index.html#laplace.curvature.AsdlInterface">AsdlInterface</a></code> provides a Kronecker factored empirical Fisher while the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code>
 does not, and only the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> provides access to Hessian approximations
 for a regression (MSELoss) loss function.</p>
@@ -96,6 +100,13 @@ la.fit(train_loader)
 # ML w.r.t. prior precision and observation noise
 ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
+</code></pre>
+<h2 id="documentation"><a href="https://aleximmer.github.io/Laplace/index.html">Documentation</a></h2>
+<pre><code class="language-bash">pip install pdoc3 matplotlib
+# create docs and write to html
+bash update_docs.sh
+# .. or serve the docs directly
+pdoc --http 0.0.0.0:8080 laplace --template-dir template
 </code></pre>
 <h3 id="full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: <em>post-hoc</em> optimization of the marginal likelihood and prediction</h3>
 <h4 id="sinusoidal-toy-data">Sinusoidal toy data</h4>
@@ -975,17 +986,23 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <h1>Index</h1>
 <div class="toc">
 <ul>
+<li><a href="#laplace">Laplace</a><ul>
 <li><a href="#setup">Setup</a></li>
 <li><a href="#structure">Structure</a></li>
 <li><a href="#extendability">Extendability</a></li>
 <li><a href="#example-usage">Example usage</a><ul>
 <li><a href="#post-hoc-prior-precision-tuning-of-last-layer-la">Post-hoc prior precision tuning of last-layer LA</a></li>
 <li><a href="#differentiating-the-log-marginal-likelihood-wrt-hyperparameters">Differentiating the log marginal likelihood w.r.t. hyperparameters</a></li>
+</ul>
+</li>
+<li><a href="#documentation">Documentation</a><ul>
 <li><a href="#full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: post-hoc optimization of the marginal likelihood and prediction</a><ul>
 <li><a href="#sinusoidal-toy-data">Sinusoidal toy data</a></li>
 <li><a href="#training-a-map">Training a MAP</a></li>
 <li><a href="#fitting-and-optimizing-the-laplace-approximation-using-empirical-bayes">Fitting and optimizing the Laplace approximation using empirical Bayes</a></li>
 <li><a href="#bayesian-predictive">Bayesian predictive</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

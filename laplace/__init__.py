@@ -1,5 +1,5 @@
 """
-.. include:: ../documentation.md
+.. include:: ../README.md
 
 .. include:: ../regression_example.md
 """
