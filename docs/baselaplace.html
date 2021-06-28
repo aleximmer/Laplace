@@ -299,11 +299,11 @@ specified by the user.</p>
 <dt><strong><code>method</code></strong> :&ensp;<code>{'marglik', 'CV'}</code>, default=<code>'marglik'</code></dt>
 <dd>specifies how the prior precision should be optimized.</dd>
 <dt><strong><code>n_steps</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
-<dd>the number of gradient descent steps to take (if applicable).</dd>
+<dd>the number of gradient descent steps to take.</dd>
 <dt><strong><code>lr</code></strong> :&ensp;<code>float</code>, default=<code>1e-1</code></dt>
-<dd>the learning rate to use for gradient descent (if applicable).</dd>
-<dt>init_prior_prec : float, default=1.</dt>
-<dt>initial prior precision before the first optimization step (if applicable).</dt>
+<dd>the learning rate to use for gradient descent.</dd>
+<dt><strong><code>init_prior_prec</code></strong> :&ensp;<code>float</code>, default=<code>1.0</code></dt>
+<dd>initial prior precision before the first optimization step.</dd>
 <dt><strong><code>val_loader</code></strong> :&ensp;<code>torch.data.utils.DataLoader</code>, default=<code>None</code></dt>
 <dd>DataLoader for the validation set; each iterate is a training batch (X, y).</dd>
 <dt><strong><code>loss</code></strong> :&ensp;<code>callable</code>, default=<code>get_nll</code></dt>
@@ -318,10 +318,10 @@ specified by the user.</p>
 <dd>type of posterior predictive, linearized GLM predictive or neural
 network sampling predictive. The GLM predictive is consistent with
 the curvature approximations used here.</dd>
-<dt><strong><code>link_approx</code></strong> :&ensp;<code>{'mc', 'probit', 'bridge'}</code></dt>
+<dt><strong><code>link_approx</code></strong> :&ensp;<code>{'mc', 'probit', 'bridge'}</code>, default=<code>'probit'</code></dt>
 <dd>how to approximate the classification link function for the <code>'glm'</code>.
-For <code>pred_type='nn'</code>, only 'mc' is possible.</dd>
-<dt><strong><code>n_samples</code></strong> :&ensp;<code>int</code></dt>
+For <code>pred_type='nn'</code>, only <code>'mc'</code> is possible.</dd>
+<dt><strong><code>n_samples</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
 <dd>number of samples for <code>link_approx='mc'</code>.</dd>
 <dt><strong><code>verbose</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>if true, the optimized prior precision will be printed
