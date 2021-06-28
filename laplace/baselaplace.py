@@ -486,11 +486,11 @@ class BaseLaplace(ABC):
         method : {'marglik', 'CV'}, default='marglik'
             specifies how the prior precision should be optimized.
         n_steps : int, default=100
-            the number of gradient descent steps to take (if applicable).
+            the number of gradient descent steps to take.
         lr : float, default=1e-1
-            the learning rate to use for gradient descent (if applicable).
-        init_prior_prec : float, default=1.
-            initial prior precision before the first optimization step (if applicable).
+            the learning rate to use for gradient descent.
+        init_prior_prec : float, default=1.0
+            initial prior precision before the first optimization step.
         val_loader : torch.data.utils.DataLoader, default=None
             DataLoader for the validation set; each iterate is a training batch (X, y).
         loss : callable, default=get_nll
@@ -505,10 +505,10 @@ class BaseLaplace(ABC):
             type of posterior predictive, linearized GLM predictive or neural
             network sampling predictive. The GLM predictive is consistent with
             the curvature approximations used here.
-        link_approx : {'mc', 'probit', 'bridge'}
+        link_approx : {'mc', 'probit', 'bridge'}, default='probit'
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
-        n_samples : int
+            For `pred_type='nn'`, only `'mc'` is possible.
+        n_samples : int, default=100
             number of samples for `link_approx='mc'`.
         verbose : bool, default=False
             if true, the optimized prior precision will be printed
