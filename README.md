@@ -3,7 +3,7 @@
 
 The `laplace` package facilitates application of Laplace approximations for entire neural networks or their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
-The documentation is available at [https://aleximmer.github.io/Laplace/index.html](https://aleximmer.github.io/Laplace), 
+The documentation is available at [https://aleximmer.github.io/Laplace](https://aleximmer.github.io/Laplace), 
 and the corresponding paper at [https://arxiv.org/pdf/2106.14806.pdf](https://arxiv.org/pdf/2106.14806.pdf).
 When using our library, please consider referring to our paper introducing it:
 ```bibtex
