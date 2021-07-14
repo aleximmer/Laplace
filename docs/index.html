@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.9.2" />
 <title>laplace API documentation</title>
-<meta name="description" content="Laplace …" />
+<meta name="description" content="![Laplace](logo/laplace_logo.png &#34;Laplace&#34;)
+…" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
 <link rel="stylesheet preload" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.1.1/styles/github.min.css" crossorigin>
@@ -23,10 +24,20 @@
 <h1 class="title">Package <code>laplace</code></h1>
 </header>
 <section id="section-intro">
-<h1 id="laplace">Laplace</h1>
-<p>Main: <a href="https://travis-ci.com/AlexImmer/Laplace"><img alt="Main" src="https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&amp;branch=main"></a>
-Dev: <a href="https://travis-ci.com/AlexImmer/Laplace"><img alt="Dev" src="https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&amp;branch=dev"></a></p>
-<p>The documentation is available at <a href="https://aleximmer.github.io/Laplace/index.html">https://aleximmer.github.io/Laplace/index.html</a>.</p>
+<h1 id="_1"><img alt="Laplace" src="logo/laplace_logo.png" title="Laplace"></h1>
+<p><a href="https://travis-ci.com/AlexImmer/Laplace"><img alt="Main" src="https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&amp;branch=main"></a></p>
+<p>The <code><a title="laplace.laplace" href="laplace.html">laplace.laplace</a></code> package facilitates the application of Laplace approximations for entire neural networks or just their last layer.
+The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
+The documentation is available at <a href="https://aleximmer.github.io/Laplace">https://aleximmer.github.io/Laplace</a>,
+and the corresponding paper at <a href="https://arxiv.org/pdf/2106.14806.pdf">https://arxiv.org/pdf/2106.14806.pdf</a>.
+When using our library, please consider referring to our paper introducing it:</p>
+<pre><code class="language-bibtex">@article{daxberger2021laplace,
+  title={Laplace Redux--Effortless Bayesian Deep Learning},
+  author={Daxberger, Erik and Kristiadi, Agustinus and Immer, Alexander and Eschenhagen, Runa and Bauer, Matthias and Hennig, Philipp},
+  journal={arXiv preprint arXiv:2106.14806},
+  year={2021}
+}
+</code></pre>
 <h2 id="setup">Setup</h2>
 <p>We assume <code>python3.8</code> since the package was developed with that version.</p>
 <pre><code class="language-bash">pip install -r requirements.txt
@@ -101,13 +112,27 @@ la.fit(train_loader)
 ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
 </code></pre>
-<h2 id="documentation"><a href="https://aleximmer.github.io/Laplace/index.html">Documentation</a></h2>
+<h2 id="documentation">Documentation</h2>
+<p>The documentation is available at <a href="https://aleximmer.github.io/Laplace">here</a> and can be generated and/or viewed locally:</p>
 <pre><code class="language-bash">pip install pdoc3 matplotlib
 # create docs and write to html
 bash update_docs.sh
 # .. or serve the docs directly
 pdoc --http 0.0.0.0:8080 laplace --template-dir template
 </code></pre>
+<h2 id="references">References</h2>
+<p>This package relies on various improvements to the Laplace approximation for neural networks, which was originally due to MacKay [1].</p>
+<ul>
+<li>[1] MacKay, DJC. <a href="https://iopscience.iop.org/article/10.1088/0954-898X/6/3/011/meta"><em>A practical Bayesian framework for backpropagation networks</em></a>. Neural computation 1992.</li>
+<li>[2] Gibbs, M. N. <a href="https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.147.1130&amp;rep=rep1&amp;type=pdf"><em>Bayesian Gaussian Processes for Regression and Classification</em></a>. PhD thesis 1997. </li>
+<li>[3] Snoek, J., Rippel, O., Swersky, K., Kiros, R., Satish, N., Sundaram, N., Patwary, M., Prabhat, M., Adams, R. <a href="http://proceedings.mlr.press/v37/snoek15.pdf"><em>Scalable bayesian optimization using deep neural networks</em></a>. ICML 2015.</li>
+<li>[4] Ritter, H., Botev, A., Barber, D. <a href="https://discovery.ucl.ac.uk/id/eprint/10080902/"><em>A scalable laplace approximation for neural networks</em></a>. ICLR 2018.</li>
+<li>[5] Foong, A. Y., Li, Y., Hernández-Lobato, J. M., Turner, R. E. <a href="https://arxiv.org/pdf/1906.11537.pdf"><em>'In-Between'Uncertainty in Bayesian Neural Networks</em></a>. ICML UDL Workshop 2019.</li>
+<li>[6] Khan, M. E., Immer, A., Abedi, E., Korzepa, M. <a href="https://arxiv.org/pdf/1906.01930.pdf"><em>Approximate inference turns deep networks into gaussian processes</em></a>. NeurIPS 2019.</li>
+<li>[7] Kristiadi, A., Hein, M., Hennig, P. <a href="https://arxiv.org/pdf/2002.10118.pdf"><em>Being Bayesian, Even Just a Bit, Fixes Overconfidence in ReLU Networks</em></a>. ICML 2020.</li>
+<li>[8] Immer, A., Korzepa, M., Bauer, M. <a href="https://arxiv.org/abs/2008.08400"><em>Improving predictions of Bayesian neural nets via local linearization</em></a>. AISTATS 2021.</li>
+<li>[9] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM. <a href="https://arxiv.org/pdf/2104.04975.pdf"><em>Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning</em></a>. ICML 2021.</li>
+</ul>
 <h3 id="full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: <em>post-hoc</em> optimization of the marginal likelihood and prediction</h3>
 <h4 id="sinusoidal-toy-data">Sinusoidal toy data</h4>
 <p>We show how the marginal likelihood can be used after training a MAP network on a simple sinusoidal regression task.
@@ -986,7 +1011,7 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <h1>Index</h1>
 <div class="toc">
 <ul>
-<li><a href="#laplace">Laplace</a><ul>
+<li><a href="#_1"></a><ul>
 <li><a href="#setup">Setup</a></li>
 <li><a href="#structure">Structure</a></li>
 <li><a href="#extendability">Extendability</a></li>
@@ -995,7 +1020,8 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><a href="#differentiating-the-log-marginal-likelihood-wrt-hyperparameters">Differentiating the log marginal likelihood w.r.t. hyperparameters</a></li>
 </ul>
 </li>
-<li><a href="#documentation">Documentation</a><ul>
+<li><a href="#documentation">Documentation</a></li>
+<li><a href="#references">References</a><ul>
 <li><a href="#full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: post-hoc optimization of the marginal likelihood and prediction</a><ul>
 <li><a href="#sinusoidal-toy-data">Sinusoidal toy data</a></li>
 <li><a href="#training-a-map">Training a MAP</a></li>

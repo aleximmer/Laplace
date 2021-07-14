@@ -1,9 +1,19 @@
-# Laplace
+# ![Laplace](logo/laplace_logo.png "Laplace")
+[![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
 
-Main: [![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
-Dev: [![Dev](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=dev)](https://travis-ci.com/AlexImmer/Laplace)
-
-The documentation is available at [https://aleximmer.github.io/Laplace/index.html](https://aleximmer.github.io/Laplace/index.html).
+The `laplace` package facilitates the application of Laplace approximations for entire neural networks or just their last layer.
+The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
+The documentation is available at [https://aleximmer.github.io/Laplace](https://aleximmer.github.io/Laplace), 
+and the corresponding paper at [https://arxiv.org/pdf/2106.14806.pdf](https://arxiv.org/pdf/2106.14806.pdf).
+When using our library, please consider referring to our paper introducing it:
+```bibtex
+@article{daxberger2021laplace,
+  title={Laplace Redux--Effortless Bayesian Deep Learning},
+  author={Daxberger, Erik and Kristiadi, Agustinus and Immer, Alexander and Eschenhagen, Runa and Bauer, Matthias and Hennig, Philipp},
+  journal={arXiv preprint arXiv:2106.14806},
+  year={2021}
+}
+```
 
 ## Setup
 
@@ -93,7 +103,9 @@ ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
 ```
 
-## [Documentation](https://aleximmer.github.io/Laplace/index.html)
+## Documentation
+
+The documentation is available at [here](https://aleximmer.github.io/Laplace) and can be generated and/or viewed locally:
 
 ```bash
 pip install pdoc3 matplotlib
@@ -102,3 +114,17 @@ bash update_docs.sh
 # .. or serve the docs directly
 pdoc --http 0.0.0.0:8080 laplace --template-dir template
 ```
+
+## References
+
+This package relies on various improvements to the Laplace approximation for neural networks, which was originally due to MacKay [1].
+
+- [1] MacKay, DJC. [*A practical Bayesian framework for backpropagation networks*](https://iopscience.iop.org/article/10.1088/0954-898X/6/3/011/meta). Neural computation 1992.
+- [2] Gibbs, M. N. [*Bayesian Gaussian Processes for Regression and Classification*](https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.147.1130&rep=rep1&type=pdf). PhD thesis 1997. 
+- [3] Snoek, J., Rippel, O., Swersky, K., Kiros, R., Satish, N., Sundaram, N., Patwary, M., Prabhat, M., Adams, R. [*Scalable bayesian optimization using deep neural networks*](http://proceedings.mlr.press/v37/snoek15.pdf). ICML 2015.
+- [4] Ritter, H., Botev, A., Barber, D. [*A scalable laplace approximation for neural networks*](https://discovery.ucl.ac.uk/id/eprint/10080902/). ICLR 2018.
+- [5] Foong, A. Y., Li, Y., Hernández-Lobato, J. M., Turner, R. E. [*'In-Between'Uncertainty in Bayesian Neural Networks*](https://arxiv.org/pdf/1906.11537.pdf). ICML UDL Workshop 2019.
+- [6] Khan, M. E., Immer, A., Abedi, E., Korzepa, M. [*Approximate inference turns deep networks into gaussian processes*](https://arxiv.org/pdf/1906.01930.pdf). NeurIPS 2019.
+- [7] Kristiadi, A., Hein, M., Hennig, P. [*Being Bayesian, Even Just a Bit, Fixes Overconfidence in ReLU Networks*](https://arxiv.org/pdf/2002.10118.pdf). ICML 2020.
+- [8] Immer, A., Korzepa, M., Bauer, M. [*Improving predictions of Bayesian neural nets via local linearization*](https://arxiv.org/abs/2008.08400). AISTATS 2021.
+- [9] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM. [*Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning*](https://arxiv.org/pdf/2104.04975.pdf). ICML 2021.
