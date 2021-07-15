@@ -6,7 +6,7 @@ The `laplace` package facilitates the application of Laplace approximations for 
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
 The documentation is available at [https://aleximmer.github.io/Laplace](https://aleximmer.github.io/Laplace).
 
-There is also a corresponding paper at [https://arxiv.org/abs/2106.14806](https://arxiv.org/abs/2106.14806) which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:
+There is also a corresponding paper, [Laplace Redux--Effortless Bayesian Deep Learning](https://arxiv.org/abs/2106.14806), which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:
 ```bibtex
 @article{daxberger2021laplace,
   title={Laplace Redux--Effortless Bayesian Deep Learning},
