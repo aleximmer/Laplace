@@ -4,7 +4,7 @@
 
 [![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
 
-The `laplace` package facilitates the application of Laplace approximations for entire neural networks or just their last layer.
+The laplace package facilitates the application of Laplace approximations for entire neural networks or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
 The library documentation is available at [https://aleximmer.github.io/Laplace](https://aleximmer.github.io/Laplace).
 
@@ -12,7 +12,8 @@ There is also a corresponding paper, [*Laplace Redux — Effortless Bayesian Dee
 ```bibtex
 @article{daxberger2021laplace,
   title={Laplace Redux--Effortless Bayesian Deep Learning},
-  author={Daxberger, Erik and Kristiadi, Agustinus and Immer, Alexander and Eschenhagen, Runa and Bauer, Matthias and Hennig, Philipp},
+  author={Daxberger, Erik and Kristiadi, Agustinus and Immer, Alexander 
+          and Eschenhagen, Runa and Bauer, Matthias and Hennig, Philipp},
   journal={arXiv preprint arXiv:2106.14806},
   year={2021}
 }

@@ -6,7 +6,7 @@
 <meta name="generator" content="pdoc 0.9.2" />
 <title>laplace API documentation</title>
 <meta name="description" content="&lt;div align=&#34;center&#34;&gt;
-&lt;img src=&#34;logo/laplace_logo.png&#34; alt=&#34;Laplace&#34; width=&#34;300&#34;/&gt;
+&lt;img src=&#34;https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png&#34; alt=&#34;Laplace&#34; width=&#34;300&#34;/&gt;
 &lt;/div&gt; …" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
@@ -29,13 +29,14 @@
 <img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
 </div>
 <p><a href="https://travis-ci.com/AlexImmer/Laplace"><img alt="Main" src="https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&amp;branch=main"></a></p>
-<p>The <code><a title="laplace.laplace" href="laplace.html">laplace.laplace</a></code> package facilitates the application of Laplace approximations for entire neural networks or just their last layer.
+<p>The laplace package facilitates the application of Laplace approximations for entire neural networks or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
 The library documentation is available at <a href="https://aleximmer.github.io/Laplace">https://aleximmer.github.io/Laplace</a>.</p>
 <p>There is also a corresponding paper, <a href="https://arxiv.org/abs/2106.14806"><em>Laplace Redux — Effortless Bayesian Deep Learning</em></a>, which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:</p>
 <pre><code class="language-bibtex">@article{daxberger2021laplace,
   title={Laplace Redux--Effortless Bayesian Deep Learning},
-  author={Daxberger, Erik and Kristiadi, Agustinus and Immer, Alexander and Eschenhagen, Runa and Bauer, Matthias and Hennig, Philipp},
+  author={Daxberger, Erik and Kristiadi, Agustinus and Immer, Alexander 
+          and Eschenhagen, Runa and Bauer, Matthias and Hennig, Philipp},
   journal={arXiv preprint arXiv:2106.14806},
   year={2021}
 }
@@ -135,7 +136,7 @@ pdoc --http 0.0.0.0:8080 laplace --template-dir template
 <li>[8] Immer, A., Korzepa, M., Bauer, M. <a href="https://arxiv.org/abs/2008.08400"><em>Improving predictions of Bayesian neural nets via local linearization</em></a>. AISTATS 2021.</li>
 <li>[9] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM. <a href="https://arxiv.org/abs/2104.04975"><em>Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning</em></a>. ICML 2021.</li>
 </ul>
-<h3 id="full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: <em>post-hoc</em> optimization of the marginal likelihood and prediction</h3>
+<h2 id="full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: <em>post-hoc</em> optimization of the marginal likelihood and prediction</h2>
 <h4 id="sinusoidal-toy-data">Sinusoidal toy data</h4>
 <p>We show how the marginal likelihood can be used after training a MAP network on a simple sinusoidal regression task.
 Subsequently, we use the optimized LA to predict which provides uncertainty on top of the MAP prediction.
@@ -1022,14 +1023,12 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 </ul>
 </li>
 <li><a href="#documentation">Documentation</a></li>
-<li><a href="#references">References</a><ul>
+<li><a href="#references">References</a></li>
 <li><a href="#full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: post-hoc optimization of the marginal likelihood and prediction</a><ul>
 <li><a href="#sinusoidal-toy-data">Sinusoidal toy data</a></li>
 <li><a href="#training-a-map">Training a MAP</a></li>
 <li><a href="#fitting-and-optimizing-the-laplace-approximation-using-empirical-bayes">Fitting and optimizing the Laplace approximation using empirical Bayes</a></li>
 <li><a href="#bayesian-predictive">Bayesian predictive</a></li>
-</ul>
-</li>
 </ul>
 </li>
 </ul>
