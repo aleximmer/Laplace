@@ -2,8 +2,6 @@
 	<img src="logo/laplace_logo.png" alt="Laplace" width="300"/>
 </div>
 
----
-
 [![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
 
 The `laplace` package facilitates the application of Laplace approximations for entire neural networks or just their last layer.
