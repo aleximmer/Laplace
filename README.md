@@ -1,6 +1,7 @@
 <div align="center">
 	<img src="logo/laplace_logo.png" alt="Laplace" width="300"/>
 </div>
+
 ---
 
 [![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
