@@ -22,15 +22,18 @@ There is also a corresponding paper, [*Laplace Redux — Effortless Bayesian Dee
 ## Setup
 
 We assume `python3.8` since the package was developed with that version.
-
+To install `laplace` with `pip`, run the following:
 ```bash
+# directly install from git
+pip install laplace@git+https://github.com/AlexImmer/Laplace.git
+```
+
+For development purposes, clone the repository and then install:
+```bash
+# or after cloning the repository for development
 pip install -r requirements.txt
 # for development
 pip install -e .
-# for "production"
-pip install .
-
-
 # run tests
 pip install -r tests/requirements.txt
 pytest tests/
@@ -109,7 +112,7 @@ ml.backward()
 
 ## Documentation
 
-The documentation is available at [here](https://aleximmer.github.io/Laplace) and can be generated and/or viewed locally:
+The documentation is available [here](https://aleximmer.github.io/Laplace) or can be generated and/or viewed locally:
 
 ```bash
 pip install pdoc3 matplotlib
