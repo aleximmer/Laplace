@@ -42,14 +42,16 @@ The library documentation is available at <a href="https://aleximmer.github.io/L
 }
 </code></pre>
 <h2 id="setup">Setup</h2>
-<p>We assume <code>python3.8</code> since the package was developed with that version.</p>
-<pre><code class="language-bash">pip install -r requirements.txt
+<p>We assume <code>python3.8</code> since the package was developed with that version.
+To install <code><a title="laplace.laplace" href="laplace.html">laplace.laplace</a></code> with <code>pip</code>, run the following:</p>
+<pre><code class="language-bash"># directly install from git
+pip install laplace@git+https://github.com/AlexImmer/Laplace.git
+</code></pre>
+<p>For development purposes, clone the repository and then install:</p>
+<pre><code class="language-bash"># or after cloning the repository for development
+pip install -r requirements.txt
 # for development
 pip install -e .
-# for &quot;production&quot;
-pip install .
-
-
 # run tests
 pip install -r tests/requirements.txt
 pytest tests/
@@ -116,7 +118,7 @@ ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
 </code></pre>
 <h2 id="documentation">Documentation</h2>
-<p>The documentation is available at <a href="https://aleximmer.github.io/Laplace">here</a> and can be generated and/or viewed locally:</p>
+<p>The documentation is available <a href="https://aleximmer.github.io/Laplace">here</a> or can be generated and/or viewed locally:</p>
 <pre><code class="language-bash">pip install pdoc3 matplotlib
 # create docs and write to html
 bash update_docs.sh
