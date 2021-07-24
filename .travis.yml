@@ -2,9 +2,8 @@ language: python
 python:
 - '3.8'
 install:
-- pip install -r requirements.txt
-- pip install -r tests/requirements.txt
-- python setup.py install
+- pip install .
+- pip install .[tests]
 script:
 - pytest -vx --cov=laplace/ tests/
 after_success:
