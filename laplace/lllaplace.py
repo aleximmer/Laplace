@@ -1,3 +1,4 @@
+from copy import deepcopy
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
@@ -62,7 +63,7 @@ class LLLaplace(BaseLaplace):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
                          prior_mean=0., temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
-        self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
+        self.model = FeatureExtractor(deepcopy(model), last_layer_name=last_layer_name)
         if self.model.last_layer is None:
             self.mean = None
             self.n_params = None
