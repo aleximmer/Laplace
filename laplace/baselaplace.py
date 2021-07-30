@@ -121,7 +121,11 @@ class BaseLaplace(ABC):
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
-            self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
+            try:
+                out = self.model(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                out = self.model(X.to(self._device))
+        self.n_outputs = out.shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
 
         N = len(train_loader.dataset)
