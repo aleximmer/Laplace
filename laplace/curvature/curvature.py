@@ -217,7 +217,7 @@ class GGNInterface(CurvatureInterface):
             ps = torch.softmax(f, dim=-1)
             H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
             H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
-        return loss.detach(), H_ggn
+        return loss, H_ggn
 
     def full(self, x, y, **kwargs):
         """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
@@ -246,7 +246,7 @@ class GGNInterface(CurvatureInterface):
             Js, f = self.jacobians(self.model, x)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
-        return loss, H_ggn
+        return loss.detach(), H_ggn
 
 
 class EFInterface(CurvatureInterface):
