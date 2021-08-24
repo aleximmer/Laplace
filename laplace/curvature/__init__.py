@@ -4,6 +4,7 @@ from laplace.curvature.curvature import CurvatureInterface, GGNInterface, EFInte
 
 try:
     from laplace.curvature.backpack import BackPackGGN, BackPackEF, BackPackInterface
+    from laplace.curvature.augmented_backpack import AugBackPackGGN
 except ModuleNotFoundError:
     logging.info('Backpack not available.')
 
@@ -14,4 +15,4 @@ except ModuleNotFoundError:
 
 __all__ = ['CurvatureInterface', 'GGNInterface', 'EFInterface',
            'BackPackInterface', 'BackPackGGN', 'BackPackEF',
-           'AsdlInterface', 'AsdlGGN', 'AsdlEF']
+           'AsdlInterface', 'AsdlGGN', 'AsdlEF', 'AugBackPackGGN']

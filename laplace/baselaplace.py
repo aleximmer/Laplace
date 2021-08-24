@@ -185,7 +185,8 @@ class BaseLaplace(ABC):
         factor = - self._H_factor
         if self.likelihood == 'regression':
             # loss used is just MSE, need to add normalizer for gaussian likelihood
-            c = self.n_data * self.n_outputs * torch.log(self.sigma_noise * sqrt(2 * pi))
+            c_factor = self.n_data * self.n_outputs / self.temperature
+            c = c_factor * torch.log(self.sigma_noise * sqrt(2 * pi))
             return factor * self.loss - c
         else:
             # for classification Xent == log Cat
