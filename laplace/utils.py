@@ -19,7 +19,9 @@ def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_sampl
     for X, y in val_loader:
         X, y = X.to(laplace._device), y.to(laplace._device)
         out = laplace(X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
-        outputs.append(out)
+
+        # len(out) == 2 in the case of regression, i.e. (f_mean, f_var)
+        outputs.append(out[0] if len(out) == 2 else out)
         targets.append(y)
     return torch.cat(outputs, dim=0), torch.cat(targets, dim=0)
 
