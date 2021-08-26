@@ -4,9 +4,9 @@ import numpy as np
 import torch
 
 from asdfghjkl import FISHER_EXACT, FISHER_MC, COV
-from asdfghjkl import SHAPE_KRON, SHAPE_DIAG
+from asdfghjkl import SHAPE_KRON, SHAPE_DIAG, SHAPE_FULL
 from asdfghjkl import fisher_for_cross_entropy
-from asdfghjkl.hessian import hessian_eigenvalues
+from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
 from asdfghjkl.gradient import batch_gradient
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
@@ -133,24 +133,34 @@ class AsdlInterface(CurvatureInterface):
         kron = self._rescale_kron_factors(kron, N)
         return self.factor * loss, self.factor * kron
 
-    def eig_lowrank(self, data_loader) -> [torch.Tensor, torch.Tensor]:
+
+class AsdlHessian(AsdlInterface):
+
+    @property
+    def _ggn_type(self):
+        raise NotImplementedError()
+
+    def full(self, x, y, **kwargs):
+        hessian_for_loss(self.model, self.lossfunc, SHAPE_FULL, x, y)
+        H = self._model.hessian.data
+        loss = self.lossfunc(self.model(x), y).detach()
+        return self.factor * loss, self.factor * H
+
+    def eig_lowrank(self, data_loader):
         eigvals, eigvecs = hessian_eigenvalues(self.model, self.lossfunc, data_loader,
                                                top_n=self.low_rank, max_iters=self.low_rank*10)
         eigvecs = torch.stack([torch.cat([p.flatten() for p in params])
                                for params in eigvecs], dim=1)
         eigvals = torch.from_numpy(np.array(eigvals)).float()
-        with torch.no_grad():
-            loss = 0
-            for X, y in data_loader:
-                loss += self.lossfunc(self.model(X), y)
+        loss = sum([self.lossfunc(self.model(x), y) for x, y in data_loader])
         return eigvecs, self.factor * eigvals, self.factor * loss
 
 
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False, **kwargs):
-        super().__init__(model, likelihood, last_layer, **kwargs)
+    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+        super().__init__(model, likelihood, last_layer)
         self.stochastic = stochastic
 
     @property
