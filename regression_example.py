@@ -1,9 +1,10 @@
+from laplace.curvature.asdl import AsdlGGN
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
+from laplace.baselaplace import LowRankLaplace
 
 n_epochs = 1000
 batch_size = 150  # full batch
@@ -30,7 +31,7 @@ for i in range(n_epochs):
         loss.backward()
         optimizer.step()
 
-la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
+la = LowRankLaplace(model, 'regression', backend=AsdlGGN, backend_kwargs={'low_rank': 20})
 la.fit(train_loader)
 log_prior, log_sigma = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
 hyper_optimizer = torch.optim.Adam([log_prior, log_sigma], lr=1e-1)

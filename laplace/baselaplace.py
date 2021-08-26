@@ -596,6 +596,82 @@ class BaseLaplace(ABC):
         pass
 
 
+class LowRankLaplace(BaseLaplace):
+
+    def _init_H(self):
+        pass
+
+    def _curv_closure(self, X, y, N):
+        pass
+
+    @property
+    def V(self):
+        (U, l), prior_prec_diag = self.posterior_precision
+        return U / prior_prec_diag.reshape(-1, 1)
+
+    @property
+    def Kinv(self):
+        (U, l), _ = self.posterior_precision
+        return torch.inverse(torch.diag(1 / l) + U.T @ self.V)
+
+    def fit(self, train_loader):
+        # override fit since output of eighessian not additive across batch
+
+        X, _ = next(iter(train_loader))
+        with torch.no_grad():
+            self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
+        setattr(self.model, 'output_size', self.n_outputs)
+
+        eigenvectors, eigenvalues, loss = self.backend.eig_lowrank(train_loader)
+        self.H = (eigenvectors, eigenvalues)
+        self.loss = loss
+
+        self.n_data = len(train_loader.dataset)
+
+    @property
+    def posterior_precision(self):
+        """Return correctly scaled posterior precision that would be constructed
+        as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.
+
+        Returns
+        -------
+        H : tuple(eigenvectors, eigenvalues)
+            scaled self.H with temperature and loss factors.
+        prior_precision_diag : torch.Tensor
+            diagonal prior precision shape `parameters` to be added to H.
+        """
+        self._check_fit()
+        return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
+
+    def functional_variance(self, Jacs):
+        prior_var = torch.einsum('ncp,nkp->nck', Jacs / self.prior_precision_diag, Jacs)
+        Jacs_V = torch.einsum('ncp,pl->ncl', Jacs, self.V)
+        info_gain = torch.einsum('ncl,nkl->nck', Jacs_V @ self.Kinv, Jacs_V)
+        return prior_var - info_gain
+
+    def sample(self, n_samples):
+        samples = torch.randn(self.n_params, n_samples)
+        d = self.prior_precision_diag
+        Vs = self.V * d.sqrt().reshape(-1, 1)
+        VtV = Vs.T @ Vs
+        Ik = torch.eye(len(VtV))
+        A = torch.cholesky(VtV)
+        B = torch.cholesky(VtV + Ik)
+        A_inv = torch.inverse(A)
+        C = torch.inverse(A_inv.T @ (B - Ik) @ A_inv)
+        prior_sample = (1 / d).sqrt().reshape(-1, 1) * samples
+        pre_comp = Vs.T @ samples
+        gain_sample = Vs @ C @ pre_comp
+        return (prior_sample - gain_sample).T
+
+    @property
+    def log_det_posterior_precision(self):
+        (U, l), prior_prec_diag = self.posterior_precision
+        return (torch.sum(torch.log(l))
+                + torch.sum(torch.log(prior_prec_diag))
+                - torch.logdet(self.Kinv))
+
+
 class FullLaplace(BaseLaplace):
     """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
     and hence posterior precision. Based on the chosen `backend` parameter, the full
