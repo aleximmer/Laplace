@@ -659,17 +659,16 @@ class LowRankLaplace(BaseLaplace):
         B = torch.cholesky(VtV + Ik)
         A_inv = torch.inverse(A)
         C = torch.inverse(A_inv.T @ (B - Ik) @ A_inv)
-        prior_sample = (1 / d).sqrt().reshape(-1, 1) * samples
-        pre_comp = Vs.T @ samples
-        gain_sample = Vs @ C @ pre_comp
-        return (prior_sample - gain_sample).T
+        Kern_inv = torch.inverse(torch.inverse(C) + Vs.T @ Vs)
+        dinv_sqrt = (d).sqrt().reshape(-1, 1)
+        prior_sample = dinv_sqrt * samples
+        gain_sample = dinv_sqrt * Vs @ Kern_inv @ (Vs.T @ samples)
+        return self.mean + (prior_sample - gain_sample).T
 
     @property
     def log_det_posterior_precision(self):
         (U, l), prior_prec_diag = self.posterior_precision
-        return (torch.sum(torch.log(l))
-                + torch.sum(torch.log(prior_prec_diag))
-                - torch.logdet(self.Kinv))
+        return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
 
 
 class FullLaplace(BaseLaplace):

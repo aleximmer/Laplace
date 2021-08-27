@@ -152,7 +152,7 @@ class AsdlHessian(AsdlInterface):
         eigvecs = torch.stack([torch.cat([p.flatten() for p in params])
                                for params in eigvecs], dim=1)
         eigvals = torch.from_numpy(np.array(eigvals)).float()
-        loss = sum([self.lossfunc(self.model(x), y) for x, y in data_loader])
+        loss = sum([self.lossfunc(self.model(x).detach(), y) for x, y in data_loader])
         return eigvecs, self.factor * eigvals, self.factor * loss
 
 
