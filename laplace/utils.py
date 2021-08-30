@@ -14,14 +14,24 @@ def get_nll(out_dist, targets):
 @torch.no_grad()
 def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
     laplace.model.eval()
-    outputs = list()
+    output_means, output_vars = list(), list()
     targets = list()
     for X, y in val_loader:
         X, y = X.to(laplace._device), y.to(laplace._device)
         out = laplace(X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
-        outputs.append(out)
+
+        if type(out) == tuple:
+            output_means.append(out[0])
+            output_vars.append(out[1])
+        else:
+            output_means.append(out)
+
         targets.append(y)
-    return torch.cat(outputs, dim=0), torch.cat(targets, dim=0)
+
+    if len(output_vars) == 0:
+        return torch.cat(output_means, dim=0), torch.cat(targets, dim=0)
+    else:
+        return (torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)), torch.cat(targets, dim=0)
 
 
 def parameters_per_layer(model):
