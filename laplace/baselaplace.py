@@ -205,7 +205,7 @@ class BaseLaplace(ABC):
             network sampling predictive. The GLM predictive is consistent with
             the curvature approximations used here.
 
-        link_approx : {'mc', 'probit', 'bridge'}
+        link_approx : {'mc', 'probit', 'bridge', 'mcparam'}
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only 'mc' is possible.
 
@@ -225,16 +225,23 @@ class BaseLaplace(ABC):
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
 
-        if link_approx not in ['mc', 'probit', 'bridge']:
+        if link_approx not in ['mc', 'probit', 'bridge', 'mcparam']:
             raise ValueError(f'Unsupported link approximation {link_approx}.')
 
         if pred_type == 'glm':
-            f_mu, f_var = self._glm_predictive_distribution(x)
             # regression
             if self.likelihood == 'regression':
+                f_mu, f_var = self._glm_predictive_distribution(x)
                 return f_mu, f_var
             # classification
-            if link_approx == 'mc':
+            if link_approx == 'mcparam':
+                Js, f_mu = self.backend.jacobians(self.model, x)
+                samples = self.sample(n_samples)
+                f_offset = f_mu - Js @ self.mean
+                f_sample_onset = Js @ self.sample(n_samples).T
+                f_samples = f_offset.unsqueeze(-1) + f_sample_onset
+                return torch.softmax(f_samples, dim=1).mean(dim=-1)
+            elif link_approx == 'mc':
                 try:
                     dist = MultivariateNormal(f_mu, f_var)
                 except:
