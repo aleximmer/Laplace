@@ -798,3 +798,8 @@ class DiagLaplace(BaseLaplace):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = samples * self.posterior_scale.reshape(1, self.n_params)
         return self.mean.reshape(1, self.n_params) + samples
+
+
+class FunctionalLaplace(BaseLaplace):
+    raise NotImplementedError
+

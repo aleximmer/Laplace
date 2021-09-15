@@ -1,7 +1,7 @@
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import BaseLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import BaseLaplace, FullLaplace, KronLaplace, DiagLaplace, FunctionalLaplace
 from laplace.feature_extractor import FeatureExtractor
 
 from laplace.matrix import Kron
@@ -197,3 +197,8 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
                  backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, last_layer_name, backend_kwargs)
+
+        
+class FunctionalLLLaplace(LLLaplace, FunctionalLaplace):
+    raise NotImplementedError
+
