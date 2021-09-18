@@ -10,7 +10,7 @@ from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 
 
-__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace']
+__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'FunctionalLaplace']
 
 
 class BaseLaplace(ABC):
@@ -801,5 +801,204 @@ class DiagLaplace(BaseLaplace):
 
 
 class FunctionalLaplace(BaseLaplace):
-    raise NotImplementedError
+    """
+    Applying the GGN (General Gauss Newton) approximation for the Hessian in the Laplace approximation of the posterior
+    turns the underlying probabilistic model from a BNN into a GLM (generalized linear model). This GLM (in the weight space)
+    is equivalent to a GP (in the function space).  This class implements the (approximate) GP inference through which
+    we obtain the desired quantities (a posterior predictive, a marginal log-likelihood).
+    See "Improving predictions of Bayesian neural nets via local linearization (Immer at. al, 2021)" for more details.
+
+    Parameters
+    ----------
+    M : number of data points for Subset-of-Data (SOD) approximate GP inference
+
+    See `BaseLaplace` class for the full interface.
+    """
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    _key = ('all', 'GP')
+
+    # TODO: default value for M
+    # TODO: temperature in the GP inference
+    # TODO: any other attributes that are needed in the FunctionalLaplace class?
+    def __init__(self, model, likelihood, M, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         prior_mean, temperature, backend, backend_kwargs)
+
+        self.M = M
+
+        # these params are not needed in FunctionalLaplace class
+        self.mean = None  # this will be replaced with f_mu from _glm_predictive_distribution(), need to think if we want to have a separate method for it
+        self.n_params = None
+        self.n_layers = None
+
+    """
+    Methods/properties from BaseLaplace not overridden here:
+        - backend
+        - check_fit
+        - log_likelihood
+        - predictive
+        - __call__ (just need to fix pred_type="glm")
+        - _glm_predictive_distribution (should think about a different name perhaps?)
+        - _nn_predictive_samples (will never be used here anyways)
+        - _check_jacobians
+        - log_det_ratio
+        - prior_mean  (m_0 part of  the GP prior)
+        - prior_precision (S_0 part of the GP prior)
+        - sigma_noise
+        _ _H_factor
+        - optimize_prior_precision (just need to fix pred_type="glm")
+        - _gridsearch (just need to fix pred_type="glm")
+        
+    
+    """
+
+    def _init_H(self):
+        """
+        TODO: Here we will not initialize H (Hessian), but we will probably initialize K_{MM} and L_{MM}.
+            Both are MC x MC block-diagonal matrices. Can utilize this fact to do a more memory efficient initialization
+            than simply torch.zeros(MC, MC, device=self._device), probably something similar to what is done in
+            KronLaplace
+        :return:
+        """
+        raise NotImplementedError
+
+    def _curv_closure(self, X, y, N):
+        """
+        TODO: Here will call backend code (curvature.py, backpack.py) and will return loss,
+            which is equivalent (up to a constant) to the sum of log-likelihoods. In backend code we also compute Jacobians
+            and Lambda terms (a Hessian of the likelihood w.r.t. f), which we will need for K_{MM} and L_{MM}
+        """
+        raise NotImplementedError
+
+    def fit(self, train_loader):
+        """
+        TODO: Iterate over data and compute loss and K_{MM} and L_{MM}.
+            Contrary to other subclasses we will not be summing up K_{MM} and L_{MM}, but will be instead storing them
+            to appropriate places in the initialized full matrices.
+
+        """
+        raise NotImplementedError
+
+    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+        """
+        TODO: GP log marginal likelihood p(y)  (we have p(f) as a prior here instead of p(\Theta))
+            Note that the method log_likelihood() will not have to be modified.
+        """
+        raise NotImplementedError
+
+    def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100):
+        """
+        In FunctionalLaplace, only glm pred_type makes sense.
+
+        __call__() method from BaseLaplace can be reused, as long as the method functional_variance() implements
+        corresponding GP predictive kernel matrix (maybe the name of the method _glm_predictive_distribution will be a
+        bit ambiguous then but can think about this later on)
+        """
+
+        assert pred_type == 'glm', "In FunctionalLaplace, only glm pred_type is supported!"
+        super().__call__(x=x, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
+
+    def predictive_samples(self, x, pred_type='glm', n_samples=100):
+        """
+
+        Similar to __call__() method above, the name of _glm_predictive_distribution() could be a bit misleading
+        """
+        assert pred_type == 'glm', "In FunctionalLaplace, only glm pred_type is supported!"
+        super().__call__(x=x, pred_type=pred_type, n_samples=n_samples)
+
+    def functional_variance(self, Jacs):
+        """
+         TODO: compute the (functional) variance of the GP predictive here (functional means without the \sigma^2 I term,
+            i.e. the variance of p(f_{*}|x_{*}, D) and not p(y_{*}|x_{*}, D)).
+            Perhaps this will take as an input also x_{*} and not only Jacs(x_{*}), need to think it through.
+        """
+        raise NotImplementedError
+
+    def sample(self, n_samples=100):
+        """
+        This function is not needed in FunctionalLaplace, since pred_type="nn" in predictive_samples() method is not
+        supported/does not make sense here.
+
+        Should think about if sample should not be an @abstractmethod in BaseLaplace anymore.
+        """
+        raise NotImplementedError
+
+    @property
+    def scatter(self):
+        """
+        TODO: Here, this function will implement a GP (log-)prior term, i.e. log p(f), which will be needed in
+            log_marginal_likelihood() method
+            Perhaps should rename this method in this class to GP_prior or something
+        """
+        raise NotImplementedError
+
+    def prior_mean_full(self):
+        """
+        TODO: the mean of the GP prior, see eq. (14) in Appendix A.2. Will use prior_mean property from BaseLaplace
+            and will also take X as an input
+        """
+        raise NotImplementedError
+
+    @property
+    def prior_kernel_full(self):
+        """
+        TODO: the kernel matrix of the GP prior, see eq. (14) in Appendix A.2. Will use prior_precision property from BaseLaplace
+            and will also take X as an input
+        """
+        raise NotImplementedError
+
+    @property
+    def log_det_prior_precision(self):
+        """
+        TODO: will not compute log determinant of self.prior_precision_diag() as in BaseLaplce but of prior_kernel_full() instead
+        """
+        raise NotImplementedError
+
+    @property
+    def posterior_precision(self):
+        """
+        This function will not be needed in FunctionalLaplace I believe, because we already have functional_variance
+        which coincides with posterior kernel matrix in the case of GP.
+        Or alternatively, in GP functional variance is the variance of p(f_{*}|x_{*}, D) and the GP posterior is
+        p(f(D) | D), so same function just evaluated at different points (once at a test point x_{*} and once on
+        the entire training dataset).
+
+        Or maybe I can compute functional_variance + \sigma^2 here, this will be needed in GP marginal likelihood
+
+        """
+        raise NotImplementedError
+
+    @property
+    def log_det_posterior_precision(self):
+        """
+        # TODO: will be needed in GP marginal likelihood
+        """
+        raise NotImplementedError
+
+    def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
+                                 init_prior_prec=1., val_loader=None, loss=get_nll,
+                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                 pred_type='glm', link_approx='probit', n_samples=100,
+                                 verbose=False):
+        """
+        Can be reused from the BaseLaplace, only need to fix pred_type
+        """
+        assert pred_type == "glm"
+        super().optimize_prior_precision()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
