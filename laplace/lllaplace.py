@@ -105,7 +105,7 @@ class LLLaplace(BaseLaplace):
 
         super().fit(train_loader)
 
-    def _glm_predictive_distribution(self, X):
+    def  _glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
@@ -198,7 +198,14 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, last_layer_name, backend_kwargs)
 
-        
+
 class FunctionalLLLaplace(LLLaplace, FunctionalLaplace):
-    raise NotImplementedError
+    """
+    TODO: write a more detailed "blueprint" for the class
+
+    Here not much changes in terms of GP inference. Since now we treat only the last layer probabilistically and
+    the rest of the network serves as a fixed feature extractor, that basically means that the X in GP changes to
+    \Tilde{X} \in R^{M \times l_{n-1}}, where l_{n-1} is the dimesion of the output of the penultimate NN layer.
+    """
+    pass
 

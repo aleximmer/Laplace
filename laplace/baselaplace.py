@@ -920,7 +920,7 @@ class FunctionalLaplace(BaseLaplace):
         This function is not needed in FunctionalLaplace, since pred_type="nn" in predictive_samples() method is not
         supported/does not make sense here.
 
-        Should think about if sample should not be an @abstractmethod in BaseLaplace anymore.
+        TODO: Should think about if sample should not be an @abstractmethod in BaseLaplace anymore.
         """
         raise NotImplementedError
 
