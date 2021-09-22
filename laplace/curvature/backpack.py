@@ -83,7 +83,7 @@ class BackPackInterface(CurvatureInterface):
             loss.backward()
         Gs = torch.cat([p.grad_batch.data.flatten(start_dim=1)
                         for p in self._model.parameters()], dim=1)
-        return Gs, loss
+        return Gs, loss.detach()
 
 
 class BackPackGGN(BackPackInterface, GGNInterface):

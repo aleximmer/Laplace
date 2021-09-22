@@ -289,4 +289,4 @@ class EFInterface(CurvatureInterface):
         """
         Gs, loss = self.gradients(x, y)
         H_ef = Gs.T @ Gs
-        return self.factor * loss.detach(), self.factor * H_ef
+        return self.factor * loss, self.factor * H_ef
