@@ -242,15 +242,18 @@ class BaseLaplace(ABC):
                 f_samples = f_offset.unsqueeze(-1) + f_sample_onset
                 return torch.softmax(f_samples, dim=1).mean(dim=-1)
             elif link_approx == 'mc':
+                f_mu, f_var = self._glm_predictive_distribution(x)
                 try:
                     dist = MultivariateNormal(f_mu, f_var)
                 except:
                     dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
                 return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
             elif link_approx == 'probit':
+                f_mu, f_var = self._glm_predictive_distribution(x)
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
                 return torch.softmax(kappa * f_mu, dim=-1)
             elif link_approx == 'bridge':
+                f_mu, f_var = self._glm_predictive_distribution(x)
                 _, K = f_mu.size(0), f_mu.size(-1)
                 f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
                 sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
