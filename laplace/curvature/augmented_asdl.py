@@ -1,10 +1,17 @@
-from laplace.curvature.curvature import EFInterface
+import warnings
+import numpy as np
 import torch
 
 from asdfghjkl.gradient import batch_aug_gradient
+from asdfghjkl.fisher import fisher_for_cross_entropy
+from asdfghjkl import FISHER_EXACT, FISHER_MC, COV
+from asdfghjkl import SHAPE_KRON, SHAPE_DIAG
 
 from laplace.curvature import CurvatureInterface, GGNInterface
 from laplace.curvature.asdl import _get_batch_grad
+from laplace.curvature import EFInterface
+from laplace.matrix import Kron
+from laplace.utils import _is_batchnorm
 
 
 class AugAsdlInterface(CurvatureInterface):
@@ -57,6 +64,63 @@ class AugAsdlInterface(CurvatureInterface):
         loss = self.lossfunc(f, y)
         return Gs, loss
 
+    def _get_kron_factors(self, curv, M):
+        kfacs = list()
+        for module in curv._model.modules():
+            if _is_batchnorm(module):
+                warnings.warn('BatchNorm unsupported for Kron, ignore.')
+                continue
+
+            stats = getattr(module, self._ggn_type, None)
+            if stats is None:
+                continue
+            if hasattr(module, 'bias') and module.bias is not None:
+                # split up bias and weights
+                kfacs.append([stats.kron.B, stats.kron.A.clone()[:-1, :-1]])
+                kfacs.append([stats.kron.B * stats.kron.A.clone()[-1, -1] / M])
+            elif hasattr(module, 'weight'):
+                p, q = np.prod(stats.kron.B.shape), np.prod(stats.kron.A.shape)
+                if p == q == 1:
+                    kfacs.append([stats.kron.B * stats.kron.A])
+                else:
+                    kfacs.append([stats.kron.B, stats.kron.A])
+            else:
+                raise ValueError(f'Whats happening with {module}?')
+        return Kron(kfacs)
+
+    @staticmethod
+    def _rescale_kron_factors(kron, N):
+        for F in kron.kfacs:
+            if len(F) == 2:
+                F[1] *= 1/N
+        return kron
+
+    def diag(self, X, y, **kwargs):
+        if self.last_layer:
+            raise ValueError('Not supported')
+            f, X = self.model.forward_with_features(X)
+        else:
+            f = self.model(X).mean(dim=1)
+            loss = self.lossfunc(f, y)
+        curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_DIAG,
+                                        inputs=X, targets=y)
+        diag_ggn = curv.matrices_to_vector(None)
+        return self.factor * loss, self.factor * diag_ggn
+
+    def kron(self, X, y, N, **wkwargs):
+        if self.last_layer:
+            raise ValueError('Not supported')
+            f, X = self.model.forward_with_features(X)
+        else:
+            f = self.model(X).mean(dim=1)
+        loss = self.lossfunc(f, y)
+        curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_KRON,
+                                        inputs=X, targets=y)
+        M = len(y)
+        kron = self._get_kron_factors(curv, M)
+        kron = self._rescale_kron_factors(kron, N)
+        return self.factor * loss, self.factor * kron
+
 
 class AugAsdlGGN(AugAsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` with Asdl and augmentation support.
@@ -93,19 +157,15 @@ class AugAsdlGGN(AugAsdlInterface, GGNInterface):
 
         return loss, H_ggn
 
-    def diag(self, X, y, **kwargs):
-        raise NotImplementedError('Unavailable for DA.')
-
-    def kron(self, X, y, N, **kwargs):
-        raise NotImplementedError('Unavailable for DA.')
+    @property
+    def _ggn_type(self):
+        return FISHER_MC if self.stochastic else FISHER_EXACT
 
 
 class AugAsdlEF(AugAsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using Asdl and augmentation support.
     """
 
-    def diag(self, X, y, **kwargs):
-        raise NotImplementedError('Unavailable for DA.')
-
-    def kron(self, X, y, N, **kwargs):
-        raise NotImplementedError('Unavailable for DA.')
+    @property
+    def _ggn_type(self):
+        return COV
