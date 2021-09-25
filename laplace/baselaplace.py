@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
+from torch.utils.data import DataLoader, SubsetRandomSampler
 
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
 from laplace.matrix import Kron
@@ -811,6 +812,8 @@ class FunctionalLaplace(BaseLaplace):
     Parameters
     ----------
     M : number of data points for Subset-of-Data (SOD) approximate GP inference
+    approximate_gp_kernel: if True we assume independent GPs across output channels. Moreover, we approximate
+                            L_{MM} with diag(L_{MM})
 
     See `BaseLaplace` class for the full interface.
     """
@@ -819,13 +822,17 @@ class FunctionalLaplace(BaseLaplace):
 
     # TODO: default value for M
     # TODO: temperature in the GP inference
-    # TODO: any other attributes that are needed in the FunctionalLaplace class?
     def __init__(self, model, likelihood, M, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None,
+                 approximate_gp_kernel=False):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
         self.M = M
+        self.approximate_gp_kernel = approximate_gp_kernel
+        self.K_MM = None
+        self.L_MM_inv = None
+        self.Sigma = None  # (K_{MM} + L_MM_inv)^{-1}
 
         # these params are not needed in FunctionalLaplace class
         self.mean = None  # this will be replaced with f_mu from _glm_predictive_distribution(), need to think if we want to have a separate method for it
@@ -855,21 +862,48 @@ class FunctionalLaplace(BaseLaplace):
 
     def _init_H(self):
         """
-        TODO: Here we will not initialize H (Hessian), but we will probably initialize K_{MM} and L_{MM}.
-            Both are MC x MC block-diagonal matrices. Can utilize this fact to do a more memory efficient initialization
-            than simply torch.zeros(MC, MC, device=self._device), probably something similar to what is done in
-            KronLaplace
+        TODO: this method is not needed here, think if it should still be @abstractmethod in BaseLaplace or not
         :return:
         """
-        raise NotImplementedError
+        pass
+
+    def _init_K_MM(self):
+        if self.approximate_gp_kernel:
+            self.K_MM = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
+        else:
+            self.K_MM = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
+
+    def _init_L_MM_inv(self):
+        if self.approximate_gp_kernel:
+            self.L_MM_inv = torch.zeros(size=(self.M * self.n_outputs), device=self._device)
+        else:
+            self.L_MM_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _curv_closure(self, X, y, N):
         """
-        TODO: Here will call backend code (curvature.py, backpack.py) and will return loss,
+        TODO: Here will call backend code (curvature.py, backpack.py, asdl.py) and will return loss,
             which is equivalent (up to a constant) to the sum of log-likelihoods. In backend code we also compute Jacobians
             and Lambda terms (a Hessian of the likelihood w.r.t. f), which we will need for K_{MM} and L_{MM}
         """
         raise NotImplementedError
+
+    def _get_sod_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
+        """
+        Subset-of-Datapoints data loader
+
+        TODO: this implementation is not really satisfactory because we only take dataset and batch_size from
+                the existing data_loader, need to take all the attributes. Alternatively, one could change the
+                signature of .fit() method in FunctionalLaplace to take in X,y,batch_size... instead of a data loader,
+                but not sure we want to have a different API for FunctionalLaplace...
+        :param train_loader:
+        :param seed:
+        :return:
+        """
+        np.random.seed(seed)
+        N = len(train_loader.dataset)
+        sod_indices = np.random.choice(list(range(N)), self.M, replace=False)
+        return DataLoader(dataset=train_loader.dataset, batch_size=train_loader.batch_size,
+                          sampler=SubsetRandomSampler(indices=sod_indices), shuffle=False)
 
     def fit(self, train_loader):
         """
@@ -878,7 +912,31 @@ class FunctionalLaplace(BaseLaplace):
             to appropriate places in the initialized full matrices.
 
         """
-        raise NotImplementedError
+        if (self.K_MM is not None) and (self.Sigma is not None):
+            raise ValueError('Already fit.')
+
+        X, _ = next(iter(train_loader))
+        with torch.no_grad():
+            self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
+        setattr(self.model, 'output_size', self.n_outputs)
+
+        self._init_K_MM()
+        self._init_L_MM_inv()
+
+        self.model.eval()
+
+        train_loader = self._get_sod_data_loader(train_loader)
+
+        N = len(train_loader.dataset)
+        for X, y in train_loader:
+            self.model.zero_grad()
+            X, y = X.to(self._device), y.to(self._device)
+            # TODO
+            # loss_batch, H_batch = self._curv_closure(X, y, N)
+            # self.loss += loss_batch
+            # self.H += H_batch
+
+        self.n_data = N
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """
