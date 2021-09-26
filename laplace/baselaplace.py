@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader, SubsetRandomSampler
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
+from laplace.curvature.backpack import BackPackGP
 
 
 __all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'FunctionalLaplace']
@@ -823,7 +824,7 @@ class FunctionalLaplace(BaseLaplace):
     # TODO: default value for M
     # TODO: temperature in the GP inference
     def __init__(self, model, likelihood, M, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None,
+                 prior_mean=0., temperature=1., backend=BackPackGP, backend_kwargs=None,
                  approximate_gp_kernel=False):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
@@ -831,13 +832,8 @@ class FunctionalLaplace(BaseLaplace):
         self.M = M
         self.approximate_gp_kernel = approximate_gp_kernel
         self.K_MM = None
-        self.L_MM_inv = None
-        self.Sigma = None  # (K_{MM} + L_MM_inv)^{-1}
-
-        # these params are not needed in FunctionalLaplace class
-        self.mean = None  # this will be replaced with f_mu from _glm_predictive_distribution(), need to think if we want to have a separate method for it
-        self.n_params = None
-        self.n_layers = None
+        self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
+        self.train_loader = None  # needed in functional variance
 
     """
     Methods/properties from BaseLaplace not overridden here:
@@ -867,25 +863,49 @@ class FunctionalLaplace(BaseLaplace):
         """
         pass
 
+    def _check_fit(self):
+        if (self.K_MM is None) or (self.Sigma_inv is None) or (self.train_loader is None):
+            raise AttributeError('Laplace not fitted. Run fit() first.')
+
     def _init_K_MM(self):
+        # TODO: store as upper/lower triangular matrix
         if self.approximate_gp_kernel:
             self.K_MM = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
             self.K_MM = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
-    def _init_L_MM_inv(self):
+    def _init_Sigma_inv(self):
+        # TODO: store as upper/lower triangular matrix
         if self.approximate_gp_kernel:
-            self.L_MM_inv = torch.zeros(size=(self.M * self.n_outputs), device=self._device)
+            self.Sigma_inv = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
-            self.L_MM_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
+            self.Sigma_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _curv_closure(self, X, y, N):
-        """
-        TODO: Here will call backend code (curvature.py, backpack.py, asdl.py) and will return loss,
-            which is equivalent (up to a constant) to the sum of log-likelihoods. In backend code we also compute Jacobians
-            and Lambda terms (a Hessian of the likelihood w.r.t. f), which we will need for K_{MM} and L_{MM}
-        """
-        raise NotImplementedError
+        return self.backend.gp(X, y)
+
+    def _store_K_batch(self, K_batch, i, j):
+        if self.approximate_gp_kernel:
+            raise NotImplementedError
+        else:
+            bC = K_batch.shape[0]
+            MC = self.K_MM.shape[0]
+            self.K_MM[i * bC:min((i + 1) * bC, MC), j * bC:min((j + 1) * bC, MC)] = K_batch
+            # TODO: remove code below once K_MM will be initialized as a lower/upper triangular matrix
+            if i != j:
+                self.K_MM[j * bC:min((j + 1) * bC, MC), i * bC:min((i + 1) * bC, MC)] = torch.transpose(K_batch, 0, 1)
+
+    def _build_L_inv(self, lambdas):
+        if self.approximate_gp_kernel:
+            raise NotImplementedError
+        else:
+            return torch.block_diag(*torch.inverse(torch.cat(lambdas, dim=0)))
+
+    def _build_Sigma_inv(self, lambdas):
+        if self.approximate_gp_kernel:
+            raise NotImplementedError
+        else:
+            return torch.inverse(self.K_MM + self._build_L_inv(lambdas))
 
     def _get_sod_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
@@ -905,6 +925,10 @@ class FunctionalLaplace(BaseLaplace):
         return DataLoader(dataset=train_loader.dataset, batch_size=train_loader.batch_size,
                           sampler=SubsetRandomSampler(indices=sod_indices), shuffle=False)
 
+    def prior_diag(self):
+        # TODO: use @property here
+        return 1 / self.prior_precision_diag
+
     def fit(self, train_loader):
         """
         TODO: Iterate over data and compute loss and K_{MM} and L_{MM}.
@@ -921,21 +945,41 @@ class FunctionalLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
 
         self._init_K_MM()
-        self._init_L_MM_inv()
+        self._init_Sigma_inv()
 
         self.model.eval()
 
         train_loader = self._get_sod_data_loader(train_loader)
 
-        N = len(train_loader.dataset)
-        for X, y in train_loader:
-            self.model.zero_grad()
-            X, y = X.to(self._device), y.to(self._device)
-            # TODO
-            # loss_batch, H_batch = self._curv_closure(X, y, N)
-            # self.loss += loss_batch
-            # self.H += H_batch
+        # print(self.K_MM.shape)
+        # print(self.K_MM)
 
+        N = len(train_loader.dataset)
+        f, lambdas = [], []
+        for i, batch in enumerate(train_loader):
+            X, y = batch
+            self.model.zero_grad()
+            # print(X.shape, y.shape)
+            X, y = X.to(self._device), y.to(self._device)
+            loss_batch, Js_batch, f_batch, lambdas_batch = self._curv_closure(X, y, N)
+            # print(loss_batch.shape, Js_batch.shape, f_batch.shape, lambdas_batch.shape)
+            self.loss += loss_batch
+            lambdas.append(lambdas_batch)
+            f.append(f_batch)
+            for j, batch_2 in enumerate(train_loader):
+                if j >= i:
+                    X2, _ = batch_2
+                    K_batch = self.backend.kernel(Js_batch, X2, S0=self.prior_diag())
+                    # print(K_batch.shape)
+                    self._store_K_batch(K_batch, i, j)
+                    # print(self.K_MM)
+
+        # print(self._build_L_inv(lambdas).shape)
+        # print(self.K_MM.shape)
+
+        self.Sigma_inv = self._build_Sigma_inv(lambdas)
+        # print(self.Sigma_inv.shape)
+        self.train_loader = train_loader
         self.n_data = N
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
@@ -945,17 +989,42 @@ class FunctionalLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
-    def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100):
+    def __call__(self, x, link_approx='probit', n_samples=100):
         """
         In FunctionalLaplace, only glm pred_type makes sense.
 
-        __call__() method from BaseLaplace can be reused, as long as the method functional_variance() implements
-        corresponding GP predictive kernel matrix (maybe the name of the method _glm_predictive_distribution will be a
-        bit ambiguous then but can think about this later on)
+        TODO: a lot of code duplication with __call__ from BaseLaplace class
         """
 
-        assert pred_type == 'glm', "In FunctionalLaplace, only glm pred_type is supported!"
-        super().__call__(x=x, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
+        # assert pred_type == 'glm', "In FunctionalLaplace, only glm pred_type is supported!"
+        # super().__call__(x=x, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
+
+        self._check_fit()
+
+        if link_approx not in ['mc', 'probit', 'bridge']:
+            raise ValueError(f'Unsupported link approximation {link_approx}.')
+
+        f_mu, f_var = self._gp_predictive_distribution(x)
+        # regression
+        if self.likelihood == 'regression':
+            return f_mu, f_var
+        # classification
+        if link_approx == 'mc':
+            try:
+                dist = MultivariateNormal(f_mu, f_var)
+            except:
+                dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
+            return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
+        elif link_approx == 'probit':
+            kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
+            return torch.softmax(kappa * f_mu, dim=-1)
+        elif link_approx == 'bridge':
+            _, K = f_mu.size(0), f_mu.size(-1)
+            f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
+            sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
+            alpha = 1 / f_var_diag * (1 - 2 / K + torch.exp(f_mu) / (K ** 2) * sum_exp)
+            dist = Dirichlet(alpha)
+            return torch.nan_to_num(dist.mean, nan=1.0)
 
     def predictive_samples(self, x, pred_type='glm', n_samples=100):
         """
@@ -965,13 +1034,35 @@ class FunctionalLaplace(BaseLaplace):
         assert pred_type == 'glm', "In FunctionalLaplace, only glm pred_type is supported!"
         super().__call__(x=x, pred_type=pred_type, n_samples=n_samples)
 
-    def functional_variance(self, Jacs):
+    def _gp_predictive_distribution(self, X):
+        Js, f_mu = self.backend.jacobians(self.model, X)
+        f_var = self.functional_variance(Js, X)
+        return f_mu.detach(), f_var.detach()
+
+    def functional_variance(self, Js, X):
         """
-         TODO: compute the (functional) variance of the GP predictive here (functional means without the \sigma^2 I term,
-            i.e. the variance of p(f_{*}|x_{*}, D) and not p(y_{*}|x_{*}, D)).
-            Perhaps this will take as an input also x_{*} and not only Jacs(x_{*}), need to think it through.
+        TODO: conflict with the abstract method...
         """
-        raise NotImplementedError
+
+        self._check_fit()
+
+        K_star = self.backend.kernel(Js, X, S0=self.prior_diag(), preserve_batch_dimension=True)
+        K_star_M = []
+        for X_batch, _ in self.train_loader:
+            K_star_M_batch = self.backend.kernel(Js, X_batch, S0=self.prior_diag(),
+                                                 preserve_batch_dimension=True, diff_batch_sizes=True)
+            K_star_M.append(K_star_M_batch)
+
+        f_var = K_star - self._build_K_star_M(K_star_M)
+        return f_var
+
+    def _build_K_star_M(self, K_star_M):
+        if self.approximate_gp_kernel:
+            raise NotImplementedError
+        else:
+            K_star_M = torch.cat(K_star_M, dim=1)
+            K_star_M = K_star_M.reshape(K_star_M.shape[0], K_star_M.shape[-1], -1)
+            return torch.einsum('bcm,mm,bem->bce', K_star_M, self.Sigma_inv, K_star_M)
 
     def sample(self, n_samples=100):
         """
