@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torch.utils.data import Sampler
 
 
 def get_nll(out_dist, targets):
@@ -173,3 +174,15 @@ def block_diag(blocks):
         M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
         p_cur += p_block
     return M
+
+
+class SoDSampler(Sampler):
+
+    def __init__(self, N, M):
+        self.indices = torch.tensor((np.random.choice(list(range(N)), M, replace=False)))
+
+    def __iter__(self):
+        return (i for i in self.indices)
+
+    def __len__(self):
+        return len(self.indices)

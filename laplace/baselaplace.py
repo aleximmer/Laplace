@@ -6,7 +6,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
-from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
+from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, SoDSampler
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 from laplace.curvature.backpack import BackPackGP
@@ -834,27 +834,7 @@ class FunctionalLaplace(BaseLaplace):
         self.K_MM = None
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
         self.train_loader = None  # needed in functional variance
-
-    """
-    Methods/properties from BaseLaplace not overridden here:
-        - backend
-        - check_fit
-        - log_likelihood
-        - predictive
-        - __call__ (just need to fix pred_type="glm")
-        - _glm_predictive_distribution (should think about a different name perhaps?)
-        - _nn_predictive_samples (will never be used here anyways)
-        - _check_jacobians
-        - log_det_ratio
-        - prior_mean  (m_0 part of  the GP prior)
-        - prior_precision (S_0 part of the GP prior)
-        - sigma_noise
-        _ _H_factor
-        - optimize_prior_precision (just need to fix pred_type="glm")
-        - _gridsearch (just need to fix pred_type="glm")
-        
-    
-    """
+        self.batch_size = None
 
     def _init_H(self):
         """
@@ -888,8 +868,8 @@ class FunctionalLaplace(BaseLaplace):
         if self.approximate_gp_kernel:
             raise NotImplementedError
         else:
-            bC = K_batch.shape[0]
-            MC = self.K_MM.shape[0]
+            bC = self.batch_size * self.n_outputs
+            MC = self.M * self.n_outputs
             self.K_MM[i * bC:min((i + 1) * bC, MC), j * bC:min((j + 1) * bC, MC)] = K_batch
             # TODO: remove code below once K_MM will be initialized as a lower/upper triangular matrix
             if i != j:
@@ -921,9 +901,8 @@ class FunctionalLaplace(BaseLaplace):
         """
         np.random.seed(seed)
         N = len(train_loader.dataset)
-        sod_indices = np.random.choice(list(range(N)), self.M, replace=False)
         return DataLoader(dataset=train_loader.dataset, batch_size=train_loader.batch_size,
-                          sampler=SubsetRandomSampler(indices=sod_indices), shuffle=False)
+                          sampler=SoDSampler(N=N, M=self.M), shuffle=False)
 
     def prior_diag(self):
         # TODO: use @property here
@@ -940,9 +919,11 @@ class FunctionalLaplace(BaseLaplace):
             raise ValueError('Already fit.')
 
         X, _ = next(iter(train_loader))
+
         with torch.no_grad():
             self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
+        self.batch_size = train_loader.batch_size
 
         self._init_K_MM()
         self._init_Sigma_inv()
@@ -951,18 +932,13 @@ class FunctionalLaplace(BaseLaplace):
 
         train_loader = self._get_sod_data_loader(train_loader)
 
-        # print(self.K_MM.shape)
-        # print(self.K_MM)
-
         N = len(train_loader.dataset)
         f, lambdas = [], []
         for i, batch in enumerate(train_loader):
             X, y = batch
             self.model.zero_grad()
-            # print(X.shape, y.shape)
             X, y = X.to(self._device), y.to(self._device)
             loss_batch, Js_batch, f_batch, lambdas_batch = self._curv_closure(X, y, N)
-            # print(loss_batch.shape, Js_batch.shape, f_batch.shape, lambdas_batch.shape)
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
             f.append(f_batch)
@@ -970,15 +946,9 @@ class FunctionalLaplace(BaseLaplace):
                 if j >= i:
                     X2, _ = batch_2
                     K_batch = self.backend.kernel(Js_batch, X2, S0=self.prior_diag())
-                    # print(K_batch.shape)
                     self._store_K_batch(K_batch, i, j)
-                    # print(self.K_MM)
-
-        # print(self._build_L_inv(lambdas).shape)
-        # print(self.K_MM.shape)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
-        # print(self.Sigma_inv.shape)
         self.train_loader = train_loader
         self.n_data = N
 
@@ -1047,6 +1017,7 @@ class FunctionalLaplace(BaseLaplace):
         self._check_fit()
 
         K_star = self.backend.kernel(Js, X, S0=self.prior_diag(), preserve_batch_dimension=True)
+        print(f"K_star max: {torch.max(K_star)}. K_star min: {torch.min(K_star)}")
         K_star_M = []
         for X_batch, _ in self.train_loader:
             K_star_M_batch = self.backend.kernel(Js, X_batch, S0=self.prior_diag(),
@@ -1054,6 +1025,7 @@ class FunctionalLaplace(BaseLaplace):
             K_star_M.append(K_star_M_batch)
 
         f_var = K_star - self._build_K_star_M(K_star_M)
+        print(f"f_var max: {torch.max(f_var)}. f_var min: {torch.min(f_var)}")
         return f_var
 
     def _build_K_star_M(self, K_star_M):
@@ -1061,8 +1033,9 @@ class FunctionalLaplace(BaseLaplace):
             raise NotImplementedError
         else:
             K_star_M = torch.cat(K_star_M, dim=1)
+            print(f"K_star_M max: {torch.max(K_star_M)}. K_star_M min: {torch.min(K_star_M)}")
             K_star_M = K_star_M.reshape(K_star_M.shape[0], K_star_M.shape[-1], -1)
-            return torch.einsum('bcm,mm,bem->bce', K_star_M, self.Sigma_inv, K_star_M)
+            return torch.einsum('bcm,mk,bek->bce', K_star_M, self.Sigma_inv, K_star_M)
 
     def sample(self, n_samples=100):
         """
