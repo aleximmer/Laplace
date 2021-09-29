@@ -14,6 +14,7 @@ def test_gp_equivalence():
     X_train, y_train, train_loader, X_test = toy_regression_dataset(sigma=true_sigma_noise)
     model = toy_model(train_loader)
 
+    # TODO: correctly incorporate _H_factor in BackPackGP
     # full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise)
     # functional_gp_la = FunctionalLaplace(model, 'regression', M=len(X_train), sigma_noise=true_sigma_noise)
     full_la = FullLaplace(model, 'regression')
@@ -32,9 +33,10 @@ def test_gp_equivalence():
     print(f_var_full / f_var_gp)
     print(np.abs(f_var_full - f_var_gp))
     print(np.max(np.abs(f_var_full - f_var_gp)))
+    print(np.mean(np.abs(f_var_full - f_var_gp)))
 
     assert np.allclose(f_mu_full, f_mu_gp)
-    # assert np.allclose(f_var_full, f_var_gp)
+    assert np.allclose(f_var_full, f_var_gp, atol=0.02)
 
 
 
