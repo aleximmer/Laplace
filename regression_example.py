@@ -7,9 +7,13 @@ from laplace import Laplace
 
 from laplace.baselaplace import FunctionalLaplace
 
-n_epochs = 100
+# TODO: why is FunctionalLaplace implementation so depended on using float64?
+torch.set_default_dtype(torch.float64)
+# torch.set_default_dtype(torch.float32)
+
+n_epochs = 1000
 batch_size = 150  # full batch
-true_sigma_noise = 0.8
+true_sigma_noise = 0.3
 torch.manual_seed(711)
 
 # create simple sinusoid data set
@@ -57,13 +61,13 @@ f_mu_gp = f_mu_gp.squeeze().detach().cpu().numpy()
 f_sigma_gp = f_var_gp.squeeze().sqrt().cpu().numpy()
 pred_std_gp = np.sqrt(f_sigma_gp**2 + la_func.sigma_noise.item()**2)
 # print(f_mu)
-print(f_var)
-print(f_var_gp)
-print(f_var/f_var_gp)
+# print(f_var)
+# print(f_var_gp)
+# print(f_var/f_var_gp)
 assert (f_mu == f_mu_gp).all()
 
 fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, sharey=True,
-                               figsize=(7, 2.8))
+                                    figsize=(7, 2.8))
 ax1.set_title('MAP')
 ax1.scatter(X_train.flatten(), y_train.flatten(), alpha=0.7, color='tab:orange')
 ax1.plot(x, f_mu, color='black', label='$f_{MAP}$')

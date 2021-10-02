@@ -862,7 +862,7 @@ class FunctionalLaplace(BaseLaplace):
             self.Sigma_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.gp(X, y)
+        return self.backend.gp(X, y, self._H_factor)
 
     def _store_K_batch(self, K_batch, i, j):
         if self.approximate_gp_kernel:
@@ -904,10 +904,6 @@ class FunctionalLaplace(BaseLaplace):
         return DataLoader(dataset=train_loader.dataset, batch_size=train_loader.batch_size,
                           sampler=SoDSampler(N=N, M=self.M), shuffle=False)
 
-    def prior_diag(self):
-        # TODO: use @property here
-        return 1 / self.prior_precision_diag
-
     def fit(self, train_loader):
         """
         TODO: Iterate over data and compute loss and K_{MM} and L_{MM}.
@@ -945,7 +941,7 @@ class FunctionalLaplace(BaseLaplace):
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
-                    K_batch = self.backend.kernel(Js_batch, X2, S0=self.prior_diag())
+                    K_batch = self.backend.kernel(Js_batch, X2, prior_precision=self.prior_precision_diag)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
@@ -1016,16 +1012,15 @@ class FunctionalLaplace(BaseLaplace):
 
         self._check_fit()
 
-        K_star = self.backend.kernel(Js, X, S0=self.prior_diag(), preserve_batch_dimension=True)
-        print(f"K_star max: {torch.max(K_star)}. K_star min: {torch.min(K_star)}")
+        K_star = self.backend.kernel(Js, X, prior_precision=self.prior_precision_diag, preserve_batch_dimension=True)
+
         K_star_M = []
         for X_batch, _ in self.train_loader:
-            K_star_M_batch = self.backend.kernel(Js, X_batch, S0=self.prior_diag(),
+            K_star_M_batch = self.backend.kernel(Js, X_batch, prior_precision=self.prior_precision_diag,
                                                  preserve_batch_dimension=True, diff_batch_sizes=True)
             K_star_M.append(K_star_M_batch)
 
         f_var = K_star - self._build_K_star_M(K_star_M)
-        print(f"f_var max: {torch.max(f_var)}. f_var min: {torch.min(f_var)}")
         return f_var
 
     def _build_K_star_M(self, K_star_M):
@@ -1033,7 +1028,6 @@ class FunctionalLaplace(BaseLaplace):
             raise NotImplementedError
         else:
             K_star_M = torch.cat(K_star_M, dim=1)
-            print(f"K_star_M max: {torch.max(K_star_M)}. K_star_M min: {torch.min(K_star_M)}")
             K_star_M = K_star_M.reshape(K_star_M.shape[0], K_star_M.shape[-1], -1)
             return torch.einsum('bcm,mk,bek->bce', K_star_M, self.Sigma_inv, K_star_M)
 
@@ -1108,6 +1102,10 @@ class FunctionalLaplace(BaseLaplace):
         """
         assert pred_type == "glm"
         super().optimize_prior_precision()
+
+
+# TODO:
+#       1) unit tests for methods in FunctionalLaplace and BackPackGP classes
 
 
 

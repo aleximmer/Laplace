@@ -159,34 +159,34 @@ class BackPackGP(BackPackInterface):
     def __init__(self, model, likelihood, last_layer=False):
         super().__init__(model, likelihood, last_layer)
 
-    def gp(self, X, y):
+    def gp(self, X, y, sigma_factor):
         if self.last_layer:
             Js, f = self.last_layer_jacobians(self.model, X)
         else:
             Js, f = self.jacobians(self.model, X)
-        lambdas = self._get_lambdas(f)
+        lambdas = self._get_lambdas(f, sigma_factor)
         loss = self.factor * self.lossfunc(f, y)
         return loss.detach(), Js, f, lambdas
 
-    def kernel(self, jacobians, batch, S0, preserve_batch_dimension=False, diff_batch_sizes=False):
+    def kernel(self, jacobians, batch, prior_precision, preserve_batch_dimension=False, diff_batch_sizes=False):
         jacobians_2, _ = self.jacobians(self.model, batch)
         P = jacobians.shape[-1]  # nr model params
+        prior = 1 / prior_precision
         # TODO: check correctness of the reshaping below
         # TODO: refactor, the current implementation with preserve_batch_dimension and diff_batch_sizes is ugly...
         if preserve_batch_dimension:  # used for K_star and K_star_M
             if diff_batch_sizes:
-                kernel = torch.einsum('bcp,p,dep->bdce', jacobians, S0, jacobians_2)
+                kernel = torch.einsum('bcp,p,dep->bdce', jacobians, prior, jacobians_2)
             else:
-                kernel = torch.einsum('bcp,p,bep->bce', jacobians, S0, jacobians_2)
+                kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
         else:  # used for K_MM
-            kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), S0, jacobians_2.reshape(-1, P))
+            kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
         return kernel
 
-    def _get_lambdas(self, f):
+    def _get_lambdas(self, f, sigma_factor):
         b, C = f.shape
-        # TODO: think about minus here
         if self.likelihood == 'regression':
-            lambdas = torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
+            lambdas = sigma_factor*torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)

@@ -4,11 +4,13 @@ from torch.utils.data import DataLoader, TensorDataset
 
 
 def toy_regression_dataset(sigma, n_train=150, n_test=500, batch_size=150):
+    torch.manual_seed(711)
     # create simple sinusoid data set
     X_train = (torch.rand(n_train) * 8).unsqueeze(-1)
     y_train = torch.sin(X_train) + torch.randn_like(X_train) * sigma
     train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size)
     X_test = torch.linspace(-5, 13, n_test).unsqueeze(-1)  # +-5 on top of the training X-range
+
     return X_train, y_train, train_loader, X_test
 
 

@@ -240,3 +240,5 @@ def test_kron_normalization_class(class_Xy, model):
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
 
+
+
