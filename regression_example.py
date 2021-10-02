@@ -5,9 +5,11 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import Laplace
 
-n_epochs = 1000
+from laplace.baselaplace import FunctionalLaplace
+
+n_epochs = 100
 batch_size = 150  # full batch
-true_sigma_noise = 0.3
+true_sigma_noise = 0.8
 torch.manual_seed(711)
 
 # create simple sinusoid data set
@@ -29,26 +31,39 @@ for i in range(n_epochs):
         loss = criterion(model(X), y)
         loss.backward()
         optimizer.step()
-
-la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
+la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full', sigma_noise=true_sigma_noise)
 la.fit(train_loader)
-log_prior, log_sigma = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
-hyper_optimizer = torch.optim.Adam([log_prior, log_sigma], lr=1e-1)
-for i in range(n_epochs):
-    hyper_optimizer.zero_grad()
-    neg_marglik = - la.log_marginal_likelihood(log_prior.exp(), log_sigma.exp())
-    neg_marglik.backward()
-    hyper_optimizer.step()
-print('sigma:', log_sigma.exp().item(), '; prior precision:', log_prior.exp().item())
+la_func = FunctionalLaplace(model, 'regression', M=len(X_train), sigma_noise=true_sigma_noise)
+la_func.fit(train_loader)
+
+# log_prior, log_sigma = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
+# hyper_optimizer = torch.optim.Adam([log_prior, log_sigma], lr=1e-1)
+# for i in range(n_epochs):
+#     hyper_optimizer.zero_grad()
+#     neg_marglik = - la.log_marginal_likelihood(log_prior.exp(), log_sigma.exp())
+#     neg_marglik.backward()
+#     hyper_optimizer.step()
+# print('sigma:', log_sigma.exp().item(), '; prior precision:', log_prior.exp().item())
 
 x = X_test.flatten().cpu().numpy()
+
 f_mu, f_var = la(X_test)
 f_mu = f_mu.squeeze().detach().cpu().numpy()
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 
-fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, sharey=True,
-                               figsize=(4.5, 2.8))
+f_mu_gp, f_var_gp = la_func(X_test)
+f_mu_gp = f_mu_gp.squeeze().detach().cpu().numpy()
+f_sigma_gp = f_var_gp.squeeze().sqrt().cpu().numpy()
+pred_std_gp = np.sqrt(f_sigma_gp**2 + la_func.sigma_noise.item()**2)
+# print(f_mu)
+print(f_var)
+print(f_var_gp)
+print(f_var/f_var_gp)
+assert (f_mu == f_mu_gp).all()
+
+fig, (ax1, ax2, ax3) = plt.subplots(nrows=1, ncols=3, sharey=True,
+                               figsize=(7, 2.8))
 ax1.set_title('MAP')
 ax1.scatter(X_train.flatten(), y_train.flatten(), alpha=0.7, color='tab:orange')
 ax1.plot(x, f_mu, color='black', label='$f_{MAP}$')
@@ -57,9 +72,17 @@ ax1.legend()
 ax2.set_title('LA')
 ax2.scatter(X_train.flatten(), y_train.flatten(), alpha=0.7, color='tab:orange')
 ax2.plot(x, f_mu, label='$\mathbb{E}[f]$')
-ax2.fill_between(x, f_mu-pred_std*2, f_mu+pred_std*2, 
+ax2.fill_between(x, f_mu-pred_std*2, f_mu+pred_std*2,
                  alpha=0.3, color='tab:blue', label='$2\sqrt{\mathbb{V}\,[f]}$')
 ax2.legend()
+
+ax3.set_title('LA-GP')
+ax3.scatter(X_train.flatten(), y_train.flatten(), alpha=0.7, color='tab:orange')
+ax3.plot(x, f_mu_gp, label='$\mathbb{E}[f]$ (GP)')
+ax3.fill_between(x, f_mu_gp-pred_std_gp*2, f_mu_gp+pred_std_gp*2,
+                 alpha=0.3, color='tab:blue', label='$2\sqrt{\mathbb{V}\,[f]}$ (GP)')
+ax3.legend()
+
 ax1.set_ylim([-4, 6])
 ax1.set_xlim([x.min(), x.max()])
 ax2.set_xlim([x.min(), x.max()])
@@ -67,4 +90,4 @@ ax1.set_ylabel('$y$')
 ax1.set_xlabel('$x$')
 ax2.set_xlabel('$x$')
 plt.tight_layout()
-plt.savefig('docs/regression_example.png', dpi=300)
+plt.savefig('docs/regression_example_functional_laplace.png', dpi=300)
