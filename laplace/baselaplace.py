@@ -825,7 +825,7 @@ class FunctionalLaplace(BaseLaplace):
     # TODO: temperature in the GP inference
     def __init__(self, model, likelihood, M, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGP, backend_kwargs=None,
-                 approximate_gp_kernel=False):
+                 approximate_gp_kernel=False, cholesky=True):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -835,6 +835,7 @@ class FunctionalLaplace(BaseLaplace):
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
         self.train_loader = None  # needed in functional variance
         self.batch_size = None
+        self.cholesky = cholesky
 
     def _init_H(self):
         """
@@ -885,7 +886,10 @@ class FunctionalLaplace(BaseLaplace):
         if self.approximate_gp_kernel:
             raise NotImplementedError
         else:
-            return torch.inverse(self.K_MM + self._build_L_inv(lambdas))
+            if self.cholesky:
+                return torch.linalg.cholesky(self.K_MM + self._build_L_inv(lambdas))
+            else:
+                return torch.inverse(self.K_MM + self._build_L_inv(lambdas))
 
     def _get_sod_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
@@ -948,12 +952,12 @@ class FunctionalLaplace(BaseLaplace):
         self.train_loader = train_loader
         self.n_data = N
 
-    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
-        """
-        TODO: GP log marginal likelihood p(y)  (we have p(f) as a prior here instead of p(\Theta))
-            Note that the method log_likelihood() will not have to be modified.
-        """
-        raise NotImplementedError
+    # def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+    #     """
+    #     TODO: GP log marginal likelihood p(y)  (we have p(f) as a prior here instead of p(\Theta))
+    #         Note that the method log_likelihood() will not have to be modified.
+    #     """
+    #     raise NotImplementedError
 
     def __call__(self, x, link_approx='probit', n_samples=100):
         """
@@ -1029,7 +1033,11 @@ class FunctionalLaplace(BaseLaplace):
         else:
             K_star_M = torch.cat(K_star_M, dim=1)
             K_star_M = K_star_M.reshape(K_star_M.shape[0], K_star_M.shape[-1], -1)
-            return torch.einsum('bcm,mk,bek->bce', K_star_M, self.Sigma_inv, K_star_M)
+            if self.cholesky:
+                v = torch.linalg.solve(self.Sigma_inv, torch.transpose(K_star_M, 1, 2))
+                return torch.einsum('bcm,bcn->bmn', v, v)
+            else:
+                return torch.einsum('bcm,mk,bek->bce', K_star_M, self.Sigma_inv, K_star_M)
 
     def sample(self, n_samples=100):
         """
@@ -1103,9 +1111,6 @@ class FunctionalLaplace(BaseLaplace):
         assert pred_type == "glm"
         super().optimize_prior_precision()
 
-
-# TODO:
-#       1) unit tests for methods in FunctionalLaplace and BackPackGP classes
 
 
 
