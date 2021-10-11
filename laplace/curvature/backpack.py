@@ -172,7 +172,6 @@ class BackPackGP(BackPackInterface):
         jacobians_2, _ = self.jacobians(self.model, batch)
         P = jacobians.shape[-1]  # nr model params
         prior = 1 / prior_precision
-        # TODO: check correctness of the reshaping below
         # TODO: refactor, the current implementation with preserve_batch_dimension and diff_batch_sizes is ugly...
         if preserve_batch_dimension:  # used for K_star and K_star_M
             if diff_batch_sizes:
