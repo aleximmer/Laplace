@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod, abstractproperty
 from math import sqrt, pi
 import numpy as np
 import torch
@@ -10,10 +9,10 @@ from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN, BackPackEF, AsdlGGN, AsdlEF
 
 
-__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace']
+__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace']
 
 
-class BaseLaplace(ABC):
+class BaseLaplace:
     """Baseclass for all Laplace approximations in this library.
 
     Parameters
@@ -129,7 +128,7 @@ class BaseLaplace(ABC):
         prior_precision_diag : torch.Tensor
         """
         if len(self.prior_precision) == 1:  # scalar
-            return self.prior_precision * torch.ones_like(self.mean, device=self._device)
+            return self.prior_precision * torch.ones(self.n_params, device=self._device)
 
         elif len(self.prior_precision) == self.n_params:  # diagonal
             return self.prior_precision
@@ -184,16 +183,20 @@ class BaseLaplace(ABC):
         else:
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
-    def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
-                                 init_prior_prec=1., val_loader=None, loss=get_nll,
-                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                 pred_type='glm', link_approx='probit', n_samples=100,
-                                 verbose=False):
+    def _optimize_prior_precision(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
+                                  init_prior_prec=1., val_loader=None, loss=get_nll,
+                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                  link_approx='probit', n_samples=100,
+                                  verbose=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
 
         Parameters
         ----------
+        pred_type : {'glm', 'nn', 'gp'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive or Gaussian Process (GP) inference.
+            The GLM predictive is consistent with the curvature approximations used here.
         method : {'marglik', 'CV'}, default='marglik'
             specifies how the prior precision should be optimized.
         n_steps : int, default=100
@@ -212,10 +215,6 @@ class BaseLaplace(ABC):
             upper bound of gridsearch interval for CV.
         grid_size : int, default=100
             number of values to consider inside the gridsearch interval for CV.
-        pred_type : {'glm', 'nn'}, default='glm'
-            type of posterior predictive, linearized GLM predictive or neural
-            network sampling predictive. The GLM predictive is consistent with
-            the curvature approximations used here.
         link_approx : {'mc', 'probit', 'bridge'}, default='probit'
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only `'mc'` is possible.
@@ -252,7 +251,7 @@ class BaseLaplace(ABC):
         if verbose:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
-    def _gridsearch(self, loss, interval, val_loader, pred_type='glm',
+    def _gridsearch(self, loss, interval, val_loader, pred_type,
                     link_approx='probit', n_samples=100):
         results = list()
         prior_precs = list()
@@ -295,16 +294,6 @@ class BaseLaplace(ABC):
     def _H_factor(self):
         sigma2 = self.sigma_noise.square()
         return 1 / sigma2 / self.temperature
-
-    @abstractproperty
-    def posterior_precision(self):
-        """Compute or return the posterior precision \\(P\\).
-
-        Returns
-        -------
-        posterior_prec : torch.Tensor
-        """
-        pass
 
 
 class ParametricLaplace(BaseLaplace):
@@ -619,6 +608,28 @@ class ParametricLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
+    def optimize_prior_precision(self, pred_type="glm", method='marglik', n_steps=100, lr=1e-1,
+                                 init_prior_prec=1., val_loader=None, loss=get_nll,
+                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                 link_approx='probit', n_samples=100,
+                                 verbose=False):
+        assert pred_type in ["glm", "nn"]
+        self._optimize_prior_precision(pred_type, method, n_steps, lr,
+                                       init_prior_prec, val_loader, loss,
+                                       log_prior_prec_min, log_prior_prec_max,
+                                       grid_size, link_approx, n_samples,
+                                       verbose)
+
+    @property
+    def posterior_precision(self):
+        """Compute or return the posterior precision \\(P\\).
+
+        Returns
+        -------
+        posterior_prec : torch.Tensor
+        """
+        raise NotImplementedError
+
 
 class FullLaplace(ParametricLaplace):
     """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -825,8 +836,8 @@ class DiagLaplace(ParametricLaplace):
 
 
 class FunctionalLaplace(BaseLaplace):
-    raise NotImplementedError
+    pass
 
 
 class SoDLaplace(FunctionalLaplace):
-    raise NotImplementedError
+    pass
