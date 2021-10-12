@@ -1,4 +1,3 @@
-from abc import abstractproperty
 import warnings
 import numpy as np
 import torch
@@ -70,9 +69,9 @@ class AsdlInterface(CurvatureInterface):
         loss = self.lossfunc(f, y)
         return Gs, loss
 
-    @abstractproperty
+    @property
     def _ggn_type(self):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def _get_kron_factors(self, curv, M):
         kfacs = list()
