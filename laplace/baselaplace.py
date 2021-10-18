@@ -323,7 +323,7 @@ class ParametricLaplace(BaseLaplace):
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         assert backend in [BackPackGGN, BackPackEF, AsdlGGN, AsdlEF], \
-            "GGN or EF backends required in ParametricLaplace."
+            'GGN or EF backends required in ParametricLaplace.'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -608,12 +608,12 @@ class ParametricLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
-    def optimize_prior_precision(self, pred_type="glm", method='marglik', n_steps=100, lr=1e-1,
+    def optimize_prior_precision(self, pred_type='glm', method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
                                  link_approx='probit', n_samples=100,
                                  verbose=False):
-        assert pred_type in ["glm", "nn"]
+        assert pred_type in ['glm', 'nn']
         self._optimize_prior_precision(pred_type, method, n_steps, lr,
                                        init_prior_prec, val_loader, loss,
                                        log_prior_prec_min, log_prior_prec_max,
