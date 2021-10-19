@@ -192,16 +192,6 @@ class BackPackGP(BackPackInterface):
             lambdas = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
         return lambdas
 
-    # TODO: think if full, kron and diag should be removed from CurvatureInterface class
-    def full(self, x, y, **kwargs):
-        raise ValueError
-
-    def kron(self, x, y, **kwargs):
-        raise ValueError
-
-    def diag(self, x, y, **kwargs):
-        raise ValueError
-
 
 def _cleanup(module):
     for child in module.children():
