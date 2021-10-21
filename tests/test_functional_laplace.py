@@ -19,7 +19,8 @@ def test_gp_equivalence_regression():
     model = toy_model(train_loader)
 
     full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise)
-    functional_gp_la = FunctionalLaplace(model, 'regression', M=len(X_train), sigma_noise=true_sigma_noise)
+    functional_gp_la = FunctionalLaplace(model, 'regression', M=len(X_train),
+                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 
@@ -43,7 +44,8 @@ def test_gp_equivalence_regression_multivariate(d=3):
     model = toy_model(train_loader, in_dim=d, out_dim=d)
 
     full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise)
-    functional_gp_la = FunctionalLaplace(model, 'regression', M=len(X_train), sigma_noise=true_sigma_noise)
+    functional_gp_la = FunctionalLaplace(model, 'regression', M=len(X_train),
+                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 

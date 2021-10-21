@@ -168,6 +168,8 @@ class BackPackGP(BackPackInterface):
         loss = self.factor * self.lossfunc(f, y)
         return loss.detach(), Js, f, lambdas
 
+    # TODO: when independent_gp_kernels=True this function should return (batch_size * C)
+    #  instead of (batch_size * C, batch_size * C), so only the diagonal of the product of Jacobians
     def kernel(self, jacobians, batch, prior_precision, preserve_batch_dimension=False, diff_batch_sizes=False):
         jacobians_2, _ = self.jacobians(self.model, batch)
         P = jacobians.shape[-1]  # nr model params

@@ -847,8 +847,13 @@ class FunctionalLaplace(BaseLaplace):
     Parameters
     ----------
     M : number of data points for Subset-of-Data (SOD) approximate GP inference
-    approximate_gp_kernel: if True we assume independent GPs across output channels. Moreover, we approximate
-                            L_{MM} with diag(L_{MM})
+    independent_gp_kernels: if True we assume independent GPs across output channels.
+    diagonal_L: approximate L_{MM} with diag(L_{MM}).
+                If False and likelihood="regression", then nothing changes
+                    because L_{MM} is anyways diagonal as long as we assume diagonal noise in the likelihood.
+                If False and likelihood="classification", then the algorithm from Chapter 3.5 from R&W 2006 GP book
+                    is used. # TODO: double check the correctness of the algorithm in R&W before implementing
+
 
     See `BaseLaplace` class for the full interface.
     """
@@ -859,12 +864,16 @@ class FunctionalLaplace(BaseLaplace):
     # TODO: temperature in the GP inference
     def __init__(self, model, likelihood, M, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGP, backend_kwargs=None,
-                 approximate_gp_kernel=False, cholesky=True):
+                 independent_gp_kernels=True, diagonal_L=True, cholesky=True):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
         self.M = M
-        self.approximate_gp_kernel = approximate_gp_kernel
+        self.independent_gp_kernels = independent_gp_kernels
+        self.diagonal_L = diagonal_L
+        if not independent_gp_kernels and likelihood == 'classification':
+            assert diagonal_L, \
+                'GP inference without independence for classification necessitates diagonal approximation of L!'
         self.K_MM = None
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
         self.train_loader = None  # needed in functional variance
@@ -877,14 +886,14 @@ class FunctionalLaplace(BaseLaplace):
 
     def _init_K_MM(self):
         # TODO: store as upper/lower triangular matrix
-        if self.approximate_gp_kernel:
+        if self.independent_gp_kernels:
             self.K_MM = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
             self.K_MM = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _init_Sigma_inv(self):
         # TODO: store as upper/lower triangular matrix
-        if self.approximate_gp_kernel:
+        if self.independent_gp_kernels:
             self.Sigma_inv = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
             self.Sigma_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
@@ -893,7 +902,7 @@ class FunctionalLaplace(BaseLaplace):
         return self.backend.gp(X, y, self._H_factor)
 
     def _store_K_batch(self, K_batch, i, j):
-        if self.approximate_gp_kernel:
+        if self.independent_gp_kernels:
             raise NotImplementedError
         else:
             bC = self.batch_size * self.n_outputs
@@ -904,13 +913,13 @@ class FunctionalLaplace(BaseLaplace):
                 self.K_MM[j * bC:min((j + 1) * bC, MC), i * bC:min((i + 1) * bC, MC)] = torch.transpose(K_batch, 0, 1)
 
     def _build_L_inv(self, lambdas):
-        if self.approximate_gp_kernel:
+        if self.independent_gp_kernels:
             raise NotImplementedError
         else:
             return torch.block_diag(*torch.inverse(torch.cat(lambdas, dim=0)))
 
     def _build_Sigma_inv(self, lambdas):
-        if self.approximate_gp_kernel:
+        if self.independent_gp_kernels:
             raise NotImplementedError
         else:
             if self.cholesky:
@@ -1038,22 +1047,22 @@ class FunctionalLaplace(BaseLaplace):
 
         K_star = self.backend.kernel(Js, X, prior_precision=self.prior_precision_diag, preserve_batch_dimension=True)
 
-        K_star_M = []
+        K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_star_M_batch = self.backend.kernel(Js, X_batch, prior_precision=self.prior_precision_diag,
+            K_M_star_batch = self.backend.kernel(Js, X_batch, prior_precision=self.prior_precision_diag,
                                                  preserve_batch_dimension=True, diff_batch_sizes=True)
-            K_star_M.append(K_star_M_batch)
+            K_M_star.append(K_M_star_batch)
 
-        f_var = K_star - self._build_K_star_M(K_star_M)
+        f_var = K_star - self._build_K_star_M(K_M_star)
         return f_var
 
-    def _build_K_star_M(self, K_star_M):
-        if self.approximate_gp_kernel:
+    def _build_K_star_M(self, K_M_star):
+        if self.independent_gp_kernels:
             raise NotImplementedError
         else:
-            K_star_M = torch.cat(K_star_M, dim=1)
+            K_M_star = torch.cat(K_M_star, dim=1)
             # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
-            K_M_star = K_star_M.reshape(K_star_M.shape[0], -1, K_star_M.shape[-1])
+            K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
             if self.cholesky:
                 v = torch.linalg.solve(self.Sigma_inv, K_M_star)
                 return torch.einsum('bcm,bcn->bmn', v, v)
