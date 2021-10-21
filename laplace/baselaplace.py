@@ -1052,12 +1052,13 @@ class FunctionalLaplace(BaseLaplace):
             raise NotImplementedError
         else:
             K_star_M = torch.cat(K_star_M, dim=1)
-            K_star_M = K_star_M.reshape(K_star_M.shape[0], K_star_M.shape[-1], -1)
+            # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
+            K_M_star = K_star_M.reshape(K_star_M.shape[0], -1, K_star_M.shape[-1])
             if self.cholesky:
-                v = torch.linalg.solve(self.Sigma_inv, torch.transpose(K_star_M, 1, 2))
+                v = torch.linalg.solve(self.Sigma_inv, K_M_star)
                 return torch.einsum('bcm,bcn->bmn', v, v)
             else:
-                return torch.einsum('bcm,mk,bek->bce', K_star_M, self.Sigma_inv, K_star_M)
+                return torch.einsum('bmc,mk,bke->bce', K_M_star, self.Sigma_inv, K_M_star)
 
     # TODO: refactor (think what pred_type='gp' will mean here)
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,

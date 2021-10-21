@@ -13,6 +13,17 @@ def toy_regression_dataset_1d(sigma, n_train=150, n_test=500, batch_size=150):
     return X_train, y_train, train_loader, X_test
 
 
+def toy_multivariate_regression_dataset(sigma, d_input, n_train=150, n_test=500, batch_size=150):
+    torch.manual_seed(711)
+    # create simple sinusoid data set
+    X_train = torch.rand(n_train, d_input) * 8
+    y_train = torch.sin(X_train) + torch.randn_like(X_train) * sigma
+    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size)
+    X_test = torch.rand(n_test, d_input) * 10
+
+    return X_train, y_train, train_loader, X_test
+
+
 def toy_classification_dataset(n_train=150, n_test=500, batch_size=150, in_dim=3, out_dim=2):
     torch.manual_seed(711)
     X_train = torch.randn(n_train, in_dim)
