@@ -916,7 +916,11 @@ class FunctionalLaplace(BaseLaplace):
         if self.independent_gp_kernels:
             raise NotImplementedError
         else:
-            return torch.block_diag(*torch.inverse(torch.cat(lambdas, dim=0)))
+            if self.diagonal_L:
+                diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
+                return torch.diag(1. / diag)
+            else:
+                return torch.block_diag(*torch.inverse(torch.cat(lambdas, dim=0)))
 
     def _build_Sigma_inv(self, lambdas):
         if self.independent_gp_kernels:
@@ -946,12 +950,9 @@ class FunctionalLaplace(BaseLaplace):
 
     def fit(self, train_loader):
         """
-        TODO: Iterate over data and compute loss and K_{MM} and L_{MM}.
-            Contrary to other subclasses we will not be summing up K_{MM} and L_{MM}, but will be instead storing them
-            to appropriate places in the initialized full matrices.
 
         """
-        if (self.K_MM is not None) and (self.Sigma is not None):
+        if (self.K_MM is not None) and (self.Sigma_inv is not None):
             raise ValueError('Already fit.')
 
         X, _ = next(iter(train_loader))
