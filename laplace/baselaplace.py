@@ -903,7 +903,12 @@ class FunctionalLaplace(BaseLaplace):
 
     def _store_K_batch(self, K_batch, i, j):
         if self.independent_gp_kernels:
-            raise NotImplementedError
+            for c in range(self.n_outputs):
+                self.K_MM[c][i * self.batch_size:min((i + 1) * self.batch_size, self.M),
+                             j * self.batch_size:min((j + 1) * self.batch_size, self.M)] = K_batch[:, :, c]
+                if i != j:
+                    self.K_MM[c][j * self.batch_size:min((j + 1) * self.batch_size, self.M),
+                                 i * self.batch_size:min((i + 1) * self.batch_size, self.M)] = torch.transpose(K_batch[:, :, c], 0, 1)
         else:
             bC = self.batch_size * self.n_outputs
             MC = self.M * self.n_outputs
@@ -914,22 +919,25 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_L_inv(self, lambdas):
         if self.independent_gp_kernels:
-            raise NotImplementedError
-        else:
-            if self.diagonal_L:
+            if self.diagonal_L or self.likelihood == "regression":
                 diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
-                return torch.diag(1. / diag)
+                # rearrange. then take the inverse for each MxM matrix separately
+                return [torch.diag(1. / diag[i::self.n_outputs]) for i in range(self.n_outputs)]
             else:
-                return torch.block_diag(*torch.inverse(torch.cat(lambdas, dim=0)))
+                # R&W 2006 algorithm
+                raise NotImplementedError
+        else:
+            # in case of self.likelihood == "classificiation" we approximate L_MM with diagonal here
+            # in case of self.likelihood == "regression" L_MM is anyways diagonal
+            diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
+            return torch.diag(1. / diag)
 
     def _build_Sigma_inv(self, lambdas):
         if self.independent_gp_kernels:
-            raise NotImplementedError
+            lambdas = self._build_L_inv(lambdas)
+            return [torch.linalg.cholesky(self.K_MM[c] + lambdas[c]) for c in range(self.n_outputs)]
         else:
-            if self.cholesky:
-                return torch.linalg.cholesky(self.K_MM + self._build_L_inv(lambdas))
-            else:
-                return torch.inverse(self.K_MM + self._build_L_inv(lambdas))
+            return torch.linalg.cholesky(self.K_MM + self._build_L_inv(lambdas))
 
     def _get_sod_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
@@ -982,7 +990,8 @@ class FunctionalLaplace(BaseLaplace):
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
-                    K_batch = self.backend.kernel(Js_batch, X2, prior_precision=self.prior_precision_diag)
+                    K_batch = self.backend.kernel(Js_batch, X2, prior_precision=self.prior_precision_diag,
+                                                  independent_gp_kernels=self.independent_gp_kernels)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
@@ -1057,6 +1066,7 @@ class FunctionalLaplace(BaseLaplace):
         f_var = K_star - self._build_K_star_M(K_M_star)
         return f_var
 
+    # TODO: remove self.cholesky
     def _build_K_star_M(self, K_M_star):
         if self.independent_gp_kernels:
             raise NotImplementedError

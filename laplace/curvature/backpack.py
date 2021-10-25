@@ -168,20 +168,27 @@ class BackPackGP(BackPackInterface):
         loss = self.factor * self.lossfunc(f, y)
         return loss.detach(), Js, f, lambdas
 
-    # TODO: when independent_gp_kernels=True this function should return (batch_size * C)
+    # TODO: when independent_gp_kernels=True this function should return (C * batch_size * batch_size)
     #  instead of (batch_size * C, batch_size * C), so only the diagonal of the product of Jacobians
-    def kernel(self, jacobians, batch, prior_precision, preserve_batch_dimension=False, diff_batch_sizes=False):
+    def kernel(self, jacobians, batch, prior_precision, preserve_batch_dimension=False, diff_batch_sizes=False,
+               independent_gp_kernels=False):
         jacobians_2, _ = self.jacobians(self.model, batch)
         P = jacobians.shape[-1]  # nr model params
-        prior = 1 / prior_precision
+        prior = 1. / prior_precision
         # TODO: refactor, the current implementation with preserve_batch_dimension and diff_batch_sizes is ugly...
-        if preserve_batch_dimension:  # used for K_star and K_star_M
-            if diff_batch_sizes:
-                kernel = torch.einsum('bcp,p,dep->bdce', jacobians, prior, jacobians_2)
+        if independent_gp_kernels:
+            if preserve_batch_dimension:
+                raise NotImplementedError
             else:
-                kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
-        else:  # used for K_MM
-            kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
+                kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
+        else:
+            if preserve_batch_dimension:  # used for K_star and K_star_M
+                if diff_batch_sizes:
+                    kernel = torch.einsum('bcp,p,dep->bdce', jacobians, prior, jacobians_2)
+                else:
+                    kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
+            else:  # used for K_MM
+                kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
         return kernel
 
     def _get_lambdas(self, f, sigma_factor):

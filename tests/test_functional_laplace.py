@@ -15,7 +15,7 @@ torch.manual_seed(711)
 
 def test_gp_equivalence_regression():
     X_train, y_train, train_loader, X_test = toy_regression_dataset_1d(sigma=true_sigma_noise,
-                                                                       batch_size=150)
+                                                                       batch_size=60)
     M = len(X_train)
     model = toy_model(train_loader)
 
@@ -41,7 +41,7 @@ def test_gp_equivalence_regression():
 def test_gp_equivalence_regression_multivariate(d=3):
     X_train, y_train, train_loader, X_test = toy_multivariate_regression_dataset(sigma=true_sigma_noise,
                                                                                  d_input=d,
-                                                                                 batch_size=150)
+                                                                                 batch_size=60)
     model = toy_model(train_loader, in_dim=d, out_dim=d)
 
     full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise)
