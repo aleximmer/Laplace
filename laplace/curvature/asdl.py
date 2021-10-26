@@ -86,8 +86,9 @@ class AsdlInterface(CurvatureInterface):
                 continue
             if hasattr(module, 'bias') and module.bias is not None:
                 # split up bias and weights
-                kfacs.append([stats.kron.B, stats.kron.A[:-1, :-1]])
-                kfacs.append([stats.kron.B * stats.kron.A[-1, -1] / M])
+                # TODO: clones are inefficient and should depend on necessity to diff wrt Jacs
+                kfacs.append([stats.kron.B, stats.kron.A.clone()[:-1, :-1]])
+                kfacs.append([stats.kron.B * stats.kron.A.clone()[-1, -1] / M])
             elif hasattr(module, 'weight'):
                 p, q = np.prod(stats.kron.B.shape), np.prod(stats.kron.A.shape)
                 if p == q == 1:

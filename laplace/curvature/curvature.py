@@ -3,6 +3,8 @@ import torch
 from torch.nn import MSELoss, CrossEntropyLoss
 
 
+# TODO: handle differentiability requirement properly with an argument
+#       that enables jacobians, functions, etc to be differentiable throughout.
 class CurvatureInterface(ABC):
     """Interface to access curvature for a model and corresponding likelihood.
     A `CurvatureInterface` must inherit from this baseclass and implement the

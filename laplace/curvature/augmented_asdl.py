@@ -76,6 +76,7 @@ class AugAsdlInterface(CurvatureInterface):
                 continue
             if hasattr(module, 'bias') and module.bias is not None:
                 # split up bias and weights
+                # TODO: clones are inefficient and should depend on necessity to diff wrt Jacs
                 kfacs.append([stats.kron.B, stats.kron.A.clone()[:-1, :-1]])
                 kfacs.append([stats.kron.B * stats.kron.A.clone()[-1, -1] / M])
             elif hasattr(module, 'weight'):
