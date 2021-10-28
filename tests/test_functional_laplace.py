@@ -19,9 +19,9 @@ def test_gp_equivalence_regression():
     M = len(X_train)
     model = toy_model(train_loader)
 
-    full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise)
+    full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise, prior_precision=2.)
     functional_gp_la = FunctionalLaplace(model, 'regression', M=M,
-                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False)
+                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False, prior_precision=2.)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 
@@ -35,6 +35,7 @@ def test_gp_equivalence_regression():
 
     assert np.allclose(f_mu_full, f_mu_gp)
     # if float64 is used instead of float32, one can use atol=1e-10 in assert below
+    print(np.max(np.abs(f_var_gp - f_var_full)))
     assert np.allclose(f_var_full, f_var_gp, atol=1e-2)
 
 
@@ -44,14 +45,31 @@ def test_gp_equivalence_regression_multivariate(d=3):
                                                                                  batch_size=60)
     model = toy_model(train_loader, in_dim=d, out_dim=d)
 
-    full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise)
+    full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise, prior_precision=2.0)
     functional_gp_la = FunctionalLaplace(model, 'regression', M=len(X_train),
-                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False)
+                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False, prior_precision=2.0)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 
     f_mu_full, f_var_full = full_la(X_test)
     f_mu_gp, f_var_gp = functional_gp_la(X_test)
+
+    # TODO: debug independent_gp_kernels=True for C > 1
+    # f_var_full = torch.diagonal(f_var_full, dim1=1, dim2=2)
+    # # print(f_var_full.shape)
+    # # print(f_var_gp.shape)
+    # # print(f_var_full)
+    # # print(f_var_gp)
+    # diffs = f_var_gp - f_var_full
+    # ratios = f_var_gp / f_var_full
+    # print(diffs)
+    # print(diffs.min())
+    # print(diffs.max())
+    # print(diffs.mean())
+    # print(ratios)
+    # print(ratios.mean())
+    # print(ratios.min())
+    # print(ratios.max())
 
     f_mu_full = f_mu_full.squeeze().detach().cpu().numpy()
     f_var_full = f_var_full.squeeze().detach().cpu().numpy()
