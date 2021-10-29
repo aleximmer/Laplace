@@ -51,8 +51,6 @@ class AugAsdlInterface(CurvatureInterface):
 
         # set gradients to zero, differentiation here only serves Jacobian computation
         model.zero_grad()
-        if x.grad is not None:
-            x.grad.zero_()
 
         return Js, f
 
