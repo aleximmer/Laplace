@@ -994,8 +994,7 @@ class FunctionalLaplace(BaseLaplace):
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
-                    K_batch = self.backend.kernel(Js_batch, X2, prior_precision=self.prior_precision_diag,
-                                                  independent_gp_kernels=self.independent_gp_kernels)
+                    K_batch = self.backend.k_b_b(Js_batch, X2, self.prior_precision_diag, self.independent_gp_kernels)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
@@ -1061,14 +1060,11 @@ class FunctionalLaplace(BaseLaplace):
 
         self._check_fit()
 
-        K_star = self.backend.kernel(Js, X, prior_precision=self.prior_precision_diag,
-                                     preserve_batch_dimension=True, independent_gp_kernels=self.independent_gp_kernels)
+        K_star = self.backend.k_star_star(Js, X, self.prior_precision_diag, self.independent_gp_kernels)
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_M_star_batch = self.backend.kernel(Js, X_batch, prior_precision=self.prior_precision_diag,
-                                                 preserve_batch_dimension=True, diff_batch_sizes=True,
-                                                 independent_gp_kernels=self.independent_gp_kernels)
+            K_M_star_batch = self.backend.k_b_star(Js, X_batch, self.prior_precision_diag, self.independent_gp_kernels)
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)
