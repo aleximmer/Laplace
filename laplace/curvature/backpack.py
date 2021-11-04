@@ -186,10 +186,8 @@ class BackPackGP(BackPackInterface):
             if preserve_batch_dimension:  # used for K_star and K_star_M
                 if diff_batch_sizes:
                     kernel = torch.einsum('bcp,p,dep->bdce', jacobians, prior, jacobians_2)
-                    # kernel = torch.einsum('...cp,p,...ep->...ce', jacobians, prior, jacobians_2)
                 else:
                     kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
-                    # kernel = torch.einsum('...cp,p,...ep->...ce', jacobians, prior, jacobians_2)
             else:  # used for K_MM
                 kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
         return kernel

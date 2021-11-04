@@ -1,6 +1,7 @@
 from math import sqrt, pi
 import numpy as np
 import torch
+import warnings
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 from torch.utils.data import DataLoader
@@ -920,7 +921,7 @@ class FunctionalLaplace(BaseLaplace):
         if self.independent_gp_kernels:
             if self.diagonal_L or self.likelihood == "regression":
                 L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
-                # rearrange. then take the inverse for each MxM matrix separately
+                # rearrange and take the inverse for each MxM matrix separately
                 return [torch.diag(1. / L_diag[i::self.n_outputs]) for i in range(self.n_outputs)]
             else:
                 # R&W 2006 algorithm
@@ -969,6 +970,10 @@ class FunctionalLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
         self.batch_size = train_loader.batch_size
 
+        if self.likelihood == "regression" and self.n_outputs > 1 and self.independent_gp_kernels:
+            warnings.warn("Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended "
+                          "in the case of multivariate regression. Predictive variance will likely be overestimated.")
+
         self._init_K_MM()
         self._init_Sigma_inv()
 
@@ -993,19 +998,7 @@ class FunctionalLaplace(BaseLaplace):
                                                   independent_gp_kernels=self.independent_gp_kernels)
                     self._store_K_batch(K_batch, i, j)
 
-        # print(torch.diagonal(self.K_MM))
-        # for c in range(self.n_outputs):
-        #     print(c)
-        #     print(torch.diagonal(self.K_MM[c]))
-
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
-        # TODO: debug independent_gp_kernels=True for C > 1
-        # print(self.Sigma_inv.max())
-        # print(self.Sigma_inv.min())
-        # for c in range(self.n_outputs):
-        #     print(c)
-        #     print(self.Sigma_inv[c].max())
-        #     print(self.Sigma_inv[c].min())
         self.train_loader = train_loader
         self.n_data = N
 
@@ -1029,6 +1022,8 @@ class FunctionalLaplace(BaseLaplace):
         # regression
         if self.likelihood == 'regression':
             return f_mu, f_var
+        if self.independent_gp_kernels:
+            f_var = torch.diag_embed(f_var)
         # classification
         if link_approx == 'mc':
             try:
@@ -1069,11 +1064,6 @@ class FunctionalLaplace(BaseLaplace):
         K_star = self.backend.kernel(Js, X, prior_precision=self.prior_precision_diag,
                                      preserve_batch_dimension=True, independent_gp_kernels=self.independent_gp_kernels)
 
-        # TODO: debug independent_gp_kernels=True for C > 1
-        # print(K_star.shape)
-        # print(K_star.max())
-        # print(K_star.min())
-        # print(K_star[1])
         K_M_star = []
         for X_batch, _ in self.train_loader:
             K_M_star_batch = self.backend.kernel(Js, X_batch, prior_precision=self.prior_precision_diag,
@@ -1081,25 +1071,11 @@ class FunctionalLaplace(BaseLaplace):
                                                  independent_gp_kernels=self.independent_gp_kernels)
             K_M_star.append(K_M_star_batch)
 
-        # TODO: debug independent_gp_kernels=True for C > 1
-        #  UPDATE 27.10.: seems like all the difference happens in prods... which makes sense since
-        #  taking only a diagonal of k(x,x) is perhaps not the same as assuming independent GP kernels?
-        # prods = self._build_K_star_M(K_M_star)
-        # print(prods.shape)
-        # print(prods.max())
-        # print(prods.min())
-        # print(prods[1])
-
         f_var = K_star - self._build_K_star_M(K_M_star)
         return f_var
 
     def _build_K_star_M(self, K_M_star):
         K_M_star = torch.cat(K_M_star, dim=1)
-        # TODO: debug independent_gp_kernels=True for C > 1
-        # print(K_M_star.shape)
-        # print(K_M_star.min())
-        # print(K_M_star.max())
-        # print(K_M_star[0, 0])
         if self.independent_gp_kernels:
             prods = []
             for c in range(self.n_outputs):

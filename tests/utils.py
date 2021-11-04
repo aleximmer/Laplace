@@ -18,9 +18,9 @@ def toy_multivariate_regression_dataset(sigma, d_input, n_train=150, n_test=500,
     # create simple sinusoid data set
     X_train = torch.rand(n_train, d_input) * 8
     y_train = torch.sin(X_train) + torch.randn_like(X_train) * sigma
+    # y_train = torch.rand(n_train, d_input) * 8 + torch.randn_like(X_train) * sigma
     train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size)
     X_test = torch.rand(n_test, d_input) * 10
-
     return X_train, y_train, train_loader, X_test
 
 
@@ -56,8 +56,10 @@ def get_psd_matrix(dim):
     X = torch.randn(dim, dim*3)
     return X @ X.T / (dim * 3)
 
+
 def grad(model):
     return torch.cat([p.grad.data.flatten() for p in model.parameters()]).detach()
+
 
 def jacobians_naive(model, data):
     model.zero_grad()
