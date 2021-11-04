@@ -1,10 +1,49 @@
+from laplace.curvature.asdl import AsdlGGN
 import pytest
 import torch
 from torch import nn
+from torch.nn.utils.convert_parameters import parameters_to_vector
+from asdfghjkl.operations import Scale, Bias, Conv2dAug
 
 from laplace.curvature import AsdlInterface, BackPackInterface, AugBackPackInterface, AugAsdlInterface, AugAsdlGGN
 from laplace.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive, jacobians_naive_aug, gradients_naive_aug
+
+
+@pytest.fixture
+def complex_model():
+    torch.manual_seed(711)
+    model = torch.nn.Sequential(nn.Conv2d(3, 4, 2, 2), nn.Flatten(), nn.Tanh(),
+                                nn.Linear(16, 20), nn.Tanh(), Scale(), Bias(), nn.Linear(20, 2))
+    setattr(model, 'output_size', 2)
+    model_params = list(model.parameters())
+    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
+    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
+def complex_model_aug():
+    torch.manual_seed(711)
+    model = torch.nn.Sequential(Conv2dAug(3, 4, 2, 2), nn.Flatten(start_dim=2), nn.Tanh(),
+                                nn.Linear(16, 20), nn.Tanh(), nn.Linear(20, 2))
+    setattr(model, 'output_size', 2)
+    model_params = list(model.parameters())
+    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
+    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
+def complex_X():
+    torch.manual_seed(711)
+    return torch.randn(10, 3, 5, 5)
+
+
+@pytest.fixture
+def complex_X_aug():
+    torch.manual_seed(711)
+    return torch.randn(10, 7, 3, 5, 5)
 
 
 @pytest.fixture
@@ -73,6 +112,16 @@ def test_jacobians_multioutput(multioutput_model, X, backend):
     assert torch.allclose(f, f_naive)
 
 
+def test_jacobians_cnn(complex_model, complex_X):
+    model = complex_model
+    Js, f = AsdlInterface.jacobians(model, complex_X)
+    Js_naive, f_naive = jacobians_naive(model, complex_X)
+    assert Js.shape == Js_naive.shape
+    assert torch.abs(Js-Js_naive).max() < 1e-6
+    assert torch.allclose(model(complex_X), f_naive)
+    assert torch.allclose(f, f_naive)
+
+
 @pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend):
     model = FeatureExtractor(singleoutput_model)
@@ -105,6 +154,16 @@ def test_jacobians_augmented(multioutput_model, X_aug, backend):
     assert torch.abs(Js-Js_naive).max() < 1e-6
     assert torch.allclose(multioutput_model(X_aug).mean(dim=1), f_naive)
     assert torch.allclose(f, f_naive)
+
+    
+def test_jacobians_cnn_augmented(complex_model_aug, complex_X_aug):
+    model = complex_model_aug
+    Js, f = AugAsdlInterface.jacobians(model, complex_X_aug)
+    Js_naive, f_naive = jacobians_naive_aug(model, complex_X_aug)
+    assert Js.shape == Js_naive.shape
+    assert torch.allclose(model(complex_X_aug).mean(dim=1), f_naive)
+    assert torch.allclose(f, f_naive)
+    assert torch.abs(Js-Js_naive).max() < 1e-6
 
 
 @pytest.mark.parametrize('likelihood', ['classification', 'regression'])
