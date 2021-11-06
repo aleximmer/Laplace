@@ -108,6 +108,37 @@ class BaseLaplace:
     def __call__(self, x, pred_type, link_approx, n_samples):
         raise NotImplementedError
 
+    @staticmethod
+    def _classification_predictive(f_mu, f_var, link_approx, n_samples):
+        """
+
+        :param f_mu:
+        :param f_var:
+        :param link_approx:
+        :param n_samples:
+        :return:
+        """
+
+        if link_approx not in ['mc', 'probit', 'bridge']:
+            raise ValueError(f'Unsupported link approximation {link_approx}.')
+
+        if link_approx == 'mc':
+            try:
+                dist = MultivariateNormal(f_mu, f_var)
+            except:
+                dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
+            return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
+        elif link_approx == 'probit':
+            kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
+            return torch.softmax(kappa * f_mu, dim=-1)
+        elif link_approx == 'bridge':
+            _, K = f_mu.size(0), f_mu.size(-1)
+            f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
+            sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
+            alpha = 1 / f_var_diag * (1 - 2 / K + torch.exp(f_mu) / (K ** 2) * sum_exp)
+            dist = Dirichlet(alpha)
+            return torch.nan_to_num(dist.mean, nan=1.0)
+
     def predictive(self, x, pred_type, link_approx, n_samples):
         return self(x, pred_type, link_approx, n_samples)
 
@@ -490,31 +521,13 @@ class ParametricLaplace(BaseLaplace):
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
 
-        if link_approx not in ['mc', 'probit', 'bridge']:
-            raise ValueError(f'Unsupported link approximation {link_approx}.')
-
         if pred_type == 'glm':
             f_mu, f_var = self._glm_predictive_distribution(x)
             # regression
             if self.likelihood == 'regression':
                 return f_mu, f_var
             # classification
-            if link_approx == 'mc':
-                try:
-                    dist = MultivariateNormal(f_mu, f_var)
-                except:
-                    dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
-                return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
-            elif link_approx == 'probit':
-                kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
-                return torch.softmax(kappa * f_mu, dim=-1)
-            elif link_approx == 'bridge':
-                _, K = f_mu.size(0), f_mu.size(-1)
-                f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
-                sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
-                alpha = 1/f_var_diag * (1 - 2/K + torch.exp(f_mu)/(K**2) * sum_exp)
-                dist = Dirichlet(alpha)
-                return torch.nan_to_num(dist.mean, nan=1.0)
+            return self._classification_predictive(f_mu, f_var, link_approx, n_samples)
         else:
             samples = self._nn_predictive_samples(x, n_samples)
             if self.likelihood == 'regression':
@@ -879,6 +892,7 @@ class FunctionalLaplace(BaseLaplace):
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
         self.train_loader = None  # needed in functional variance
         self.batch_size = None
+        self.prior_factor_sod = None
 
     def _check_fit(self):
         if (self.K_MM is None) or (self.Sigma_inv is None) or (self.train_loader is None):
@@ -980,8 +994,9 @@ class FunctionalLaplace(BaseLaplace):
         self.model.eval()
 
         train_loader = self._get_sod_data_loader(train_loader)
-
         N = len(train_loader.dataset)
+        self.prior_factor_sod = self.M / N
+
         f, lambdas = [], []
         for i, batch in enumerate(train_loader):
             X, y = batch
@@ -994,28 +1009,44 @@ class FunctionalLaplace(BaseLaplace):
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
-                    K_batch = self.backend.k_b_b(Js_batch, X2, self.prior_precision_diag, self.independent_gp_kernels)
+                    K_batch = self.backend.k_b_b(Js_batch, X2, self.prior_precision_diag,
+                                                 self.independent_gp_kernels, self.prior_factor_sod)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
         self.train_loader = train_loader
         self.n_data = N
 
-    # TODO: refactor
     def __call__(self, x, link_approx='probit', n_samples=100):
         """
-        In FunctionalLaplace, only glm pred_type makes sense.
 
-        TODO: a lot of code duplication with __call__ from BaseLaplace class
+        Compute the posterior predictive on input data `X`.
+        Contrary to ParametricLaplace, we do not expose parameter 'pred_type' here because it is set to
+        'pred_type=gp'. For more details see Improving predictions of Bayesian neural nets via local linearization
+        by Immer et al. (see Figure 2 there).
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            `(batch_size, input_shape)`
+
+        link_approx : {'mc', 'probit', 'bridge'}
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only 'mc' is possible.
+
+        n_samples : int
+            number of samples for `link_approx='mc'`.
+
+        Returns
+        -------
+        predictive: torch.Tensor or Tuple[torch.Tensor]
+            For `likelihood='classification'`, a torch.Tensor is returned with
+            a distribution over classes (similar to a Softmax).
+            For `likelihood='regression'`, a tuple of torch.Tensor is returned
+            with the mean and the predictive variance.
         """
 
-        # assert pred_type == 'glm', "In FunctionalLaplace, only glm pred_type is supported!"
-        # super().__call__(x=x, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
-
         self._check_fit()
-
-        if link_approx not in ['mc', 'probit', 'bridge']:
-            raise ValueError(f'Unsupported link approximation {link_approx}.')
 
         f_mu, f_var = self._gp_predictive_distribution(x)
         # regression
@@ -1024,22 +1055,7 @@ class FunctionalLaplace(BaseLaplace):
         if self.independent_gp_kernels:
             f_var = torch.diag_embed(f_var)
         # classification
-        if link_approx == 'mc':
-            try:
-                dist = MultivariateNormal(f_mu, f_var)
-            except:
-                dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
-            return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
-        elif link_approx == 'probit':
-            kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
-            return torch.softmax(kappa * f_mu, dim=-1)
-        elif link_approx == 'bridge':
-            _, K = f_mu.size(0), f_mu.size(-1)
-            f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
-            sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
-            alpha = 1 / f_var_diag * (1 - 2 / K + torch.exp(f_mu) / (K ** 2) * sum_exp)
-            dist = Dirichlet(alpha)
-            return torch.nan_to_num(dist.mean, nan=1.0)
+        return self._classification_predictive(f_mu, f_var, link_approx, n_samples)
 
     def predictive_samples(self, x, pred_type='glm', n_samples=100):
         """
@@ -1060,11 +1076,13 @@ class FunctionalLaplace(BaseLaplace):
 
         self._check_fit()
 
-        K_star = self.backend.k_star_star(Js, X, self.prior_precision_diag, self.independent_gp_kernels)
+        K_star = self.backend.k_star_star(Js, X, self.prior_precision_diag,
+                                          self.independent_gp_kernels, self.prior_factor_sod)
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_M_star_batch = self.backend.k_b_star(Js, X_batch, self.prior_precision_diag, self.independent_gp_kernels)
+            K_M_star_batch = self.backend.k_b_star(Js, X_batch, self.prior_precision_diag,
+                                                   self.independent_gp_kernels, self.prior_factor_sod)
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)

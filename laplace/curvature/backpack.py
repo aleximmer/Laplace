@@ -168,7 +168,7 @@ class BackPackGP(BackPackInterface):
         loss = self.factor * self.lossfunc(f, y)
         return loss.detach(), Js, f, lambdas
 
-    def k_b_b(self, jacobians, batch, prior_precision, independent_gp_kernels):
+    def k_b_b(self, jacobians, batch, prior_precision, independent_gp_kernels, prior_factor=1.0):
         """
         Compute K_bb, which is a part of K_MM kernel matrix.
 
@@ -176,18 +176,19 @@ class BackPackGP(BackPackInterface):
         :param batch:
         :param prior_precision:
         :param independent_gp_kernels:
+        :param prior_factor:
         :return:
         """
         jacobians_2, _ = self.jacobians(self.model, batch)
         P = jacobians.shape[-1]  # nr model params
-        prior = 1. / prior_precision
+        prior = prior_factor / prior_precision
         if independent_gp_kernels:
             kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
         else:
             kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
         return kernel
 
-    def k_star_star(self, jacobians, batch, prior_precision, independent_gp_kernels):
+    def k_star_star(self, jacobians, batch, prior_precision, independent_gp_kernels, prior_factor=1.0):
         """
         Compute K_star_star kernel matrix.
 
@@ -195,17 +196,18 @@ class BackPackGP(BackPackInterface):
         :param batch:
         :param prior_precision:
         :param independent_gp_kernels:
+        :param prior_factor:
         :return:
         """
         jacobians_2, _ = self.jacobians(self.model, batch)
-        prior = 1. / prior_precision
+        prior = prior_factor / prior_precision
         if independent_gp_kernels:
             kernel = torch.einsum('bcp,bcp->bc', jacobians, jacobians_2 * prior)
         else:
             kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
         return kernel
 
-    def k_b_star(self, jacobians, batch, prior_precision, independent_gp_kernels):
+    def k_b_star(self, jacobians, batch, prior_precision, independent_gp_kernels, prior_factor=1.0):
         """
         Compute K_b_star, which is a part of K_M_star kernel matrix.
 
@@ -213,10 +215,11 @@ class BackPackGP(BackPackInterface):
         :param batch:
         :param prior_precision:
         :param independent_gp_kernels:
+        :param prior_factor:
         :return:
         """
         jacobians_2, _ = self.jacobians(self.model, batch)
-        prior = 1. / prior_precision
+        prior = prior_factor / prior_precision
         if independent_gp_kernels:
             kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
         else:
