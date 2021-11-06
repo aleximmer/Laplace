@@ -64,6 +64,9 @@ class BaseLaplace:
         self.n_outputs = None
         self.n_data = None
 
+        # MAP estimate of parameters (for ParametricLaplace this corresponds to the posterior mean)
+        self.map_estimate = parameters_to_vector(self.model.parameters()).detach()
+
     @property
     def backend(self):
         if self._backend is None:
@@ -81,6 +84,41 @@ class BaseLaplace:
         raise NotImplementedError
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+        """Compute the approximation to the log marginal likelihood subject
+        to specific Laplace or GP approximations .
+        Requires that the Laplace approximation has been fit before.
+        The resulting torch.Tensor is differentiable in `prior_precision` and
+        `sigma_noise` if these have gradients enabled.
+        By passing `prior_precision` or `sigma_noise`, the current value is
+        overwritten. This is useful for iterating on the log marginal likelihood.
+
+        Parameters
+        ----------
+        prior_precision : torch.Tensor, optional
+            prior precision if should be changed from current `prior_precision` value
+        sigma_noise : [type], optional
+            observation noise standard deviation if should be changed
+
+        Returns
+        -------
+        log_marglik : torch.Tensor
+        """
+        # make sure we can differentiate wrt prior and sigma_noise for regression
+        self._check_fit()
+
+        # update prior precision (useful when iterating on marglik)
+        if prior_precision is not None:
+            self.prior_precision = prior_precision
+
+        # update sigma_noise (useful when iterating on marglik)
+        if sigma_noise is not None:
+            if self.likelihood != 'regression':
+                raise ValueError('Can only change sigma_noise for regression.')
+            self.sigma_noise = sigma_noise
+
+        return self._log_marginal_likelihood()
+
+    def _log_marginal_likelihood(self):
         raise NotImplementedError
 
     @property
@@ -106,6 +144,34 @@ class BaseLaplace:
             return factor * self.loss
 
     def __call__(self, x, pred_type, link_approx, n_samples):
+        """Compute the posterior predictive on input data `X`.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            `(batch_size, input_shape)`
+
+        pred_type : {'glm', 'nn', 'gp'},
+            type of posterior predictive, linearized GLM predictive or neural
+            network (nn) sampling predictive or Gaussian Process (GP) predictive.
+            For ParametricLaplace subclasses, the GLM predictive is consistent with
+            the curvature approximations used there.
+
+        link_approx : {'mc', 'probit', 'bridge'}
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only 'mc' is possible.
+
+        n_samples : int
+            number of samples for `link_approx='mc'`.
+
+        Returns
+        -------
+        predictive: torch.Tensor or Tuple[torch.Tensor]
+            For `likelihood='classification'`, a torch.Tensor is returned with
+            a distribution over classes (similar to a Softmax).
+            For `likelihood='regression'`, a tuple of torch.Tensor is returned
+            with the mean and the predictive variance.
+        """
         raise NotImplementedError
 
     @staticmethod
@@ -362,9 +428,6 @@ class ParametricLaplace(BaseLaplace):
 
         self.H = None
 
-        # posterior mean/mode
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
-
     def _init_H(self):
         raise NotImplementedError
 
@@ -414,7 +477,7 @@ class ParametricLaplace(BaseLaplace):
         [type]
             [description]
         """
-        delta = (self.mean - self.prior_mean)
+        delta = (self.map_estimate - self.prior_mean)
         return (delta * self.prior_precision_diag) @ delta
 
     @property
@@ -453,69 +516,10 @@ class ParametricLaplace(BaseLaplace):
         """
         return self.log_det_posterior_precision - self.log_det_prior_precision
 
-    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
-        """Compute the Laplace approximation to the log marginal likelihood subject
-        to specific Hessian approximations that subclasses implement.
-        Requires that the Laplace approximation has been fit before.
-        The resulting torch.Tensor is differentiable in `prior_precision` and
-        `sigma_noise` if these have gradients enabled.
-        By passing `prior_precision` or `sigma_noise`, the current value is
-        overwritten. This is useful for iterating on the log marginal likelihood.
-
-        Parameters
-        ----------
-        prior_precision : torch.Tensor, optional
-            prior precision if should be changed from current `prior_precision` value
-        sigma_noise : [type], optional
-            observation noise standard deviation if should be changed
-
-        Returns
-        -------
-        log_marglik : torch.Tensor
-        """
-        # make sure we can differentiate wrt prior and sigma_noise for regression
-        self._check_fit()
-
-        # update prior precision (useful when iterating on marglik)
-        if prior_precision is not None:
-            self.prior_precision = prior_precision
-
-        # update sigma_noise (useful when iterating on marglik)
-        if sigma_noise is not None:
-            if self.likelihood != 'regression':
-                raise ValueError('Can only change sigma_noise for regression.')
-            self.sigma_noise = sigma_noise
-
+    def _log_marginal_likelihood(self):
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100):
-        """Compute the posterior predictive on input data `X`.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            `(batch_size, input_shape)`
-
-        pred_type : {'glm', 'nn'}, default='glm'
-            type of posterior predictive, linearized GLM predictive or neural
-            network sampling predictive. The GLM predictive is consistent with
-            the curvature approximations used here.
-
-        link_approx : {'mc', 'probit', 'bridge'}
-            how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
-
-        n_samples : int
-            number of samples for `link_approx='mc'`.
-
-        Returns
-        -------
-        predictive: torch.Tensor or Tuple[torch.Tensor]
-            For `likelihood='classification'`, a torch.Tensor is returned with
-            a distribution over classes (similar to a Softmax).
-            For `likelihood='regression'`, a tuple of torch.Tensor is returned
-            with the mean and the predictive variance.
-        """
         self._check_fit()
 
         if pred_type not in ['glm', 'nn']:
@@ -584,7 +588,7 @@ class ParametricLaplace(BaseLaplace):
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.parameters())
             fs.append(self.model(X.to(self._device)).detach())
-        vector_to_parameters(self.mean, self.model.parameters())
+        vector_to_parameters(self.map_estimate, self.model.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
@@ -717,7 +721,7 @@ class FullLaplace(ParametricLaplace):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
 
     def sample(self, n_samples=100):
-        dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
+        dist = MultivariateNormal(loc=self.map_estimate, scale_tril=self.posterior_scale)
         return dist.sample((n_samples,))
 
 
@@ -777,7 +781,7 @@ class KronLaplace(ParametricLaplace):
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
-        return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
+        return self.map_estimate.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
 
     @BaseLaplace.prior_precision.setter
     def prior_precision(self, prior_precision):
@@ -847,7 +851,7 @@ class DiagLaplace(ParametricLaplace):
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = samples * self.posterior_scale.reshape(1, self.n_params)
-        return self.mean.reshape(1, self.n_params) + samples
+        return self.map_estimate.reshape(1, self.n_params) + samples
 
 
 class FunctionalLaplace(BaseLaplace):
@@ -890,7 +894,7 @@ class FunctionalLaplace(BaseLaplace):
                 'GP inference without independence for classification necessitates diagonal approximation of L!'
         self.K_MM = None
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
-        self.train_loader = None  # needed in functional variance
+        self.train_loader = None  # needed in functional variance and marginal log likelihood
         self.batch_size = None
         self.prior_factor_sod = None
 
@@ -1017,34 +1021,9 @@ class FunctionalLaplace(BaseLaplace):
         self.train_loader = train_loader
         self.n_data = N
 
-    def __call__(self, x, link_approx='probit', n_samples=100):
-        """
-
-        Compute the posterior predictive on input data `X`.
-        Contrary to ParametricLaplace, we do not expose parameter 'pred_type' here because it is set to
-        'pred_type=gp'. For more details see Improving predictions of Bayesian neural nets via local linearization
-        by Immer et al. (see Figure 2 there).
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            `(batch_size, input_shape)`
-
-        link_approx : {'mc', 'probit', 'bridge'}
-            how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
-
-        n_samples : int
-            number of samples for `link_approx='mc'`.
-
-        Returns
-        -------
-        predictive: torch.Tensor or Tuple[torch.Tensor]
-            For `likelihood='classification'`, a torch.Tensor is returned with
-            a distribution over classes (similar to a Softmax).
-            For `likelihood='regression'`, a tuple of torch.Tensor is returned
-            with the mean and the predictive variance.
-        """
+    def __call__(self, x, pred_type='gp', link_approx='probit', n_samples=100):
+        if pred_type not in ['gp']:
+            raise ValueError('Only gp supported as prediction types.')
 
         self._check_fit()
 
@@ -1057,13 +1036,12 @@ class FunctionalLaplace(BaseLaplace):
         # classification
         return self._classification_predictive(f_mu, f_var, link_approx, n_samples)
 
-    def predictive_samples(self, x, pred_type='glm', n_samples=100):
-        """
-
-        Similar to __call__() method above, the name of _glm_predictive_distribution() could be a bit misleading
-        """
-        assert pred_type == 'glm', "In FunctionalLaplace, only glm pred_type is supported!"
-        super().__call__(x=x, pred_type=pred_type, n_samples=n_samples)
+    # TODO: refactor
+    # TODO: think about the difference between predictive and predictive_samples in ParametricLaplace
+    #           and whether or not predictive_samples is even needed in FunctionalLaplace
+    def predictive_samples(self, x, pred_type='gp', link_approx='probit', n_samples=100):
+        assert pred_type == 'gp', 'In FunctionalLaplace, only glm pred_type is supported!'
+        super().__call__(x=x, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
 
     def _gp_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(self.model, X)
@@ -1105,15 +1083,22 @@ class FunctionalLaplace(BaseLaplace):
             v = torch.linalg.solve(self.Sigma_inv, K_M_star)
             return torch.einsum('bcm,bcn->bmn', v, v)
 
-    # TODO: refactor (think what pred_type='gp' will mean here)
+    def _log_marginal_likelihood(self):
+        return self.log_likelihood - 0.5 * (self.log_det_K + self.scatter + self.M * self.n_outputs)
+
+    @property
+    def log_det_K(self):
+        raise NotImplementedError
+
+    @property
+    def scatter(self):
+        raise NotImplementedError
+
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
                                  pred_type='gp', link_approx='probit', n_samples=100,
                                  verbose=False):
-        """
-        Can be reused from the BaseLaplace, only need to fix pred_type
-        """
         assert pred_type == 'gp'
         self._optimize_prior_precision(pred_type, method, n_steps, lr,
                                        init_prior_prec, val_loader, loss,

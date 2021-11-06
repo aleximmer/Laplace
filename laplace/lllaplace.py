@@ -63,15 +63,15 @@ class LLLaplace(ParametricLaplace):
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
         if self.model.last_layer is None:
-            self.mean = None
+            self.map_estimate = None
             self.n_params = None
             self.n_layers = None
             # ignore checks of prior mean setter temporarily, check on .fit()
             self._prior_precision = prior_precision
             self._prior_mean = prior_mean
         else:
-            self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
-            self.n_params = len(self.mean)
+            self.map_estimate = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.n_params = len(self.map_estimate)
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
@@ -95,8 +95,8 @@ class LLLaplace(ParametricLaplace):
             X, _ = next(iter(train_loader))
             with torch.no_grad():
                 self.model.find_last_layer(X[:1].to(self._device))
-            self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
-            self.n_params = len(self.mean)
+            self.map_estimate = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.n_params = len(self.map_estimate)
             self.n_layers = len(list(self.model.last_layer.parameters()))
             # here, check the already set prior precision again
             self.prior_precision = self._prior_precision
@@ -114,7 +114,7 @@ class LLLaplace(ParametricLaplace):
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.last_layer.parameters())
             fs.append(self.model(X.to(self._device)).detach())
-        vector_to_parameters(self.mean, self.model.last_layer.parameters())
+        vector_to_parameters(self.map_estimate, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
@@ -130,7 +130,7 @@ class LLLaplace(ParametricLaplace):
         prior_precision_diag : torch.Tensor
         """
         if len(self.prior_precision) == 1:  # scalar
-            return self.prior_precision * torch.ones_like(self.mean)
+            return self.prior_precision * torch.ones_like(self.map_estimate)
 
         elif len(self.prior_precision) == self.n_params:  # diagonal
             return self.prior_precision
