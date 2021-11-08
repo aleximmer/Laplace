@@ -1004,7 +1004,6 @@ class FunctionalLaplace(BaseLaplace):
         f, lambdas = [], []
         for i, batch in enumerate(train_loader):
             X, y = batch
-            self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
             loss_batch, Js_batch, f_batch, lambdas_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
@@ -1013,6 +1012,7 @@ class FunctionalLaplace(BaseLaplace):
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
+                    X2 = X2.to(self._device)
                     K_batch = self.backend.k_b_b(Js_batch, X2, self.prior_precision_diag,
                                                  self.independent_gp_kernels, self.prior_factor_sod)
                     self._store_K_batch(K_batch, i, j)
@@ -1087,13 +1087,62 @@ class FunctionalLaplace(BaseLaplace):
         return self.log_likelihood - 0.5 * (self.log_det_K + self.scatter + self.M * self.n_outputs)
 
     @property
-    def log_det_K(self):
-        raise NotImplementedError
+    def log_det_K(self, eps=0.001):
+        """
+        Computes log determinant term of log(p(f))
+
+        :param eps: diagonal noise (for numerical stability)
+        :return:
+        """
+        if self.independent_gp_kernels:
+            log_det = 0.
+            for c in range(self.n_outputs):
+                log_det += torch.logdet(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * eps)
+            return log_det
+        else:
+            return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * eps)
+
+    @staticmethod
+    def log_det(A, eps=0.001):
+        """
+        Computes a log determinant of a (semi-)positive definite matrix
+
+        :param A: torch.tensor
+        :param eps: diagonal noise (for numerical stability)
+        :return: float
+        """
+        chol = torch.linalg.cholesky(A) + torch.eye(n=A.shape[0]) * eps
+        return torch.sum(torch.log(torch.diagonal(chol)))
 
     @property
-    def scatter(self):
-        raise NotImplementedError
+    def scatter(self, eps=0.001):
+        """
+        Compute scatter term in log(p(f)), see eq. (10), (14) and (A5) in
+        "Improving predictions of Bayesian neural nets via local linearization"
 
+        :param eps: diagonal noise (for numerical stability)
+        :return:
+        """
+
+        diff = self.prior_mean - self.map_estimate
+        N = len(self.train_loader)
+        mu = []
+        for i, batch in enumerate(self.train_loader):
+            X, y = batch
+            X, y = X.to(self._device), y.to(self._device)
+            _, Js_batch, _, _ = self._curv_closure(X, y, N)
+            mu.append(torch.einsum('bcp,p->bc', Js_batch, diff))
+        mu = torch.cat(mu, dim=0)
+        if self.independent_gp_kernels:
+            _scatter = 0.
+            for c in range(self.n_outputs):
+                K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * eps)
+                _scatter += torch.dot(mu[:, c], torch.matmul(K_inv, mu[:, c]))
+        else:
+            K_inv = torch.inverse(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * eps)
+            _scatter = torch.dot(mu.reshape(-1), torch.matmul(K_inv, mu.reshape(-1)))
+        return _scatter
+            
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,

@@ -61,7 +61,7 @@ def test_gp_equivalence_regression_multivariate(c=3):
 
     assert np.allclose(f_mu_full, f_mu_gp)
     # if float64 is used instead of float32, one can use atol=1e-10 in assert below
-    # assert np.allclose(f_var_full, f_var_gp, atol=1e-2)
+    assert np.allclose(f_var_full, f_var_gp, atol=1e-2)
 
 
 def test_gp_equivalence_classification(c=2):
@@ -70,7 +70,7 @@ def test_gp_equivalence_classification(c=2):
 
     full_la = FullLaplace(model, 'classification', prior_precision=1.0)
     functional_gp_la = FunctionalLaplace(model, 'classification', M=len(X_train),
-                                         independent_gp_kernels=False, prior_precision=1.0)
+                                         independent_gp_kernels=True, prior_precision=1.0)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 
