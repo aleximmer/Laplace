@@ -386,9 +386,9 @@ def test_laplace_stochastic_gradient_estimate(laplace, lh, model, aug_reg_loader
             exp_stoch_grad = sum_stoch_grad * (N / B) / i
 
             mean_abs_error = torch.mean(torch.abs(exp_stoch_grad - real_grad))
-            max_abs_error = torch.mean(torch.abs(exp_stoch_grad - real_grad))
-            if (i < 10) or (i % 50 == 0):
-                print(f"Sample {i},\tmean_abs_error: {mean_abs_error:.5f}\tmax_abs_error: {max_abs_error:.5f}")
+            max_abs_error = torch.max(torch.abs(exp_stoch_grad - real_grad))
+            # if (i < 10) or (i % 50 == 0):
+            #     print(f"Sample {i},\tmean_abs_error: {mean_abs_error:.5f}\tmax_abs_error: {max_abs_error:.5f}")
 
         assert torch.allclose(exp_stoch_grad, real_grad, atol=0.1)
         assert False
