@@ -904,14 +904,12 @@ class FunctionalLaplace(BaseLaplace):
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def _init_K_MM(self):
-        # TODO: store as upper/lower triangular matrix
         if self.independent_gp_kernels:
             self.K_MM = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
             self.K_MM = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _init_Sigma_inv(self):
-        # TODO: store as upper/lower triangular matrix
         if self.independent_gp_kernels:
             self.Sigma_inv = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
@@ -932,7 +930,6 @@ class FunctionalLaplace(BaseLaplace):
             bC = self.batch_size * self.n_outputs
             MC = self.M * self.n_outputs
             self.K_MM[i * bC:min((i + 1) * bC, MC), j * bC:min((j + 1) * bC, MC)] = K_batch
-            # TODO: remove code below once K_MM will be initialized as a lower/upper triangular matrix
             if i != j:
                 self.K_MM[j * bC:min((j + 1) * bC, MC), i * bC:min((i + 1) * bC, MC)] = torch.transpose(K_batch, 0, 1)
 
@@ -978,7 +975,6 @@ class FunctionalLaplace(BaseLaplace):
     def fit(self, train_loader):
 
         X, _ = next(iter(train_loader))
-
         with torch.no_grad():
             self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
@@ -1007,8 +1003,9 @@ class FunctionalLaplace(BaseLaplace):
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
             f.append(f_batch)
-            mu_batch = y - (f_batch + torch.einsum('bcp,p->bc', Js_batch, diff_mu))
-            mu.append(mu_batch)
+            if self.likelihood == "regression":
+                mu_batch = y - (f_batch + torch.einsum('bcp,p->bc', Js_batch, diff_mu))
+                mu.append(mu_batch)
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
@@ -1018,7 +1015,8 @@ class FunctionalLaplace(BaseLaplace):
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
-        self.mu = torch.cat(mu, dim=0)
+        if self.likelihood == "regression":
+            self.mu = torch.cat(mu, dim=0)
         self.train_loader = train_loader
         self.n_data = N
 
@@ -1037,12 +1035,32 @@ class FunctionalLaplace(BaseLaplace):
         # classification
         return self._classification_predictive(f_mu, f_var, link_approx, n_samples)
 
-    # TODO: refactor
-    # TODO: think about the difference between predictive and predictive_samples in ParametricLaplace
-    #           and whether or not predictive_samples is even needed in FunctionalLaplace
-    def predictive_samples(self, x, pred_type='gp', link_approx='probit', n_samples=100):
-        assert pred_type == 'gp', 'In FunctionalLaplace, only glm pred_type is supported!'
-        super().__call__(x=x, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
+    def predictive_samples(self, x, n_samples=100):
+        """Sample from the posterior predictive on input data `x`.
+        Can be used, for example, for Thompson sampling.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch_size, input_shape)`
+
+        n_samples : int
+            number of samples
+
+        Returns
+        -------
+        samples : torch.Tensor
+            samples `(n_samples, batch_size, output_shape)`
+        """
+        self._check_fit()
+
+        f_mu, f_var = self._gp_predictive_distribution(x)
+        assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+        dist = MultivariateNormal(f_mu, f_var)
+        samples = dist.sample((n_samples,))
+        if self.likelihood == 'regression':
+            return samples
+        return torch.softmax(samples, dim=-1)
 
     def _gp_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(self.model, X)
@@ -1051,6 +1069,11 @@ class FunctionalLaplace(BaseLaplace):
 
     def functional_variance(self, Js, X):
         """
+        GP predictive variance
+
+        :param Js:
+        :param X:
+        :return:
         """
 
         self._check_fit()
@@ -1086,7 +1109,10 @@ class FunctionalLaplace(BaseLaplace):
 
     def _log_marginal_likelihood(self):
         self.fit(self.train_loader)
-        return - 0.5 * (self.log_det_K + self.scatter + self.M * self.n_outputs * np.log(2 * np.pi))
+        if self.likelihood == 'classification':
+            raise NotImplementedError
+        elif self.likelihood == 'regression':
+            return - 0.5 * (self.log_det_K + self.scatter + self.M * self.n_outputs * np.log(2 * np.pi))
 
     @property
     def log_det_K(self):
@@ -1105,7 +1131,7 @@ class FunctionalLaplace(BaseLaplace):
     @property
     def scatter(self):
         """
-        Compute scatter term in GP margina likelihood
+        Compute scatter term in GP marginal likelihood
         :return:
         """
 
