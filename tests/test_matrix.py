@@ -171,3 +171,42 @@ def test_matrix_consistent():
     M_true.diagonal().add_(3.4)
     kron_decomp += torch.tensor(3.4)
     assert torch.allclose(M_true, kron_decomp.to_matrix(exponent=1))
+
+
+def test_inplace_detach(model):
+    kron = Kron.init_from_model(model, 'cpu')
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    to_add = Kron([[torch.ones(i, i, requires_grad=True) for i in sizes] for sizes in expected_sizes])
+    kron += to_add
+
+    for facs in kron.kfacs:
+        for fi in facs:
+            assert fi.grad_fn is not None
+
+    returned_kron = kron.detach_()
+
+    # Test if detached inplace
+    for facs in kron.kfacs:
+        for fi in facs:
+            assert fi.grad_fn is None
+
+    # Assert returned value is the same reference
+    assert returned_kron is kron
+
+def test_detach(model):
+    kron = Kron.init_from_model(model, 'cpu')
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    to_add = Kron([[torch.randn(i, i, requires_grad=True) for i in sizes] for sizes in expected_sizes])
+    kron += to_add
+
+    detached_kron = kron.detach()
+    
+    # Assert original stays attached, returned is detached and values are equal
+    for facs, detached_facs in zip(kron.kfacs, detached_kron.kfacs):
+        for fi, detached_fi in zip(facs, detached_facs):
+            assert torch.allclose(fi, detached_fi)
+            assert fi.grad_fn is not None
+            assert detached_fi.grad_fn is None
+
+    assert detached_kron is not kron
+

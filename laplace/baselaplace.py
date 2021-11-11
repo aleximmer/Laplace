@@ -103,7 +103,7 @@ class BaseLaplace(ABC):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader):
+    def fit(self, train_loader, only_diff_last=None):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -111,6 +111,10 @@ class BaseLaplace(ABC):
         train_loader : torch.data.utils.DataLoader
             each iterate is a training batch (X, y);
             `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+        only_diff_last : (int, or None)
+            in case this variable is an integer, the H and loss are only differentiable w.r.t.
+            the 'only_diff_last' batches. All batches before this number are detached from the
+            computational graph, resulting in a cheaper (unbiased) stochastic gradient estimate.
         """
         if self.H is not None:
             raise ValueError('Already fit.')
@@ -125,12 +129,19 @@ class BaseLaplace(ABC):
         setattr(self.model, 'output_size', self.n_outputs)
 
         N = len(train_loader.dataset)
-        for X, y in train_loader:
+        N_batches = len(train_loader)
+        for batch_i, (X, y) in enumerate(train_loader):
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
             loss_batch, H_batch = self._curv_closure(X, y, N)
-            self.loss += loss_batch
-            self.H += H_batch
+
+            detach_batch = (only_diff_last is not None) and (batch_i + only_diff_last < N_batches)
+            if detach_batch:
+                self.loss += loss_batch.detach()
+                self.H += H_batch.detach()
+            else:
+                self.loss += loss_batch
+                self.H += H_batch
 
         self.n_data = N
 
@@ -710,8 +721,8 @@ class KronLaplace(BaseLaplace):
     def _curv_closure(self, X, y, N):
         return self.backend.kron(X, y, N=N)
 
-    def fit(self, train_loader, keep_factors=False):
-        super().fit(train_loader)
+    def fit(self, train_loader, only_diff_last=None, keep_factors=False):
+        super().fit(train_loader, only_diff_last=only_diff_last)
         # Kron requires postprocessing as all quantities depend on the decomposition.
         if keep_factors:
             self.H_facs = self.H

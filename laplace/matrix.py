@@ -235,6 +235,21 @@ class Kron:
                 blocks.append(kron(F[0], F[1]))
         return block_diag(blocks)
 
+    def detach_(self):
+        """ Detaches the Tensor (inplace) from the graph that created it. """
+
+        for F in self.kfacs:
+            for Hi in F:
+                Hi.detach_()
+
+        return self
+
+    def detach(self):
+        """ Returns a new Kron object, detached from the current graph.
+        The result will never require gradient. """
+
+        return Kron([[Hi.detach() for Hi in F] for F in self.kfacs])
+
     # for commutative operations
     __radd__ = __add__
     __rmul__ = __mul__
