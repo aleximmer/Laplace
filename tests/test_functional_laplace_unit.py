@@ -26,7 +26,7 @@ def model():
 def test_sod_data_loader(reg_loader, model):
     M = 5
     func_la = FunctionalLaplace(model, "regression", M)
-    sod_data_loader = func_la._get_sod_data_loader(reg_loader)
+    sod_data_loader = func_la._get_SoD_data_loader(reg_loader)
 
     first_iter = []
     for x, _ in sod_data_loader:

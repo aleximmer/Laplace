@@ -955,14 +955,10 @@ class FunctionalLaplace(BaseLaplace):
         else:
             return torch.linalg.cholesky(self.K_MM + self._build_L_inv(lambdas))
 
-    def _get_sod_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
+    def _get_SoD_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
         Subset-of-Datapoints data loader
 
-        TODO: this implementation is not really satisfactory because we only take dataset and batch_size from
-                the existing data_loader, need to take all the attributes. Alternatively, one could change the
-                signature of .fit() method in FunctionalLaplace to take in X,y,batch_size... instead of a data loader,
-                but not sure we want to have a different API for FunctionalLaplace...
         :param train_loader:
         :param seed:
         :return:
@@ -989,7 +985,7 @@ class FunctionalLaplace(BaseLaplace):
         N = len(train_loader.dataset)
         if self.M is None:
             self.M = N
-        train_loader = self._get_sod_data_loader(train_loader)
+        train_loader = self._get_SoD_data_loader(train_loader)
         self.prior_factor_sod = self.M / N
 
         self._init_K_MM()
@@ -1113,7 +1109,7 @@ class FunctionalLaplace(BaseLaplace):
         if self.likelihood == 'classification':
             raise NotImplementedError
         elif self.likelihood == 'regression':
-            return - 0.5 * (self.log_det_K + self.scatter + self.M * self.n_outputs * np.log(2 * np.pi))
+            return - 0.5 * (self.log_det_K + self.scatter_lml + self.M * self.n_outputs * np.log(2 * np.pi))
 
     @property
     def log_det_K(self):
@@ -1130,21 +1126,21 @@ class FunctionalLaplace(BaseLaplace):
             return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
 
     @property
-    def scatter(self):
+    def scatter_lml(self):
         """
-        Compute scatter term in GP marginal likelihood
+        Compute scatter term in GP log marginal likelihood
         :return:
         """
 
         if self.independent_gp_kernels:
-            _scatter = 0.
+            scatter = 0.
             for c in range(self.n_outputs):
                 K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * self.sigma_noise.square())
-                _scatter += torch.dot(self.mu[:, c], torch.matmul(K_inv, self.mu[:, c]))
+                scatter += torch.dot(self.mu[:, c], torch.matmul(K_inv, self.mu[:, c]))
         else:
             K_inv = torch.inverse(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
-            _scatter = torch.dot(self.mu.reshape(-1), torch.matmul(K_inv, self.mu.reshape(-1)))
-        return _scatter
+            scatter = torch.dot(self.mu.reshape(-1), torch.matmul(K_inv, self.mu.reshape(-1)))
+        return scatter
             
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
@@ -1158,6 +1154,3 @@ class FunctionalLaplace(BaseLaplace):
                                        grid_size, link_approx, n_samples,
                                        verbose)
 
-
-class SoDLaplace(FunctionalLaplace):
-    pass

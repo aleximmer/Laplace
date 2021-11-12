@@ -1,4 +1,4 @@
-from laplace.baselaplace import ParametricLaplace
+from laplace.baselaplace import BaseLaplace
 from laplace import *
 
 
@@ -17,10 +17,10 @@ def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure
 
     Returns
     -------
-    laplace : ParametricLaplace
-        chosen subclass of ParametricLaplace instantiated with additional arguments
+    laplace : BaseLaplace
+        chosen subclass of BaseLaplace instantiated with additional arguments
     """
-    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(ParametricLaplace)
+    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(BaseLaplace)
                    if hasattr(subclass, '_key')}
     laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
     return laplace_class(model, likelihood, *args, **kwargs)

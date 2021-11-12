@@ -7,8 +7,7 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
-from laplace.baselaplace import FunctionalLaplace
+from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace, FunctionalLaplace
 from tests.utils import jacobians_naive
 
 
