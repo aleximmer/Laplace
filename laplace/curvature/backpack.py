@@ -172,8 +172,8 @@ class BackPackGP(BackPackInterface):
         """
         Compute K_bb, which is a part of K_MM kernel matrix.
 
-        :param jacobians:
-        :param batch:
+        :param jacobians: torch.tensor with shape (b, C, P)
+        :param batch: torch.tensor with shape (b, C)
         :param prior_precision:
         :param independent_gp_kernels:
         :param prior_factor:
@@ -229,7 +229,8 @@ class BackPackGP(BackPackInterface):
     def _get_lambdas(self, f, sigma_factor):
         b, C = f.shape
         if self.likelihood == 'regression':
-            lambdas = sigma_factor*torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
+            # second derivative is (1 / sigma^2) * I_{C}
+            lambdas = sigma_factor * torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)

@@ -8,12 +8,14 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 
 from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import FunctionalLaplace
 from tests.utils import jacobians_naive
 
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors = [FullLaplace, KronLaplace, DiagLaplace]
+flavors = [FullLaplace, KronLaplace, DiagLaplace, FunctionalLaplace]
+flavors_parametric = [FullLaplace, KronLaplace, DiagLaplace]
 
 
 @pytest.fixture
@@ -117,7 +119,7 @@ def test_laplace_init_precision(laplace, model):
         lap = laplace(model, likelihood='regression', prior_precision=precision)
 
 
-@pytest.mark.parametrize('laplace', flavors)
+@pytest.mark.parametrize('laplace', flavors_parametric)
 def test_laplace_init_prior_mean_and_scatter(laplace, model):
     mean = parameters_to_vector(model.parameters())
     P = len(mean)
@@ -133,6 +135,7 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model):
     lap_tensor_full_mean = laplace(model, 'classification',
                                    prior_precision=1e-2, prior_mean=torch.ones(P))
     assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(P))
+
     expected = ((mean - 1) * 1e-2) @ (mean - 1)
     assert expected.ndim == 0
     assert torch.allclose(lap_scalar_mean.scatter, expected)
@@ -167,7 +170,7 @@ def test_laplace_init_temperature(laplace, model):
     assert lap.temperature == T
 
 
-@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+@pytest.mark.parametrize('laplace,lh', product(flavors_parametric, ['classification', 'regression']))
 def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     if lh == 'classification':
         loader = class_loader
@@ -251,16 +254,23 @@ def test_regression_predictive(laplace, model, reg_loader):
         lap(X, pred_type='linear')
 
     # GLM predictive, functional variance tested already above.
-    f_mu, f_var = lap(X, pred_type='glm')
-    assert torch.allclose(f_mu, f)
-    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
-    assert len(f_mu) == len(X)
+    if laplace == FunctionalLaplace:
+        f_mu, f_var = lap(X, pred_type='gp')
+        assert torch.allclose(f_mu, f)
+        assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+        assert len(f_mu) == len(X)
 
-    # NN predictive (only diagonal variance estimation)
-    f_mu, f_var = lap(X, pred_type='nn')
-    assert f_mu.shape == f_var.shape
-    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
-    assert len(f_mu) == len(X)
+    else:
+        f_mu, f_var = lap(X, pred_type='glm')
+        assert torch.allclose(f_mu, f)
+        assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+        assert len(f_mu) == len(X)
+
+        # NN predictive (only diagonal variance estimation)
+        f_mu, f_var = lap(X, pred_type='nn')
+        assert f_mu.shape == f_var.shape
+        assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
+        assert len(f_mu) == len(X)
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -275,21 +285,25 @@ def test_classification_predictive(laplace, model, class_loader):
         lap(X, pred_type='linear')
 
     # GLM predictive
-    f_pred = lap(X, pred_type='glm', link_approx='mc', n_samples=100)
+    if laplace == FunctionalLaplace:
+        pred_type = 'gp'
+    else:
+        pred_type = 'glm'
+    f_pred = lap(X, pred_type=pred_type, link_approx='mc', n_samples=100)
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
-    f_pred = lap(X, pred_type='glm', link_approx='probit')
+    f_pred = lap(X, pred_type=pred_type, link_approx='probit')
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
-    f_pred = lap(X, pred_type='glm', link_approx='bridge')
+    f_pred = lap(X, pred_type=pred_type, link_approx='bridge')
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
-
-    # NN predictive
-    f_pred = lap(X, pred_type='nn', n_samples=100)
-    assert f_pred.shape == f.shape
-    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    if laplace != FunctionalLaplace:
+        # NN predictive
+        f_pred = lap(X, pred_type='nn', n_samples=100)
+        assert f_pred.shape == f.shape
+        assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -303,13 +317,18 @@ def test_regression_predictive_samples(laplace, model, reg_loader):
     with pytest.raises(ValueError):
         lap(X, pred_type='linear')
 
-    # GLM predictive, functional variance tested already above.
-    fsamples = lap.predictive_samples(X, pred_type='glm', n_samples=100)
-    assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    if laplace == FunctionalLaplace:
+        # GP predictive, functional variance tested already above.
+        fsamples = lap.predictive_samples(X, n_samples=100)
+        assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    else:
+        # GLM predictive, functional variance tested already above.
+        fsamples = lap.predictive_samples(X, pred_type='glm', n_samples=100)
+        assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
 
-    # NN predictive (only diagonal variance estimation)
-    fsamples = lap.predictive_samples(X, pred_type='nn', n_samples=100)
-    assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
+        # NN predictive (only diagonal variance estimation)
+        fsamples = lap.predictive_samples(X, pred_type='nn', n_samples=100)
+        assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -323,12 +342,19 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     with pytest.raises(ValueError):
         lap(X, pred_type='linear')
 
-    # GLM predictive
-    fsamples = lap.predictive_samples(X, pred_type='glm', n_samples=100)
-    assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
-    assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
+    if laplace == FunctionalLaplace:
+        # GLM predictive
+        fsamples = lap.predictive_samples(X, n_samples=100)
+        assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
+        assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
-    # NN predictive
-    f_pred = lap.predictive_samples(X, pred_type='nn', n_samples=100)
-    assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
-    assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
+    else:
+        # GLM predictive
+        fsamples = lap.predictive_samples(X, pred_type='glm', n_samples=100)
+        assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
+        assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
+
+        # NN predictive
+        f_pred = lap.predictive_samples(X, pred_type='nn', n_samples=100)
+        assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
+        assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1

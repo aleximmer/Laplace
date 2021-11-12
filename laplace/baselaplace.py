@@ -864,7 +864,8 @@ class FunctionalLaplace(BaseLaplace):
 
     Parameters
     ----------
-    M : number of data points for Subset-of-Data (SOD) approximate GP inference
+    M : number of data points for Subset-of-Data (SOD) approximate GP inference.
+        By default (M=None), all data points from train dataset are used
     independent_gp_kernels: if True we assume independent GPs across output channels.
     diagonal_L: approximate L_{MM} with diag(L_{MM}).
                 If False and likelihood="regression", then nothing changes
@@ -878,9 +879,8 @@ class FunctionalLaplace(BaseLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('all', 'GP')
 
-    # TODO: default value for M
     # TODO: temperature in the GP inference
-    def __init__(self, model, likelihood, M, sigma_noise=1., prior_precision=1.,
+    def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGP, backend_kwargs=None,
                  independent_gp_kernels=True, diagonal_L=True):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
@@ -984,15 +984,16 @@ class FunctionalLaplace(BaseLaplace):
             warnings.warn("Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended "
                           "in the case of multivariate regression. Predictive variance will likely be overestimated.")
 
-        self._init_K_MM()
-        self._init_Sigma_inv()
-
         self.model.eval()
 
-        train_loader = self._get_sod_data_loader(train_loader)
         N = len(train_loader.dataset)
+        if self.M is None:
+            self.M = N
+        train_loader = self._get_sod_data_loader(train_loader)
         self.prior_factor_sod = self.M / N
 
+        self._init_K_MM()
+        self._init_Sigma_inv()
         diff_mu = self.prior_mean - self.map_estimate
 
         f, lambdas, mu = [], [], []
@@ -1030,8 +1031,6 @@ class FunctionalLaplace(BaseLaplace):
         # regression
         if self.likelihood == 'regression':
             return f_mu, f_var
-        if self.independent_gp_kernels:
-            f_var = torch.diag_embed(f_var)
         # classification
         return self._classification_predictive(f_mu, f_var, link_approx, n_samples)
 
@@ -1065,6 +1064,8 @@ class FunctionalLaplace(BaseLaplace):
     def _gp_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(self.model, X)
         f_var = self.functional_variance(Js, X)
+        if self.independent_gp_kernels:
+            f_var = torch.diag_embed(f_var)
         return f_mu.detach(), f_var.detach()
 
     def functional_variance(self, Js, X):
