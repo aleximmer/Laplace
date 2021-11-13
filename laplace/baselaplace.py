@@ -857,16 +857,21 @@ class DiagLaplace(ParametricLaplace):
 class FunctionalLaplace(BaseLaplace):
     """
     Applying the GGN (General Gauss Newton) approximation for the Hessian in the Laplace approximation of the posterior
-    turns the underlying probabilistic model from a BNN into a GLM (generalized linear model). This GLM (in the weight space)
-    is equivalent to a GP (in the function space).  This class implements the (approximate) GP inference through which
+    turns the underlying probabilistic model from a BNN into a GLM (generalized linear model).
+    This GLM (in the weight space) is equivalent to a GP (in the function space), see
+    "Approximate Inference Turns Deep Networks into Gaussian Processes (Khan et al., 2019)"
+
+    This class implements the (approximate) GP inference through which
     we obtain the desired quantities (a posterior predictive, a marginal log-likelihood).
-    See "Improving predictions of Bayesian neural nets via local linearization (Immer at. al, 2021)" for more details.
+    See "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)" for more details.
 
     Parameters
     ----------
     M : number of data points for Subset-of-Data (SOD) approximate GP inference.
         By default (M=None), all data points from train dataset are used
-    diagonal_kernel: if True we assume independent GPs across output channels.
+    diagonal_kernel: GP kernel here is product of Jacobians, which results in a C x C matrix where C is the output dimension.
+                     If diagonal_kernel=True, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
+                     assuming independent GPs across output channels.
     diagonal_L: approximate L_{MM} with diag(L_{MM}).
                 If False and likelihood="regression", then nothing changes
                     because L_{MM} is anyways diagonal as long as we assume diagonal noise in the likelihood.
@@ -882,6 +887,7 @@ class FunctionalLaplace(BaseLaplace):
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGP, backend_kwargs=None,
                  diagonal_kernel=False, diagonal_L=True):
+        assert backend in [BackPackGP], 'Only BackPack backend is supported in FunctionalLaplace'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -891,12 +897,13 @@ class FunctionalLaplace(BaseLaplace):
         if not diagonal_kernel and likelihood == 'classification':
             assert diagonal_L, \
                 'GP inference without independence for classification necessitates diagonal approximation of L!'
+
         self.K_MM = None
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
         self.train_loader = None  # needed in functional variance and marginal log likelihood
         self.batch_size = None
         self.prior_factor_sod = None
-        self.mu = None
+        self.mu = None  # mean of the log marginal likelihood
 
     def _check_fit(self):
         if (self.K_MM is None) or (self.Sigma_inv is None) or (self.train_loader is None):
@@ -914,7 +921,7 @@ class FunctionalLaplace(BaseLaplace):
         else:
             self.Sigma_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
-    def _curv_closure(self, X, y, N):
+    def _curv_closure(self, X, y):
         return self.backend.gp(X, y, self._H_factor)
 
     def _store_K_batch(self, K_batch, i, j):
@@ -964,11 +971,18 @@ class FunctionalLaplace(BaseLaplace):
         :return:
         """
         np.random.seed(seed)
-        N = len(train_loader.dataset)
         return DataLoader(dataset=train_loader.dataset, batch_size=train_loader.batch_size,
-                          sampler=SoDSampler(N=N, M=self.M), shuffle=False)
+                          sampler=SoDSampler(N=len(train_loader.dataset), M=self.M), shuffle=False)
 
     def fit(self, train_loader):
+        """Fit the Laplace approximation of a GP posterior.
+
+        Parameters
+        ----------
+        train_loader : torch.data.utils.DataLoader
+            `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+            `train_loader.batch_size` needs to be set to access \\(b\\) batch_size
+        """
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
@@ -976,17 +990,19 @@ class FunctionalLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
         self.batch_size = train_loader.batch_size
 
-        if self.likelihood == "regression" and self.n_outputs > 1 and self.diagonal_kernel:
-            warnings.warn("Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended "
-                          "in the case of multivariate regression. Predictive variance will likely be overestimated.")
+        if self.likelihood == 'regression' and self.n_outputs > 1 and self.diagonal_kernel:
+            warnings.warn('Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended '
+                          'in the case of multivariate regression. Predictive variance will likely be overestimated.')
 
         self.model.eval()
 
         N = len(train_loader.dataset)
-        if self.M is None:
+        self.n_data = N
+        if self.M is None:  # by default, all training data points are used for GP inference
             self.M = N
         train_loader = self._get_SoD_data_loader(train_loader)
-        self.prior_factor_sod = self.M / N
+        self.train_loader = train_loader
+        self.prior_factor_sod = self.M / self.n_data
 
         self._init_K_MM()
         self._init_Sigma_inv()
@@ -996,7 +1012,7 @@ class FunctionalLaplace(BaseLaplace):
         for i, batch in enumerate(train_loader):
             X, y = batch
             X, y = X.to(self._device), y.to(self._device)
-            loss_batch, Js_batch, f_batch, lambdas_batch = self._curv_closure(X, y, N)
+            loss_batch, Js_batch, f_batch, lambdas_batch = self._curv_closure(X, y)
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
             f.append(f_batch)
@@ -1014,12 +1030,10 @@ class FunctionalLaplace(BaseLaplace):
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
         if self.likelihood == "regression":
             self.mu = torch.cat(mu, dim=0)
-        self.train_loader = train_loader
-        self.n_data = N
 
     def __call__(self, x, pred_type='gp', link_approx='probit', n_samples=100):
         if pred_type not in ['gp']:
-            raise ValueError('Only gp supported as prediction types.')
+            raise ValueError('Only gp supported as prediction type.')
 
         self._check_fit()
 
@@ -1059,12 +1073,12 @@ class FunctionalLaplace(BaseLaplace):
 
     def _gp_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(self.model, X)
-        f_var = self.functional_variance(Js, X)
+        f_var = self.predictive_variance(Js, X)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
         return f_mu.detach(), f_var.detach()
 
-    def functional_variance(self, Js, X):
+    def predictive_variance(self, Js, X):
         """
         GP predictive variance
 

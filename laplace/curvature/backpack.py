@@ -155,11 +155,32 @@ class BackPackEF(BackPackInterface, EFInterface):
 
 
 class BackPackGP(BackPackInterface):
+    """Implementation of the GP inference using Backpack.
+    """
 
     def __init__(self, model, likelihood, last_layer=False):
         super().__init__(model, likelihood, last_layer)
 
     def gp(self, X, y, sigma_factor):
+        """
+         Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch, input_shape)`
+        y : torch.Tensor
+            labels `(batch, output_shape)`
+        sigma_factor: inverse of (scaled) likelihood noise
+
+        Returns
+        -------
+        loss : torch.tensor
+        Js : torch.tensor
+              Jacobians (batch, output_shape, parameters)
+        f : torch.tensor
+              NN output (batch, output_shape)
+        lambdas: torch.tensor
+              Hessian of p(y|f) w.r.t. f (batch, output_shape, output_shape)
+        """
         if self.last_layer:
             Js, f = self.last_layer_jacobians(self.model, X)
         else:
