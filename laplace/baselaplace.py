@@ -1072,7 +1072,10 @@ class FunctionalLaplace(BaseLaplace):
         return torch.softmax(samples, dim=-1)
 
     def _gp_predictive_distribution(self, X):
-        Js, f_mu = self.backend.jacobians(self.model, X)
+        if self.backend.last_layer:
+            Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
+        else:
+            Js, f_mu = self.backend.jacobians(self.model, X)
         f_var = self.predictive_variance(Js, X)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)

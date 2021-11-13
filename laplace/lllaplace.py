@@ -4,7 +4,7 @@ from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, Dia
 from laplace.feature_extractor import FeatureExtractor
 
 from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN
+from laplace.curvature import BackPackGGN, BackPackGP
 
 
 __all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
@@ -104,7 +104,7 @@ class LLLaplace(ParametricLaplace):
 
         super().fit(train_loader)
 
-    def  _glm_predictive_distribution(self, X):
+    def _glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
@@ -198,15 +198,94 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
                          prior_mean, temperature, backend, last_layer_name, backend_kwargs)
 
 
-class FunctionalLLLaplace(LLLaplace, FunctionalLaplace):
+class FunctionalLLLaplace(FunctionalLaplace):
     """
-
-    Here not much changes in terms of GP inference. Since now we treat only the last layer probabilistically and
-    the rest of the network serves as a fixed feature extractor, that basically means that the X in GP changes to
-    \Tilde{X} \in R^{M \times l_{n-1}}, where l_{n-1} is the dimesion of the output of the penultimate NN layer.
+    Here not much changes in terms of GP inference compared to FunctionalLaplace class.
+    Since now we treat only the last layer probabilistically and the rest of the network is used as a "fixed feature
+    extractor", that means that the X in GP inference changes to \Tilde{X} \in R^{M \times l_{n-1}}, where l_{n-1}
+    is the dimension of the output of the penultimate NN layer.
+    
+    Parameters
+    ----------
+    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    likelihood : {'classification', 'regression'}
+        determines the log likelihood Hessian approximation
+    M : number of data points for Subset-of-Data (SOD) approximate GP inference.
+        By default (M=None), all data points from train dataset are used
+    sigma_noise : torch.Tensor or float, default=1
+        observation noise for the regression setting; must be 1 for classification
+    prior_precision : torch.Tensor or float, default=1
+        prior precision of a Gaussian prior (= weight decay);
+        can be scalar, per-layer, or diagonal in the most general case
+    prior_mean : torch.Tensor or float, default=0
+        prior mean of a Gaussian prior, useful for continual learning
+    temperature : float, default=1
+        temperature of the likelihood; lower temperature leads to more
+        concentrated posterior and vice versa.
+    backend : subclasses of `laplace.curvature.CurvatureInterface`
+        backend for access to curvature/Hessian approximations
+    last_layer_name: str, default=None
+        name of the model's last layer, if None it will be determined automatically
+    backend_kwargs : dict, default=None
+        arguments passed to the backend on initialization, for example to
+        set the number of MC samples for stochastic approximations.
+    diagonal_kernel: GP kernel here is product of Jacobians, which results in a C x C matrix where C is the output dimension.
+                     If diagonal_kernel=True, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
+                     assuming independent GPs across output channels.
+    diagonal_L: approximate L_{MM} with diag(L_{MM}).
+                If False and likelihood="regression", then nothing changes
+                    because L_{MM} is anyways diagonal as long as we assume diagonal noise in the likelihood.
+                If False and likelihood="classification", then the algorithm from Chapter 3.5 from R&W 2006 GP book
+                    is used.
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'GP')
-    pass
+
+    def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGP, last_layer_name=None,
+                 backend_kwargs=None, diagonal_kernel=False, diagonal_L=True):
+        super().__init__(model, likelihood, M=M, sigma_noise=sigma_noise, prior_precision=1.,
+                         prior_mean=0., temperature=temperature, backend=backend,
+                         backend_kwargs=backend_kwargs, diagonal_kernel=diagonal_kernel, diagonal_L=diagonal_L)
+        self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
+        if self.model.last_layer is None:
+            self.map_estimate = None
+            self.n_params = None
+            self.n_layers = None
+            # ignore checks of prior mean setter temporarily, check on .fit()
+            self._prior_precision = prior_precision
+            self._prior_mean = prior_mean
+        else:
+            self.map_estimate = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.n_params = len(self.map_estimate)
+            self.n_layers = len(list(self.model.last_layer.parameters()))
+            self.prior_precision = prior_precision
+            self.prior_mean = prior_mean
+        self._backend_kwargs['last_layer'] = True
+
+    def fit(self, train_loader):
+        """Fit the Laplace approximation of a GP posterior.
+
+        Parameters
+        ----------
+        train_loader : torch.data.utils.DataLoader
+            `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+            `train_loader.batch_size` needs to be set to access \\(b\\) batch_size
+        """
+        self.model.eval()
+
+        if self.model.last_layer is None:
+            X, _ = next(iter(train_loader))
+            with torch.no_grad():
+                self.model.find_last_layer(X[:1].to(self._device))
+            self.map_estimate = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.n_params = len(self.map_estimate)
+            self.n_layers = len(list(self.model.last_layer.parameters()))
+            # here, check the already set prior precision again
+            self.prior_precision = self._prior_precision
+            self.prior_mean = self._prior_mean
+
+        super().fit(train_loader)
+
 

@@ -161,6 +161,13 @@ class BackPackGP(BackPackInterface):
     def __init__(self, model, likelihood, last_layer=False):
         super().__init__(model, likelihood, last_layer)
 
+    def _jacobians(self, X):
+        if self.last_layer:
+            Js, f = self.last_layer_jacobians(self.model, X)
+        else:
+            Js, f = self.jacobians(self.model, X)
+        return Js, f
+
     def gp(self, X, y, sigma_factor):
         """
          Parameters
@@ -181,10 +188,7 @@ class BackPackGP(BackPackInterface):
         lambdas: torch.tensor
               Hessian of p(y|f) w.r.t. f (batch, output_shape, output_shape)
         """
-        if self.last_layer:
-            Js, f = self.last_layer_jacobians(self.model, X)
-        else:
-            Js, f = self.jacobians(self.model, X)
+        Js, f = self._jacobians(X)
         lambdas = self._get_lambdas(f, sigma_factor)
         loss = self.factor * self.lossfunc(f, y)
         return loss.detach(), Js, f, lambdas
@@ -200,7 +204,7 @@ class BackPackGP(BackPackInterface):
         :param prior_factor:
         :return:
         """
-        jacobians_2, _ = self.jacobians(self.model, batch)
+        jacobians_2, _ = self._jacobians(batch)
         P = jacobians.shape[-1]  # nr model params
         prior = prior_factor / prior_precision
         if diagonal_kernel:
@@ -220,7 +224,7 @@ class BackPackGP(BackPackInterface):
         :param prior_factor:
         :return:
         """
-        jacobians_2, _ = self.jacobians(self.model, batch)
+        jacobians_2, _ = self._jacobians(batch)
         prior = prior_factor / prior_precision
         if diagonal_kernel:
             kernel = torch.einsum('bcp,bcp->bc', jacobians, jacobians_2 * prior)
@@ -239,7 +243,7 @@ class BackPackGP(BackPackInterface):
         :param prior_factor:
         :return:
         """
-        jacobians_2, _ = self.jacobians(self.model, batch)
+        jacobians_2, _ = self._jacobians(batch)
         prior = prior_factor / prior_precision
         if diagonal_kernel:
             kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
