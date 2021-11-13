@@ -10,7 +10,6 @@ from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, vali
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN, BackPackEF, BackPackGP, AsdlGGN, AsdlEF
 
-
 __all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace']
 
 
@@ -38,6 +37,7 @@ class BaseLaplace:
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
     """
+
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
@@ -904,6 +904,7 @@ class FunctionalLaplace(BaseLaplace):
         self.batch_size = None
         self.prior_factor_sod = None
         self.mu = None  # mean of the log marginal likelihood
+        self.L = None
 
     def _check_fit(self):
         if (self.K_MM is None) or (self.Sigma_inv is None) or (self.train_loader is None):
@@ -928,10 +929,11 @@ class FunctionalLaplace(BaseLaplace):
         if self.diagonal_kernel:
             for c in range(self.n_outputs):
                 self.K_MM[c][i * self.batch_size:min((i + 1) * self.batch_size, self.M),
-                             j * self.batch_size:min((j + 1) * self.batch_size, self.M)] = K_batch[:, :, c]
+                j * self.batch_size:min((j + 1) * self.batch_size, self.M)] = K_batch[:, :, c]
                 if i != j:
                     self.K_MM[c][j * self.batch_size:min((j + 1) * self.batch_size, self.M),
-                                 i * self.batch_size:min((i + 1) * self.batch_size, self.M)] = torch.transpose(K_batch[:, :, c], 0, 1)
+                    i * self.batch_size:min((i + 1) * self.batch_size, self.M)] = torch.transpose(K_batch[:, :, c], 0,
+                                                                                                  1)
         else:
             bC = self.batch_size * self.n_outputs
             MC = self.M * self.n_outputs
@@ -939,12 +941,30 @@ class FunctionalLaplace(BaseLaplace):
             if i != j:
                 self.K_MM[j * bC:min((j + 1) * bC, MC), i * bC:min((i + 1) * bC, MC)] = torch.transpose(K_batch, 0, 1)
 
-    def _build_L_inv(self, lambdas):
+    # # TODO: refactor, current implementation with self.L is ugly af
+    # def _build_L_inv(self, lambdas):
+    #     if self.diagonal_kernel:
+    #         if self.diagonal_L or self.likelihood == "regression":
+    #             L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
+    #             # rearrange and take the inverse for each MxM matrix separately
+    #             self.L = [L_diag[i::self.n_outputs] for i in range(self.n_outputs)]
+    #             return [torch.diag(1. / L_diag[i::self.n_outputs]) for i in range(self.n_outputs)]
+    #         else:
+    #             # TODO: double check the correctness of the algorithm in R&W before implementing
+    #             # R&W 2006 algorithm
+    #             raise NotImplementedError
+    #     else:
+    #         # in case of self.likelihood == "classificiation" we approximate L_MM with diagonal here
+    #         # in case of self.likelihood == "regression" L_MM is anyways diagonal
+    #         diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
+    #         self.L = diag
+    #         return torch.diag(1. / diag)
+
+    def _build_L(self, lambdas):
         if self.diagonal_kernel:
             if self.diagonal_L or self.likelihood == "regression":
                 L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
-                # rearrange and take the inverse for each MxM matrix separately
-                return [torch.diag(1. / L_diag[i::self.n_outputs]) for i in range(self.n_outputs)]
+                return [L_diag[i::self.n_outputs] for i in range(self.n_outputs)]
             else:
                 # TODO: double check the correctness of the algorithm in R&W before implementing
                 # R&W 2006 algorithm
@@ -952,15 +972,14 @@ class FunctionalLaplace(BaseLaplace):
         else:
             # in case of self.likelihood == "classificiation" we approximate L_MM with diagonal here
             # in case of self.likelihood == "regression" L_MM is anyways diagonal
-            diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
-            return torch.diag(1. / diag)
+            return torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
 
-    def _build_Sigma_inv(self, lambdas):
+    def _build_Sigma_inv(self):
         if self.diagonal_kernel:
-            lambdas = self._build_L_inv(lambdas)
-            return [torch.linalg.cholesky(self.K_MM[c] + lambdas[c]) for c in range(self.n_outputs)]
+            return [torch.linalg.cholesky(self.K_MM[c] + torch.diag(1. / lambda_c)) for c, lambda_c in
+                    enumerate(self.L)]
         else:
-            return torch.linalg.cholesky(self.K_MM + self._build_L_inv(lambdas))
+            return torch.linalg.cholesky(self.K_MM + torch.diag(1 / self.L))
 
     def _get_SoD_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
@@ -1019,6 +1038,8 @@ class FunctionalLaplace(BaseLaplace):
             if self.likelihood == "regression":
                 mu_batch = y - (f_batch + torch.einsum('bcp,p->bc', Js_batch, diff_mu))
                 mu.append(mu_batch)
+            elif self.likelihood == "classification":
+                mu.append(f_batch)
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
@@ -1027,9 +1048,9 @@ class FunctionalLaplace(BaseLaplace):
                                                  self.diagonal_kernel, self.prior_factor_sod)
                     self._store_K_batch(K_batch, i, j)
 
-        self.Sigma_inv = self._build_Sigma_inv(lambdas)
-        if self.likelihood == "regression":
-            self.mu = torch.cat(mu, dim=0)
+        self.L = self._build_L(lambdas)
+        self.Sigma_inv = self._build_Sigma_inv()
+        self.mu = torch.cat(mu, dim=0)
 
     def __call__(self, x, pred_type='gp', link_approx='probit', n_samples=100):
         if pred_type not in ['gp']:
@@ -1122,9 +1143,14 @@ class FunctionalLaplace(BaseLaplace):
             return torch.einsum('bcm,bcn->bmn', v, v)
 
     def _log_marginal_likelihood(self):
+        """
+        For classification we use a (multi-class) log marginal likelihood from R&W 2006, Chapter 3.4.4
+
+        :return:
+        """
         self.fit(self.train_loader)
         if self.likelihood == 'classification':
-            raise NotImplementedError
+            return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
         elif self.likelihood == 'regression':
             return - 0.5 * (self.log_det_K + self.scatter_lml + self.M * self.n_outputs * np.log(2 * np.pi))
 
@@ -1134,31 +1160,49 @@ class FunctionalLaplace(BaseLaplace):
         Computes log determinant term in GP marginal likelihood
         :return:
         """
-        if self.diagonal_kernel:
-            log_det = 0.
-            for c in range(self.n_outputs):
-                log_det += torch.logdet(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * self.sigma_noise.square())
-            return log_det
+        if self.likelihood == "regression":
+            if self.diagonal_kernel:
+                log_det = 0.
+                for c in range(self.n_outputs):
+                    log_det += torch.logdet(
+                        self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * self.sigma_noise.square())
+                return log_det
+            else:
+                return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
         else:
-            return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
+            if self.diagonal_kernel:
+                log_det = 0.
+                for c in range(self.n_outputs):
+                    W = torch.sqrt(self.L[c])
+                    log_det += torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0]))
+                return log_det
+            else:
+                W = torch.sqrt(self.L)
+                return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0]))
 
     @property
-    def scatter_lml(self):
+    def scatter_lml(self, eps=0.001):
         """
         Compute scatter term in GP log marginal likelihood
+
+        :param eps: diagonal noise for numerical stability when inverting K_MM
         :return:
         """
-
+        if self.likelihood == "regression":
+            noise = self.sigma_noise.square()
+        else:
+            noise = eps
         if self.diagonal_kernel:
             scatter = 0.
             for c in range(self.n_outputs):
-                K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * self.sigma_noise.square())
+                K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * noise)
                 scatter += torch.dot(self.mu[:, c], torch.matmul(K_inv, self.mu[:, c]))
         else:
-            K_inv = torch.inverse(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
+            K_inv = torch.inverse(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * noise)
             scatter = torch.dot(self.mu.reshape(-1), torch.matmul(K_inv, self.mu.reshape(-1)))
+
         return scatter
-            
+
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
@@ -1170,4 +1214,3 @@ class FunctionalLaplace(BaseLaplace):
                                        log_prior_prec_min, log_prior_prec_max,
                                        grid_size, link_approx, n_samples,
                                        verbose)
-
