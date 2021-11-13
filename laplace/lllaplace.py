@@ -204,7 +204,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
     Since now we treat only the last layer probabilistically and the rest of the network is used as a "fixed feature
     extractor", that means that the X in GP inference changes to \Tilde{X} \in R^{M \times l_{n-1}}, where l_{n-1}
     is the dimension of the output of the penultimate NN layer.
-    
+
     Parameters
     ----------
     model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
