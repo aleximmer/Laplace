@@ -300,13 +300,13 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
         return jacobians_2, None
     mocker.patch('laplace.curvature.BackPackGP.jacobians', mock_jacobians)
 
-    full_kernel = kernel(jacobians, X, prior_precision=torch.ones(3), independent_gp_kernels=False)
-    full_kernel_precision_0_5 = kernel(jacobians, X, prior_precision=0.5 * torch.ones(3), independent_gp_kernels=False)
+    full_kernel = kernel(jacobians, X, prior_precision=torch.ones(3), diagonal_kernel=False)
+    full_kernel_precision_0_5 = kernel(jacobians, X, prior_precision=0.5 * torch.ones(3), diagonal_kernel=False)
     assert torch.equal(expected_full_kernel, full_kernel)
     assert torch.equal(2. * expected_full_kernel, full_kernel_precision_0_5)
 
-    block_diag_kernel = kernel(jacobians, X, prior_precision=torch.ones(3), independent_gp_kernels=True)
-    block_diag_kernel_precision_0_5 = kernel(jacobians, X, prior_precision=0.5 * torch.ones(3), independent_gp_kernels=True)
+    block_diag_kernel = kernel(jacobians, X, prior_precision=torch.ones(3), diagonal_kernel=True)
+    block_diag_kernel_precision_0_5 = kernel(jacobians, X, prior_precision=0.5 * torch.ones(3), diagonal_kernel=True)
     assert torch.equal(expected_block_diagonal_kernel, block_diag_kernel)
     assert torch.equal(2. * expected_block_diagonal_kernel, block_diag_kernel_precision_0_5)
 

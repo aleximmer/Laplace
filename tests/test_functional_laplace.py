@@ -21,7 +21,7 @@ def test_gp_equivalence_regression():
 
     full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise, prior_precision=2.)
     functional_gp_la = FunctionalLaplace(model, 'regression', M=M,
-                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False, prior_precision=2.)
+                                         sigma_noise=true_sigma_noise, diagonal_kernel=False, prior_precision=2.)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 
@@ -47,7 +47,7 @@ def test_gp_equivalence_regression_multivariate(c=3):
 
     full_la = FullLaplace(model, 'regression', sigma_noise=true_sigma_noise, prior_precision=2.0)
     functional_gp_la = FunctionalLaplace(model, 'regression', M=len(X_train),
-                                         sigma_noise=true_sigma_noise, independent_gp_kernels=False, prior_precision=2.0)
+                                         sigma_noise=true_sigma_noise, diagonal_kernel=False, prior_precision=2.0)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 
@@ -70,7 +70,7 @@ def test_gp_equivalence_classification(c=2):
 
     full_la = FullLaplace(model, 'classification', prior_precision=1.0)
     functional_gp_la = FunctionalLaplace(model, 'classification', M=len(X_train),
-                                         independent_gp_kernels=True, prior_precision=1.0)
+                                         diagonal_kernel=True, prior_precision=1.0)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 

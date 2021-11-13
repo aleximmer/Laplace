@@ -866,12 +866,12 @@ class FunctionalLaplace(BaseLaplace):
     ----------
     M : number of data points for Subset-of-Data (SOD) approximate GP inference.
         By default (M=None), all data points from train dataset are used
-    independent_gp_kernels: if True we assume independent GPs across output channels.
+    diagonal_kernel: if True we assume independent GPs across output channels.
     diagonal_L: approximate L_{MM} with diag(L_{MM}).
                 If False and likelihood="regression", then nothing changes
                     because L_{MM} is anyways diagonal as long as we assume diagonal noise in the likelihood.
                 If False and likelihood="classification", then the algorithm from Chapter 3.5 from R&W 2006 GP book
-                    is used. # TODO: double check the correctness of the algorithm in R&W before implementing
+                    is used.
 
 
     See `BaseLaplace` class for the full interface.
@@ -879,17 +879,16 @@ class FunctionalLaplace(BaseLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('all', 'GP')
 
-    # TODO: temperature in the GP inference
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGP, backend_kwargs=None,
-                 independent_gp_kernels=True, diagonal_L=True):
+                 diagonal_kernel=False, diagonal_L=True):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
         self.M = M
-        self.independent_gp_kernels = independent_gp_kernels
+        self.diagonal_kernel = diagonal_kernel
         self.diagonal_L = diagonal_L
-        if not independent_gp_kernels and likelihood == 'classification':
+        if not diagonal_kernel and likelihood == 'classification':
             assert diagonal_L, \
                 'GP inference without independence for classification necessitates diagonal approximation of L!'
         self.K_MM = None
@@ -904,13 +903,13 @@ class FunctionalLaplace(BaseLaplace):
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def _init_K_MM(self):
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             self.K_MM = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
             self.K_MM = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _init_Sigma_inv(self):
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             self.Sigma_inv = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
         else:
             self.Sigma_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
@@ -919,7 +918,7 @@ class FunctionalLaplace(BaseLaplace):
         return self.backend.gp(X, y, self._H_factor)
 
     def _store_K_batch(self, K_batch, i, j):
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             for c in range(self.n_outputs):
                 self.K_MM[c][i * self.batch_size:min((i + 1) * self.batch_size, self.M),
                              j * self.batch_size:min((j + 1) * self.batch_size, self.M)] = K_batch[:, :, c]
@@ -934,12 +933,13 @@ class FunctionalLaplace(BaseLaplace):
                 self.K_MM[j * bC:min((j + 1) * bC, MC), i * bC:min((i + 1) * bC, MC)] = torch.transpose(K_batch, 0, 1)
 
     def _build_L_inv(self, lambdas):
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             if self.diagonal_L or self.likelihood == "regression":
                 L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
                 # rearrange and take the inverse for each MxM matrix separately
                 return [torch.diag(1. / L_diag[i::self.n_outputs]) for i in range(self.n_outputs)]
             else:
+                # TODO: double check the correctness of the algorithm in R&W before implementing
                 # R&W 2006 algorithm
                 raise NotImplementedError
         else:
@@ -949,7 +949,7 @@ class FunctionalLaplace(BaseLaplace):
             return torch.diag(1. / diag)
 
     def _build_Sigma_inv(self, lambdas):
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             lambdas = self._build_L_inv(lambdas)
             return [torch.linalg.cholesky(self.K_MM[c] + lambdas[c]) for c in range(self.n_outputs)]
         else:
@@ -976,7 +976,7 @@ class FunctionalLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
         self.batch_size = train_loader.batch_size
 
-        if self.likelihood == "regression" and self.n_outputs > 1 and self.independent_gp_kernels:
+        if self.likelihood == "regression" and self.n_outputs > 1 and self.diagonal_kernel:
             warnings.warn("Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended "
                           "in the case of multivariate regression. Predictive variance will likely be overestimated.")
 
@@ -1008,7 +1008,7 @@ class FunctionalLaplace(BaseLaplace):
                     X2, _ = batch_2
                     X2 = X2.to(self._device)
                     K_batch = self.backend.k_b_b(Js_batch, X2, self.prior_precision_diag,
-                                                 self.independent_gp_kernels, self.prior_factor_sod)
+                                                 self.diagonal_kernel, self.prior_factor_sod)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
@@ -1060,7 +1060,7 @@ class FunctionalLaplace(BaseLaplace):
     def _gp_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(self.model, X)
         f_var = self.functional_variance(Js, X)
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
         return f_mu.detach(), f_var.detach()
 
@@ -1076,12 +1076,12 @@ class FunctionalLaplace(BaseLaplace):
         self._check_fit()
 
         K_star = self.backend.k_star_star(Js, X, self.prior_precision_diag,
-                                          self.independent_gp_kernels, self.prior_factor_sod)
+                                          self.diagonal_kernel, self.prior_factor_sod)
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
             K_M_star_batch = self.backend.k_b_star(Js, X_batch, self.prior_precision_diag,
-                                                   self.independent_gp_kernels, self.prior_factor_sod)
+                                                   self.diagonal_kernel, self.prior_factor_sod)
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)
@@ -1089,7 +1089,7 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_K_star_M(self, K_M_star):
         K_M_star = torch.cat(K_M_star, dim=1)
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             prods = []
             for c in range(self.n_outputs):
                 v = torch.squeeze(torch.linalg.solve(self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
@@ -1117,7 +1117,7 @@ class FunctionalLaplace(BaseLaplace):
         Computes log determinant term in GP marginal likelihood
         :return:
         """
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             log_det = 0.
             for c in range(self.n_outputs):
                 log_det += torch.logdet(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * self.sigma_noise.square())
@@ -1132,7 +1132,7 @@ class FunctionalLaplace(BaseLaplace):
         :return:
         """
 
-        if self.independent_gp_kernels:
+        if self.diagonal_kernel:
             scatter = 0.
             for c in range(self.n_outputs):
                 K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * self.sigma_noise.square())

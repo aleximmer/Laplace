@@ -200,11 +200,13 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
 
 class FunctionalLLLaplace(LLLaplace, FunctionalLaplace):
     """
-    TODO: write a more detailed "blueprint" for the class
 
     Here not much changes in terms of GP inference. Since now we treat only the last layer probabilistically and
     the rest of the network serves as a fixed feature extractor, that basically means that the X in GP changes to
     \Tilde{X} \in R^{M \times l_{n-1}}, where l_{n-1} is the dimesion of the output of the penultimate NN layer.
     """
+
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    _key = ('last_layer', 'GP')
     pass
 
