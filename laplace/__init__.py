@@ -1,7 +1,8 @@
 """
 .. include:: ../README.md
 
-.. include:: ../regression_example.md
+.. include:: ../examples/regression_example.md
+.. include:: ../examples/calibration_example.md
 """
 REGRESSION = 'regression'
 CLASSIFICATION = 'classification'
