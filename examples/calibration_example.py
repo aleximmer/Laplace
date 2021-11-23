@@ -2,6 +2,7 @@ import warnings
 warnings.simplefilter("ignore", UserWarning)
 
 import torch
+import torch.distributions as dists
 import numpy as np
 import helper.wideresnet as wrn
 import helper.dataloaders as dl
@@ -19,7 +20,7 @@ torch.backends.cudnn.benchmark = True
 
 train_loader = dl.CIFAR10(train=True)
 test_loader = dl.CIFAR10(train=False)
-targets = torch.cat([y for x, y in test_loader], dim=0).numpy()
+targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 
 model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
 
@@ -43,14 +44,15 @@ def predict(dataloader, model, laplace=False):
         else:
             py.append(torch.softmax(model(x.cuda()), dim=-1))
 
-    return torch.cat(py).cpu().numpy()
+    return torch.cat(py).cpu()
 
 
 probs_map = predict(test_loader, model, laplace=False)
-acc_map = (probs_map.argmax(-1) == targets).mean()
-ece_map = ECE(bins=15).measure(probs_map, targets)
+acc_map = (probs_map.argmax(-1) == targets).float().mean()
+ece_map = ECE(bins=15).measure(probs_map.numpy(), targets.numpy())
+nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
-print(f'[MAP] Acc.(🠕): {acc_map:.1%}; ECE(🠗): {ece_map:.1%}')
+print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 
 # Laplace
 la = Laplace(model, 'classification',
@@ -60,7 +62,8 @@ la.fit(train_loader)
 la.optimize_prior_precision(method='marglik')
 
 probs_laplace = predict(test_loader, la, laplace=True)
-acc_laplace = (probs_laplace.argmax(-1) == targets).mean()
-ece_laplace = ECE(bins=15).measure(probs_laplace, targets)
+acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
+ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
+nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
-print(f'[Laplace] Acc.(🠕): {acc_laplace:.1%}; ECE(🠗): {ece_laplace:.1%}')
+print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
