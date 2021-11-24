@@ -6,9 +6,8 @@ import torch.distributions as dists
 import numpy as np
 import helper.wideresnet as wrn
 import helper.dataloaders as dl
+from helper import util
 from netcal.metrics import ECE
-import urllib.request
-import os.path
 
 from laplace import Laplace
 
@@ -22,15 +21,11 @@ train_loader = dl.CIFAR10(train=True)
 test_loader = dl.CIFAR10(train=False)
 targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 
+# The model is a standard WideResNet 16-4
+# Taken as is from https://github.com/hendrycks/outlier-exposure
 model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
 
-# Download pre-trained model if necessary
-if not os.path.isfile('CIFAR10_plain.pt'):
-    if not os.path.exists('./temp'):
-        os.makedirs('./temp')
-
-    urllib.request.urlretrieve('https://nc.mlcloud.uni-tuebingen.de/index.php/s/2PBDYDsiotN76mq/download', './temp/CIFAR10_plain.pt')
-
+util.download_pretrained_model()
 model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
 
 
