@@ -11,13 +11,13 @@ from laplace.matrix import Kron
 class BackPackInterface(CurvatureInterface):
     """Interface for Backpack backend.
     """
-    def __init__(self, model, likelihood, last_layer=False):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
         extend(self._model)
         extend(self.lossfunc)
 
     @staticmethod
-    def jacobians(model, x):
+    def jacobians(model, x, subnetwork_indices=None):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension.
 
@@ -26,6 +26,9 @@ class BackPackInterface(CurvatureInterface):
         model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
+        subnetwork_indices : torch.Tensor, default=None
+            indices of the vectorized model parameters that define the subnetwork
+            to apply the Laplace approximation over
 
         Returns
         -------
@@ -49,6 +52,8 @@ class BackPackInterface(CurvatureInterface):
                     to_cat.append(param.grad_batch.detach().reshape(x.shape[0], -1))
                     delattr(param, 'grad_batch')
                 Jk = torch.cat(to_cat, dim=1)
+                if subnetwork_indices is not None:
+                    Jk = Jk[:, subnetwork_indices]
             to_stack.append(Jk)
             if i == 0:
                 f = out.detach()
@@ -83,14 +88,16 @@ class BackPackInterface(CurvatureInterface):
             loss.backward()
         Gs = torch.cat([p.grad_batch.data.flatten(start_dim=1)
                         for p in self._model.parameters()], dim=1)
+        if self.subnetwork_indices is not None:
+            Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
 
 
 class BackPackGGN(BackPackInterface, GGNInterface):
     """Implementation of the `GGNInterface` using Backpack.
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
         self.stochastic = stochastic
 
     def _get_diag_ggn(self):

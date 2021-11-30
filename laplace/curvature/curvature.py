@@ -16,6 +16,9 @@ class CurvatureInterface:
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
         only consider curvature of last layer
+    subnetwork_indices : torch.Tensor, default=None
+        indices of the vectorized model parameters that define the subnetwork
+        to apply the Laplace approximation over
 
     Attributes
     ----------
@@ -24,11 +27,12 @@ class CurvatureInterface:
         conversion factor between torch losses and base likelihoods
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
-    def __init__(self, model, likelihood, last_layer=False):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
         assert likelihood in ['regression', 'classification']
         self.likelihood = likelihood
         self.model = model
         self.last_layer = last_layer
+        self.subnetwork_indices = subnetwork_indices
         if likelihood == 'regression':
             self.lossfunc = MSELoss(reduction='sum')
             self.factor = 0.5
@@ -41,7 +45,7 @@ class CurvatureInterface:
         return self.model.last_layer if self.last_layer else self.model
 
     @staticmethod
-    def jacobians(model, x):
+    def jacobians(model, x, subnetwork_indices=None):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
@@ -49,6 +53,9 @@ class CurvatureInterface:
         model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
+        subnetwork_indices : torch.Tensor, default=None
+            indices of the vectorized model parameters that define the subnetwork
+            to apply the Laplace approximation over
 
         Returns
         -------
@@ -180,12 +187,15 @@ class GGNInterface(CurvatureInterface):
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
         only consider curvature of last layer
+    subnetwork_indices : torch.Tensor, default=None
+        indices of the vectorized model parameters that define the subnetwork
+        to apply the Laplace approximation over
     stochastic : bool, default=False
         Fisher if stochastic else GGN
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
         self.stochastic = stochastic
-        super().__init__(model, likelihood, last_layer)
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
     def _get_full_ggn(self, Js, f, y):
         """Compute full GGN from Jacobians.
@@ -239,7 +249,7 @@ class GGNInterface(CurvatureInterface):
         if self.last_layer:
             Js, f = self.last_layer_jacobians(self.model, x)
         else:
-            Js, f = self.jacobians(self.model, x)
+            Js, f = self.jacobians(self.model, x, self.subnetwork_indices)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn
@@ -256,6 +266,9 @@ class EFInterface(CurvatureInterface):
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
         only consider curvature of last layer
+    subnetwork_indices : torch.Tensor, default=None
+        indices of the vectorized model parameters that define the subnetwork
+        to apply the Laplace approximation over
 
     Attributes
     ----------
