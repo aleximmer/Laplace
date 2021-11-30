@@ -941,25 +941,6 @@ class FunctionalLaplace(BaseLaplace):
             if i != j:
                 self.K_MM[j * bC:min((j + 1) * bC, MC), i * bC:min((i + 1) * bC, MC)] = torch.transpose(K_batch, 0, 1)
 
-    # # TODO: refactor, current implementation with self.L is ugly af
-    # def _build_L_inv(self, lambdas):
-    #     if self.diagonal_kernel:
-    #         if self.diagonal_L or self.likelihood == "regression":
-    #             L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
-    #             # rearrange and take the inverse for each MxM matrix separately
-    #             self.L = [L_diag[i::self.n_outputs] for i in range(self.n_outputs)]
-    #             return [torch.diag(1. / L_diag[i::self.n_outputs]) for i in range(self.n_outputs)]
-    #         else:
-    #             # TODO: double check the correctness of the algorithm in R&W before implementing
-    #             # R&W 2006 algorithm
-    #             raise NotImplementedError
-    #     else:
-    #         # in case of self.likelihood == "classificiation" we approximate L_MM with diagonal here
-    #         # in case of self.likelihood == "regression" L_MM is anyways diagonal
-    #         diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
-    #         self.L = diag
-    #         return torch.diag(1. / diag)
-
     def _build_L(self, lambdas):
         if self.diagonal_kernel:
             if self.diagonal_L or self.likelihood == "regression":
@@ -1144,12 +1125,15 @@ class FunctionalLaplace(BaseLaplace):
 
     def _log_marginal_likelihood(self):
         """
-        For classification we use a (multi-class) log marginal likelihood from R&W 2006, Chapter 3.4.4
+        For classification we use a (multi-class) log marginal likelihood from R&W 2006, Chapter 3.5 eq. (3.44)
 
         :return:
         """
         self.fit(self.train_loader)
         if self.likelihood == 'classification':
+            if not self.diagonal_kernel:
+                warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
+                              'independent GP kernels.')
             return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
         elif self.likelihood == 'regression':
             return - 0.5 * (self.log_det_K + self.scatter_lml + self.M * self.n_outputs * np.log(2 * np.pi))
