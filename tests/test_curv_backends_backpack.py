@@ -288,11 +288,11 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
     X, y = reg_Xy
     backend = BackPackGP(model, 'regression')
     if kernel_type == 'k_b_b':
-        kernel = backend.k_b_b
+        kernel = backend.kernel_batch
     elif kernel_type == 'k_star_star':
-        kernel = backend.k_star_star
+        kernel = backend.kernel_star
     elif kernel_type == 'k_b_star':
-        kernel = backend.k_b_star
+        kernel = backend.kernel_batch_star
     else:
         raise ValueError
 

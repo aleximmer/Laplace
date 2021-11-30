@@ -922,7 +922,7 @@ class FunctionalLaplace(BaseLaplace):
             self.Sigma_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _curv_closure(self, X, y):
-        return self.backend.gp(X, y, self._H_factor)
+        return self.backend.gp_quantities(X, y, self._H_factor)
 
     def _store_K_batch(self, K_batch, i, j):
         if self.diagonal_kernel:
@@ -1023,8 +1023,8 @@ class FunctionalLaplace(BaseLaplace):
                 if j >= i:
                     X2, _ = batch_2
                     X2 = X2.to(self._device)
-                    K_batch = self.backend.k_b_b(Js_batch, X2, self.prior_precision_diag,
-                                                 self.diagonal_kernel, self.prior_factor_sod)
+                    K_batch = self.backend.kernel_batch(Js_batch, X2, self.prior_precision_diag,
+                                                        self.diagonal_kernel, self.prior_factor_sod)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
@@ -1092,13 +1092,13 @@ class FunctionalLaplace(BaseLaplace):
 
         self._check_fit()
 
-        K_star = self.backend.k_star_star(Js, X, self.prior_precision_diag,
+        K_star = self.backend.kernel_star(Js, X, self.prior_precision_diag,
                                           self.diagonal_kernel, self.prior_factor_sod)
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_M_star_batch = self.backend.k_b_star(Js, X_batch, self.prior_precision_diag,
-                                                   self.diagonal_kernel, self.prior_factor_sod)
+            K_M_star_batch = self.backend.kernel_batch_star(Js, X_batch, self.prior_precision_diag,
+                                                            self.diagonal_kernel, self.prior_factor_sod)
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)
