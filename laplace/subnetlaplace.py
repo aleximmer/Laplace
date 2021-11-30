@@ -60,6 +60,7 @@ class SubnetLaplace(ParametricLaplace):
                          prior_mean=prior_mean, temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.subnetwork_mask = subnetwork_mask
+        self.n_params_subnet = len(self.subnetwork_mask)
 
     @property
     def subnetwork_mask(self):
@@ -70,8 +71,12 @@ class SubnetLaplace(ParametricLaplace):
         """Check validity of subnetwork mask and convert it to a vector of indices of the vectorized
         model parameters that define the subnetwork to apply the Laplace approximation over.
         """
-        if isinstance(subnetwork_mask, torch.Tensor) and len(subnetwork_mask.shape) == 1:
-            if len(subnetwork_mask) == self.n_params and\
+        if isinstance(subnetwork_mask, torch.Tensor):
+            if subnetwork_mask.type() not in ['torch.ByteTensor', 'torch.IntTensor', 'torch.LongTensor'] or\
+                len(subnetwork_mask.shape) != 1:
+                raise ValueError('Subnetwork mask needs to be 1-dimensional torch.{Byte,Int,Long}Tensor!')
+
+            elif len(subnetwork_mask) == self.n_params and\
                 len(subnetwork_mask[subnetwork_mask == 0]) +\
                     len(subnetwork_mask[subnetwork_mask == 1]) == self.n_params:
                 self._subnetwork_mask = subnetwork_mask.nonzero(as_tuple=True)[0]
@@ -81,16 +86,16 @@ class SubnetLaplace(ParametricLaplace):
                 self._subnetwork_mask = subnetwork_mask
 
             else:
-                raise ValueError('Subnetwork mask needs to identify the subnetwork parameters\
-                    from the vectorized model parameters as:\
-                    1) a vector of indices of the subnetwork parameters,\
-                    2) a binary vector of size (parameters) where 1s locate the subnetwork parameters')
+                raise ValueError('Subnetwork mask needs to identify the subnetwork parameters '\
+                    'from the vectorized model parameters as:\n'\
+                    '1) a vector of indices of the subnetwork parameters, or\n'\
+                    '2) a binary vector of size (parameters) where 1s locate the subnetwork parameters.')
 
         elif subnetwork_mask is None:
-            raise ValueError('You need to specify a subnetwork mask!')
+            raise ValueError('Subnetwork Laplace requires passing a subnetwork mask!')
 
         else:
-            raise ValueError('Subnetwork mask needs to be 1-dimensional torch.Tensor!')
+            raise ValueError('Subnetwork mask needs to be torch.Tensor!')
 
         # Q: do we allow changing the subnetwork after instantiation, or should it stay fixed?
         #self._backend_kwargs['subnetwork_mask'] = self._subnetwork_mask
@@ -101,7 +106,26 @@ class SubnetLaplace(ParametricLaplace):
 
         # Q jacobian() is static and therefore cannot access self.subnetwork_indices (need to pass it)
         # what about making it non-static? it's also ugly in l. 563 of baselaplace.py!
-        
+
+        # still need to implement nn mc predictive (need to sample subnet separately and then put samples together)
+
+    @property
+    def prior_precision_diag(self):
+        """Obtain the diagonal prior precision \\(p_0\\) constructed from either
+        a scalar or diagonal prior precision.
+
+        Returns
+        -------
+        prior_precision_diag : torch.Tensor
+        """
+        if len(self.prior_precision) == 1:  # scalar
+            return self.prior_precision * torch.ones(self.n_params_subnet, device=self._device)
+
+        elif len(self.prior_precision) == self.n_params_subnet:  # diagonal
+            return self.prior_precision
+
+        else:
+            raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
 
 
 class FullSubnetLaplace(SubnetLaplace, FullLaplace):
@@ -118,3 +142,6 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         super().__init__(model, likelihood, subnetwork_mask, sigma_noise, prior_precision,
                          prior_mean, temperature, backend,  backend_kwargs)
+
+    def _init_H(self):
+        self.H = torch.zeros(self.n_params_subnet, self.n_params_subnet, device=self._device)
