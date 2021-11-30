@@ -97,17 +97,7 @@ class SubnetLaplace(ParametricLaplace):
         else:
             raise ValueError('Subnetwork mask needs to be torch.Tensor!')
 
-        # Q: do we allow changing the subnetwork after instantiation, or should it stay fixed?
-        #self._backend_kwargs['subnetwork_mask'] = self._subnetwork_mask
         self.backend.subnetwork_indices = self._subnetwork_mask
-
-        # Q: documentation: should I mention subnetworks everywhere and write down the number
-        # of parameters?
-
-        # Q jacobian() is static and therefore cannot access self.subnetwork_indices (need to pass it)
-        # what about making it non-static? it's also ugly in l. 563 of baselaplace.py!
-
-        # still need to implement nn mc predictive (need to sample subnet separately and then put samples together)
 
     @property
     def prior_precision_diag(self):
