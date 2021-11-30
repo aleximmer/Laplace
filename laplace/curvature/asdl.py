@@ -130,6 +130,9 @@ class AsdlInterface(CurvatureInterface):
         kron = self._rescale_kron_factors(kron, N)
         return self.factor * loss, self.factor * kron
 
+    def gp_quantities(self):
+        raise NotImplementedError
+
 
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.

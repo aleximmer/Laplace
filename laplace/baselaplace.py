@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, SoDSampler
 from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN, BackPackEF, BackPackGP, AsdlGGN, AsdlEF
+from laplace.curvature import BackPackGGN, BackPackEF, BackPackInterface, AsdlGGN, AsdlEF, AsdlInterface
 
 
 __all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace']
@@ -885,9 +885,9 @@ class FunctionalLaplace(BaseLaplace):
     _key = ('all', 'GP')
 
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGP, backend_kwargs=None,
+                 prior_mean=0., temperature=1., backend=BackPackInterface, backend_kwargs=None,
                  diagonal_kernel=False, diagonal_L=True):
-        assert backend in [BackPackGP], 'Only BackPack backend is supported in FunctionalLaplace'
+        assert backend in [BackPackInterface], 'Only BackPack backend is supported in FunctionalLaplace (for now)'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -1023,8 +1023,7 @@ class FunctionalLaplace(BaseLaplace):
                 if j >= i:
                     X2, _ = batch_2
                     X2 = X2.to(self._device)
-                    K_batch = self.backend.kernel_batch(Js_batch, X2, self.prior_precision_diag,
-                                                        self.diagonal_kernel, self.prior_factor_sod)
+                    K_batch = self.kernel_batch(Js_batch, X2)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
@@ -1072,10 +1071,7 @@ class FunctionalLaplace(BaseLaplace):
         return torch.softmax(samples, dim=-1)
 
     def _gp_predictive_distribution(self, X):
-        if self.backend.last_layer:
-            Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
-        else:
-            Js, f_mu = self.backend.jacobians(self.model, X)
+        Js, f_mu = self.backend.gp_jacobians(X)
         f_var = self.predictive_variance(Js, X)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
@@ -1092,13 +1088,11 @@ class FunctionalLaplace(BaseLaplace):
 
         self._check_fit()
 
-        K_star = self.backend.kernel_star(Js, X, self.prior_precision_diag,
-                                          self.diagonal_kernel, self.prior_factor_sod)
+        K_star = self.kernel_star(Js, X)
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_M_star_batch = self.backend.kernel_batch_star(Js, X_batch, self.prior_precision_diag,
-                                                            self.diagonal_kernel, self.prior_factor_sod)
+            K_M_star_batch = self.kernel_batch_star(Js, X_batch)
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)
@@ -1171,3 +1165,79 @@ class FunctionalLaplace(BaseLaplace):
                                        grid_size, link_approx, n_samples,
                                        verbose)
 
+    def kernel_batch(self, jacobians, batch):
+        """
+        Compute K_bb, which is part of K_MM kernel matrix.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor (b, C, P)
+        batch : torch.Tensor (b, C)
+
+        Returns
+        -------
+        kernel : torch.tensor
+            K_bb with shape (b * C, b * C)
+        """
+        if isinstance(self.backend, BackPackInterface):
+            jacobians_2, _ = self.backend.gp_jacobians(batch)
+            P = jacobians.shape[-1]  # nr model params
+            prior = self.prior_factor_sod / self.prior_precision_diag
+            if self.diagonal_kernel:
+                kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
+            else:
+                kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
+            return kernel
+        elif isinstance(self.backend, AsdlInterface):
+            raise NotImplementedError
+
+    def kernel_star(self, jacobians, batch):
+        """
+        Compute K_star_star kernel matrix.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor (b, C, P)
+        batch : torch.Tensor (b, C)
+
+        Returns
+        -------
+        kernel : torch.tensor
+            K_star with shape (b, C, C)
+
+        """
+        if isinstance(self.backend, BackPackInterface):
+            jacobians_2, _ = self.backend.gp_jacobians(batch)
+            prior = self.prior_factor_sod / self.prior_precision_diag
+            if self.diagonal_kernel:
+                kernel = torch.einsum('bcp,bcp->bc', jacobians, jacobians_2 * prior)
+            else:
+                kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
+            return kernel
+        elif isinstance(self.backend, AsdlInterface):
+            raise NotImplementedError
+
+    def kernel_batch_star(self, jacobians, batch):
+        """
+        Compute K_b_star, which is a part of K_M_star kernel matrix.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor (b1, C, P)
+        batch : torch.Tensor (b2, C)
+
+        Returns
+        -------
+        kernel : torch.tensor
+            K_batch_star with shape (b1, b2, C, C)
+        """
+        if isinstance(self.backend, BackPackInterface):
+            jacobians_2, _ = self.backend.gp_jacobians(batch)
+            prior = self.prior_factor_sod / self.prior_precision_diag
+            if self.diagonal_kernel:
+                kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
+            else:
+                kernel = torch.einsum('bcp,p,dep->bdce', jacobians, prior, jacobians_2)
+            return kernel
+        elif isinstance(self.backend, AsdlInterface):
+            raise NotImplementedError

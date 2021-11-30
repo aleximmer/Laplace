@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import BackPackGGN, BackPackEF, BackPackGP
+from laplace.curvature import BackPackGGN, BackPackEF
 
 
 @pytest.fixture
@@ -239,79 +239,3 @@ def test_kron_normalization_class(class_Xy, model):
     loss_test, kron_test  = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
-
-
-@pytest.mark.parametrize('kernel_type,jacobians,jacobians_2,expected_full_kernel,expected_block_diagonal_kernel',
-                         [('k_b_b',
-                           torch.tensor([[[1., 1., 1.], [2., 2., 2.]],
-                                         [[1., 1., 1.], [3., 3., 3.]]]),
-                           torch.tensor([[[1., 1., 1.], [2., 2., 2.]],
-                                         [[1., 1., 1.], [3., 3., 3.]]]),
-                           torch.tensor([[3., 6., 3., 9.],
-                                         [6., 12., 6., 18.],
-                                         [3., 6., 3., 9.],
-                                         [9., 18., 9., 27.]]),
-                           torch.tensor([[[3., 12.],
-                                         [3., 18.]],
-                                        [[3., 18.],
-                                         [3., 27.]]])
-                           ),
-                          ('k_star_star',
-                           torch.tensor([[[1., 1., 1.], [1., 1., 1.]],
-                                         [[1., 1., 1.], [2., 2., 2.]],
-                                         [[1., 1., 1.], [3., 3., 3.]]]),
-                           torch.tensor([[[1., 1., 1.], [1., 1., 1.]],
-                                         [[1., 1., 1.], [2., 2., 2.]],
-                                         [[1., 1., 1.], [3., 3., 3.]]]),
-                           torch.tensor([[[3., 3.],
-                                          [3., 3.]],
-                                         [[3., 6.],
-                                          [6., 12.]],
-                                         [[3., 9.],
-                                          [9., 27.]]]),
-                          torch.tensor([[3., 3.],
-                                        [3., 12.],
-                                        [3., 27.]])
-                           ),
-                          ('k_b_star',
-                           torch.tensor([[[1., 1., 1.], [1., 1., 1.]],
-                                         [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5]]]),
-                           torch.tensor([[[1., 1., 1.], [2., 2., 2.]],
-                                         [[1., 1., 1.], [3., 3., 3.]]]),
-                           torch.tensor([[[[3., 6.], [3., 6.]], [[3., 9.], [3., 9.]]],
-                                         [[[1.5, 3.], [1.5, 3.]], [[1.5, 4.5], [1.5, 4.5]]]]),
-                           torch.tensor([[[3., 6.], [3., 9.]],
-                                         [[1.5, 3.], [1.5, 4.5]]])
-                           )])
-def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2, 
-                   expected_full_kernel, expected_block_diagonal_kernel):
-    X, y = reg_Xy
-    backend = BackPackGP(model, 'regression')
-    if kernel_type == 'k_b_b':
-        kernel = backend.kernel_batch
-    elif kernel_type == 'k_star_star':
-        kernel = backend.kernel_star
-    elif kernel_type == 'k_b_star':
-        kernel = backend.kernel_batch_star
-    else:
-        raise ValueError
-
-    def mock_jacobians(self, model, x):
-        return jacobians_2, None
-    mocker.patch('laplace.curvature.BackPackGP.jacobians', mock_jacobians)
-
-    full_kernel = kernel(jacobians, X, prior_precision=torch.ones(3), diagonal_kernel=False)
-    full_kernel_precision_0_5 = kernel(jacobians, X, prior_precision=0.5 * torch.ones(3), diagonal_kernel=False)
-    assert torch.equal(expected_full_kernel, full_kernel)
-    assert torch.equal(2. * expected_full_kernel, full_kernel_precision_0_5)
-
-    block_diag_kernel = kernel(jacobians, X, prior_precision=torch.ones(3), diagonal_kernel=True)
-    block_diag_kernel_precision_0_5 = kernel(jacobians, X, prior_precision=0.5 * torch.ones(3), diagonal_kernel=True)
-    assert torch.equal(expected_block_diagonal_kernel, block_diag_kernel)
-    assert torch.equal(2. * expected_block_diagonal_kernel, block_diag_kernel_precision_0_5)
-
-
-
-
-
-
