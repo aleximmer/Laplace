@@ -1071,7 +1071,7 @@ class FunctionalLaplace(BaseLaplace):
         return torch.softmax(samples, dim=-1)
 
     def _gp_predictive_distribution(self, X):
-        Js, f_mu = self.backend.gp_jacobians(X)
+        Js, f_mu = self._jacobians(X)
         f_var = self.predictive_variance(Js, X)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
@@ -1180,7 +1180,7 @@ class FunctionalLaplace(BaseLaplace):
             K_bb with shape (b * C, b * C)
         """
         if isinstance(self.backend, BackPackInterface):
-            jacobians_2, _ = self.backend.gp_jacobians(batch)
+            jacobians_2, _ = self._jacobians(batch)
             P = jacobians.shape[-1]  # nr model params
             prior = self.prior_factor_sod / self.prior_precision_diag
             if self.diagonal_kernel:
@@ -1207,7 +1207,7 @@ class FunctionalLaplace(BaseLaplace):
 
         """
         if isinstance(self.backend, BackPackInterface):
-            jacobians_2, _ = self.backend.gp_jacobians(batch)
+            jacobians_2, _ = self._jacobians(batch)
             prior = self.prior_factor_sod / self.prior_precision_diag
             if self.diagonal_kernel:
                 kernel = torch.einsum('bcp,bcp->bc', jacobians, jacobians_2 * prior)
@@ -1232,7 +1232,7 @@ class FunctionalLaplace(BaseLaplace):
             K_batch_star with shape (b1, b2, C, C)
         """
         if isinstance(self.backend, BackPackInterface):
-            jacobians_2, _ = self.backend.gp_jacobians(batch)
+            jacobians_2, _ = self._jacobians(batch)
             prior = self.prior_factor_sod / self.prior_precision_diag
             if self.diagonal_kernel:
                 kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
@@ -1241,3 +1241,10 @@ class FunctionalLaplace(BaseLaplace):
             return kernel
         elif isinstance(self.backend, AsdlInterface):
             raise NotImplementedError
+
+    def _jacobians(self, X):
+        """
+        A wrapper function to compute jacobians - this enables reusing same kernel methods (kernel_batch etc.)
+        in FunctionalLaplace and FunctionalLLLaplace by simply overwriting this method instead of all kernel methods.
+        """
+        return self.backend.jacobians(self.model, X)

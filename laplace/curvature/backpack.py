@@ -85,16 +85,6 @@ class BackPackInterface(CurvatureInterface):
                         for p in self._model.parameters()], dim=1)
         return Gs, loss
 
-    def gp_jacobians(self, X):
-        """
-        A helper function to compute jacobians (used in GP methods to reduce code duplication).
-        """
-        if self.last_layer:
-            Js, f = self.last_layer_jacobians(self.model, X)
-        else:
-            Js, f = self.jacobians(self.model, X)
-        return Js, f
-
     def gp_quantities(self, X, y, sigma_factor):
         """
          Parameters
@@ -115,7 +105,10 @@ class BackPackInterface(CurvatureInterface):
         lambdas: torch.tensor
               Hessian of p(y|f) w.r.t. f (batch, output_shape, output_shape)
         """
-        Js, f = self.gp_jacobians(X)
+        if self.last_layer:
+            Js, f = self.last_layer_jacobians(self.model, X)
+        else:
+            Js, f = self.jacobians(self.model, X)
         lambdas = self.H_log_likelihood(f, sigma_factor)
         loss = self.factor * self.lossfunc(f, y)
         return loss.detach(), Js, f, lambdas

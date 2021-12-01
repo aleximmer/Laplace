@@ -288,4 +288,8 @@ class FunctionalLLLaplace(FunctionalLaplace):
 
         super().fit(train_loader)
 
-
+    def _jacobians(self, X):
+        """
+        A helper function to compute jacobians.
+        """
+        return self.backend.last_layer_jacobians(self.model, X)
