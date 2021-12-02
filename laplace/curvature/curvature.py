@@ -91,7 +91,7 @@ class CurvatureInterface:
 
     def H_log_likelihood(self, f, sigma_factor=None):
         """
-        Second derivative (Hessian) of log-likelihood w.r.t. the output of NN (f)
+        Second derivative (Hessian) of log-likelihood w.r.t. the output of NN \\(f\\)
 
         Parameters
         ----------
@@ -103,7 +103,7 @@ class CurvatureInterface:
         Returns
         -------
         H_lik: torch.Tensor
-              Hessian of p(y|f) w.r.t. f (batch, output_shape, output_shape)
+              Hessian of \\(p(y|f)\\) w.r.t. \\(f\\) (batch, output_shape, output_shape)
         """
         if self.likelihood == 'regression':
             assert sigma_factor is not None, 'sigma_factor should be provided for regression'

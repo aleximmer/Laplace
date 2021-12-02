@@ -202,41 +202,11 @@ class FunctionalLLLaplace(FunctionalLaplace):
     """
     Here not much changes in terms of GP inference compared to FunctionalLaplace class.
     Since now we treat only the last layer probabilistically and the rest of the network is used as a "fixed feature
-    extractor", that means that the X in GP inference changes to \Tilde{X} \in R^{M \times l_{n-1}}, where l_{n-1}
-    is the dimension of the output of the penultimate NN layer.
+    extractor", that means that the \\(X \\in R^{M \\times D\\) in GP inference changes
+    to \\(\Tilde{X} \\in R^{M \\times l_{n-1}} \\),  where \\(l_{n-1}\\) is the dimension of the output
+    of the penultimate NN layer.
 
-    Parameters
-    ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
-    likelihood : {'classification', 'regression'}
-        determines the log likelihood Hessian approximation
-    M : number of data points for Subset-of-Data (SOD) approximate GP inference.
-        By default (M=None), all data points from train dataset are used
-    sigma_noise : torch.Tensor or float, default=1
-        observation noise for the regression setting; must be 1 for classification
-    prior_precision : torch.Tensor or float, default=1
-        prior precision of a Gaussian prior (= weight decay);
-        can be scalar, per-layer, or diagonal in the most general case
-    prior_mean : torch.Tensor or float, default=0
-        prior mean of a Gaussian prior, useful for continual learning
-    temperature : float, default=1
-        temperature of the likelihood; lower temperature leads to more
-        concentrated posterior and vice versa.
-    backend : subclasses of `laplace.curvature.CurvatureInterface`
-        backend for access to curvature/Hessian approximations
-    last_layer_name: str, default=None
-        name of the model's last layer, if None it will be determined automatically
-    backend_kwargs : dict, default=None
-        arguments passed to the backend on initialization, for example to
-        set the number of MC samples for stochastic approximations.
-    diagonal_kernel: GP kernel here is product of Jacobians, which results in a C x C matrix where C is the output dimension.
-                     If diagonal_kernel=True, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
-                     assuming independent GPs across output channels.
-    diagonal_L: approximate L_{MM} with diag(L_{MM}).
-                If False and likelihood="regression", then nothing changes
-                    because L_{MM} is anyways diagonal as long as we assume diagonal noise in the likelihood.
-                If False and likelihood="classification", then the algorithm from Chapter 3.5 from R&W 2006 GP book
-                    is used.
+    See `FunctionalLaplace` for the full interface.
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)

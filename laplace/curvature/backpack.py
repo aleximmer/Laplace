@@ -103,7 +103,7 @@ class BackPackInterface(CurvatureInterface):
         f : torch.tensor
               NN output (batch, output_shape)
         lambdas: torch.tensor
-              Hessian of p(y|f) w.r.t. f (batch, output_shape, output_shape)
+              Hessian of \\( p(y|f) \\) w.r.t. \\(f\\) (batch, output_shape, output_shape)
         """
         if self.last_layer:
             Js, f = self.last_layer_jacobians(self.model, X)

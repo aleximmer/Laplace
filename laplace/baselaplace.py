@@ -177,12 +177,6 @@ class BaseLaplace:
     @staticmethod
     def _classification_predictive(f_mu, f_var, link_approx, n_samples):
         """
-
-        :param f_mu:
-        :param f_var:
-        :param link_approx:
-        :param n_samples:
-        :return:
         """
 
         if link_approx not in ['mc', 'probit', 'bridge']:
@@ -282,11 +276,11 @@ class BaseLaplace:
         else:
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
-    def _optimize_prior_precision(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
-                                  init_prior_prec=1., val_loader=None, loss=get_nll,
-                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                  link_approx='probit', n_samples=100,
-                                  verbose=False):
+    def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
+                                      init_prior_prec=1., val_loader=None, loss=get_nll,
+                                      log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                      link_approx='probit', n_samples=100,
+                                      verbose=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
 
@@ -632,12 +626,15 @@ class ParametricLaplace(BaseLaplace):
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
                                  link_approx='probit', n_samples=100,
                                  verbose=False):
+        """
+        `optimize_prior_precision_base` from `BaseLaplace` with `pred_type` in `{'glm', 'nn'}`
+        """
         assert pred_type in ['glm', 'nn']
-        self._optimize_prior_precision(pred_type, method, n_steps, lr,
-                                       init_prior_prec, val_loader, loss,
-                                       log_prior_prec_min, log_prior_prec_max,
-                                       grid_size, link_approx, n_samples,
-                                       verbose)
+        self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
+                                           init_prior_prec, val_loader, loss,
+                                           log_prior_prec_min, log_prior_prec_max,
+                                           grid_size, link_approx, n_samples,
+                                           verbose)
 
     @property
     def posterior_precision(self):
@@ -867,16 +864,22 @@ class FunctionalLaplace(BaseLaplace):
 
     Parameters
     ----------
-    M : number of data points for Subset-of-Data (SOD) approximate GP inference.
-        By default (M=None), all data points from train dataset are used
-    diagonal_kernel: GP kernel here is product of Jacobians, which results in a C x C matrix where C is the output dimension.
-                     If diagonal_kernel=True, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
-                     assuming independent GPs across output channels.
-    diagonal_L: approximate L_{MM} with diag(L_{MM}).
-                If False and likelihood="regression", then nothing changes
-                    because L_{MM} is anyways diagonal as long as we assume diagonal noise in the likelihood.
-                If False and likelihood="classification", then the algorithm from Chapter 3.5 from R&W 2006 GP book
-                    is used.
+    M : int
+        number of data points for Subset-of-Data (SOD) approximate GP inference.
+        By default (`M=None`), all data points from train dataset are used
+    diagonal_kernel : bool
+        GP kernel here is product of Jacobians, which results in a \\( C \\times C\\) matrix where \\(C\\) is the output
+        dimension. If `diagonal_kernel=True`, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
+        assuming independent GPs across output channels.
+    diagonal_L : bool
+        approximate \\( L_{MM} \\) with \\( diag(L_{MM}) \\). \\( L_{MM} \\) is a block-diagonal matrix, where blocks
+        represent Hessians of per-data-point log-likelihood w.r.t. NN output \\( f \\). See Appendix A.2.1 in
+        "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)"
+        for exact definition.
+        If False and `likelihood='regression'`, then nothing changes
+            because \\( L_{MM} \\)  is anyways diagonal as long as we assume diagonal noise in the likelihood.
+        If False and `likelihood='classification'`, then the algorithm from Chapter 3.5 from R&W 2006 GP book
+            is used.
 
 
     See `BaseLaplace` class for the full interface.
@@ -965,10 +968,6 @@ class FunctionalLaplace(BaseLaplace):
     def _get_SoD_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
         Subset-of-Datapoints data loader
-
-        :param train_loader:
-        :param seed:
-        :return:
         """
         np.random.seed(seed)
         return DataLoader(dataset=train_loader.dataset, batch_size=train_loader.batch_size,
@@ -1016,14 +1015,14 @@ class FunctionalLaplace(BaseLaplace):
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
             f.append(f_batch)
-            if self.likelihood == "regression":
+            if self.likelihood == 'regression':
                 mu_batch = y - (f_batch + torch.einsum('bcp,p->bc', Js_batch, diff_mu))
                 mu.append(mu_batch)
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
                     X2 = X2.to(self._device)
-                    K_batch = self.kernel_batch(Js_batch, X2)
+                    K_batch = self._kernel_batch(Js_batch, X2)
                     self._store_K_batch(K_batch, i, j)
 
         self.Sigma_inv = self._build_Sigma_inv(lambdas)
@@ -1036,7 +1035,7 @@ class FunctionalLaplace(BaseLaplace):
 
         self._check_fit()
 
-        f_mu, f_var = self._gp_predictive_distribution(x)
+        f_mu, f_var = self.gp_posterior(x)
         # regression
         if self.likelihood == 'regression':
             return f_mu, f_var
@@ -1045,7 +1044,6 @@ class FunctionalLaplace(BaseLaplace):
 
     def predictive_samples(self, x, n_samples=100):
         """Sample from the posterior predictive on input data `x`.
-        Can be used, for example, for Thompson sampling.
 
         Parameters
         ----------
@@ -1062,7 +1060,7 @@ class FunctionalLaplace(BaseLaplace):
         """
         self._check_fit()
 
-        f_mu, f_var = self._gp_predictive_distribution(x)
+        f_mu, f_var = self.gp_posterior(x)
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
         dist = MultivariateNormal(f_mu, f_var)
         samples = dist.sample((n_samples,))
@@ -1070,29 +1068,52 @@ class FunctionalLaplace(BaseLaplace):
             return samples
         return torch.softmax(samples, dim=-1)
 
-    def _gp_predictive_distribution(self, X):
-        Js, f_mu = self._jacobians(X)
-        f_var = self.predictive_variance(Js, X)
+    def gp_posterior(self, X_star):
+        """
+        \\(q(f_* | x_*, \mathcal{D}) = \mathcal{N} (f_*, \Sigma_*) \\), where
+        \\(\Sigma_* =  K_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\)
+
+        See eq. A.6 in "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)"
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            test data points \\(X_* \in \mathbb{R}^{N_{test} \\times C} \\)
+
+        Returns
+        -------
+        f_mu : torch.Tensor
+            mean of the GP posterior distribution
+        f_var: torch.Tensor
+            variance of the GP posterior distribution
+
+
+        """
+        Js, f_mu = self._jacobians(X_star)
+        f_var = self._gp_posterior_variance(Js, X_star)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
         return f_mu.detach(), f_var.detach()
 
-    def predictive_variance(self, Js, X):
+    def _gp_posterior_variance(self, Js_star, X_star):
         """
-        GP predictive variance
+        GP posterior variance: \\( k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\)
 
-        :param Js:
-        :param X:
-        :return:
+        Parameters
+        ----------
+        Js : torch.Tensor
+            Jacobians of test data points
+        X : torch.Tensor
+            test data points \\(X \in \mathbb{R}^{N_{test} \\times C} \\)
         """
 
         self._check_fit()
 
-        K_star = self.kernel_star(Js, X)
+        K_star = self._kernel_star(Js_star, X_star)
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_M_star_batch = self.kernel_batch_star(Js, X_batch)
+            K_M_star_batch = self._kernel_batch_star(Js_star, X_batch)
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)
@@ -1126,7 +1147,6 @@ class FunctionalLaplace(BaseLaplace):
     def log_det_K(self):
         """
         Computes log determinant term in GP marginal likelihood
-        :return:
         """
         if self.diagonal_kernel:
             log_det = 0.
@@ -1140,7 +1160,6 @@ class FunctionalLaplace(BaseLaplace):
     def scatter_lml(self):
         """
         Compute scatter term in GP log marginal likelihood
-        :return:
         """
 
         if self.diagonal_kernel:
@@ -1158,14 +1177,17 @@ class FunctionalLaplace(BaseLaplace):
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
                                  pred_type='gp', link_approx='probit', n_samples=100,
                                  verbose=False):
+        """
+        `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='GP'`
+        """
         assert pred_type == 'gp'
-        self._optimize_prior_precision(pred_type, method, n_steps, lr,
-                                       init_prior_prec, val_loader, loss,
-                                       log_prior_prec_min, log_prior_prec_max,
-                                       grid_size, link_approx, n_samples,
-                                       verbose)
+        self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
+                                           init_prior_prec, val_loader, loss,
+                                           log_prior_prec_min, log_prior_prec_max,
+                                           grid_size, link_approx, n_samples,
+                                           verbose)
 
-    def kernel_batch(self, jacobians, batch):
+    def _kernel_batch(self, jacobians, batch):
         """
         Compute K_bb, which is part of K_MM kernel matrix.
 
@@ -1191,7 +1213,7 @@ class FunctionalLaplace(BaseLaplace):
         elif isinstance(self.backend, AsdlInterface):
             raise NotImplementedError
 
-    def kernel_star(self, jacobians, batch):
+    def _kernel_star(self, jacobians, batch):
         """
         Compute K_star_star kernel matrix.
 
@@ -1217,7 +1239,7 @@ class FunctionalLaplace(BaseLaplace):
         elif isinstance(self.backend, AsdlInterface):
             raise NotImplementedError
 
-    def kernel_batch_star(self, jacobians, batch):
+    def _kernel_batch_star(self, jacobians, batch):
         """
         Compute K_b_star, which is a part of K_M_star kernel matrix.
 

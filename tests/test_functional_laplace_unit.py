@@ -168,11 +168,11 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
     func_la = FunctionalLaplace(model, 'regression', prior_precision=1.0, diagonal_kernel=False)
     func_la.prior_factor_sod = 1.0
     if kernel_type == 'kernel_batch':
-        kernel = func_la.kernel_batch
+        kernel = func_la._kernel_batch
     elif kernel_type == 'kernel_star':
-        kernel = func_la.kernel_star
+        kernel = func_la._kernel_star
     elif kernel_type == 'kernel_batch_star':
-        kernel = func_la.kernel_batch_star
+        kernel = func_la._kernel_batch_star
     else:
         raise ValueError
 
