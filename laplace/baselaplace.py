@@ -1077,7 +1077,7 @@ class FunctionalLaplace(BaseLaplace):
 
         Parameters
         ----------
-        X : torch.Tensor
+        X_star : torch.Tensor
             test data points \\(X_* \in \mathbb{R}^{N_{test} \\times C} \\)
 
         Returns
@@ -1101,9 +1101,9 @@ class FunctionalLaplace(BaseLaplace):
 
         Parameters
         ----------
-        Js : torch.Tensor
+        Js_star : torch.Tensor
             Jacobians of test data points
-        X : torch.Tensor
+        X_star : torch.Tensor
             test data points \\(X \in \mathbb{R}^{N_{test} \\times C} \\)
         """
 
