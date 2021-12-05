@@ -2,7 +2,7 @@ from copy import deepcopy
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import BaseLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.feature_extractor import FeatureExtractor
 
 from laplace.matrix import Kron
@@ -12,7 +12,7 @@ from laplace.curvature import BackPackGGN
 __all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
 
-class LLLaplace(BaseLaplace):
+class LLLaplace(ParametricLaplace):
     """Baseclass for all last-layer Laplace approximations in this library.
     Subclasses specify the structure of the Hessian approximation.
     See `BaseLaplace` for the full interface.

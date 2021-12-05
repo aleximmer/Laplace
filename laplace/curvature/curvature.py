@@ -1,9 +1,8 @@
-from abc import ABC, abstractmethod, abstractstaticmethod
 import torch
 from torch.nn import MSELoss, CrossEntropyLoss
 
 
-class CurvatureInterface(ABC):
+class CurvatureInterface:
     """Interface to access curvature for a model and corresponding likelihood.
     A `CurvatureInterface` must inherit from this baseclass and implement the
     necessary functions `jacobians`, `full`, `kron`, and `diag`.
@@ -41,7 +40,7 @@ class CurvatureInterface(ABC):
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
-    @abstractstaticmethod
+    @staticmethod
     def jacobians(model, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
@@ -58,7 +57,7 @@ class CurvatureInterface(ABC):
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        pass
+        raise NotImplementedError
 
     @staticmethod
     def last_layer_jacobians(model, x):
@@ -90,7 +89,6 @@ class CurvatureInterface(ABC):
 
         return Js, f.detach()
 
-    @abstractstaticmethod
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter \\(\\theta\\).
 
@@ -106,9 +104,8 @@ class CurvatureInterface(ABC):
         Gs : torch.Tensor
             gradients `(batch, parameters)`
         """
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def full(self, x, y, **kwargs):
         """Compute a dense curvature (approximation) in the form of a \\(P \\times P\\) matrix
         \\(H\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
@@ -126,9 +123,8 @@ class CurvatureInterface(ABC):
         H : torch.Tensor
             Hessian approximation `(parameters, parameters)`
         """
-        pass
+        raise NotImplementedError
 
-    @abstractmethod
     def kron(self, x, y, **kwargs):
         """Compute a Kronecker factored curvature approximation (such as KFAC).
         The approximation to \\(H\\) takes the form of two Kronecker factors \\(Q, H\\),
@@ -150,8 +146,8 @@ class CurvatureInterface(ABC):
         H : `laplace.matrix.Kron`
             Kronecker factored Hessian approximation.
         """
+        raise NotImplementedError
 
-    @abstractmethod
     def diag(self, x, y, **kwargs):
         """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a 
         vector of the dimensionality of parameters \\(\\theta\\).
@@ -169,7 +165,7 @@ class CurvatureInterface(ABC):
         H : torch.Tensor
             vector representing the diagonal of H
         """
-        pass
+        raise NotImplementedError
 
 
 class GGNInterface(CurvatureInterface):
