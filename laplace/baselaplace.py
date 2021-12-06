@@ -183,11 +183,11 @@ class BaseLaplace:
         else:
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
-    def _optimize_prior_precision(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
-                                  init_prior_prec=1., val_loader=None, loss=get_nll,
-                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                  link_approx='probit', n_samples=100,
-                                  verbose=False):
+    def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
+                                      init_prior_prec=1., val_loader=None, loss=get_nll,
+                                      log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                      link_approx='probit', n_samples=100, verbose=False, 
+                                      cv_loss_with_var=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
 
@@ -209,6 +209,9 @@ class BaseLaplace:
             DataLoader for the validation set; each iterate is a training batch (X, y).
         loss : callable, default=get_nll
             loss function to use for CV.
+        cv_loss_with_var: bool, default=False
+            if true, `loss` takes three arguments `loss(output_mean, output_var, target)`,
+            otherwise, `loss` takes two arguments `loss(output_mean, target)`
         log_prior_prec_min : float, default=-4
             lower bound of gridsearch interval for CV.
         log_prior_prec_max : float, default=4
@@ -244,7 +247,7 @@ class BaseLaplace:
             )
             self.prior_precision = self._gridsearch(
                 loss, interval, val_loader, pred_type=pred_type,
-                link_approx=link_approx, n_samples=n_samples
+                link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var
             )
         else:
             raise ValueError('For now only marglik and CV is implemented.')
@@ -252,7 +255,7 @@ class BaseLaplace:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
     def _gridsearch(self, loss, interval, val_loader, pred_type,
-                    link_approx='probit', n_samples=100):
+                    link_approx='probit', n_samples=100, loss_with_var=False):
         results = list()
         prior_precs = list()
         for prior_prec in interval:
@@ -262,7 +265,14 @@ class BaseLaplace:
                     self, val_loader, pred_type=pred_type,
                     link_approx=link_approx, n_samples=n_samples
                 )
-                result = loss(out_dist, targets)
+                if self.likelihood == 'regression':
+                    out_mean, out_var = out_dist
+                    if loss_with_var:
+                        result = loss(out_mean, out_var, targets).item()
+                    else:
+                        result = loss(out_mean, targets).item()
+                else:
+                    result = loss(out_dist, targets).item()
             except RuntimeError:
                 result = np.inf
             results.append(result)
@@ -608,17 +618,17 @@ class ParametricLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
-    def optimize_prior_precision(self, pred_type='glm', method='marglik', n_steps=100, lr=1e-1,
+    def optimize_prior_precision(self, method='marglik', pred_type='glm', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                 link_approx='probit', n_samples=100,
-                                 verbose=False):
+                                 link_approx='probit', n_samples=100, verbose=False, 
+                                 cv_loss_with_var=False):
         assert pred_type in ['glm', 'nn']
-        self._optimize_prior_precision(pred_type, method, n_steps, lr,
-                                       init_prior_prec, val_loader, loss,
-                                       log_prior_prec_min, log_prior_prec_max,
-                                       grid_size, link_approx, n_samples,
-                                       verbose)
+        self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
+                                           init_prior_prec, val_loader, loss,
+                                           log_prior_prec_min, log_prior_prec_max,
+                                           grid_size, link_approx, n_samples,
+                                           verbose, cv_loss_with_var)
 
     @property
     def posterior_precision(self):
