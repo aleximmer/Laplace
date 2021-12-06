@@ -1,6 +1,6 @@
 ## Full example: *post-hoc* optimization of the marginal likelihood and prediction
 
-#### Sinusoidal toy data
+### Sinusoidal toy data
 We show how the marginal likelihood can be used after training a MAP network on a simple sinusoidal regression task. 
 Subsequently, we use the optimized LA to predict which provides uncertainty on top of the MAP prediction.
 First, we set up the training data for the problem with observation noise \\(\\sigma=0.3\\):
@@ -22,7 +22,7 @@ train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size
 X_test = torch.linspace(-5, 13, 500).unsqueeze(-1)  # +-5 on top of the training X-range
 ```
 
-#### Training a MAP
+### Training a MAP
 We now use `pytorch` to train a neural network with single hidden layer and Tanh activation.
 This is standard so nothing new here, yet:
 ```python
@@ -41,7 +41,7 @@ for i in range(n_epochs):
         optimizer.step()
 ```
 
-#### Fitting and optimizing the Laplace approximation using empirical Bayes
+### Fitting and optimizing the Laplace approximation using empirical Bayes
 With the MAP-trained model at hand, we can estimate the prior precision and observation noise
 using empirical Bayes after training.
 The `Laplace` method is called to construct a LA for `'regression'` with `'all'` weights.
@@ -65,7 +65,7 @@ The obtained observation noise is close to the ground truth with a value of \\(\
 without the need for any validation data.
 The resulting prior precision is \\(\\delta \\approx 0.18\\).
 
-#### Bayesian predictive
+### Bayesian predictive
 Lastly, we compare the MAP prediction to the obtained LA prediction.
 For LA, we have a closed-form predictive distribution on the output \\(f\\) which is a Gaussian
 \\(\\mathcal{N}(f(x;\\theta_{MAP}), \\mathbb{V}[f] + \\sigma^2)\\):
