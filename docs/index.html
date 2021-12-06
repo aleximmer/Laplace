@@ -234,12 +234,12 @@ plt.show()
 <h4 id="data-loading">Data loading</h4>
 <p>First, let us load the CIFAR-10 dataset. The helper scripts for CIFAR-10 and WideResNet are available in the <code>examples/helper</code> directory in the main repository.</p>
 <pre><code class="language-python">import torch
+import torch.distributions as dists
 import numpy as np
 import helper.wideresnet as wrn
 import helper.dataloaders as dl
+from helper import util
 from netcal.metrics import ECE
-import urllib.request
-import os.path
 
 from laplace import Laplace
 
@@ -255,15 +255,11 @@ targets = torch.cat([y for x, y in test_loader], dim=0).numpy()
 </code></pre>
 <h4 id="load-a-pre-trained-model">Load a pre-trained model</h4>
 <p>Next, we will load a pre-trained WideResNet-16-4 model. Note that a GPU with CUDA support is needed for this example.</p>
-<pre><code class="language-python">model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
+<pre><code class="language-python"># The model is a standard WideResNet 16-4
+# Taken as is from https://github.com/hendrycks/outlier-exposure
+model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
 
-# Download pre-trained model if necessary
-if not os.path.isfile('CIFAR10_plain.pt'):
-    if not os.path.exists('./temp'):
-        os.makedirs('./temp')
-
-    urllib.request.urlretrieve('https://nc.mlcloud.uni-tuebingen.de/index.php/s/2PBDYDsiotN76mq/download', './temp/CIFAR10_plain.pt')
-
+util.download_pretrained_model()
 model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
 </code></pre>
 <p>To simplify the downstream tasks, we will use the following helper function to make predictions. It simply iterates through all minibatches and obtains the predictive probabilities of the CIFAR-10 classes.</p>
@@ -280,16 +276,17 @@ def predict(dataloader, model, laplace=False):
     return torch.cat(py).cpu().numpy()
 </code></pre>
 <h4 id="the-calibration-of-map">The calibration of MAP</h4>
-<p>We are now ready to see how calibrated is the model. The metric we use is the expected calibration error (ECE, Naeni et al., AAAI 2015). Note that lower values are better for this metric.</p>
+<p>We are now ready to see how calibrated is the model. The metrics we use are the expected calibration error (ECE, Naeni et al., AAAI 2015) and the negative (Categorical) log-likelihood. Note that lower values are better for both these metrics.</p>
 <p>First, let us inspect the MAP model. We shall use the <a href="https://github.com/fabiankueppers/calibration-framework"><code>netcal</code></a> library to easily compute the ECE.</p>
 <pre><code class="language-python">probs_map = predict(test_loader, model, laplace=False)
-acc_map = (probs_map.argmax(-1) == targets).mean()
-ece_map = ECE(bins=15).measure(probs_map, targets)
+acc_map = (probs_map.argmax(-1) == targets).float().mean()
+ece_map = ECE(bins=15).measure(probs_map.numpy(), targets.numpy())
+nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
-print(f'[MAP] Acc.(🠕): {acc_map:.1%}; ECE(🠗): {ece_map:.1%}')
+print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 </code></pre>
 <p>Running this snippet, we would get:</p>
-<pre><code>[MAP] Acc.(🠕): 94.8%; ECE(🠗): 2.0%
+<pre><code>[MAP] Acc.: 94.8%; ECE: 2.0%; NLL: 0.172
 </code></pre>
 <h3 id="the-calibration-of-laplace">The calibration of Laplace</h3>
 <p>Now we inspect the benefit of the LA. Let us apply the simple last-layer LA model, and optimize the prior precision hyperparameter using a <em>post-hoc</em> marginal likelihood maximization.</p>
@@ -302,11 +299,14 @@ la.optimize_prior_precision(method='marglik')
 </code></pre>
 <p>Then, we are ready to see how well does LA improves the calibration of the MAP model:</p>
 <pre><code class="language-python">probs_laplace = predict(test_loader, la, laplace=True)
-acc_laplace = (probs_laplace.argmax(-1) == targets).mean()
-ece_laplace = ECE(bins=15).measure(probs_laplace, targets)
+acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
+ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
+nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
+
+print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
 </code></pre>
 <p>Running this snippet, we obtain:</p>
-<pre><code>[Laplace] Acc. (🠕): 94.8%; ECE (🠗): 0.8%
+<pre><code>[Laplace] Acc.: 94.8%; ECE: 0.8%; NLL: 0.157
 </code></pre>
 <p>Notice that the last-layer LA does not do any harm to the accuracy, yet it improves the calibration of the MAP model substantially.</p>
 </section>
