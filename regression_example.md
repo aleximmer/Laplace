@@ -1,4 +1,4 @@
-### Full example: *post-hoc* optimization of the marginal likelihood and prediction
+## Full example: *post-hoc* optimization of the marginal likelihood and prediction
 
 #### Sinusoidal toy data
 We show how the marginal likelihood can be used after training a MAP network on a simple sinusoidal regression task. 

@@ -18,7 +18,10 @@ def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_sampl
     targets = list()
     for X, y in val_loader:
         X, y = X.to(laplace._device), y.to(laplace._device)
-        out = laplace(X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
+        out = laplace(
+            X, pred_type=pred_type,
+            link_approx=link_approx,
+            n_samples=n_samples)
 
         if type(out) == tuple:
             output_means.append(out[0])
@@ -30,8 +33,8 @@ def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_sampl
 
     if len(output_vars) == 0:
         return torch.cat(output_means, dim=0), torch.cat(targets, dim=0)
-    else:
-        return (torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)), torch.cat(targets, dim=0)
+    return ((torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)),
+            torch.cat(targets, dim=0))
 
 
 def parameters_per_layer(model):
