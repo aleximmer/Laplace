@@ -193,6 +193,10 @@ class BaseLaplace:
 
         Parameters
         ----------
+        pred_type : {'glm', 'nn', 'gp'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive or Gaussian Process (GP) inference.
+            The GLM predictive is consistent with the curvature approximations used here.
         method : {'marglik', 'CV'}, default='marglik'
             specifies how the prior precision should be optimized.
         n_steps : int, default=100
@@ -214,10 +218,6 @@ class BaseLaplace:
             upper bound of gridsearch interval for CV.
         grid_size : int, default=100
             number of values to consider inside the gridsearch interval for CV.
-        pred_type : {'glm', 'nn'}, default='glm'
-            type of posterior predictive, linearized GLM predictive or neural
-            network sampling predictive. The GLM predictive is consistent with
-            the curvature approximations used here.
         link_approx : {'mc', 'probit', 'bridge'}, default='probit'
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only `'mc'` is possible.
@@ -254,7 +254,7 @@ class BaseLaplace:
         if verbose:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
-    def _gridsearch(self, loss, interval, val_loader, pred_type='glm',
+    def _gridsearch(self, loss, interval, val_loader, pred_type,
                     link_approx='probit', n_samples=100, loss_with_var=False):
         results = list()
         prior_precs = list()
