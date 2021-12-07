@@ -663,8 +663,11 @@ class LowRankLaplace(ParametricLaplace):
         (U, l), _ = self.posterior_precision
         return torch.inverse(torch.diag(1 / l) + U.T @ self.V)
 
-    def fit(self, train_loader):
+    def fit(self, train_loader, override=True):
         # override fit since output of eighessian not additive across batch
+        if not override:
+            # LowRankLA cannot be updated since eigenvalue representation not additive
+            raise ValueError('LowRank LA does not support updating.')
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
