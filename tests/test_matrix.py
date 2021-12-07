@@ -138,7 +138,7 @@ def test_bmm(small_model):
     # test J @ S^-1/2  (sampling)
     JS = kron_decomp.bmm(Js, exponent=-1/2)
     JSJ = torch.bmm(JS, Js.transpose(1,2))
-    l, Q = S_inv.symeig(eigenvectors=True)
+    l, Q = torch.linalg.eigh(S_inv, UPLO='U')
     JS_true = Js @ Q @ torch.diag(torch.sqrt(l)) @ Q.T
     JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
     assert torch.allclose(JS, JS_true)
