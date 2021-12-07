@@ -130,7 +130,7 @@ def diagonal_add_scalar(X, value):
     values = X.new_ones(X.shape[0]).mul(value)
     return X.index_put(tuple(indices.t()), values, accumulate=True)
 
-
+ 
 def symeig(M):
     """Symetric eigendecomposition avoiding failure cases by
     adding and removing jitter to the diagonal.
@@ -147,13 +147,13 @@ def symeig(M):
         eigenvectors
     """
     try:
-        L, W = torch.symeig(M, eigenvectors=True)
+        L, W = torch.linalg.eigh(M, UPLO='U')
     except RuntimeError:  # did not converge
         logging.info('SYMEIG: adding jitter, did not converge.')
         # use W L W^T + I = W (L + I) W^T
-        M = diagonal_add_scalar(M, value=1.)
+        M = M + torch.eye(M.shape[0])
         try:
-            L, W = torch.symeig(M, eigenvectors=True)
+            L, W = torch.linalg.eigh(M, UPLO='U')
             L -= 1.
         except RuntimeError:
             stats = f'diag: {M.diagonal()}, max: {M.abs().max()}, '
@@ -162,8 +162,8 @@ def symeig(M):
             exit()
     # eigenvalues of symeig at least 0
     L = L.clamp(min=0.0)
-    L[torch.isnan(L)] = 0.0
-    W[torch.isnan(W)] = 0.0
+    L = torch.nan_to_num(L)
+    W = torch.nan_to_num(W)
     return L, W
 
 
