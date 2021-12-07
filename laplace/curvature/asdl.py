@@ -12,6 +12,8 @@ from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.matrix import Kron
 from laplace.utils import _is_batchnorm
 
+EPS = 1e-6
+
 
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
@@ -146,11 +148,14 @@ class AsdlHessian(AsdlInterface):
         return self.factor * loss, self.factor * H
 
     def eig_lowrank(self, data_loader):
+        # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
         eigvals, eigvecs = hessian_eigenvalues(self.model, self.lossfunc, data_loader,
                                                top_n=self.low_rank, max_iters=self.low_rank*10)
+        eigvals = torch.from_numpy(np.array(eigvals))
+        mask = (eigvals > EPS)
         eigvecs = torch.stack([torch.cat([p.flatten() for p in params])
-                               for params in eigvecs], dim=1)
-        eigvals = torch.from_numpy(np.array(eigvals)).float()
+                               for params in eigvecs], dim=1)[:, mask]
+        eigvals = eigvals[mask].to(eigvecs.dtype).to(eigvecs.device)
         loss = sum([self.lossfunc(self.model(x).detach(), y) for x, y in data_loader])
         return eigvecs, self.factor * eigvals, self.factor * loss
 

@@ -1,3 +1,4 @@
+from laplace.baselaplace import LowRankLaplace
 import pytest
 from itertools import product
 import numpy as np
@@ -7,13 +8,13 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from tests.utils import jacobians_naive
 
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors = [FullLaplace, KronLaplace, DiagLaplace]
+flavors = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace]
 
 
 @pytest.fixture
@@ -211,6 +212,9 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     Sigma_0 = torch.inverse(prior_prec)
     if laplace == DiagLaplace:
         log_det_post_prec = lap.posterior_precision.log().sum()
+    elif laplace == LowRankLaplace:
+        (U, l), p0 = lap.posterior_precision
+        log_det_post_prec = (U @ torch.diag(l) @ U.T + p0.diag()).logdet()
     else:
         log_det_post_prec = lap.posterior_precision.logdet()
     lml = lml + 1/2 * (prior_prec.logdet() - log_det_post_prec)
@@ -231,6 +235,9 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
         Sigma = lap.posterior_covariance
     elif laplace == KronLaplace:
         Sigma = lap.posterior_precision.to_matrix(exponent=-1)
+    elif laplace == LowRankLaplace:
+        (U, l), p0 = lap.posterior_precision
+        Sigma = (U @ torch.diag(l) @ U.T + p0.diag()).inverse()
     elif laplace == DiagLaplace:
         Sigma = torch.diag(lap.posterior_variance)
     Js, f = jacobians_naive(model, loader.dataset.tensors[0])

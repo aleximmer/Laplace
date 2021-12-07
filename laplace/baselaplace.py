@@ -1,4 +1,5 @@
 from math import sqrt, pi
+from laplace.curvature.asdl import AsdlHessian
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
@@ -332,8 +333,6 @@ class ParametricLaplace(BaseLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
-        assert backend in [BackPackGGN, BackPackEF, AsdlGGN, AsdlEF], \
-            'GGN or EF backends required in ParametricLaplace.'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -646,11 +645,26 @@ class ParametricLaplace(BaseLaplace):
 
 
 class LowRankLaplace(ParametricLaplace):
+    """Laplace approximation with low-rank log likelihood Hessian (approximation). 
+    The low-rank matrix is represented by an eigendecomposition (vecs, values).
+    Based on the chosen `backend`, either a true Hessian or, for example, GGN
+    approximation could be used.
+    The posterior precision is computed as
+    \\( P = V diag(l) V^T + P_0.\\)
+    To sample, compute the functional variance, and log determinant, algebraic tricks 
+    are usedto reduce the costs of inversion to the that of a \\(K \times K\\) matrix
+    if we have a rank of K.
+    
+    See `BaseLaplace` for the full interface.
+    """
+    def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, 
+                 temperature=1, backend=AsdlHessian, backend_kwargs=None):
+        super().__init__(model, likelihood, sigma_noise=sigma_noise, 
+                         prior_precision=prior_precision, prior_mean=prior_mean, 
+                         temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
 
+    
     def _init_H(self):
-        pass
-
-    def _curv_closure(self, X, y, N):
         pass
 
     @property
