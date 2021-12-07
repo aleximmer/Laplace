@@ -1,4 +1,3 @@
-from abc import ABC, abstractmethod, abstractproperty
 from math import sqrt, pi
 import numpy as np
 import torch
@@ -7,32 +6,14 @@ from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
 from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN
+from laplace.curvature import BackPackGGN, BackPackEF, AsdlGGN, AsdlEF
 
 
-__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace']
+__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace']
 
 
-class BaseLaplace(ABC):
+class BaseLaplace:
     """Baseclass for all Laplace approximations in this library.
-    Subclasses need to specify how the Hessian approximation is initialized,
-    how to add up curvature over training data, how to sample from the
-    Laplace approximation, and how to compute the functional variance.
-
-    A Laplace approximation is represented by a MAP which is given by the
-    `model` parameter and a posterior precision or covariance specifying
-    a Gaussian distribution \\(\\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
-    The goal of this class is to compute the posterior precision \\(P\\)
-    which sums as
-    \\[
-        P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
-        \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
-    \\]
-    Every subclass implements different approximations to the log likelihood Hessians,
-    for example, a diagonal one. The prior is assumed to be Gaussian and therefore we have
-    a simple form for \\(\\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}} = P_0 \\).
-    In particular, we assume a scalar, layer-wise, or diagonal prior precision so that in
-    all cases \\(P_0 = \\textrm{diag}(p_0)\\) and the structure of \\(p_0\\) can be varied.
 
     Parameters
     ----------
@@ -62,10 +43,8 @@ class BaseLaplace(ABC):
 
         self.model = model
         self._device = next(model.parameters()).device
-        # initialize state #
-        # posterior mean/mode
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
-        self.n_params = len(self.mean)
+
+        self.n_params = len(parameters_to_vector(self.model.parameters()).detach())
         self.n_layers = len(list(self.model.parameters()))
         self.prior_precision = prior_precision
         self.prior_mean = prior_mean
@@ -77,7 +56,6 @@ class BaseLaplace(ABC):
         self._backend = None
         self._backend_cls = backend
         self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
-        self.H = None
 
         # log likelihood = g(loss)
         self.loss = 0.
@@ -91,17 +69,285 @@ class BaseLaplace(ABC):
                                               **self._backend_kwargs)
         return self._backend
 
-    @abstractmethod
-    def _init_H(self):
-        pass
-
-    @abstractmethod
     def _curv_closure(self, X, y, N):
-        pass
+        raise NotImplementedError
+
+    def _check_fit(self):
+        raise NotImplementedError
+
+    def fit(self, train_loader):
+        raise NotImplementedError
+
+    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+        raise NotImplementedError
+
+    @property
+    def log_likelihood(self):
+        """Compute log likelihood on the training data after `.fit()` has been called.
+        The log likelihood is computed on-demand based on the loss and, for example,
+        the observation noise which makes it differentiable in the latter for
+        iterative updates.
+
+        Returns
+        -------
+        log_likelihood : torch.Tensor
+        """
+        self._check_fit()
+
+        factor = - self._H_factor
+        if self.likelihood == 'regression':
+            # loss used is just MSE, need to add normalizer for gaussian likelihood
+            c = self.n_data * self.n_outputs * torch.log(self.sigma_noise * sqrt(2 * pi))
+            return factor * self.loss - c
+        else:
+            # for classification Xent == log Cat
+            return factor * self.loss
+
+    def __call__(self, x, pred_type, link_approx, n_samples):
+        raise NotImplementedError
+
+    def predictive(self, x, pred_type, link_approx, n_samples):
+        return self(x, pred_type, link_approx, n_samples)
+
+    def _check_jacobians(self, Js):
+        if not isinstance(Js, torch.Tensor):
+            raise ValueError('Jacobians have to be torch.Tensor.')
+        if not Js.device == self._device:
+            raise ValueError('Jacobians need to be on the same device as Laplace.')
+        m, k, p = Js.size()
+        if p != self.n_params:
+            raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
+
+    @property
+    def prior_precision_diag(self):
+        """Obtain the diagonal prior precision \\(p_0\\) constructed from either
+        a scalar, layer-wise, or diagonal prior precision.
+
+        Returns
+        -------
+        prior_precision_diag : torch.Tensor
+        """
+        if len(self.prior_precision) == 1:  # scalar
+            return self.prior_precision * torch.ones(self.n_params, device=self._device)
+
+        elif len(self.prior_precision) == self.n_params:  # diagonal
+            return self.prior_precision
+
+        elif len(self.prior_precision) == self.n_layers:  # per layer
+            n_params_per_layer = parameters_per_layer(self.model)
+            return torch.cat([prior * torch.ones(n_params, device=self._device) for prior, n_params
+                              in zip(self.prior_precision, n_params_per_layer)])
+
+        else:
+            raise ValueError('Mismatch of prior and model. Diagonal, scalar, or per-layer prior.')
+
+    @property
+    def prior_mean(self):
+        return self._prior_mean
+
+    @prior_mean.setter
+    def prior_mean(self, prior_mean):
+        if np.isscalar(prior_mean) and np.isreal(prior_mean):
+            self._prior_mean = torch.tensor(prior_mean, device=self._device)
+        elif torch.is_tensor(prior_mean):
+            if prior_mean.ndim == 0:
+                self._prior_mean = prior_mean.reshape(-1).to(self._device)
+            elif prior_mean.ndim == 1:
+                if not len(prior_mean) in [1, self.n_params]:
+                    raise ValueError('Invalid length of prior mean.')
+                self._prior_mean = prior_mean
+            else:
+                raise ValueError('Prior mean has too many dimensions!')
+        else:
+            raise ValueError('Invalid argument type of prior mean.')
+
+    @property
+    def prior_precision(self):
+        return self._prior_precision
+
+    @prior_precision.setter
+    def prior_precision(self, prior_precision):
+        self._posterior_scale = None
+        if np.isscalar(prior_precision) and np.isreal(prior_precision):
+            self._prior_precision = torch.tensor([prior_precision], device=self._device)
+        elif torch.is_tensor(prior_precision):
+            if prior_precision.ndim == 0:
+                # make dimensional
+                self._prior_precision = prior_precision.reshape(-1).to(self._device)
+            elif prior_precision.ndim == 1:
+                if len(prior_precision) not in [1, self.n_layers, self.n_params]:
+                    raise ValueError('Length of prior precision does not align with architecture.')
+                self._prior_precision = prior_precision.to(self._device)
+            else:
+                raise ValueError('Prior precision needs to be at most one-dimensional tensor.')
+        else:
+            raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
+
+    def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
+                                      init_prior_prec=1., val_loader=None, loss=get_nll,
+                                      log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                      link_approx='probit', n_samples=100, verbose=False, 
+                                      cv_loss_with_var=False):
+        """Optimize the prior precision post-hoc using the `method`
+        specified by the user.
+
+        Parameters
+        ----------
+        pred_type : {'glm', 'nn', 'gp'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive or Gaussian Process (GP) inference.
+            The GLM predictive is consistent with the curvature approximations used here.
+        method : {'marglik', 'CV'}, default='marglik'
+            specifies how the prior precision should be optimized.
+        n_steps : int, default=100
+            the number of gradient descent steps to take.
+        lr : float, default=1e-1
+            the learning rate to use for gradient descent.
+        init_prior_prec : float, default=1.0
+            initial prior precision before the first optimization step.
+        val_loader : torch.data.utils.DataLoader, default=None
+            DataLoader for the validation set; each iterate is a training batch (X, y).
+        loss : callable, default=get_nll
+            loss function to use for CV.
+        cv_loss_with_var: bool, default=False
+            if true, `loss` takes three arguments `loss(output_mean, output_var, target)`,
+            otherwise, `loss` takes two arguments `loss(output_mean, target)`
+        log_prior_prec_min : float, default=-4
+            lower bound of gridsearch interval for CV.
+        log_prior_prec_max : float, default=4
+            upper bound of gridsearch interval for CV.
+        grid_size : int, default=100
+            number of values to consider inside the gridsearch interval for CV.
+        link_approx : {'mc', 'probit', 'bridge'}, default='probit'
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only `'mc'` is possible.
+        n_samples : int, default=100
+            number of samples for `link_approx='mc'`.
+        verbose : bool, default=False
+            if true, the optimized prior precision will be printed
+            (can be a large tensor if the prior has a diagonal covariance).
+        """
+        if method == 'marglik':
+            self.prior_precision = init_prior_prec
+            log_prior_prec = self.prior_precision.log()
+            log_prior_prec.requires_grad = True
+            optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
+            for _ in range(n_steps):
+                optimizer.zero_grad()
+                prior_prec = log_prior_prec.exp()
+                neg_log_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
+                neg_log_marglik.backward()
+                optimizer.step()
+            self.prior_precision = log_prior_prec.detach().exp()
+        elif method == 'CV':
+            if val_loader is None:
+                raise ValueError('CV requires a validation set DataLoader')
+            interval = torch.logspace(
+                log_prior_prec_min, log_prior_prec_max, grid_size
+            )
+            self.prior_precision = self._gridsearch(
+                loss, interval, val_loader, pred_type=pred_type,
+                link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var
+            )
+        else:
+            raise ValueError('For now only marglik and CV is implemented.')
+        if verbose:
+            print(f'Optimized prior precision is {self.prior_precision}.')
+
+    def _gridsearch(self, loss, interval, val_loader, pred_type,
+                    link_approx='probit', n_samples=100, loss_with_var=False):
+        results = list()
+        prior_precs = list()
+        for prior_prec in interval:
+            self.prior_precision = prior_prec
+            try:
+                out_dist, targets = validate(
+                    self, val_loader, pred_type=pred_type,
+                    link_approx=link_approx, n_samples=n_samples
+                )
+                if self.likelihood == 'regression':
+                    out_mean, out_var = out_dist
+                    if loss_with_var:
+                        result = loss(out_mean, out_var, targets).item()
+                    else:
+                        result = loss(out_mean, targets).item()
+                else:
+                    result = loss(out_dist, targets).item()
+            except RuntimeError:
+                result = np.inf
+            results.append(result)
+            prior_precs.append(prior_prec)
+        return prior_precs[np.argmin(results)]
+
+    @property
+    def sigma_noise(self):
+        return self._sigma_noise
+
+    @sigma_noise.setter
+    def sigma_noise(self, sigma_noise):
+        self._posterior_scale = None
+        if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
+            self._sigma_noise = torch.tensor(sigma_noise, device=self._device)
+        elif torch.is_tensor(sigma_noise):
+            if sigma_noise.ndim == 0:
+                self._sigma_noise = sigma_noise.to(self._device)
+            elif sigma_noise.ndim == 1:
+                if len(sigma_noise) > 1:
+                    raise ValueError('Only homoscedastic output noise supported.')
+                self._sigma_noise = sigma_noise[0].to(self._device)
+            else:
+                raise ValueError('Sigma noise needs to be scalar or 1-dimensional.')
+        else:
+            raise ValueError('Invalid type: sigma noise needs to be torch.Tensor or scalar.')
+
+    @property
+    def _H_factor(self):
+        sigma2 = self.sigma_noise.square()
+        return 1 / sigma2 / self.temperature
+
+
+class ParametricLaplace(BaseLaplace):
+    """
+    Parametric Laplace class.
+
+    Subclasses need to specify how the Hessian approximation is initialized,
+    how to add up curvature over training data, how to sample from the
+    Laplace approximation, and how to compute the functional variance.
+
+    A Laplace approximation is represented by a MAP which is given by the
+    `model` parameter and a posterior precision or covariance specifying
+    a Gaussian distribution \\(\\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
+    The goal of this class is to compute the posterior precision \\(P\\)
+    which sums as
+    \\[
+        P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
+        \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
+    \\]
+    Every subclass implements different approximations to the log likelihood Hessians,
+    for example, a diagonal one. The prior is assumed to be Gaussian and therefore we have
+    a simple form for \\(\\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}} = P_0 \\).
+    In particular, we assume a scalar, layer-wise, or diagonal prior precision so that in
+    all cases \\(P_0 = \\textrm{diag}(p_0)\\) and the structure of \\(p_0\\) can be varied.
+    """
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+        assert backend in [BackPackGGN, BackPackEF, AsdlGGN, AsdlEF], \
+            'GGN or EF backends required in ParametricLaplace.'
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         prior_mean, temperature, backend, backend_kwargs)
+
+        self.H = None
+
+        # posterior mean/mode
+        self.mean = parameters_to_vector(self.model.parameters()).detach()
+
+    def _init_H(self):
+        raise NotImplementedError
 
     def _check_fit(self):
         if self.H is None:
-            raise AttributeError('Laplace not fitted. Run fit() first.')
+            raise AttributeError('ParametricLaplace not fitted. Run fit() first.')
 
     def fit(self, train_loader):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -121,7 +367,11 @@ class BaseLaplace(ABC):
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
-            self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
+            try:
+                out = self.model(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                out = self.model(X.to(self._device))
+        self.n_outputs = out.shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
 
         N = len(train_loader.dataset)
@@ -133,6 +383,56 @@ class BaseLaplace(ABC):
             self.H += H_batch
 
         self.n_data = N
+
+    @property
+    def scatter(self):
+        """Computes the _scatter_, a term of the log marginal likelihood that
+        corresponds to L-2 regularization:
+        `scatter` = \\((\\theta_{MAP} - \\mu_0)^{T} P_0 (\\theta_{MAP} - \\mu_0) \\).
+
+        Returns
+        -------
+        [type]
+            [description]
+        """
+        delta = (self.mean - self.prior_mean)
+        return (delta * self.prior_precision_diag) @ delta
+
+    @property
+    def log_det_prior_precision(self):
+        """Compute log determinant of the prior precision
+        \\(\\log \\det P_0\\)
+
+        Returns
+        -------
+        log_det : torch.Tensor
+        """
+        return self.prior_precision_diag.log().sum()
+
+    @property
+    def log_det_posterior_precision(self):
+        """Compute log determinant of the posterior precision
+        \\(\\log \\det P\\) which depends on the subclasses structure
+        used for the Hessian approximation.
+
+        Returns
+        -------
+        log_det : torch.Tensor
+        """
+        raise NotImplementedError
+
+    @property
+    def log_det_ratio(self):
+        """Compute the log determinant ratio, a part of the log marginal likelihood.
+        \\[
+            \\log \\frac{\\det P}{\\det P_0} = \\log \\det P - \\log \\det P_0
+        \\]
+
+        Returns
+        -------
+        log_det_ratio : torch.Tensor
+        """
+        return self.log_det_posterior_precision - self.log_det_prior_precision
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the log marginal likelihood subject
@@ -168,28 +468,6 @@ class BaseLaplace(ABC):
             self.sigma_noise = sigma_noise
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
-
-    @property
-    def log_likelihood(self):
-        """Compute log likelihood on the training data after `.fit()` has been called.
-        The log likelihood is computed on-demand based on the loss and, for example,
-        the observation noise which makes it differentiable in the latter for
-        iterative updates.
-
-        Returns
-        -------
-        log_likelihood : torch.Tensor
-        """
-        self._check_fit()
-
-        factor = - self._H_factor
-        if self.likelihood == 'regression':
-            # loss used is just MSE, need to add normalizer for gaussian likelihood
-            c = self.n_data * self.n_outputs * torch.log(self.sigma_noise * sqrt(2 * pi))
-            return factor * self.loss - c
-        else:
-            # for classification Xent == log Cat
-            return factor * self.loss
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100):
         """Compute the posterior predictive on input data `X`.
@@ -255,9 +533,6 @@ class BaseLaplace(ABC):
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
 
-    def predictive(self, x, pred_type='glm', link_approx='mc', n_samples=100):
-        return self(x, pred_type, link_approx, n_samples)
-
     def predictive_samples(self, x, pred_type='glm', n_samples=100):
         """Sample from the posterior predictive on input data `x`.
         Can be used, for example, for Thompson sampling.
@@ -314,7 +589,6 @@ class BaseLaplace(ABC):
             fs = torch.softmax(fs, dim=-1)
         return fs
 
-    @abstractmethod
     def functional_variance(self, Jacs):
         """Compute functional variance for the `'glm'` predictive:
         `f_var[i] = Jacs[i] @ P.inv() @ Jacs[i].T`, which is a output x output
@@ -335,18 +609,8 @@ class BaseLaplace(ABC):
         f_var : torch.Tensor
             output covariance `(batch, outputs, outputs)`
         """
-        pass
+        raise NotImplementedError
 
-    def _check_jacobians(self, Js):
-        if not isinstance(Js, torch.Tensor):
-            raise ValueError('Jacobians have to be torch.Tensor.')
-        if not Js.device == self._device:
-            raise ValueError('Jacobians need to be on the same device as Laplace.')
-        m, k, p = Js.size()
-        if p != self.n_params:
-            raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
-
-    @abstractmethod
     def sample(self, n_samples=100):
         """Sample from the Laplace posterior approximation, i.e.,
         \\( \\theta \\sim \\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
@@ -356,236 +620,21 @@ class BaseLaplace(ABC):
         n_samples : int, default=100
             number of samples
         """
-        pass
+        raise NotImplementedError
 
-    @property
-    def scatter(self):
-        """Computes the _scatter_, a term of the log marginal likelihood that
-        corresponds to L-2 regularization:
-        `scatter` = \\((\\theta_{MAP} - \\mu_0)^{T} P_0 (\\theta_{MAP} - \\mu_0) \\).
-
-        Returns
-        -------
-        [type]
-            [description]
-        """
-        delta = (self.mean - self.prior_mean)
-        return (delta * self.prior_precision_diag) @ delta
-
-    @property
-    def log_det_prior_precision(self):
-        """Compute log determinant of the prior precision
-        \\(\\log \\det P_0\\)
-
-        Returns
-        -------
-        log_det : torch.Tensor
-        """
-        return self.prior_precision_diag.log().sum()
-
-    @abstractproperty
-    def log_det_posterior_precision(self):
-        """Compute log determinant of the posterior precision
-        \\(\\log \\det P\\) which depends on the subclasses structure
-        used for the Hessian approximation.
-
-        Returns
-        -------
-        log_det : torch.Tensor
-        """
-        pass
-
-    @property
-    def log_det_ratio(self):
-        """Compute the log determinant ratio, a part of the log marginal likelihood.
-        \\[
-            \\log \\frac{\\det P}{\\det P_0} = \\log \\det P - \\log \\det P_0
-        \\]
-
-        Returns
-        -------
-        log_det_ratio : torch.Tensor
-        """
-        return self.log_det_posterior_precision - self.log_det_prior_precision
-
-    @property
-    def prior_precision_diag(self):
-        """Obtain the diagonal prior precision \\(p_0\\) constructed from either
-        a scalar, layer-wise, or diagonal prior precision.
-
-        Returns
-        -------
-        prior_precision_diag : torch.Tensor
-        """
-        if len(self.prior_precision) == 1:  # scalar
-            return self.prior_precision * torch.ones_like(self.mean, device=self._device)
-
-        elif len(self.prior_precision) == self.n_params:  # diagonal
-            return self.prior_precision
-
-        elif len(self.prior_precision) == self.n_layers:  # per layer
-            n_params_per_layer = parameters_per_layer(self.model)
-            return torch.cat([prior * torch.ones(n_params, device=self._device) for prior, n_params
-                              in zip(self.prior_precision, n_params_per_layer)])
-
-        else:
-            raise ValueError('Mismatch of prior and model. Diagonal, scalar, or per-layer prior.')
-
-    @property
-    def prior_mean(self):
-        return self._prior_mean
-
-    @prior_mean.setter
-    def prior_mean(self, prior_mean):
-        if np.isscalar(prior_mean) and np.isreal(prior_mean):
-            self._prior_mean = torch.tensor(prior_mean, device=self._device)
-        elif torch.is_tensor(prior_mean):
-            if prior_mean.ndim == 0:
-                self._prior_mean = prior_mean.reshape(-1).to(self._device)
-            elif prior_mean.ndim == 1:
-                if not len(prior_mean) in [1, self.n_params]:
-                    raise ValueError('Invalid length of prior mean.')
-                self._prior_mean = prior_mean
-            else:
-                raise ValueError('Prior mean has too many dimensions!')
-        else:
-            raise ValueError('Invalid argument type of prior mean.')
-
-    @property
-    def prior_precision(self):
-        return self._prior_precision
-
-    @prior_precision.setter
-    def prior_precision(self, prior_precision):
-        self._posterior_scale = None
-        if np.isscalar(prior_precision) and np.isreal(prior_precision):
-            self._prior_precision = torch.tensor([prior_precision], device=self._device)
-        elif torch.is_tensor(prior_precision):
-            if prior_precision.ndim == 0:
-                # make dimensional
-                self._prior_precision = prior_precision.reshape(-1).to(self._device)
-            elif prior_precision.ndim == 1:
-                if len(prior_precision) not in [1, self.n_layers, self.n_params]:
-                    raise ValueError('Length of prior precision does not align with architecture.')
-                self._prior_precision = prior_precision.to(self._device)
-            else:
-                raise ValueError('Prior precision needs to be at most one-dimensional tensor.')
-        else:
-            raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
-
-    def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
+    def optimize_prior_precision(self, method='marglik', pred_type='glm', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                 pred_type='glm', link_approx='probit', n_samples=100,
-                                 verbose=False):
-        """Optimize the prior precision post-hoc using the `method`
-        specified by the user.
-
-        Parameters
-        ----------
-        method : {'marglik', 'CV'}, default='marglik'
-            specifies how the prior precision should be optimized.
-        n_steps : int, default=100
-            the number of gradient descent steps to take.
-        lr : float, default=1e-1
-            the learning rate to use for gradient descent.
-        init_prior_prec : float, default=1.0
-            initial prior precision before the first optimization step.
-        val_loader : torch.data.utils.DataLoader, default=None
-            DataLoader for the validation set; each iterate is a training batch (X, y).
-        loss : callable, default=get_nll
-            loss function to use for CV.
-        log_prior_prec_min : float, default=-4
-            lower bound of gridsearch interval for CV.
-        log_prior_prec_max : float, default=4
-            upper bound of gridsearch interval for CV.
-        grid_size : int, default=100
-            number of values to consider inside the gridsearch interval for CV.
-        pred_type : {'glm', 'nn'}, default='glm'
-            type of posterior predictive, linearized GLM predictive or neural
-            network sampling predictive. The GLM predictive is consistent with
-            the curvature approximations used here.
-        link_approx : {'mc', 'probit', 'bridge'}, default='probit'
-            how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only `'mc'` is possible.
-        n_samples : int, default=100
-            number of samples for `link_approx='mc'`.
-        verbose : bool, default=False
-            if true, the optimized prior precision will be printed
-            (can be a large tensor if the prior has a diagonal covariance).
-        """
-        if method == 'marglik':
-            self.prior_precision = init_prior_prec
-            log_prior_prec = self.prior_precision.log()
-            log_prior_prec.requires_grad = True
-            optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
-            for _ in range(n_steps):
-                optimizer.zero_grad()
-                prior_prec = log_prior_prec.exp()
-                neg_log_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
-                neg_log_marglik.backward()
-                optimizer.step()
-            self.prior_precision = log_prior_prec.detach().exp()
-        elif method == 'CV':
-            if val_loader is None:
-                raise ValueError('CV requires a validation set DataLoader')
-            interval = torch.logspace(
-                log_prior_prec_min, log_prior_prec_max, grid_size
-            )
-            self.prior_precision = self._gridsearch(
-                loss, interval, val_loader, pred_type=pred_type,
-                link_approx=link_approx, n_samples=n_samples
-            )
-        else:
-            raise ValueError('For now only marglik and CV is implemented.')
-        if verbose:
-            print(f'Optimized prior precision is {self.prior_precision}.')
-
-    def _gridsearch(self, loss, interval, val_loader, pred_type='glm',
-                    link_approx='probit', n_samples=100):
-        results = list()
-        prior_precs = list()
-        for prior_prec in interval:
-            self.prior_precision = prior_prec
-            try:
-                out_dist, targets = validate(
-                    self, val_loader, pred_type=pred_type,
-                    link_approx=link_approx, n_samples=n_samples
-                )
-                result = loss(out_dist, targets)
-            except RuntimeError:
-                result = np.inf
-            results.append(result)
-            prior_precs.append(prior_prec)
-        return prior_precs[np.argmin(results)]
+                                 link_approx='probit', n_samples=100, verbose=False, 
+                                 cv_loss_with_var=False):
+        assert pred_type in ['glm', 'nn']
+        self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
+                                           init_prior_prec, val_loader, loss,
+                                           log_prior_prec_min, log_prior_prec_max,
+                                           grid_size, link_approx, n_samples,
+                                           verbose, cv_loss_with_var)
 
     @property
-    def sigma_noise(self):
-        return self._sigma_noise
-
-    @sigma_noise.setter
-    def sigma_noise(self, sigma_noise):
-        self._posterior_scale = None
-        if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
-            self._sigma_noise = torch.tensor(sigma_noise, device=self._device)
-        elif torch.is_tensor(sigma_noise):
-            if sigma_noise.ndim == 0:
-                self._sigma_noise = sigma_noise.to(self._device)
-            elif sigma_noise.ndim == 1:
-                if len(sigma_noise) > 1:
-                    raise ValueError('Only homoscedastic output noise supported.')
-                self._sigma_noise = sigma_noise[0].to(self._device)
-            else:
-                raise ValueError('Sigma noise needs to be scalar or 1-dimensional.')
-        else:
-            raise ValueError('Invalid type: sigma noise needs to be torch.Tensor or scalar.')
-
-    @property
-    def _H_factor(self):
-        sigma2 = self.sigma_noise.square()
-        return 1 / sigma2 / self.temperature
-
-    @abstractproperty
     def posterior_precision(self):
         """Compute or return the posterior precision \\(P\\).
 
@@ -593,10 +642,10 @@ class BaseLaplace(ABC):
         -------
         posterior_prec : torch.Tensor
         """
-        pass
+        raise NotImplementedError
 
 
-class LowRankLaplace(BaseLaplace):
+class LowRankLaplace(ParametricLaplace):
 
     def _init_H(self):
         pass
@@ -671,7 +720,7 @@ class LowRankLaplace(BaseLaplace):
         return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
 
 
-class FullLaplace(BaseLaplace):
+class FullLaplace(ParametricLaplace):
     """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
     and hence posterior precision. Based on the chosen `backend` parameter, the full
     approximation can be, for example, a generalized Gauss-Newton matrix.
@@ -746,7 +795,7 @@ class FullLaplace(BaseLaplace):
         return dist.sample((n_samples,))
 
 
-class KronLaplace(BaseLaplace):
+class KronLaplace(ParametricLaplace):
     """Laplace approximation with Kronecker factored log likelihood Hessian approximation
     and hence posterior precision.
     Mathematically, we have for each parameter group, e.g., torch.nn.Module,
@@ -812,7 +861,7 @@ class KronLaplace(BaseLaplace):
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
 
-class DiagLaplace(BaseLaplace):
+class DiagLaplace(ParametricLaplace):
     """Laplace approximation with diagonal log likelihood Hessian approximation
     and hence posterior precision.
     Mathematically, we have \\(P \\approx \\textrm{diag}(P)\\).
@@ -873,3 +922,11 @@ class DiagLaplace(BaseLaplace):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = samples * self.posterior_scale.reshape(1, self.n_params)
         return self.mean.reshape(1, self.n_params) + samples
+
+
+class FunctionalLaplace(BaseLaplace):
+    pass
+
+
+class SoDLaplace(FunctionalLaplace):
+    pass

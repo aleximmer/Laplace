@@ -1,7 +1,8 @@
+from copy import deepcopy
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import BaseLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.feature_extractor import FeatureExtractor
 
 from laplace.matrix import Kron
@@ -11,7 +12,7 @@ from laplace.curvature import BackPackGGN
 __all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
 
-class LLLaplace(BaseLaplace):
+class LLLaplace(ParametricLaplace):
     """Baseclass for all last-layer Laplace approximations in this library.
     Subclasses specify the structure of the Hessian approximation.
     See `BaseLaplace` for the full interface.
@@ -62,7 +63,7 @@ class LLLaplace(BaseLaplace):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
                          prior_mean=0., temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
-        self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
+        self.model = FeatureExtractor(deepcopy(model), last_layer_name=last_layer_name)
         if self.model.last_layer is None:
             self.mean = None
             self.n_params = None
@@ -95,7 +96,10 @@ class LLLaplace(BaseLaplace):
         if self.model.last_layer is None:
             X, _ = next(iter(train_loader))
             with torch.no_grad():
-                self.model.find_last_layer(X[:1].to(self._device))
+                try:
+                    self.model.find_last_layer(X[:1].to(self._device))
+                except (TypeError, AttributeError):
+                    self.model.find_last_layer(X.to(self._device))
             self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(self.mean)
             self.n_layers = len(list(self.model.last_layer.parameters()))
