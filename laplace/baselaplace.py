@@ -133,15 +133,9 @@ class BaseLaplace(ABC):
         for batch_i, (X, y) in enumerate(train_loader):
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
-            loss_batch, H_batch = self._curv_closure(X, y, N)
-
             detach_batch = (only_diff_last is not None) and (batch_i + only_diff_last < N_batches)
-            if detach_batch:
-                self.loss += loss_batch.detach()
-                self.H += H_batch.detach()
-            else:
-                self.loss += loss_batch
-                self.H += H_batch
+            X = X.detach() if detach_batch else X
+            loss_batch, H_batch = self._curv_closure(X, y, N)
 
         self.n_data = N
 
