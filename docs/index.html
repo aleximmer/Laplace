@@ -137,7 +137,7 @@ pdoc --http 0.0.0.0:8080 laplace --template-dir template
 <li>[9] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM. <a href="https://arxiv.org/abs/2104.04975"><em>Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning</em></a>. ICML 2021.</li>
 </ul>
 <h2 id="full-example-post-hoc-optimization-of-the-marginal-likelihood-and-prediction">Full example: <em>post-hoc</em> optimization of the marginal likelihood and prediction</h2>
-<h4 id="sinusoidal-toy-data">Sinusoidal toy data</h4>
+<h3 id="sinusoidal-toy-data">Sinusoidal toy data</h3>
 <p>We show how the marginal likelihood can be used after training a MAP network on a simple sinusoidal regression task.
 Subsequently, we use the optimized LA to predict which provides uncertainty on top of the MAP prediction.
 First, we set up the training data for the problem with observation noise \(\sigma=0.3\):</p>
@@ -157,7 +157,7 @@ y_train = torch.sin(X_train) + torch.randn_like(X_train) * true_sigma_noise
 train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size)
 X_test = torch.linspace(-5, 13, 500).unsqueeze(-1)  # +-5 on top of the training X-range
 </code></pre>
-<h4 id="training-a-map">Training a MAP</h4>
+<h3 id="training-a-map">Training a MAP</h3>
 <p>We now use <code>pytorch</code> to train a neural network with single hidden layer and Tanh activation.
 This is standard so nothing new here, yet:</p>
 <pre><code class="language-python"># create and train MAP model
@@ -174,7 +174,7 @@ for i in range(n_epochs):
         loss.backward()
         optimizer.step()
 </code></pre>
-<h4 id="fitting-and-optimizing-the-laplace-approximation-using-empirical-bayes">Fitting and optimizing the Laplace approximation using empirical Bayes</h4>
+<h3 id="fitting-and-optimizing-the-laplace-approximation-using-empirical-bayes">Fitting and optimizing the Laplace approximation using empirical Bayes</h3>
 <p>With the MAP-trained model at hand, we can estimate the prior precision and observation noise
 using empirical Bayes after training.
 The <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> method is called to construct a LA for <code>'regression'</code> with <code>'all'</code> weights.
@@ -194,7 +194,7 @@ for i in range(n_epochs):
 <p>The obtained observation noise is close to the ground truth with a value of \(\sigma \approx 0.28\)
 without the need for any validation data.
 The resulting prior precision is \(\delta \approx 0.18\).</p>
-<h4 id="bayesian-predictive">Bayesian predictive</h4>
+<h3 id="bayesian-predictive">Bayesian predictive</h3>
 <p>Lastly, we compare the MAP prediction to the obtained LA prediction.
 For LA, we have a closed-form predictive distribution on the output \(f\) which is a Gaussian
 \(\mathcal{N}(f(x;\theta_{MAP}), \mathbb{V}[f] + \sigma^2)\):</p>
@@ -229,6 +229,86 @@ plt.tight_layout()
 plt.show()
 </code></pre>
 <p><img alt=":align: center" src="regression_example.png"></p>
+<h2 id="full-example-post-hoc-laplace-on-a-large-image-classifier">Full example: <em>post-hoc</em> Laplace on a large image classifier</h2>
+<p>An advantage of the Laplace approximation over variational Bayes and Markov Chain Monte Carlo methods is its <em>post-hoc</em> nature. That means we can apply LA on (almost) any <em>pre-trained</em> neural network. In this example, we will see how we can apply the last-layer LA on a deep WideResNet model, trained on CIFAR-10.</p>
+<h4 id="data-loading">Data loading</h4>
+<p>First, let us load the CIFAR-10 dataset. The helper scripts for CIFAR-10 and WideResNet are available in the <code>examples/helper</code> directory in the main repository.</p>
+<pre><code class="language-python">import torch
+import torch.distributions as dists
+import numpy as np
+import helper.wideresnet as wrn
+import helper.dataloaders as dl
+from helper import util
+from netcal.metrics import ECE
+
+from laplace import Laplace
+
+
+np.random.seed(7777)
+torch.manual_seed(7777)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = True
+
+train_loader = dl.CIFAR10(train=True)
+test_loader = dl.CIFAR10(train=False)
+targets = torch.cat([y for x, y in test_loader], dim=0).numpy()
+</code></pre>
+<h4 id="load-a-pre-trained-model">Load a pre-trained model</h4>
+<p>Next, we will load a pre-trained WideResNet-16-4 model. Note that a GPU with CUDA support is needed for this example.</p>
+<pre><code class="language-python"># The model is a standard WideResNet 16-4
+# Taken as is from https://github.com/hendrycks/outlier-exposure
+model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
+
+util.download_pretrained_model()
+model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
+</code></pre>
+<p>To simplify the downstream tasks, we will use the following helper function to make predictions. It simply iterates through all minibatches and obtains the predictive probabilities of the CIFAR-10 classes.</p>
+<pre><code class="language-python">@torch.no_grad()
+def predict(dataloader, model, laplace=False):
+    py = []
+
+    for x, _ in dataloader:
+        if laplace:
+            py.append(model(x.cuda()))
+        else:
+            py.append(torch.softmax(model(x.cuda()), dim=-1))
+
+    return torch.cat(py).cpu().numpy()
+</code></pre>
+<h4 id="the-calibration-of-map">The calibration of MAP</h4>
+<p>We are now ready to see how calibrated is the model. The metrics we use are the expected calibration error (ECE, Naeni et al., AAAI 2015) and the negative (Categorical) log-likelihood. Note that lower values are better for both these metrics.</p>
+<p>First, let us inspect the MAP model. We shall use the <a href="https://github.com/fabiankueppers/calibration-framework"><code>netcal</code></a> library to easily compute the ECE.</p>
+<pre><code class="language-python">probs_map = predict(test_loader, model, laplace=False)
+acc_map = (probs_map.argmax(-1) == targets).float().mean()
+ece_map = ECE(bins=15).measure(probs_map.numpy(), targets.numpy())
+nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
+
+print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
+</code></pre>
+<p>Running this snippet, we would get:</p>
+<pre><code>[MAP] Acc.: 94.8%; ECE: 2.0%; NLL: 0.172
+</code></pre>
+<h3 id="the-calibration-of-laplace">The calibration of Laplace</h3>
+<p>Now we inspect the benefit of the LA. Let us apply the simple last-layer LA model, and optimize the prior precision hyperparameter using a <em>post-hoc</em> marginal likelihood maximization.</p>
+<pre><code class="language-python"># Laplace
+la = Laplace(model, 'classification',
+             subset_of_weights='last_layer',
+             hessian_structure='kron')
+la.fit(train_loader)
+la.optimize_prior_precision(method='marglik')
+</code></pre>
+<p>Then, we are ready to see how well does LA improves the calibration of the MAP model:</p>
+<pre><code class="language-python">probs_laplace = predict(test_loader, la, laplace=True)
+acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
+ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
+nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
+
+print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
+</code></pre>
+<p>Running this snippet, we obtain:</p>
+<pre><code>[Laplace] Acc.: 94.8%; ECE: 0.8%; NLL: 0.157
+</code></pre>
+<p>Notice that the last-layer LA does not do any harm to the accuracy, yet it improves the calibration of the MAP model substantially.</p>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
@@ -281,13 +361,15 @@ plt.show()
 <dd>&nbsp;</dd>
 <dt><strong><code>subset_of_weights</code></strong> :&ensp;<code>{'last_layer', 'all'}</code>, default=<code>'last_layer'</code></dt>
 <dd>subset of weights to consider for inference</dd>
-<dt><strong><code>hessian_structure</code></strong> :&ensp;<code>{'diag', 'kron', 'full'}</code>, default=<code>'kron'</code></dt>
-<dd>structure of the Hessian approximation</dd>
+<dt><strong><code>hessian_structure</code></strong> :&ensp;<code>{'diag', 'kron', 'full', 'GP'}</code>, default=<code>'kron'</code></dt>
+<dd>structure of the Hessian approximation.
+Note that in case of hessian_structure='GP', we are not really doing any Hessian approximation,
+the inference is instead done in the functional space</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
-<dt><strong><code>laplace</code></strong> :&ensp;<code><a title="laplace.ParametricLaplace" href="#laplace.ParametricLaplace">ParametricLaplace</a></code></dt>
-<dd>chosen subclass of ParametricLaplace instantiated with additional arguments</dd>
+<dt><strong><code>laplace</code></strong> :&ensp;<code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code></dt>
+<dd>chosen subclass of BaseLaplace instantiated with additional arguments</dd>
 </dl></div>
 </dd>
 </dl>
@@ -381,13 +463,71 @@ a scalar, layer-wise, or diagonal prior precision.</p>
 <span>def <span class="ident">log_marginal_likelihood</span></span>(<span>self, prior_precision=None, sigma_noise=None)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Compute the approximation to the log marginal likelihood subject
+to specific Laplace or GP approximations .
+Requires that the Laplace approximation has been fit before.
+The resulting torch.Tensor is differentiable in <code>prior_precision</code> and
+<code>sigma_noise</code> if these have gradients enabled.
+By passing <code>prior_precision</code> or <code>sigma_noise</code>, the current value is
+overwritten. This is useful for iterating on the log marginal likelihood.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>prior_precision</code></strong> :&ensp;<code>torch.Tensor</code>, optional</dt>
+<dd>prior precision if should be changed from current <code>prior_precision</code> value</dd>
+<dt><strong><code>sigma_noise</code></strong> :&ensp;<code>[type]</code>, optional</dt>
+<dd>observation noise standard deviation if should be changed</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>log_marglik</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 </dd>
 <dt id="laplace.BaseLaplace.predictive"><code class="name flex">
 <span>def <span class="ident">predictive</span></span>(<span>self, x, pred_type, link_approx, n_samples)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
+</dd>
+<dt id="laplace.BaseLaplace.optimize_prior_precision_base"><code class="name flex">
+<span>def <span class="ident">optimize_prior_precision_base</span></span>(<span>self, pred_type, method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Optimize the prior precision post-hoc using the <code>method</code>
+specified by the user.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>pred_type</code></strong> :&ensp;<code>{'glm', 'nn', 'gp'}</code>, default=<code>'glm'</code></dt>
+<dd>type of posterior predictive, linearized GLM predictive or neural
+network sampling predictive or Gaussian Process (GP) inference.
+The GLM predictive is consistent with the curvature approximations used here.</dd>
+<dt><strong><code>method</code></strong> :&ensp;<code>{'marglik', 'CV'}</code>, default=<code>'marglik'</code></dt>
+<dd>specifies how the prior precision should be optimized.</dd>
+<dt><strong><code>n_steps</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
+<dd>the number of gradient descent steps to take.</dd>
+<dt><strong><code>lr</code></strong> :&ensp;<code>float</code>, default=<code>1e-1</code></dt>
+<dd>the learning rate to use for gradient descent.</dd>
+<dt><strong><code>init_prior_prec</code></strong> :&ensp;<code>float</code>, default=<code>1.0</code></dt>
+<dd>initial prior precision before the first optimization step.</dd>
+<dt><strong><code>val_loader</code></strong> :&ensp;<code>torch.data.utils.DataLoader</code>, default=<code>None</code></dt>
+<dd>DataLoader for the validation set; each iterate is a training batch (X, y).</dd>
+<dt><strong><code>loss</code></strong> :&ensp;<code>callable</code>, default=<code>get_nll</code></dt>
+<dd>loss function to use for CV.</dd>
+<dt><strong><code>log_prior_prec_min</code></strong> :&ensp;<code>float</code>, default=<code>-4</code></dt>
+<dd>lower bound of gridsearch interval for CV.</dd>
+<dt><strong><code>log_prior_prec_max</code></strong> :&ensp;<code>float</code>, default=<code>4</code></dt>
+<dd>upper bound of gridsearch interval for CV.</dd>
+<dt><strong><code>grid_size</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
+<dd>number of values to consider inside the gridsearch interval for CV.</dd>
+<dt><strong><code>link_approx</code></strong> :&ensp;<code>{'mc', 'probit', 'bridge'}</code>, default=<code>'probit'</code></dt>
+<dd>how to approximate the classification link function for the <code>'glm'</code>.
+For <code>pred_type='nn'</code>, only <code>'mc'</code> is possible.</dd>
+<dt><strong><code>n_samples</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
+<dd>number of samples for <code>link_approx='mc'</code>.</dd>
+<dt><strong><code>verbose</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>if true, the optimized prior precision will be printed
+(can be a large tensor if the prior has a diagonal covariance).</dd>
+</dl></div>
 </dd>
 </dl>
 </dd>
@@ -498,30 +638,6 @@ used for the Hessian approximation.</p>
 <code>train_loader.dataset</code> needs to be set to access <span><span class="MathJax_Preview">N</span><script type="math/tex">N</script></span>, size of the data set</dd>
 </dl></div>
 </dd>
-<dt id="laplace.ParametricLaplace.log_marginal_likelihood"><code class="name flex">
-<span>def <span class="ident">log_marginal_likelihood</span></span>(<span>self, prior_precision=None, sigma_noise=None)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Compute the Laplace approximation to the log marginal likelihood subject
-to specific Hessian approximations that subclasses implement.
-Requires that the Laplace approximation has been fit before.
-The resulting torch.Tensor is differentiable in <code>prior_precision</code> and
-<code>sigma_noise</code> if these have gradients enabled.
-By passing <code>prior_precision</code> or <code>sigma_noise</code>, the current value is
-overwritten. This is useful for iterating on the log marginal likelihood.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>prior_precision</code></strong> :&ensp;<code>torch.Tensor</code>, optional</dt>
-<dd>prior precision if should be changed from current <code>prior_precision</code> value</dd>
-<dt><strong><code>sigma_noise</code></strong> :&ensp;<code>[type]</code>, optional</dt>
-<dd>observation noise standard deviation if should be changed</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>log_marglik</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl></div>
-</dd>
 <dt id="laplace.ParametricLaplace.predictive_samples"><code class="name flex">
 <span>def <span class="ident">predictive_samples</span></span>(<span>self, x, pred_type='glm', n_samples=100)</span>
 </code></dt>
@@ -584,7 +700,7 @@ the output covariance matrix
 <span>def <span class="ident">optimize_prior_precision</span></span>(<span>self, pred_type='glm', method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False)</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p><code>optimize_prior_precision_base</code> from <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> with <code>pred_type</code> in <code>{'glm', 'nn'}</code></p></div>
 </dd>
 </dl>
 <h3>Inherited members</h3>
@@ -592,6 +708,133 @@ the output covariance matrix
 <li><code><b><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.BaseLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="laplace.FunctionalLaplace"><code class="flex name class">
+<span>class <span class="ident">FunctionalLaplace</span></span>
+<span>(</span><span>model, likelihood, M=None, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackInterface, backend_kwargs=None, diagonal_kernel=False, diagonal_L=True)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Applying the GGN (General Gauss Newton) approximation for the Hessian in the Laplace approximation of the posterior
+turns the underlying probabilistic model from a BNN into a GLM (generalized linear model).
+This GLM (in the weight space) is equivalent to a GP (in the function space), see
+"Approximate Inference Turns Deep Networks into Gaussian Processes (Khan et al., 2019)"</p>
+<p>This class implements the (approximate) GP inference through which
+we obtain the desired quantities (a posterior predictive, a marginal log-likelihood).
+See "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)" for more details.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>M</code></strong> :&ensp;<code>int</code></dt>
+<dd>number of data points for Subset-of-Data (SOD) approximate GP inference.
+By default (<code>M=None</code>), all data points from train dataset are used</dd>
+<dt><strong><code>diagonal_kernel</code></strong> :&ensp;<code>bool</code></dt>
+<dd>GP kernel here is product of Jacobians, which results in a <span><span class="MathJax_Preview"> C \times C</span><script type="math/tex"> C \times C</script></span> matrix where <span><span class="MathJax_Preview">C</span><script type="math/tex">C</script></span> is the output
+dimension. If <code>diagonal_kernel=True</code>, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
+assuming independent GPs across output channels.</dd>
+<dt><strong><code>diagonal_L</code></strong> :&ensp;<code>bool</code></dt>
+<dd>approximate <span><span class="MathJax_Preview"> L_{MM} </span><script type="math/tex"> L_{MM} </script></span> with <span><span class="MathJax_Preview"> diag(L_{MM}) </span><script type="math/tex"> diag(L_{MM}) </script></span>. <span><span class="MathJax_Preview"> L_{MM} </span><script type="math/tex"> L_{MM} </script></span> is a block-diagonal matrix, where blocks
+represent Hessians of per-data-point log-likelihood w.r.t. NN output <span><span class="MathJax_Preview"> f </span><script type="math/tex"> f </script></span>. See Appendix A.2.1 in
+"Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)"
+for exact definition.
+If False and <code>likelihood='regression'</code>, then nothing changes
+because <span><span class="MathJax_Preview"> L_{MM} </span><script type="math/tex"> L_{MM} </script></span>
+is anyways diagonal as long as we assume diagonal noise in the likelihood.
+If False and <code>likelihood='classification'</code>, then the algorithm from Chapter 3.5 from R&amp;W 2006 GP book
+is used.</dd>
+</dl>
+<p>See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> class for the full interface.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li>laplace.lllaplace.FunctionalLLLaplace</li>
+</ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="laplace.FunctionalLaplace.log_det_K"><code class="name">var <span class="ident">log_det_K</span></code></dt>
+<dd>
+<div class="desc"><p>Computes log determinant term in GP marginal likelihood</p></div>
+</dd>
+<dt id="laplace.FunctionalLaplace.scatter_lml"><code class="name">var <span class="ident">scatter_lml</span></code></dt>
+<dd>
+<div class="desc"><p>Compute scatter term in GP log marginal likelihood</p></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.FunctionalLaplace.fit"><code class="name flex">
+<span>def <span class="ident">fit</span></span>(<span>self, train_loader)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Fit the Laplace approximation of a GP posterior.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>train_loader</code></strong> :&ensp;<code>torch.data.utils.DataLoader</code></dt>
+<dd><code>train_loader.dataset</code> needs to be set to access <span><span class="MathJax_Preview">N</span><script type="math/tex">N</script></span>, size of the data set
+<code>train_loader.batch_size</code> needs to be set to access <span><span class="MathJax_Preview">b</span><script type="math/tex">b</script></span> batch_size</dd>
+</dl></div>
+</dd>
+<dt id="laplace.FunctionalLaplace.predictive_samples"><code class="name flex">
+<span>def <span class="ident">predictive_samples</span></span>(<span>self, x, n_samples=100)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Sample from the posterior predictive on input data <code>x</code>.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>input data <code>(batch_size, input_shape)</code></dd>
+<dt><strong><code>n_samples</code></strong> :&ensp;<code>int</code></dt>
+<dd>number of samples</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>samples</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>samples <code>(n_samples, batch_size, output_shape)</code></dd>
+</dl></div>
+</dd>
+<dt id="laplace.FunctionalLaplace.gp_posterior"><code class="name flex">
+<span>def <span class="ident">gp_posterior</span></span>(<span>self, X_star)</span>
+</code></dt>
+<dd>
+<div class="desc"><p><span><span class="MathJax_Preview">q(f_* | x_*, \mathcal{D}) = \mathcal{N} (f_*, \Sigma_*) </span><script type="math/tex">q(f_* | x_*, \mathcal{D}) = \mathcal{N} (f_*, \Sigma_*) </script></span>, where
+<span><span class="MathJax_Preview">\Sigma_* =
+K_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}</span><script type="math/tex">\Sigma_* =
+K_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}</script></span></p>
+<p>See eq. A.6 in "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)"</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>X_star</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>test data points <span><span class="MathJax_Preview">X_* \in \mathbb{R}^{N_{test} \times C} </span><script type="math/tex">X_* \in \mathbb{R}^{N_{test} \times C} </script></span></dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>f_mu</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>mean of the GP posterior distribution</dd>
+<dt><strong><code>f_var</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>variance of the GP posterior distribution</dd>
+</dl></div>
+</dd>
+<dt id="laplace.FunctionalLaplace.optimize_prior_precision"><code class="name flex">
+<span>def <span class="ident">optimize_prior_precision</span></span>(<span>self, method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, pred_type='gp', link_approx='probit', n_samples=100, verbose=False)</span>
+</code></dt>
+<dd>
+<div class="desc"><p><code>optimize_prior_precision_base</code> from <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> with <code>pred_type='GP'</code></p></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.baselaplace.BaseLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.BaseLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
 </ul>
 </li>
@@ -657,7 +900,9 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
@@ -716,7 +961,9 @@ Damping can be enabled by setting <code>damping=True</code>.</p></div>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
@@ -783,7 +1030,9 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
@@ -877,7 +1126,9 @@ a scalar or diagonal prior precision.</p>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
@@ -913,7 +1164,9 @@ See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace
 <li><code><a title="laplace.baselaplace.FullLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.FullLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.FullLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.FullLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.posterior_covariance" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_covariance">posterior_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.posterior_scale" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_scale">posterior_scale</a></code></li>
@@ -957,7 +1210,9 @@ Use of <code>damping</code> is possible by initializing or setting <code>damping
 <li><code><a title="laplace.baselaplace.KronLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.KronLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
 <li><code><a title="laplace.baselaplace.KronLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.KronLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.KronLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.KronLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.KronLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.KronLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.KronLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.baselaplace.KronLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
@@ -993,7 +1248,9 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><code><a title="laplace.baselaplace.DiagLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.DiagLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.DiagLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.DiagLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.posterior_scale" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_scale">posterior_scale</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.posterior_variance" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_variance">posterior_variance</a></code></li>
@@ -1001,6 +1258,50 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><code><a title="laplace.baselaplace.DiagLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="laplace.FunctionalLLLaplace"><code class="flex name class">
+<span>class <span class="ident">FunctionalLLLaplace</span></span>
+<span>(</span><span>model, likelihood, M=None, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackInterface, last_layer_name=None, backend_kwargs=None, diagonal_kernel=False, diagonal_L=True)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Here not much changes in terms of GP inference compared to FunctionalLaplace class.
+Since now we treat only the last layer probabilistically and the rest of the network is used as a "fixed feature
+extractor", that means that the <span><span class="MathJax_Preview">X \in R^{M \times D</span><script type="math/tex">X \in R^{M \times D</script></span> in GP inference changes
+to <span><span class="MathJax_Preview">\Tilde{X} \in R^{M \times l_{n-1}} </span><script type="math/tex">\Tilde{X} \in R^{M \times l_{n-1}} </script></span>,
+where <span><span class="MathJax_Preview">l_{n-1}</span><script type="math/tex">l_{n-1}</script></span> is the dimension of the output
+of the penultimate NN layer.</p>
+<p>See <code><a title="laplace.FunctionalLaplace" href="#laplace.FunctionalLaplace">FunctionalLaplace</a></code> for the full interface.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>laplace.baselaplace.FunctionalLaplace</li>
+<li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.FunctionalLLLaplace.fit"><code class="name flex">
+<span>def <span class="ident">fit</span></span>(<span>self, train_loader)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Fit the Laplace approximation of a GP posterior.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>train_loader</code></strong> :&ensp;<code>torch.data.utils.DataLoader</code></dt>
+<dd><code>train_loader.dataset</code> needs to be set to access <span><span class="MathJax_Preview">N</span><script type="math/tex">N</script></span>, size of the data set
+<code>train_loader.batch_size</code> needs to be set to access <span><span class="MathJax_Preview">b</span><script type="math/tex">b</script></span> batch_size</dd>
+</dl></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.baselaplace.BaseLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.baselaplace.BaseLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
 </ul>
 </li>
 </ul>
@@ -1027,6 +1328,13 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><a href="#training-a-map">Training a MAP</a></li>
 <li><a href="#fitting-and-optimizing-the-laplace-approximation-using-empirical-bayes">Fitting and optimizing the Laplace approximation using empirical Bayes</a></li>
 <li><a href="#bayesian-predictive">Bayesian predictive</a></li>
+</ul>
+</li>
+<li><a href="#full-example-post-hoc-laplace-on-a-large-image-classifier">Full example: post-hoc Laplace on a large image classifier</a><ul>
+<li><a href="#data-loading">Data loading</a></li>
+<li><a href="#load-a-pre-trained-model">Load a pre-trained model</a></li>
+<li><a href="#the-calibration-of-map">The calibration of MAP</a></li>
+<li><a href="#the-calibration-of-laplace">The calibration of Laplace</a></li>
 </ul>
 </li>
 </ul>
@@ -1056,17 +1364,26 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><code><a title="laplace.BaseLaplace.fit" href="#laplace.BaseLaplace.fit">fit</a></code></li>
 <li><code><a title="laplace.BaseLaplace.log_marginal_likelihood" href="#laplace.BaseLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
 <li><code><a title="laplace.BaseLaplace.predictive" href="#laplace.BaseLaplace.predictive">predictive</a></code></li>
+<li><code><a title="laplace.BaseLaplace.optimize_prior_precision_base" href="#laplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 </ul>
 </li>
 <li>
 <h4><code><a title="laplace.ParametricLaplace" href="#laplace.ParametricLaplace">ParametricLaplace</a></code></h4>
 <ul class="">
 <li><code><a title="laplace.ParametricLaplace.fit" href="#laplace.ParametricLaplace.fit">fit</a></code></li>
-<li><code><a title="laplace.ParametricLaplace.log_marginal_likelihood" href="#laplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.predictive_samples" href="#laplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.functional_variance" href="#laplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.sample" href="#laplace.ParametricLaplace.sample">sample</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.optimize_prior_precision" href="#laplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="laplace.FunctionalLaplace" href="#laplace.FunctionalLaplace">FunctionalLaplace</a></code></h4>
+<ul class="">
+<li><code><a title="laplace.FunctionalLaplace.fit" href="#laplace.FunctionalLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.FunctionalLaplace.predictive_samples" href="#laplace.FunctionalLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.FunctionalLaplace.gp_posterior" href="#laplace.FunctionalLaplace.gp_posterior">gp_posterior</a></code></li>
+<li><code><a title="laplace.FunctionalLaplace.optimize_prior_precision" href="#laplace.FunctionalLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
 </ul>
 </li>
 <li>
@@ -1089,6 +1406,12 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 </li>
 <li>
 <h4><code><a title="laplace.DiagLLLaplace" href="#laplace.DiagLLLaplace">DiagLLLaplace</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.FunctionalLLLaplace" href="#laplace.FunctionalLLLaplace">FunctionalLLLaplace</a></code></h4>
+<ul class="">
+<li><code><a title="laplace.FunctionalLLLaplace.fit" href="#laplace.FunctionalLLLaplace.fit">fit</a></code></li>
+</ul>
 </li>
 </ul>
 </li>

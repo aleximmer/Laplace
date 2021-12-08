@@ -56,7 +56,7 @@ def test_gp_equivalence_regression_multivariate(parametric_laplace, functional_l
 
     full_la = parametric_laplace(model, 'regression', sigma_noise=true_sigma_noise, prior_precision=2.0)
     functional_gp_la = functional_laplace(model, 'regression', M=len(X_train),
-                                         sigma_noise=true_sigma_noise, diagonal_kernel=False, prior_precision=2.0)
+                                          sigma_noise=true_sigma_noise, diagonal_kernel=False, prior_precision=2.0)
     full_la.fit(train_loader)
     functional_gp_la.fit(train_loader)
 

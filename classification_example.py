@@ -14,14 +14,13 @@ X_train, y_train, train_loader, X_test = toy_classification_dataset(batch_size=b
 model = toy_model(train_loader, in_dim=4, out_dim=c, regression=False)
 
 
-la = Laplace(model, 'classification', subset_of_weights='all', hessian_structure='GP',
-             diagonal_L=True, diagonal_kernel=True)
-# la = Laplace(model, 'classification', subset_of_weights='all', hessian_structure='diag')
+# la = Laplace(model, 'classification', subset_of_weights='all', hessian_structure='GP',
+#              diagonal_L=True, diagonal_kernel=True)
+la = Laplace(model, 'classification', subset_of_weights='all', hessian_structure='diag')
 la.fit(train_loader)
 log_prior = torch.ones(1, requires_grad=True)
 hyper_optimizer = torch.optim.Adam([log_prior], lr=1e-1)
 for i in range(n_epochs):
-    print(i)
     hyper_optimizer.zero_grad()
     neg_marglik = - la.log_marginal_likelihood(log_prior.exp())
     neg_marglik.backward()

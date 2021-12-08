@@ -113,6 +113,24 @@ only at current last-layer parameter <span><span class="MathJax_Preview">\theta_
 </dl>
 <h3>Methods</h3>
 <dl>
+<dt id="laplace.curvature.curvature.CurvatureInterface.H_log_likelihood"><code class="name flex">
+<span>def <span class="ident">H_log_likelihood</span></span>(<span>self, f, sigma_factor=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Second derivative (Hessian) of log-likelihood w.r.t. the output of NN <span><span class="MathJax_Preview">f</span><script type="math/tex">f</script></span></p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>f</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Output of the last layer of NN (before softmax layer)</dd>
+<dt><strong><code>sigma_factor</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Precision (scaled with temperature) in regression likelihood. See _H_factor property in BaseLaplace</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>H_lik</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Hessian of <span><span class="MathJax_Preview">p(y|f)</span><script type="math/tex">p(y|f)</script></span> w.r.t. <span><span class="MathJax_Preview">f</span><script type="math/tex">f</script></span> (batch, output_shape, output_shape)</dd>
+</dl></div>
+</dd>
 <dt id="laplace.curvature.curvature.CurvatureInterface.gradients"><code class="name flex">
 <span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
 </code></dt>
@@ -259,6 +277,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 <ul class="hlist">
 <li><code><b><a title="laplace.curvature.curvature.CurvatureInterface" href="#laplace.curvature.curvature.CurvatureInterface">CurvatureInterface</a></b></code>:
 <ul class="hlist">
+<li><code><a title="laplace.curvature.curvature.CurvatureInterface.H_log_likelihood" href="#laplace.curvature.curvature.CurvatureInterface.H_log_likelihood">H_log_likelihood</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.diag" href="#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.gradients" href="#laplace.curvature.curvature.CurvatureInterface.gradients">gradients</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.jacobians" href="#laplace.curvature.curvature.CurvatureInterface.jacobians">jacobians</a></code></li>
@@ -330,6 +349,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 <ul class="hlist">
 <li><code><b><a title="laplace.curvature.curvature.CurvatureInterface" href="#laplace.curvature.curvature.CurvatureInterface">CurvatureInterface</a></b></code>:
 <ul class="hlist">
+<li><code><a title="laplace.curvature.curvature.CurvatureInterface.H_log_likelihood" href="#laplace.curvature.curvature.CurvatureInterface.H_log_likelihood">H_log_likelihood</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.diag" href="#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.gradients" href="#laplace.curvature.curvature.CurvatureInterface.gradients">gradients</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.jacobians" href="#laplace.curvature.curvature.CurvatureInterface.jacobians">jacobians</a></code></li>
@@ -360,6 +380,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 <ul class="">
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.jacobians" href="#laplace.curvature.curvature.CurvatureInterface.jacobians">jacobians</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians" href="#laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians">last_layer_jacobians</a></code></li>
+<li><code><a title="laplace.curvature.curvature.CurvatureInterface.H_log_likelihood" href="#laplace.curvature.curvature.CurvatureInterface.H_log_likelihood">H_log_likelihood</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.gradients" href="#laplace.curvature.curvature.CurvatureInterface.gradients">gradients</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.full" href="#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.kron" href="#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>

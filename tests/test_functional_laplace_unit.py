@@ -23,6 +23,14 @@ def model():
     return model
 
 
+@pytest.fixture
+def reg_Xy():
+    torch.manual_seed(711)
+    X = torch.randn(10, 3)
+    y = torch.randn(10, 2)
+    return X, y
+
+
 def test_sod_data_loader(reg_loader, model):
     M = 5
     func_la = FunctionalLaplace(model, 'regression', M)
@@ -112,5 +120,74 @@ def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=
     _check(expected)
 
 
+@pytest.mark.parametrize('kernel_type,jacobians,jacobians_2,expected_full_kernel,expected_block_diagonal_kernel',
+                         [('kernel_batch',
+                           torch.tensor([[[1., 1., 1.], [2., 2., 2.]],
+                                         [[1., 1., 1.], [3., 3., 3.]]]),
+                           torch.tensor([[[1., 1., 1.], [2., 2., 2.]],
+                                         [[1., 1., 1.], [3., 3., 3.]]]),
+                           torch.tensor([[3., 6., 3., 9.],
+                                         [6., 12., 6., 18.],
+                                         [3., 6., 3., 9.],
+                                         [9., 18., 9., 27.]]),
+                           torch.tensor([[[3., 12.],
+                                         [3., 18.]],
+                                        [[3., 18.],
+                                         [3., 27.]]])
+                           ),
+                          ('kernel_star',
+                           torch.tensor([[[1., 1., 1.], [1., 1., 1.]],
+                                         [[1., 1., 1.], [2., 2., 2.]],
+                                         [[1., 1., 1.], [3., 3., 3.]]]),
+                           torch.tensor([[[1., 1., 1.], [1., 1., 1.]],
+                                         [[1., 1., 1.], [2., 2., 2.]],
+                                         [[1., 1., 1.], [3., 3., 3.]]]),
+                           torch.tensor([[[3., 3.],
+                                          [3., 3.]],
+                                         [[3., 6.],
+                                          [6., 12.]],
+                                         [[3., 9.],
+                                          [9., 27.]]]),
+                          torch.tensor([[3., 3.],
+                                        [3., 12.],
+                                        [3., 27.]])
+                           ),
+                          ('kernel_batch_star',
+                           torch.tensor([[[1., 1., 1.], [1., 1., 1.]],
+                                         [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5]]]),
+                           torch.tensor([[[1., 1., 1.], [2., 2., 2.]],
+                                         [[1., 1., 1.], [3., 3., 3.]]]),
+                           torch.tensor([[[[3., 6.], [3., 6.]], [[3., 9.], [3., 9.]]],
+                                         [[[1.5, 3.], [1.5, 3.]], [[1.5, 4.5], [1.5, 4.5]]]]),
+                           torch.tensor([[[3., 6.], [3., 9.]],
+                                         [[1.5, 3.], [1.5, 4.5]]])
+                           )])
+def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
+                   expected_full_kernel, expected_block_diagonal_kernel):
+    X, y = reg_Xy
+    func_la = FunctionalLaplace(model, 'regression', prior_precision=1.0, diagonal_kernel=False)
+    func_la.prior_factor_sod = 1.0
+    if kernel_type == 'kernel_batch':
+        kernel = func_la._kernel_batch
+    elif kernel_type == 'kernel_star':
+        kernel = func_la._kernel_star
+    elif kernel_type == 'kernel_batch_star':
+        kernel = func_la._kernel_batch_star
+    else:
+        raise ValueError
 
+    # mocking jacobians
+    def mock_jacobians(self, model, x):
+        return jacobians_2, None
+    mocker.patch('laplace.curvature.BackPackInterface.jacobians', mock_jacobians)
 
+    #  mocking prior precision
+    mocker.patch('laplace.baselaplace.FunctionalLaplace.prior_precision_diag', torch.ones(3))
+
+    # X does not have an impact since we mock jacobians in mock_jacobians above
+    full_kernel = kernel(jacobians, X)
+    assert torch.equal(expected_full_kernel, full_kernel)
+
+    func_la.diagonal_kernel = True
+    block_diag_kernel = kernel(jacobians, X)
+    assert torch.equal(expected_block_diagonal_kernel, block_diag_kernel)

@@ -149,6 +149,29 @@ adding and removing jitter to the diagonal.</p>
 </dl>
 </section>
 <section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="laplace.utils.SoDSampler"><code class="flex name class">
+<span>class <span class="ident">SoDSampler</span></span>
+<span>(</span><span>N, M)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Base class for all Samplers.</p>
+<p>Every Sampler subclass has to provide an :meth:<code>__iter__</code> method, providing a
+way to iterate over indices of dataset elements, and a :meth:<code>__len__</code> method
+that returns the length of the returned iterators.</p>
+<div class="admonition note">
+<p class="admonition-title">Note:&ensp;The :meth:<code>__len__</code> method isn't strictly required by</p>
+<p>:class:<code>~torch.utils.data.DataLoader</code>, but is expected in any
+calculation involving the length of a :class:<code>~torch.utils.data.DataLoader</code>.</p>
+</div></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torch.utils.data.sampler.Sampler</li>
+<li>typing.Generic</li>
+</ul>
+</dd>
+</dl>
 </section>
 </article>
 <nav id="sidebar">
@@ -172,6 +195,13 @@ adding and removing jitter to the diagonal.</p>
 <li><code><a title="laplace.utils.diagonal_add_scalar" href="#laplace.utils.diagonal_add_scalar">diagonal_add_scalar</a></code></li>
 <li><code><a title="laplace.utils.symeig" href="#laplace.utils.symeig">symeig</a></code></li>
 <li><code><a title="laplace.utils.block_diag" href="#laplace.utils.block_diag">block_diag</a></code></li>
+</ul>
+</li>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="laplace.utils.SoDSampler" href="#laplace.utils.SoDSampler">SoDSampler</a></code></h4>
+</li>
 </ul>
 </li>
 </ul>

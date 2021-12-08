@@ -85,6 +85,34 @@ class BackPackInterface(CurvatureInterface):
                         for p in self._model.parameters()], dim=1)
         return Gs, loss
 
+    def gp_quantities(self, X, y, sigma_factor):
+        """
+         Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch, input_shape)`
+        y : torch.Tensor
+            labels `(batch, output_shape)`
+        sigma_factor: inverse of (scaled) likelihood noise
+
+        Returns
+        -------
+        loss : torch.tensor
+        Js : torch.tensor
+              Jacobians (batch, output_shape, parameters)
+        f : torch.tensor
+              NN output (batch, output_shape)
+        lambdas: torch.tensor
+              Hessian of \\( p(y|f) \\) w.r.t. \\(f\\) (batch, output_shape, output_shape)
+        """
+        if self.last_layer:
+            Js, f = self.last_layer_jacobians(self.model, X)
+        else:
+            Js, f = self.jacobians(self.model, X)
+        lambdas = self.H_log_likelihood(f, sigma_factor)
+        loss = self.factor * self.lossfunc(f, y)
+        return loss.detach(), Js, f, lambdas
+
 
 class BackPackGGN(BackPackInterface, GGNInterface):
     """Implementation of the `GGNInterface` using Backpack.
@@ -152,115 +180,6 @@ class BackPackEF(BackPackInterface, EFInterface):
 
     def kron(self, X, y, **kwargs):
         raise NotImplementedError('Unavailable through Backpack.')
-
-
-class BackPackGP(BackPackInterface):
-    """Implementation of the GP inference using Backpack.
-    """
-
-    def __init__(self, model, likelihood, last_layer=False):
-        super().__init__(model, likelihood, last_layer)
-
-    def _jacobians(self, X):
-        if self.last_layer:
-            Js, f = self.last_layer_jacobians(self.model, X)
-        else:
-            Js, f = self.jacobians(self.model, X)
-        return Js, f
-
-    def gp(self, X, y, sigma_factor):
-        """
-         Parameters
-        ----------
-        x : torch.Tensor
-            input data `(batch, input_shape)`
-        y : torch.Tensor
-            labels `(batch, output_shape)`
-        sigma_factor: inverse of (scaled) likelihood noise
-
-        Returns
-        -------
-        loss : torch.tensor
-        Js : torch.tensor
-              Jacobians (batch, output_shape, parameters)
-        f : torch.tensor
-              NN output (batch, output_shape)
-        lambdas: torch.tensor
-              Hessian of p(y|f) w.r.t. f (batch, output_shape, output_shape)
-        """
-        Js, f = self._jacobians(X)
-        lambdas = self._get_lambdas(f, sigma_factor)
-        loss = self.factor * self.lossfunc(f, y)
-        return loss.detach(), Js, f, lambdas
-
-    def k_b_b(self, jacobians, batch, prior_precision, diagonal_kernel, prior_factor=1.0):
-        """
-        Compute K_bb, which is a part of K_MM kernel matrix.
-
-        :param jacobians: torch.tensor with shape (b, C, P)
-        :param batch: torch.tensor with shape (b, C)
-        :param prior_precision:
-        :param diagonal_kernel:
-        :param prior_factor:
-        :return:
-        """
-        jacobians_2, _ = self._jacobians(batch)
-        P = jacobians.shape[-1]  # nr model params
-        prior = prior_factor / prior_precision
-        if diagonal_kernel:
-            kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
-        else:
-            kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
-        return kernel
-
-    def k_star_star(self, jacobians, batch, prior_precision, diagonal_kernel, prior_factor=1.0):
-        """
-        Compute K_star_star kernel matrix.
-
-        :param jacobians:
-        :param batch:
-        :param prior_precision:
-        :param diagonal_kernel:
-        :param prior_factor:
-        :return:
-        """
-        jacobians_2, _ = self._jacobians(batch)
-        prior = prior_factor / prior_precision
-        if diagonal_kernel:
-            kernel = torch.einsum('bcp,bcp->bc', jacobians, jacobians_2 * prior)
-        else:
-            kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
-        return kernel
-
-    def k_b_star(self, jacobians, batch, prior_precision, diagonal_kernel, prior_factor=1.0):
-        """
-        Compute K_b_star, which is a part of K_M_star kernel matrix.
-
-        :param jacobians:
-        :param batch:
-        :param prior_precision:
-        :param diagonal_kernel:
-        :param prior_factor:
-        :return:
-        """
-        jacobians_2, _ = self._jacobians(batch)
-        prior = prior_factor / prior_precision
-        if diagonal_kernel:
-            kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
-        else:
-            kernel = torch.einsum('bcp,p,dep->bdce', jacobians, prior, jacobians_2)
-        return kernel
-
-    def _get_lambdas(self, f, sigma_factor):
-        b, C = f.shape
-        if self.likelihood == 'regression':
-            # second derivative is (1 / sigma^2) * I_{C}
-            lambdas = sigma_factor * torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
-        else:
-            # second derivative of log lik is diag(p) - pp^T
-            ps = torch.softmax(f, dim=-1)
-            lambdas = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
-        return lambdas
 
 
 def _cleanup(module):
