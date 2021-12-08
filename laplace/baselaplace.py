@@ -137,12 +137,8 @@ class BaseLaplace(ABC):
             X = X.detach() if detach_batch else X
             loss_batch, H_batch = self._curv_closure(X, y, N)
 
-            if detach_batch:
-                self.loss += loss_batch.detach()
-                self.H += H_batch.detach()
-            else:
-                self.loss += loss_batch
-                self.H += H_batch
+            self.loss += loss_batch
+            self.H += H_batch
 
         self.n_data = N
 
