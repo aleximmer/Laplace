@@ -146,7 +146,7 @@ overwritten. This is useful for iterating on the log marginal likelihood.</p>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.baselaplace.BaseLaplace.optimize_prior_precision_base"><code class="name flex">
-<span>def <span class="ident">optimize_prior_precision_base</span></span>(<span>self, pred_type, method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False)</span>
+<span>def <span class="ident">optimize_prior_precision_base</span></span>(<span>self, pred_type, method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False, cv_loss_with_var=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Optimize the prior precision post-hoc using the <code>method</code>
@@ -169,6 +169,9 @@ The GLM predictive is consistent with the curvature approximations used here.</d
 <dd>DataLoader for the validation set; each iterate is a training batch (X, y).</dd>
 <dt><strong><code>loss</code></strong> :&ensp;<code>callable</code>, default=<code>get_nll</code></dt>
 <dd>loss function to use for CV.</dd>
+<dt><strong><code>cv_loss_with_var</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>if true, <code>loss</code> takes three arguments <code>loss(output_mean, output_var, target)</code>,
+otherwise, <code>loss</code> takes two arguments <code>loss(output_mean, target)</code></dd>
 <dt><strong><code>log_prior_prec_min</code></strong> :&ensp;<code>float</code>, default=<code>-4</code></dt>
 <dd>lower bound of gridsearch interval for CV.</dd>
 <dt><strong><code>log_prior_prec_max</code></strong> :&ensp;<code>float</code>, default=<code>4</code></dt>
@@ -554,7 +557,7 @@ the output covariance matrix
 </dl></div>
 </dd>
 <dt id="laplace.baselaplace.ParametricLaplace.optimize_prior_precision"><code class="name flex">
-<span>def <span class="ident">optimize_prior_precision</span></span>(<span>self, pred_type='glm', method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False)</span>
+<span>def <span class="ident">optimize_prior_precision</span></span>(<span>self, method='marglik', pred_type='glm', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False, cv_loss_with_var=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p><code>optimize_prior_precision_base</code> from <code><a title="laplace.baselaplace.BaseLaplace" href="#laplace.baselaplace.BaseLaplace">BaseLaplace</a></code> with <code>pred_type</code> in <code>{'glm', 'nn'}</code></p></div>

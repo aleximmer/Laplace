@@ -870,11 +870,22 @@ class FunctionalLaplace(BaseLaplace):
     Applying the GGN (General Gauss Newton) approximation for the Hessian in the Laplace approximation of the posterior
     turns the underlying probabilistic model from a BNN into a GLM (generalized linear model).
     This GLM (in the weight space) is equivalent to a GP (in the function space), see
-    "Approximate Inference Turns Deep Networks into Gaussian Processes (Khan et al., 2019)"
+    [Approximate Inference Turns Deep Networks into Gaussian Processes (Khan et al., 2019)](https://arxiv.org/abs/1906.01930)
 
     This class implements the (approximate) GP inference through which
-    we obtain the desired quantities (a posterior predictive, a marginal log-likelihood).
-    See "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)" for more details.
+    we obtain the desired quantities (posterior predictive, marginal log-likelihood).
+    See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
+    for more details.
+
+    Note that for `likelihood='classification'`, we approximate \( L_{NN} \\) with a diagonal matrix
+    ( \\( L_{NN} \\) is a block-diagonal matrix, where blocks represent Hessians of per-data-point log-likelihood w.r.t.
+     neural network output \\( f \\), See Appendix [A.2.1](https://arxiv.org/abs/2008.08400) for exact definition). We
+     resort to such an approximation because of the (possible) errors found in Laplace approximation for
+     multiclass GP classification in Chapter 3.5 of [R&W 2006 GP book](http://www.gaussianprocess.org/gpml/),
+     see the question
+     [here](https://stats.stackexchange.com/questions/555183/gaussian-processes-multi-class-laplace-approximation)
+     for more details. Alternatively, one could also resort to *one-vs-one* or *one-vs-rest* implementations
+     for multiclass classification, however, that is not (yet) supported here.
 
     Parameters
     ----------
@@ -885,14 +896,6 @@ class FunctionalLaplace(BaseLaplace):
         GP kernel here is product of Jacobians, which results in a \\( C \\times C\\) matrix where \\(C\\) is the output
         dimension. If `diagonal_kernel=True`, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
         assuming independent GPs across output channels.
-    diagonal_L : bool
-        approximate \\( L_{MM} \\) with \\( diag(L_{MM}) \\). \\( L_{MM} \\) is a block-diagonal matrix, where blocks
-        represent Hessians of per-data-point log-likelihood w.r.t. NN output \\( f \\). See Appendix A.2.1 in
-        "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)"
-        for exact definition.
-        If False and `likelihood='regression'`, then nothing changes
-            because \\( L_{MM} \\)  is anyways diagonal as long as we assume diagonal noise in the likelihood.
-
 
     See `BaseLaplace` class for the full interface.
     """
@@ -901,17 +904,13 @@ class FunctionalLaplace(BaseLaplace):
 
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackInterface, backend_kwargs=None,
-                 diagonal_kernel=False, diagonal_L=True):
+                 diagonal_kernel=False):
         assert backend in [BackPackInterface], 'Only BackPack backend is supported in FunctionalLaplace (for now)'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
         self.M = M
         self.diagonal_kernel = diagonal_kernel
-        self.diagonal_L = diagonal_L
-        if not diagonal_kernel and likelihood == 'classification':
-            assert diagonal_L, \
-                'GP inference without independence for classification necessitates diagonal approximation of L!'
 
         self.K_MM = None
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
@@ -957,17 +956,11 @@ class FunctionalLaplace(BaseLaplace):
                 self.K_MM[j * bC:min((j + 1) * bC, MC), i * bC:min((i + 1) * bC, MC)] = torch.transpose(K_batch, 0, 1)
 
     def _build_L(self, lambdas):
+        L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
         if self.diagonal_kernel:
-            if self.diagonal_L or self.likelihood == "regression":
-                L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
-                return [L_diag[i::self.n_outputs] for i in range(self.n_outputs)]
-            else:
-                # R&W 2006 algorithm
-                raise NotImplementedError
+            return [L_diag[i::self.n_outputs] for i in range(self.n_outputs)]
         else:
-            # in case of self.likelihood == "classificiation" we approximate L_MM with diagonal here
-            # in case of self.likelihood == "regression" L_MM is anyways diagonal
-            return torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
+            return L_diag
 
     def _build_Sigma_inv(self):
         if self.diagonal_kernel:
@@ -1081,7 +1074,7 @@ class FunctionalLaplace(BaseLaplace):
         \\(q(f_* | x_*, \mathcal{D}) = \mathcal{N} (f_*, \Sigma_*) \\), where
         \\(\Sigma_* =  K_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\)
 
-        See eq. A.6 in "Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)"
+        See eq. A.6 in [Improving predictions of Bayesian neural nets via local linearization](https://arxiv.org/abs/2008.08400)
 
         Parameters
         ----------
@@ -1161,7 +1154,7 @@ class FunctionalLaplace(BaseLaplace):
 
         For `classification` we use eq. (3.44) from Chapter 3.5 from
         [GP book R&W 2006](http://www.gaussianprocess.org/gpml/chapters/) with
-        (note that we always use diagonal approximation \\(D\\) here of the Hessian of log likelihood w.r.t. \\(f\\) here):
+        (note that we always use diagonal approximation \\(D\\) of the Hessian of log likelihood w.r.t. \\(f\\)):
 
         log determinant term := \\( \log | I + D^{1/2}K D^{1/2} | \\)
 
@@ -1179,19 +1172,15 @@ class FunctionalLaplace(BaseLaplace):
             else:
                 return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
         else:
-            if self.diagonal_L:
-                if self.diagonal_kernel:
-                    log_det = 0.
-                    for c in range(self.n_outputs):
-                        W = torch.sqrt(self.L[c])
-                        log_det += torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0]))
-                    return log_det
-                else:
-                    W = torch.sqrt(self.L)
-                    return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0]))
+            if self.diagonal_kernel:
+                log_det = 0.
+                for c in range(self.n_outputs):
+                    W = torch.sqrt(self.L[c])
+                    log_det += torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0]))
+                return log_det
             else:
-                # R&W 2006 algorithm
-                raise NotImplementedError
+                W = torch.sqrt(self.L)
+                return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0]))
 
     @property
     def scatter_lml(self, eps=0.001):

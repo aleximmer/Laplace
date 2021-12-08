@@ -94,7 +94,7 @@ def test_gp_equivalence_classification(laplace, diagonal_kernel, c=2):
     p_full = p_full.squeeze().detach().cpu().numpy()
     p_gp = p_gp.squeeze().detach().cpu().numpy()
 
-    # difference due to the approximation with diagonal_L=True
+    # difference due to the diagonal approximation of L
     # diffs = np.abs(p_full - p_gp)
     # print(diffs.mean())
     # print(diffs.max())
