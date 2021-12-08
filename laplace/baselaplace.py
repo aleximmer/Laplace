@@ -892,8 +892,6 @@ class FunctionalLaplace(BaseLaplace):
         for exact definition.
         If False and `likelihood='regression'`, then nothing changes
             because \\( L_{MM} \\)  is anyways diagonal as long as we assume diagonal noise in the likelihood.
-        If False and `likelihood='classification'`, then the algorithm from Chapter 3.5 from R&W 2006 GP book
-            is used.
 
 
     See `BaseLaplace` class for the full interface.
@@ -920,7 +918,7 @@ class FunctionalLaplace(BaseLaplace):
         self.train_loader = None  # needed in functional variance and marginal log likelihood
         self.batch_size = None
         self.prior_factor_sod = None
-        self.mu = None  # mean of the log marginal likelihood
+        self.mu = None  # mean in the scatter term of the log marginal likelihood
         self.L = None
 
     def _check_fit(self):
@@ -964,7 +962,6 @@ class FunctionalLaplace(BaseLaplace):
                 L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
                 return [L_diag[i::self.n_outputs] for i in range(self.n_outputs)]
             else:
-                # TODO: double check the correctness of the algorithm in R&W before implementing
                 # R&W 2006 algorithm
                 raise NotImplementedError
         else:
@@ -1019,7 +1016,6 @@ class FunctionalLaplace(BaseLaplace):
 
         self._init_K_MM()
         self._init_Sigma_inv()
-        diff_mu = self.prior_mean - self.map_estimate
 
         f, lambdas, mu = [], [], []
         for i, batch in enumerate(train_loader):
@@ -1029,11 +1025,7 @@ class FunctionalLaplace(BaseLaplace):
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
             f.append(f_batch)
-            if self.likelihood == 'regression':
-                mu_batch = y - (f_batch + torch.einsum('bcp,p->bc', Js_batch, diff_mu))
-                mu.append(mu_batch)
-            elif self.likelihood == "classification":
-                mu.append(f_batch)
+            mu.append(self._mean_scatter_term_batch(Js_batch, f_batch, y))  # needed for marginal likelihood
             for j, batch_2 in enumerate(train_loader):
                 if j >= i:
                     X2, _ = batch_2
@@ -1153,9 +1145,6 @@ class FunctionalLaplace(BaseLaplace):
             return torch.einsum('bcm,bcn->bmn', v, v)
 
     def _log_marginal_likelihood(self):
-        """
-        For classification we use a (multi-class) log marginal likelihood from R&W 2006, Chapter 3.5 eq. (3.44)
-        """
         self.fit(self.train_loader)
         if self.likelihood == 'classification':
             if not self.diagonal_kernel:
@@ -1169,6 +1158,16 @@ class FunctionalLaplace(BaseLaplace):
     def log_det_K(self):
         """
         Computes log determinant term in GP marginal likelihood
+
+        For `classification` we use eq. (3.44) from Chapter 3.5 from
+        [GP book R&W 2006](http://www.gaussianprocess.org/gpml/chapters/) with
+        (note that we always use diagonal approximation \\(D\\) here of the Hessian of log likelihood w.r.t. \\(f\\) here):
+
+        log determinant term := \\( \log | I + D^{1/2}K D^{1/2} | \\)
+
+        For `regression`, we use ["standard" GP marginal likelihood](https://stats.stackexchange.com/questions/280105/log-marginal-likelihood-for-gaussian-process):
+
+        log determinant term := \\( \log | K + \\sigma_2 I | \\)
         """
         if self.likelihood == "regression":
             if self.diagonal_kernel:
@@ -1180,20 +1179,36 @@ class FunctionalLaplace(BaseLaplace):
             else:
                 return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
         else:
-            if self.diagonal_kernel:
-                log_det = 0.
-                for c in range(self.n_outputs):
-                    W = torch.sqrt(self.L[c])
-                    log_det += torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0]))
-                return log_det
+            if self.diagonal_L:
+                if self.diagonal_kernel:
+                    log_det = 0.
+                    for c in range(self.n_outputs):
+                        W = torch.sqrt(self.L[c])
+                        log_det += torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0]))
+                    return log_det
+                else:
+                    W = torch.sqrt(self.L)
+                    return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0]))
             else:
-                W = torch.sqrt(self.L)
-                return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0]))
+                # R&W 2006 algorithm
+                raise NotImplementedError
 
     @property
     def scatter_lml(self, eps=0.001):
         """
-        Compute scatter term in GP log marginal likelihood
+        Compute scatter term in GP log marginal likelihood.
+
+        For `classification` we use eq. (3.44) from Chapter 3.5 from
+        [GP book R&W 2006](http://www.gaussianprocess.org/gpml/chapters/) with \\(\hat{f} = f \\):
+
+        scatter term := \\( f K^{-1} f^{T} \\)
+
+        For `regression`, we use ["standard" GP marginal likelihood](https://stats.stackexchange.com/questions/280105/log-marginal-likelihood-for-gaussian-process):
+
+        scatter term := \\( (y - m)K^{-1}(y -m )^T \\),
+        where \\( m \\) is the mean of the GP prior, which in our case corresponds to
+        \\( m := f + J (\\theta - \\theta_{MAP}) \\)
+
         """
         if self.likelihood == "regression":
             noise = self.sigma_noise.square()
@@ -1308,3 +1323,30 @@ class FunctionalLaplace(BaseLaplace):
         in FunctionalLaplace and FunctionalLLLaplace by simply overwriting this method instead of all kernel methods.
         """
         return self.backend.jacobians(self.model, X)
+
+    def _mean_scatter_term_batch(self, Js, f, y):
+        """
+        Compute mean vector in the scatter term in the log marginal likelihood
+
+        See `scatter_lml` property above for the exact equations of mean vectors in scatter terms for
+        both types of likelihood (regression, classification).
+
+        Parameters
+        ----------
+        Js : torch.tensor
+              Jacobians (batch, output_shape, parameters)
+        f : torch.tensor
+              NN output (batch, output_shape)
+        y: torch.tensor
+              data labels (batch, output_shape)
+
+        Returns
+        -------
+        mu : torch.tensor
+            K_batch_star with shape (batch, output_shape)
+        """
+
+        if self.likelihood == 'regression':
+            return y - (f + torch.einsum('bcp,p->bc', Js, self.prior_mean - self.map_estimate))
+        elif self.likelihood == "classification":
+            return f
