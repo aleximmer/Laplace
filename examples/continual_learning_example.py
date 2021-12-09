@@ -56,7 +56,9 @@ def main():
     color = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 
     plt.figure()
-    plt.imshow(cl_show, cmap='gray', origin='lower')
+    plt.imshow(
+        cl_show, cmap='gray', origin='lower',
+        extent=(datagen.x_min, datagen.x_max, datagen.y_min, datagen.y_max))
     for t in range(task_id+1):
         idx = np.where(datagen.y == t)
         plt.scatter(
@@ -113,7 +115,7 @@ def train(task_id, model, la, train_loader):
             subset_of_weights='all',
             hessian_structure='diag',
             prior_mean=la.mean,
-            prior_precision=la.posterior_precision,
+            prior_precision=torch.exp(log_prior_prec),
             backend=AsdlGGN)
         hyper_la.fit(train_loader)
         
