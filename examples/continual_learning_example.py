@@ -127,6 +127,8 @@ def train(task_id, model, la, train_loader):
             hyper_optimizer.step()
         marglik = marglik.item() / N
 
+        la.prior_precision = torch.exp(log_prior_prec).clone().detach()
+
         print(f'Task {task_id+1} epoch {epoch+1} - train loss: {train_loss:.3f}, neg. log marglik: {marglik:.3f}')
 
 
