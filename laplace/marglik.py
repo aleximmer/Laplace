@@ -197,8 +197,8 @@ def marglik_training(
         losses.append(epoch_loss)
 
         # compute validation error to report during training
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}; '
-                        + f'Perf={epoch_perf:.3f}; lr={scheduler.get_last_lr()[0]:.7f}')
+        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.' +
+                     f'Perf={epoch_perf:.3f}')
 
         # only update hyperparameters every marglik_frequency steps after burnin
         if (epoch % marglik_frequency) != 0 or epoch < n_epochs_burnin:
