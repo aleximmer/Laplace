@@ -806,17 +806,20 @@ class KronLaplace(ParametricLaplace):
         -------
         precision : `laplace.matrix.KronDecomposed`
         """
-        if type(self.H) is Kron:
-            # decompose first
-            return self.H.decompose() * self._H_factor + self.prior_precision
+        if type(self.H) is Kron:  # Fall back to prior
+            return self.prior_precision_diag
         return self.H * self._H_factor + self.prior_precision
 
     @property
     def log_det_posterior_precision(self):
+        if type(self.H) is Kron:  # Fall back to diag prior
+            return self.posterior_precision.log().sum()
         return self.posterior_precision.logdet()
 
     def square_norm(self, value):
         delta = value - self.mean
+        if type(self.H) is Kron:  # fall back to prior
+            return (delta * self.posterior_precision)
         return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
     def functional_variance(self, Js):
