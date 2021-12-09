@@ -181,7 +181,7 @@ class BaseLaplace:
     def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
                                       init_prior_prec=1., val_loader=None, loss=get_nll,
                                       log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                      link_approx='probit', n_samples=100, verbose=False, 
+                                      link_approx='probit', n_samples=100, verbose=False,
                                       cv_loss_with_var=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
@@ -334,11 +334,11 @@ class ParametricLaplace(BaseLaplace):
         try:
             self._init_H()
         except AttributeError:  # necessary information not yet available
-            pass  
+            pass
         self.loss = 0
         self.n_data = 0
         # posterior mean/mode
-        self.mean = self.prior_mean 
+        self.mean = self.prior_mean
 
     def _init_H(self):
         raise NotImplementedError
@@ -359,7 +359,7 @@ class ParametricLaplace(BaseLaplace):
             self._init_H()
             self.loss = 0
             self.n_data = 0
-            
+
         self.model.eval()
         self.mean = parameters_to_vector(self.model.parameters()).detach()
 
@@ -445,7 +445,7 @@ class ParametricLaplace(BaseLaplace):
 
     def log_prob(self, value):
         """Compute the log probability under the (current) Laplace approximation.
-        
+
         Returns
         -------
         log_prob : torch.Tensor
@@ -638,7 +638,7 @@ class ParametricLaplace(BaseLaplace):
     def optimize_prior_precision(self, method='marglik', pred_type='glm', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                 link_approx='probit', n_samples=100, verbose=False, 
+                                 link_approx='probit', n_samples=100, verbose=False,
                                  cv_loss_with_var=False):
         assert pred_type in ['glm', 'nn']
         self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
@@ -727,7 +727,7 @@ class FullLaplace(ParametricLaplace):
     @property
     def log_det_posterior_precision(self):
         return self.posterior_precision.logdet()
-    
+
     def square_norm(self, value):
         delta = value - self.mean
         return delta @ self.posterior_precision @ delta
@@ -819,7 +819,7 @@ class KronLaplace(ParametricLaplace):
     def square_norm(self, value):
         delta = value - self.mean
         if type(self.H) is Kron:  # fall back to prior
-            return (delta * self.posterior_precision)
+            return (delta * self.posterior_precision) @ delta
         return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
     def functional_variance(self, Js):
