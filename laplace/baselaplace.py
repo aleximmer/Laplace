@@ -82,41 +82,6 @@ class BaseLaplace:
         raise NotImplementedError
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
-        """Compute the approximation to the log marginal likelihood subject
-        to specific Laplace or GP approximations .
-        Requires that the Laplace approximation has been fit before.
-        The resulting torch.Tensor is differentiable in `prior_precision` and
-        `sigma_noise` if these have gradients enabled.
-        By passing `prior_precision` or `sigma_noise`, the current value is
-        overwritten. This is useful for iterating on the log marginal likelihood.
-
-        Parameters
-        ----------
-        prior_precision : torch.Tensor, optional
-            prior precision if should be changed from current `prior_precision` value
-        sigma_noise : [type], optional
-            observation noise standard deviation if should be changed
-
-        Returns
-        -------
-        log_marglik : torch.Tensor
-        """
-        # make sure we can differentiate wrt prior and sigma_noise for regression
-        self._check_fit()
-
-        # update prior precision (useful when iterating on marglik)
-        if prior_precision is not None:
-            self.prior_precision = prior_precision
-
-        # update sigma_noise (useful when iterating on marglik)
-        if sigma_noise is not None:
-            if self.likelihood != 'regression':
-                raise ValueError('Can only change sigma_noise for regression.')
-            self.sigma_noise = sigma_noise
-
-        return self._log_marginal_likelihood()
-
-    def _log_marginal_likelihood(self):
         raise NotImplementedError
 
     @property
@@ -1359,7 +1324,39 @@ class FunctionalLaplace(BaseLaplace):
             v = torch.linalg.solve(self.Sigma_inv, K_M_star)
             return torch.einsum('bcm,bcn->bmn', v, v)
 
-    def _log_marginal_likelihood(self):
+    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+        """Compute the approximation to the log marginal likelihood subject
+
+        Requires that the Laplace approximation has been fit before.
+        The resulting torch.Tensor is differentiable in `prior_precision` and
+        `sigma_noise` if these have gradients enabled.
+        By passing `prior_precision` or `sigma_noise`, the current value is
+        overwritten. This is useful for iterating on the log marginal likelihood.
+
+        Parameters
+        ----------
+        prior_precision : torch.Tensor, optional
+            prior precision if should be changed from current `prior_precision` value
+        sigma_noise : [type], optional
+            observation noise standard deviation if should be changed
+
+        Returns
+        -------
+        log_marglik : torch.Tensor
+        """
+        # make sure we can differentiate wrt prior and sigma_noise for regression
+        self._check_fit()
+
+        # update prior precision (useful when iterating on marglik)
+        if prior_precision is not None:
+            self.prior_precision = prior_precision
+
+        # update sigma_noise (useful when iterating on marglik)
+        if sigma_noise is not None:
+            if self.likelihood != 'regression':
+                raise ValueError('Can only change sigma_noise for regression.')
+            self.sigma_noise = sigma_noise
+
         self.fit(self.train_loader)
         if self.likelihood == 'classification':
             if not self.diagonal_kernel:
