@@ -269,6 +269,34 @@ class GGNInterface(CurvatureInterface):
             H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
         return H_lik
 
+    def gp_quantities(self, X, y, sigma_factor):
+        """
+         Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch, input_shape)`
+        y : torch.Tensor
+            labels `(batch, output_shape)`
+        sigma_factor: inverse of (scaled) likelihood noise
+
+        Returns
+        -------
+        loss : torch.tensor
+        Js : torch.tensor
+              Jacobians (batch, output_shape, parameters)
+        f : torch.tensor
+              NN output (batch, output_shape)
+        lambdas: torch.tensor
+              Hessian of \\( p(y|f) \\) w.r.t. \\(f\\) (batch, output_shape, output_shape)
+        """
+        if self.last_layer:
+            Js, f = self.last_layer_jacobians(self.model, X)
+        else:
+            Js, f = self.jacobians(self.model, X)
+        lambdas = self.H_log_likelihood(f, sigma_factor)
+        loss = self.factor * self.lossfunc(f, y)
+        return loss.detach(), Js, f, lambdas
+
 
 class EFInterface(CurvatureInterface):
     """Interface for Empirical Fisher as Hessian approximation.
