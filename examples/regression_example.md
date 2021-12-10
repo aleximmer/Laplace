@@ -1,38 +1,42 @@
-## Full example: *post-hoc* optimization of the marginal likelihood and prediction
+## Full example: Optimization of the marginal likelihood and prediction
 
 ### Sinusoidal toy data
 We show how the marginal likelihood can be used after training a MAP network on a simple sinusoidal regression task. 
 Subsequently, we use the optimized LA to predict which provides uncertainty on top of the MAP prediction.
+We also show how the `marglik_training` utility method can be used to jointly train the MAP and hyperparameters.
 First, we set up the training data for the problem with observation noise \\(\\sigma=0.3\\):
 ```python
+from laplace.baselaplace import FullLaplace
+from laplace.curvature.backpack import BackPackGGN
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
+from laplace import Laplace, marglik_training
+
+from helper.dataloaders import get_sinusoid_example
+from helper.util import plot_regression
 
 n_epochs = 1000
-batch_size = 150  # full batch
-true_sigma_noise = 0.3
-
-# create simple sinusoid data set
-X_train = (torch.rand(150) * 8).unsqueeze(-1)
-y_train = torch.sin(X_train) + torch.randn_like(X_train) * true_sigma_noise
-train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size)
-X_test = torch.linspace(-5, 13, 500).unsqueeze(-1)  # +-5 on top of the training X-range
+torch.manual_seed(711)
+# sample toy data example
+X_train, y_train, train_loader, X_test = get_sinusoid_example(sigma_noise=0.3)
 ```
 
 ### Training a MAP
 We now use `pytorch` to train a neural network with single hidden layer and Tanh activation.
+The trained neural network will be our MAP estimate.
 This is standard so nothing new here, yet:
 ```python
 # create and train MAP model
-model = torch.nn.Sequential(torch.nn.Linear(1, 50),
-                            torch.nn.Tanh(),
-                            torch.nn.Linear(50, 1))
+def get_model():
+    torch.manual_seed(711)
+    return torch.nn.Sequential(
+        torch.nn.Linear(1, 50), torch.nn.Tanh(), torch.nn.Linear(50, 1)
+    )
+model = get_model()
 
 criterion = torch.nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(), weight_decay=5e-4, lr=1e-2)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 for i in range(n_epochs):
     for X, y in train_loader:
         optimizer.zero_grad()
@@ -45,7 +49,7 @@ for i in range(n_epochs):
 With the MAP-trained model at hand, we can estimate the prior precision and observation noise
 using empirical Bayes after training.
 The `Laplace` method is called to construct a LA for `'regression'` with `'all'` weights.
-As default `Laplace` returns a Kronecker factored LA.
+As default `Laplace` returns a Kronecker factored LA, we use `'full'` instead on this small example.
 We fit the LA to the training data and initialize `log_prior` and `log_sigma`.
 Using Adam, we minimize the negative log marginal likelihood for `n_epochs`.
 
@@ -63,10 +67,10 @@ for i in range(n_epochs):
 
 The obtained observation noise is close to the ground truth with a value of \\(\\sigma \\approx 0.28\\)
 without the need for any validation data.
-The resulting prior precision is \\(\\delta \\approx 0.18\\).
+The resulting prior precision is \\(\\delta \\approx 0.10\\).
 
 ### Bayesian predictive
-Lastly, we compare the MAP prediction to the obtained LA prediction.
+Here, we compare the MAP prediction to the obtained LA prediction.
 For LA, we have a closed-form predictive distribution on the output \\(f\\) which is a Gaussian
 \\(\\mathcal{N}(f(x;\\theta_{MAP}), \\mathbb{V}[f] + \\sigma^2)\\):
 
@@ -76,34 +80,38 @@ f_mu, f_var = la(X_test)
 f_mu = f_mu.squeeze().detach().cpu().numpy()
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
-```
 
-In comparison to the MAP, the predictive shows useful uncertainties:
-
-```python
-import matplotlib.pyplot as plt
-fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, sharey=True,
-                               figsize=(4.5, 2.8))
-ax1.set_title('MAP')
-ax1.scatter(X_train.flatten(), y_train.flatten(), alpha=0.7, color='tab:orange')
-ax1.plot(x, f_mu, color='black', label='$f_{MAP}$')
-ax1.legend()
-
-ax2.set_title('LA')
-ax2.scatter(X_train.flatten(), y_train.flatten(), alpha=0.7, color='tab:orange')
-ax2.plot(x, f_mu, label='$\mathbb{E}[f]$')
-ax2.fill_between(x, f_mu-pred_std*2, f_mu+pred_std*2, 
-                 alpha=0.3, color='tab:blue', label='$2\sqrt{\mathbb{V}\,[f]}$')
-ax2.legend()
-ax1.set_ylim([-4, 6])
-ax1.set_xlim([x.min(), x.max()])
-ax2.set_xlim([x.min(), x.max()])
-ax1.set_ylabel('$y$')
-ax1.set_xlabel('$x$')
-ax2.set_xlabel('$x$')
-plt.tight_layout()
-plt.show()
+plot_regression(X_train, y_train, x, f_mu, pred_std)
 ```
 
 .. image:: regression_example.png
+   :align: center
+
+In comparison to the MAP, the predictive shows useful uncertainties.
+When our MAP is over or underfit, the Laplace approximation cannot fix this anymore.
+In this case, joint optimization of MAP and marginal likelihood can be useful.
+
+### Jointly optimize MAP and hyperparameters using online empirical Bayes
+We provide a utility method `marglik_training` that implements the algorithm proposed in [1].
+The method optimizes the neural network and the hyperparameters in an interleaved way
+and returns an optimally regularized LA.
+Below, we use this method and plot the corresponding predictive uncertainties again:
+
+```python
+model = get_model()
+la, model, margliks, losses = marglik_training(
+    model=model, train_loader=train_loader, likelihood='regression',
+    hessian_structure='full', backend=BackPackGGN, n_epochs=n_epochs, 
+    optimizer_kwargs={'lr': 1e-2}, prior_structure='scalar'
+)
+
+f_mu, f_var = la(X_test)
+f_mu = f_mu.squeeze().detach().cpu().numpy()
+f_sigma = f_var.squeeze().sqrt().cpu().numpy()
+pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
+
+plot_regression(X_train, y_train, x, f_mu, pred_std)
+```
+
+.. image:: regression_example_online.png
    :align: center
