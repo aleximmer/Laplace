@@ -16,8 +16,7 @@ class BackPackInterface(CurvatureInterface):
         extend(self._model)
         extend(self.lossfunc)
 
-    @staticmethod
-    def jacobians(model, x, subnetwork_indices=None):
+    def jacobians(self, model, x):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension.
 
@@ -26,9 +25,6 @@ class BackPackInterface(CurvatureInterface):
         model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
-        subnetwork_indices : torch.Tensor, default=None
-            indices of the vectorized model parameters that define the subnetwork
-            to apply the Laplace approximation over
 
         Returns
         -------
@@ -52,8 +48,8 @@ class BackPackInterface(CurvatureInterface):
                     to_cat.append(param.grad_batch.detach().reshape(x.shape[0], -1))
                     delattr(param, 'grad_batch')
                 Jk = torch.cat(to_cat, dim=1)
-                if subnetwork_indices is not None:
-                    Jk = Jk[:, subnetwork_indices]
+                if self.subnetwork_indices is not None:
+                    Jk = Jk[:, self.subnetwork_indices]
             to_stack.append(Jk)
             if i == 0:
                 f = out.detach()

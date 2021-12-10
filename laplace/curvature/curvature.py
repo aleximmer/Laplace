@@ -44,8 +44,7 @@ class CurvatureInterface:
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
-    @staticmethod
-    def jacobians(model, x, subnetwork_indices=None):
+    def jacobians(self, model, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
@@ -53,9 +52,6 @@ class CurvatureInterface:
         model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
-        subnetwork_indices : torch.Tensor, default=None
-            indices of the vectorized model parameters that define the subnetwork
-            to apply the Laplace approximation over
 
         Returns
         -------
@@ -66,8 +62,7 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
-    @staticmethod
-    def last_layer_jacobians(model, x):
+    def last_layer_jacobians(self, model, x):
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\) 
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
@@ -249,7 +244,7 @@ class GGNInterface(CurvatureInterface):
         if self.last_layer:
             Js, f = self.last_layer_jacobians(self.model, x)
         else:
-            Js, f = self.jacobians(self.model, x, self.subnetwork_indices)
+            Js, f = self.jacobians(self.model, x)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn
