@@ -189,7 +189,7 @@ class LastLayerSubnetMask(SubnetMask):
     def n_params_subnet(self):
         if self._n_params_subnet is None:
             self._check_select()
-            self._n_params_subnet = torch.count_nonzero(self._indices).item()
+            self._n_params_subnet = len(self._indices)
         return self._n_params_subnet
 
     def get_subnet_mask(self, train_loader):
