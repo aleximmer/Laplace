@@ -79,7 +79,7 @@ class CurvatureInterface:
             output function `(batch, outputs)`
         """
         f, phi = model.forward_with_features(x)
-        bsize = len(x)
+        bsize = phi.shape[0]
         output_size = f.shape[-1]
 
         # calculate Jacobians using the feature vector 'phi'

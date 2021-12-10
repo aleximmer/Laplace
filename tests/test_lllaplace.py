@@ -135,7 +135,7 @@ def test_laplace_init_precision(laplace, model):
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_laplace_init_prior_mean_and_scatter(laplace, model):
+def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     lap_scalar_mean = laplace(model, 'classification', last_layer_name='1',
                               prior_precision=1e-2, prior_mean=1.)
     assert torch.allclose(lap_scalar_mean.prior_mean, torch.tensor([1.]))
@@ -148,6 +148,11 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model):
     lap_tensor_full_mean = laplace(model, 'classification', last_layer_name='1',
                                    prior_precision=1e-2, prior_mean=torch.ones(20*2+2))
     assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(20*2+2))
+
+    lap_scalar_mean.fit(class_loader)
+    lap_tensor_mean.fit(class_loader)
+    lap_tensor_scalar_mean.fit(class_loader)
+    lap_tensor_full_mean.fit(class_loader)
     expected = lap_scalar_mean.scatter
     assert expected.ndim == 0
     assert torch.allclose(lap_tensor_mean.scatter, expected)
@@ -243,7 +248,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     assert samples.shape == torch.Size([1000000, len(theta)])
     mu_comp = samples.mean(dim=0)
     mu_true = lap.mean
-    assert torch.allclose(mu_comp, mu_true, rtol=1)
+    assert torch.allclose(mu_comp, mu_true, atol=1e-2)
 
     # test functional variance
     if laplace == FullLLLaplace:

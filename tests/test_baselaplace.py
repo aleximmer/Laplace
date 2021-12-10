@@ -1,19 +1,24 @@
+from math import sqrt
 import pytest
 from itertools import product
 import numpy as np
+from copy import deepcopy
 import torch
 from torch import nn
+from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
+from laplace.matrix import KronDecomposed
 from tests.utils import jacobians_naive
 
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors = [FullLaplace, KronLaplace, DiagLaplace]
+flavors = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace]
+online_flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 
 @pytest.fixture
@@ -118,7 +123,7 @@ def test_laplace_init_precision(laplace, model):
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_laplace_init_prior_mean_and_scatter(laplace, model):
+def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     mean = parameters_to_vector(model.parameters())
     P = len(mean)
     lap_scalar_mean = laplace(model, 'classification',
@@ -133,8 +138,14 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model):
     lap_tensor_full_mean = laplace(model, 'classification',
                                    prior_precision=1e-2, prior_mean=torch.ones(P))
     assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(P))
-    expected = ((mean - 1) * 1e-2) @ (mean - 1)
-    assert expected.ndim == 0
+
+    lap_scalar_mean.fit(class_loader)
+    lap_tensor_mean.fit(class_loader)
+    lap_tensor_scalar_mean.fit(class_loader)
+    lap_tensor_full_mean.fit(class_loader)
+    expected = torch.tensor(0).reshape(-1)
+    # assert expected.ndim == 0
+    expected = ((mean -1) * 1e-2) @ (mean -1)
     assert torch.allclose(lap_scalar_mean.scatter, expected)
     assert lap_scalar_mean.scatter.shape == expected.shape
     assert torch.allclose(lap_tensor_mean.scatter, expected)
@@ -208,9 +219,11 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     prior_prec = torch.diag(lap.prior_precision_diag)
     assert prior_prec.shape == torch.Size([len(theta), len(theta)])
     lml = lml - 1/2 * theta @ prior_prec @ theta
-    Sigma_0 = torch.inverse(prior_prec)
     if laplace == DiagLaplace:
         log_det_post_prec = lap.posterior_precision.log().sum()
+    elif laplace == LowRankLaplace:
+        (U, l), p0 = lap.posterior_precision
+        log_det_post_prec = (U @ torch.diag(l) @ U.T + p0.diag()).logdet()
     else:
         log_det_post_prec = lap.posterior_precision.logdet()
     lml = lml + 1/2 * (prior_prec.logdet() - log_det_post_prec)
@@ -224,19 +237,85 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     assert samples.shape == torch.Size([1000000, len(theta)])
     mu_comp = samples.mean(dim=0)
     mu_true = lap.mean
-    assert torch.allclose(mu_comp, mu_true, rtol=1)
+    assert torch.allclose(mu_comp, mu_true, atol=1e-2)
 
     # test functional variance
     if laplace == FullLaplace:
         Sigma = lap.posterior_covariance
     elif laplace == KronLaplace:
         Sigma = lap.posterior_precision.to_matrix(exponent=-1)
+    elif laplace == LowRankLaplace:
+        (U, l), p0 = lap.posterior_precision
+        Sigma = (U @ torch.diag(l) @ U.T + p0.diag()).inverse()
     elif laplace == DiagLaplace:
         Sigma = torch.diag(lap.posterior_variance)
     Js, f = jacobians_naive(model, loader.dataset.tensors[0])
     true_f_var = torch.einsum('mkp,pq,mcq->mkc', Js, Sigma, Js)
     comp_f_var = lap.functional_variance(Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
+
+
+@pytest.mark.parametrize('laplace', online_flavors)
+def test_overriding_fit(laplace, model, reg_loader):
+    lap = laplace(model, 'regression', sigma_noise=0.3, prior_precision=0.7)
+    lap.fit(reg_loader)
+    if type(lap.posterior_precision) is KronDecomposed:
+        P = lap.posterior_precision.to_matrix()
+    else:
+        P = lap.posterior_precision.clone()
+    m = lap.mean.clone()
+    marglik = lap.log_marginal_likelihood().detach().clone()
+    assert lap.n_data == len(reg_loader.dataset)
+    lap.fit(reg_loader, override=True)
+    assert torch.allclose(lap.mean, m)
+    if type(lap.posterior_precision) is KronDecomposed:
+        assert torch.allclose(lap.posterior_precision.to_matrix(), P)
+    else:
+        assert torch.allclose(lap.posterior_precision, P)
+    assert torch.allclose(marglik, lap.log_marginal_likelihood())
+    assert lap.n_data == len(reg_loader.dataset)
+
+
+@pytest.mark.parametrize('laplace', online_flavors)
+def test_online_fit(laplace, model, reg_loader):
+    lap = laplace(model, 'regression', sigma_noise=0.3, prior_precision=0.7)
+    lap.fit(reg_loader)
+    if type(lap.H) is KronDecomposed:
+        P = lap.H.to_matrix().clone()
+    else:
+        P = lap.H.clone()
+    loss, n_data = deepcopy(lap.loss), deepcopy(lap.n_data)
+    # fit a second and third time but don't override
+    lap.fit(reg_loader, override=False)
+    lap.fit(reg_loader, override=False)
+    # Hessian should be now roughly 3x the one before
+    assert torch.allclose(3 * loss, lap.loss)
+    assert (3 * n_data) == lap.n_data
+    if type(lap.H) is KronDecomposed:
+        assert torch.allclose(lap.H.to_matrix(), 3 * P)
+    else:
+        assert torch.allclose(lap.H, 3 * P)
+
+
+def test_log_prob_full(model, class_loader):
+    lap = FullLaplace(model, 'classification', prior_precision=0.7)
+    theta = torch.randn_like(parameters_to_vector(model.parameters()))
+    # posterior without fitting is just prior
+    posterior = Normal(loc=torch.zeros_like(theta), scale=sqrt(1/0.7))
+    assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta).sum())
+    lap.fit(class_loader)
+    posterior = MultivariateNormal(loc=lap.mean, precision_matrix=lap.posterior_precision)
+    assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta))
+
+    
+def test_log_prob_kron(model, class_loader):
+    lap = KronLaplace(model, 'classification', prior_precision=0.24)
+    theta = torch.randn_like(parameters_to_vector(model.parameters()))
+    posterior = Normal(loc=lap.mean, scale=sqrt(1/0.24))
+    assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta).sum())
+    lap.fit(class_loader)
+    posterior = MultivariateNormal(loc=lap.mean, precision_matrix=lap.posterior_precision.to_matrix())
+    assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta))
 
 
 @pytest.mark.parametrize('laplace', flavors)

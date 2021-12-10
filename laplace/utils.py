@@ -3,6 +3,7 @@ from typing import Union
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 
@@ -14,14 +15,27 @@ def get_nll(out_dist, targets):
 @torch.no_grad()
 def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
     laplace.model.eval()
-    outputs = list()
+    output_means, output_vars = list(), list()
     targets = list()
     for X, y in val_loader:
         X, y = X.to(laplace._device), y.to(laplace._device)
-        out = laplace(X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples)
-        outputs.append(out)
+        out = laplace(
+            X, pred_type=pred_type,
+            link_approx=link_approx,
+            n_samples=n_samples)
+
+        if type(out) == tuple:
+            output_means.append(out[0])
+            output_vars.append(out[1])
+        else:
+            output_means.append(out)
+
         targets.append(y)
-    return torch.cat(outputs, dim=0), torch.cat(targets, dim=0)
+
+    if len(output_vars) == 0:
+        return torch.cat(output_means, dim=0), torch.cat(targets, dim=0)
+    return ((torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)),
+            torch.cat(targets, dim=0))
 
 
 def parameters_per_layer(model):
@@ -117,7 +131,7 @@ def diagonal_add_scalar(X, value):
     values = X.new_ones(X.shape[0]).mul(value)
     return X.index_put(tuple(indices.t()), values, accumulate=True)
 
-
+ 
 def symeig(M):
     """Symetric eigendecomposition avoiding failure cases by
     adding and removing jitter to the diagonal.
@@ -134,13 +148,13 @@ def symeig(M):
         eigenvectors
     """
     try:
-        L, W = torch.symeig(M, eigenvectors=True)
+        L, W = torch.linalg.eigh(M, UPLO='U')
     except RuntimeError:  # did not converge
         logging.info('SYMEIG: adding jitter, did not converge.')
         # use W L W^T + I = W (L + I) W^T
-        M = diagonal_add_scalar(M, value=1.)
+        M = M + torch.eye(M.shape[0])
         try:
-            L, W = torch.symeig(M, eigenvectors=True)
+            L, W = torch.linalg.eigh(M, UPLO='U')
             L -= 1.
         except RuntimeError:
             stats = f'diag: {M.diagonal()}, max: {M.abs().max()}, '
@@ -149,8 +163,8 @@ def symeig(M):
             exit()
     # eigenvalues of symeig at least 0
     L = L.clamp(min=0.0)
-    L[torch.isnan(L)] = 0.0
-    W[torch.isnan(W)] = 0.0
+    L = torch.nan_to_num(L)
+    W = torch.nan_to_num(W)
     return L, W
 
 
@@ -173,3 +187,30 @@ def block_diag(blocks):
         M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
         p_cur += p_block
     return M
+
+
+def expand_prior_precision(prior_prec, model):
+    """Expand prior precision to match the shape of the model parameters.
+
+    Parameters
+    ----------
+    prior_prec : torch.Tensor 1-dimensional
+        prior precision 
+    model : torch.nn.Module
+        torch model with parameters that are regularized by prior_prec
+
+    Returns
+    -------
+    expanded_prior_prec : torch.Tensor 
+        expanded prior precision has the same shape as model parameters
+    """
+    theta = parameters_to_vector(model.parameters())
+    device, P = theta.device, len(theta)
+    assert prior_prec.ndim == 1
+    if len(prior_prec) == 1:  # scalar
+        return torch.ones(P, device=device) * prior_prec
+    elif len(prior_prec) == P:  # full diagonal
+        return prior_prec.to(device)
+    else:
+        return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
+                          in zip(prior_prec, model.parameters())])
