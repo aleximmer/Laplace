@@ -18,11 +18,6 @@ EPS = 1e-6
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
-    def __init__(self, model, likelihood, last_layer=False, low_rank=10):
-        if likelihood != 'classification':
-            raise ValueError('This backend only supports classification currently.')
-        self.low_rank = low_rank
-        super().__init__(model, likelihood, last_layer)
 
     @staticmethod
     def jacobians(model, x):
@@ -137,6 +132,10 @@ class AsdlInterface(CurvatureInterface):
 
 class AsdlHessian(AsdlInterface):
 
+    def __init__(self, model, likelihood, last_layer=False, low_rank=10):
+        super().__init__(model, likelihood, last_layer)
+        self.low_rank = low_rank
+
     @property
     def _ggn_type(self):
         raise NotImplementedError()
@@ -164,6 +163,8 @@ class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
     def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+        if likelihood != 'classification':
+            raise ValueError('This backend only supports classification currently.')
         super().__init__(model, likelihood, last_layer)
         self.stochastic = stochastic
 
@@ -175,6 +176,10 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl.
     """
+    def __init__(self, model, likelihood, last_layer=False):
+        if likelihood != 'classification':
+            raise ValueError('This backend only supports classification currently.')
+        super().__init__(model, likelihood, last_layer)
 
     @property
     def _ggn_type(self):
