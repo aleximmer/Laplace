@@ -72,11 +72,11 @@ class LLLaplace(ParametricLaplace):
             self._prior_precision = prior_precision
             self._prior_mean = prior_mean
         else:
-            self.mean = prior_mean 
             self.n_params = len(parameters_to_vector(self.model.last_layer.parameters()))
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
+            self.mean = self.prior_mean 
         self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader, override=True):

@@ -335,8 +335,6 @@ class ParametricLaplace(BaseLaplace):
             self._init_H()
         except AttributeError:  # necessary information not yet available
             pass
-        self.loss = 0
-        self.n_data = 0
         # posterior mean/mode
         self.mean = self.prior_mean
 
