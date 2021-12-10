@@ -4,9 +4,10 @@ import torch
 from torch.optim import Adam
 from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
+import warnings
 import logging
 
-from laplace import KronLaplace
+from laplace import Laplace
 from laplace.curvature import AsdlGGN
 from laplace.utils import expand_prior_precision
 
@@ -15,13 +16,13 @@ def marglik_training(
     model,
     train_loader,
     likelihood='classification',
+    hessian_structure='kron',
+    backend=AsdlGGN,
     optimizer_cls=Adam,
     optimizer_kwargs=None,
     scheduler_cls=None,
     scheduler_kwargs=None,
     n_epochs=300,
-    laplace=KronLaplace,
-    backend=AsdlGGN,
     lr_hyp=1e-1,
     prior_structure='layerwise',
     n_epochs_burnin=0,
@@ -69,6 +70,10 @@ def marglik_training(
         pytorch dataloader that implements `len(train_loader.dataset)` to obtain number of data points
     likelihood : str, default='classification'
         'classification' or 'regression'
+    hessian_structure : {'diag', 'kron', 'full'}, default='kron'
+        structure of the Hessian approximation
+    backend : Backend, default=AsdlGGN
+        Curvature subclass, e.g. AsdlGGN/AsdlEF or BackPackGGN/BackPackEF
     optimizer_cls : torch.optim.Optimizer, default=Adam
         optimizer to use for optimizing the neural network parameters togeth with `train_loader`
     optimizer_kwargs : dict, default=None
@@ -80,10 +85,6 @@ def marglik_training(
         keyword arguments for `scheduler_cls`, e.g. `lr_min` for CosineAnnealingLR
     n_epochs : int, default=300
         number of epochs to train for
-    laplace : Laplace, default=KronLaplace
-        type of Laplace approximation to use, should be subclass of `BaseLaplace`
-    backend : Backend, default=AsdlGGN
-        Curvature subclass, e.g. AsdlGGN/AsdlEF or BackPackGGN/BackPackEF
     lr_hyp : float, default=0.1
         Adam learning rate for hyperparameters
     prior_structure : str, default='layerwise'
@@ -114,6 +115,10 @@ def marglik_training(
     losses : list
         list of losses (log joints) obtained during training (to monitor convergence)
     """
+    if 'weight_decay' in optimizer_kwargs:
+        warnings.warn('Weight decay is handled and optimized. Will be set to 0.')
+        optimizer_kwargs['weight_decay'] = 0.0
+
     # get device, data set size N, number of layers H, number of parameters P
     device = parameters_to_vector(model.parameters()).device
     N = len(train_loader.dataset)
@@ -188,13 +193,13 @@ def marglik_training(
             optimizer.step()
             epoch_loss += loss.cpu().item() / len(train_loader)
             if likelihood == 'regression':
-                epoch_perf += (f.detach() - y).square().sum() / N
+                epoch_perf += (f.detach() - y).square().sum()
             else:
-                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item() / N
+                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
             if scheduler_cls is not None:
                 scheduler.step()
 
-        losses.append(epoch_loss)
+        losses.append(epoch_loss / N)
 
         # compute validation error to report during training
         logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.' +
@@ -208,8 +213,11 @@ def marglik_training(
         # 1. fit laplace approximation
         sigma_noise = 1 if likelihood == 'classification' else torch.exp(log_sigma_noise)
         prior_prec = torch.exp(log_prior_prec)
-        lap = laplace(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_prec,
-                      temperature=temperature, backend=backend)
+        lap = Laplace(
+            model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise, 
+            prior_precision=prior_prec, temperature=temperature, backend=backend,
+            subset_of_weights='all'
+        )
         lap.fit(train_loader)
 
         # 2. differentiate wrt. hyperparameters for n_hypersteps
@@ -242,7 +250,10 @@ def marglik_training(
         model.load_state_dict(best_model_dict)
         sigma_noise = best_sigma
         prior_prec = best_precision
-    lap = laplace(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_prec,
-                  temperature=temperature, backend=backend)
+    lap = Laplace(
+        model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise, 
+        prior_precision=prior_prec, temperature=temperature, backend=backend,
+        subset_of_weights='all'
+    )
     lap.fit(train_loader)
     return lap, model, margliks, losses
