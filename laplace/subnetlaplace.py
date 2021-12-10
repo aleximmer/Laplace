@@ -1,6 +1,6 @@
 import torch
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace
+from laplace.baselaplace import FullLaplace
 
 from laplace.curvature import BackPackGGN
 
@@ -8,28 +8,33 @@ from laplace.curvature import BackPackGGN
 __all__ = ['FullSubnetLaplace']
 
 
-class SubnetLaplace(ParametricLaplace):
-    """Baseclass for all subnetwork Laplace approximations in this library.
-    Subclasses specify the structure of the Hessian approximation.
-    See `BaseLaplace` for the full interface.
+class FullSubnetLaplace(FullLaplace):
+    """Class for subnetwork Laplace, which computes the Laplace approximation over
+    just a subset of the model parameters (i.e. a subnetwork within the neural network).
+    Subnetwork Laplace only supports a full Hessian approximation; other Hessian
+    approximations could be used in theory, but would not make as much sense conceptually.
 
     A Laplace approximation is represented by a MAP which is given by the
     `model` parameter and a posterior precision or covariance specifying
     a Gaussian distribution \\(\\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
-    Here, only the parameters of a subnetwork of the neural network
-    are treated probabilistically.
+    Here, only a subset of the model parameters (i.e. a subnetwork of the
+    neural network) are treated probabilistically.
     The goal of this class is to compute the posterior precision \\(P\\)
     which sums as
     \\[
         P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
         \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
     \\]
-    There is one subclass, which implements the only supported option of a full
-    approximation to the log likelihood Hessian. The prior is assumed to be Gaussian and
-    therefore we have a simple form for
+    The prior is assumed to be Gaussian and therefore we have a simple form for
     \\(\\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}} = P_0 \\).
     In particular, we assume a scalar or diagonal prior precision so that in
     all cases \\(P_0 = \\textrm{diag}(p_0)\\) and the structure of \\(p_0\\) can be varied.
+
+    The subnetwork Laplace approximation only supports a full, i.e., dense, log likelihood
+    Hessian approximation and hence posterior precision.  Based on the chosen `backend`
+    parameter, the full approximation can be, for example, a generalized Gauss-Newton
+    matrix.  Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
+    See `FullLaplace` and `BaseLaplace` for the full interface.
 
     Parameters
     ----------
@@ -54,6 +59,9 @@ class SubnetLaplace(ParametricLaplace):
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
     """
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    _key = ('subnetwork', 'full')
+
     def __init__(self, model, likelihood, subnetwork_mask=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_precision,
@@ -61,6 +69,9 @@ class SubnetLaplace(ParametricLaplace):
                          backend_kwargs=backend_kwargs)
         self.subnetwork_mask = subnetwork_mask
         self.n_params_subnet = len(self.subnetwork_mask)
+
+    def _init_H(self):
+        self.H = torch.zeros(self.n_params_subnet, self.n_params_subnet, device=self._device)
 
     @property
     def subnetwork_mask(self):
@@ -116,22 +127,3 @@ class SubnetLaplace(ParametricLaplace):
 
         else:
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
-
-
-class FullSubnetLaplace(SubnetLaplace, FullLaplace):
-    """Subnetwork Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
-    and hence posterior precision. Based on the chosen `backend` parameter, the full
-    approximation can be, for example, a generalized Gauss-Newton matrix.
-    Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
-    See `FullLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface.
-    """
-    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('subnetwork', 'full')
-
-    def __init__(self, model, likelihood, subnetwork_mask=None, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
-        super().__init__(model, likelihood, subnetwork_mask, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend,  backend_kwargs)
-
-    def _init_H(self):
-        self.H = torch.zeros(self.n_params_subnet, self.n_params_subnet, device=self._device)
