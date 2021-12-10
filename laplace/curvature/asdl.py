@@ -19,8 +19,8 @@ class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
     def __init__(self, model, likelihood, last_layer=False, low_rank=10):
-        # if likelihood != 'classification':
-        #     raise ValueError('This backend only supports classification currently.')
+        if likelihood != 'classification':
+            raise ValueError('This backend only supports classification currently.')
         self.low_rank = low_rank
         super().__init__(model, likelihood, last_layer)
 
