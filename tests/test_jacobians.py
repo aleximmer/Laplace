@@ -39,7 +39,7 @@ def X():
 def test_linear_jacobians(linear_model, X, backend_cls):
     # jacobian of linear model is input X.
     backend = backend_cls(linear_model, 'classification')
-    Js, f = backend.jacobians(linear_model, X)
+    Js, f = backend.jacobians(X)
     # into Jacs shape (batch_size, output_size, params)
     true_Js = X.reshape(len(X), 1, -1)
     assert true_Js.shape == Js.shape
@@ -51,7 +51,7 @@ def test_linear_jacobians(linear_model, X, backend_cls):
 def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = singleoutput_model
     backend = backend_cls(model, 'classification')
-    Js, f = backend.jacobians(model, X)
+    Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
@@ -63,7 +63,7 @@ def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
 def test_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = multioutput_model
     backend = backend_cls(model, 'classification')
-    Js, f = backend.jacobians(model, X)
+    Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
@@ -75,7 +75,7 @@ def test_jacobians_multioutput(multioutput_model, X, backend_cls):
 def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = FeatureExtractor(singleoutput_model)
     backend = backend_cls(model, 'classification')
-    Js, f = backend.last_layer_jacobians(model, X)
+    Js, f = backend.last_layer_jacobians(X)
     _, phi = model.forward_with_features(X)
     Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
     assert Js.shape == Js_naive.shape
@@ -88,7 +88,7 @@ def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
 def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = FeatureExtractor(multioutput_model)
     backend = backend_cls(model, 'classification')
-    Js, f = backend.last_layer_jacobians(model, X)
+    Js, f = backend.last_layer_jacobians(X)
     _, phi = model.forward_with_features(X)
     Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
     assert Js.shape == Js_naive.shape

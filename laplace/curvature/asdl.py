@@ -19,13 +19,12 @@ class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
 
-    def jacobians(self, model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -37,12 +36,12 @@ class AsdlInterface(CurvatureInterface):
             output function `(batch, outputs)`
         """
         Js = list()
-        for i in range(model.output_size):
+        for i in range(self.model.output_size):
             def loss_fn(outputs, targets):
                 return outputs[:, i].sum()
 
-            f = batch_gradient(model, loss_fn, x, None).detach()
-            Jk = _get_batch_grad(model)
+            f = batch_gradient(self.model, loss_fn, x, None).detach()
+            Jk = _get_batch_grad(self.model)
             if self.subnetwork_indices is not None:
                 Jk = Jk[:, self.subnetwork_indices]
             Js.append(Jk)

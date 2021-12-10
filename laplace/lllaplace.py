@@ -115,7 +115,7 @@ class LLLaplace(ParametricLaplace):
         self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
 
     def _glm_predictive_distribution(self, X):
-        Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
+        Js, f_mu = self.backend.last_layer_jacobians(X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 

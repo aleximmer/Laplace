@@ -592,7 +592,7 @@ class ParametricLaplace(BaseLaplace):
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X):
-        Js, f_mu = self.backend.jacobians(self.model, X)
+        Js, f_mu = self.backend.jacobians(X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 

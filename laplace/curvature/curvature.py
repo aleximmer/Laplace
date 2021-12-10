@@ -44,12 +44,11 @@ class CurvatureInterface:
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
-    def jacobians(self, model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -62,13 +61,12 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
-    def last_layer_jacobians(self, model, x):
+    def last_layer_jacobians(self, x):
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\) 
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
         Parameters
         ----------
-        model : laplace.feature_extractor.FeatureExtractor
         x : torch.Tensor
 
         Returns
@@ -78,7 +76,7 @@ class CurvatureInterface:
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        f, phi = model.forward_with_features(x)
+        f, phi = self.model.forward_with_features(x)
         bsize = phi.shape[0]
         output_size = f.shape[-1]
 
@@ -86,7 +84,7 @@ class CurvatureInterface:
         identity = torch.eye(output_size, device=x.device).unsqueeze(0).tile(bsize, 1, 1)
         # Jacobians are batch x output x params
         Js = torch.einsum('kp,kij->kijp', phi, identity).reshape(bsize, output_size, -1)
-        if model.last_layer.bias is not None:
+        if self.model.last_layer.bias is not None:
             Js = torch.cat([Js, identity], dim=2)
 
         return Js, f.detach()
@@ -242,9 +240,9 @@ class GGNInterface(CurvatureInterface):
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 
         if self.last_layer:
-            Js, f = self.last_layer_jacobians(self.model, x)
+            Js, f = self.last_layer_jacobians(x)
         else:
-            Js, f = self.jacobians(self.model, x)
+            Js, f = self.jacobians(x)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn

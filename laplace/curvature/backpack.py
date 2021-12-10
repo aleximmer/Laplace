@@ -16,13 +16,12 @@ class BackPackInterface(CurvatureInterface):
         extend(self._model)
         extend(self.lossfunc)
 
-    def jacobians(self, model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension.
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -33,7 +32,7 @@ class BackPackInterface(CurvatureInterface):
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        model = extend(model)
+        model = extend(self.model)
         to_stack = []
         for i in range(model.output_size):
             model.zero_grad()

@@ -261,7 +261,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     Js, f = jacobians_naive(feature_extractor.last_layer, phi)
     true_f_var = torch.einsum('mkp,pq,mcq->mkc', Js, Sigma, Js)
     # test last-layer Jacobians
-    comp_Js, comp_f = lap.backend.last_layer_jacobians(lap.model, X)
+    comp_Js, comp_f = lap.backend.last_layer_jacobians(X)
     assert torch.allclose(Js, comp_Js)
     assert torch.allclose(f, comp_f)
     comp_f_var = lap.functional_variance(comp_Js)
