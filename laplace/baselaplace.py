@@ -335,8 +335,6 @@ class ParametricLaplace(BaseLaplace):
             self._init_H()
         except AttributeError:  # necessary information not yet available
             pass
-        self.loss = 0
-        self.n_data = 0
         # posterior mean/mode
         self.mean = self.prior_mean
 
@@ -443,13 +441,21 @@ class ParametricLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
-    def log_prob(self, value):
+    def log_prob(self, value, normalized=True):
         """Compute the log probability under the (current) Laplace approximation.
+
+        Parameters
+        ----------
+        normalized : bool, default=True
+            whether to return log of a properly normalized Gaussian or just the
+            terms that depend on `value`.
 
         Returns
         -------
         log_prob : torch.Tensor
         """
+        if not normalized:
+            return - self.square_norm(value) / 2
         log_prob = - self.n_params / 2 * log(2 * pi) + self.log_det_posterior_precision / 2
         log_prob -= self.square_norm(value) / 2
         return log_prob
@@ -806,20 +812,18 @@ class KronLaplace(ParametricLaplace):
         -------
         precision : `laplace.matrix.KronDecomposed`
         """
-        if type(self.H) is Kron:  # Fall back to prior
-            return self.prior_precision_diag
         return self.H * self._H_factor + self.prior_precision
 
     @property
     def log_det_posterior_precision(self):
         if type(self.H) is Kron:  # Fall back to diag prior
-            return self.posterior_precision.log().sum()
+            return self.prior_precision_diag.log().sum()
         return self.posterior_precision.logdet()
 
     def square_norm(self, value):
         delta = value - self.mean
         if type(self.H) is Kron:  # fall back to prior
-            return (delta * self.posterior_precision) @ delta
+            return (delta * self.prior_precision_diag) @ delta
         return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
     def functional_variance(self, Js):
