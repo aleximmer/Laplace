@@ -146,6 +146,24 @@ adding and removing jitter to the diagonal.</p>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
+<dt id="laplace.utils.expand_prior_precision"><code class="name flex">
+<span>def <span class="ident">expand_prior_precision</span></span>(<span>prior_prec, model)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Expand prior precision to match the shape of the model parameters.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>prior_prec</code></strong> :&ensp;<code>torch.Tensor 1-dimensional</code></dt>
+<dd>prior precision</dd>
+<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
+<dd>torch model with parameters that are regularized by prior_prec</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>expanded_prior_prec</code></strong> :&ensp;<code>torch.Tensor </code></dt>
+<dd>expanded prior precision has the same shape as model parameters</dd>
+</dl></div>
+</dd>
 </dl>
 </section>
 <section>
@@ -172,6 +190,7 @@ adding and removing jitter to the diagonal.</p>
 <li><code><a title="laplace.utils.diagonal_add_scalar" href="#laplace.utils.diagonal_add_scalar">diagonal_add_scalar</a></code></li>
 <li><code><a title="laplace.utils.symeig" href="#laplace.utils.symeig">symeig</a></code></li>
 <li><code><a title="laplace.utils.block_diag" href="#laplace.utils.block_diag">block_diag</a></code></li>
+<li><code><a title="laplace.utils.expand_prior_precision" href="#laplace.utils.expand_prior_precision">expand_prior_precision</a></code></li>
 </ul>
 </li>
 </ul>
