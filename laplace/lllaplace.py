@@ -65,6 +65,7 @@ class LLLaplace(ParametricLaplace):
         self.model = FeatureExtractor(deepcopy(model), last_layer_name=last_layer_name)
         if self.model.last_layer is None:
             self.map_estimate = None
+            self.mean = prior_mean
             self.n_params = None
             self.n_layers = None
             # ignore checks of prior mean setter temporarily, check on .fit()
@@ -76,9 +77,10 @@ class LLLaplace(ParametricLaplace):
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
+            self.mean = self.prior_mean 
         self._backend_kwargs['last_layer'] = True
 
-    def fit(self, train_loader):
+    def fit(self, train_loader, override=True):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -86,10 +88,10 @@ class LLLaplace(ParametricLaplace):
         train_loader : torch.data.utils.DataLoader
             each iterate is a training batch (X, y);
             `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+        override : bool, default=True
+            whether to initialize H, loss, and n_data again; setting to False is useful for
+            online learning settings to accumulate a sequential posterior approximation.
         """
-        if self.H is not None:
-            raise ValueError('Already fit.')
-
         self.model.eval()
 
         if self.model.last_layer is None:
@@ -105,8 +107,13 @@ class LLLaplace(ParametricLaplace):
             # here, check the already set prior precision again
             self.prior_precision = self._prior_precision
             self.prior_mean = self._prior_mean
+            self._init_H()
 
-        super().fit(train_loader)
+        if override:
+            self._init_H()
+
+        super().fit(train_loader, override=override)
+        self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
 
     def _glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.last_layer_jacobians(self.model, X)

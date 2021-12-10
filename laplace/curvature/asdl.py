@@ -3,22 +3,21 @@ import numpy as np
 import torch
 
 from asdfghjkl import FISHER_EXACT, FISHER_MC, COV
-from asdfghjkl import SHAPE_KRON, SHAPE_DIAG
+from asdfghjkl import SHAPE_KRON, SHAPE_DIAG, SHAPE_FULL
 from asdfghjkl import fisher_for_cross_entropy
+from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
 from asdfghjkl.gradient import batch_gradient
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.matrix import Kron
 from laplace.utils import _is_batchnorm
 
+EPS = 1e-6
+
 
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
-    def __init__(self, model, likelihood, last_layer=False):
-        if likelihood != 'classification':
-            raise ValueError('This backend only supports classification currently.')
-        super().__init__(model, likelihood, last_layer)
 
     @staticmethod
     def jacobians(model, x):
@@ -131,10 +130,41 @@ class AsdlInterface(CurvatureInterface):
         return self.factor * loss, self.factor * kron
 
 
+class AsdlHessian(AsdlInterface):
+
+    def __init__(self, model, likelihood, last_layer=False, low_rank=10):
+        super().__init__(model, likelihood, last_layer)
+        self.low_rank = low_rank
+
+    @property
+    def _ggn_type(self):
+        raise NotImplementedError()
+
+    def full(self, x, y, **kwargs):
+        hessian_for_loss(self.model, self.lossfunc, SHAPE_FULL, x, y)
+        H = self._model.hessian.data
+        loss = self.lossfunc(self.model(x), y).detach()
+        return self.factor * loss, self.factor * H
+
+    def eig_lowrank(self, data_loader):
+        # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
+        eigvals, eigvecs = hessian_eigenvalues(self.model, self.lossfunc, data_loader,
+                                               top_n=self.low_rank, max_iters=self.low_rank*10)
+        eigvals = torch.from_numpy(np.array(eigvals))
+        mask = (eigvals > EPS)
+        eigvecs = torch.stack([torch.cat([p.flatten() for p in params])
+                               for params in eigvecs], dim=1)[:, mask]
+        eigvals = eigvals[mask].to(eigvecs.dtype).to(eigvecs.device)
+        loss = sum([self.lossfunc(self.model(x).detach(), y) for x, y in data_loader])
+        return eigvecs, self.factor * eigvals, self.factor * loss
+
+
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
     def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+        if likelihood != 'classification':
+            raise ValueError('This backend only supports classification currently.')
         super().__init__(model, likelihood, last_layer)
         self.stochastic = stochastic
 
@@ -146,6 +176,10 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl.
     """
+    def __init__(self, model, likelihood, last_layer=False):
+        if likelihood != 'classification':
+            raise ValueError('This backend only supports classification currently.')
+        super().__init__(model, likelihood, last_layer)
 
     @property
     def _ggn_type(self):

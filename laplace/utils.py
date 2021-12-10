@@ -3,6 +3,7 @@ from typing import Union
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torch.utils.data import Sampler
@@ -131,7 +132,7 @@ def diagonal_add_scalar(X, value):
     values = X.new_ones(X.shape[0]).mul(value)
     return X.index_put(tuple(indices.t()), values, accumulate=True)
 
- 
+
 def symeig(M):
     """Symetric eigendecomposition avoiding failure cases by
     adding and removing jitter to the diagonal.
@@ -152,7 +153,7 @@ def symeig(M):
     except RuntimeError:  # did not converge
         logging.info('SYMEIG: adding jitter, did not converge.')
         # use W L W^T + I = W (L + I) W^T
-        M = M + torch.eye(M.shape[0])
+        M = M + torch.eye(M.shape[0], device=M.device)
         try:
             L, W = torch.linalg.eigh(M, UPLO='U')
             L -= 1.
@@ -199,3 +200,30 @@ class SoDSampler(Sampler):
 
     def __len__(self):
         return len(self.indices)
+
+
+def expand_prior_precision(prior_prec, model):
+    """Expand prior precision to match the shape of the model parameters.
+
+    Parameters
+    ----------
+    prior_prec : torch.Tensor 1-dimensional
+        prior precision
+    model : torch.nn.Module
+        torch model with parameters that are regularized by prior_prec
+
+    Returns
+    -------
+    expanded_prior_prec : torch.Tensor
+        expanded prior precision has the same shape as model parameters
+    """
+    theta = parameters_to_vector(model.parameters())
+    device, P = theta.device, len(theta)
+    assert prior_prec.ndim == 1
+    if len(prior_prec) == 1:  # scalar
+        return torch.ones(P, device=device) * prior_prec
+    elif len(prior_prec) == P:  # full diagonal
+        return prior_prec.to(device)
+    else:
+        return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
+                          in zip(prior_prec, model.parameters())])

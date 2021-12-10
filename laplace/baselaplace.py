@@ -1,4 +1,5 @@
-from math import sqrt, pi
+from math import sqrt, pi, log
+from laplace.curvature.asdl import AsdlHessian
 import numpy as np
 import torch
 import warnings
@@ -62,7 +63,7 @@ class BaseLaplace:
         # log likelihood = g(loss)
         self.loss = 0.
         self.n_outputs = None
-        self.n_data = None
+        self.n_data = 0
 
         # MAP estimate of parameters (for ParametricLaplace this corresponds to the posterior mean)
         self.map_estimate = parameters_to_vector(self.model.parameters()).detach()
@@ -75,9 +76,6 @@ class BaseLaplace:
         return self._backend
 
     def _curv_closure(self, X, y, N):
-        raise NotImplementedError
-
-    def _check_fit(self):
         raise NotImplementedError
 
     def fit(self, train_loader):
@@ -132,8 +130,6 @@ class BaseLaplace:
         -------
         log_likelihood : torch.Tensor
         """
-        self._check_fit()
-
         factor = - self._H_factor
         if self.likelihood == 'regression':
             # loss used is just MSE, need to add normalizer for gaussian likelihood
@@ -279,7 +275,7 @@ class BaseLaplace:
     def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
                                       init_prior_prec=1., val_loader=None, loss=get_nll,
                                       log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                      link_approx='probit', n_samples=100, verbose=False, 
+                                      link_approx='probit', n_samples=100, verbose=False,
                                       cv_loss_with_var=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
@@ -425,21 +421,20 @@ class ParametricLaplace(BaseLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
-        assert backend in [BackPackGGN, BackPackEF, AsdlGGN, AsdlEF], \
-            'GGN or EF backends required in ParametricLaplace.'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
-        self.H = None
+        try:
+            self._init_H()
+        except AttributeError:  # necessary information not yet available
+            pass
+        # posterior mean/mode
+        self.mean = self.prior_mean
 
     def _init_H(self):
         raise NotImplementedError
 
-    def _check_fit(self):
-        if self.H is None:
-            raise AttributeError('ParametricLaplace not fitted. Run fit() first.')
-
-    def fit(self, train_loader):
+    def fit(self, train_loader, override=True):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -447,13 +442,17 @@ class ParametricLaplace(BaseLaplace):
         train_loader : torch.data.utils.DataLoader
             each iterate is a training batch (X, y);
             `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+        override : bool, default=True
+            whether to initialize H, loss, and n_data again; setting to False is useful for
+            online learning settings to accumulate a sequential posterior approximation.
         """
-        if self.H is not None:
-            raise ValueError('Already fit.')
-
-        self._init_H()
+        if override:
+            self._init_H()
+            self.loss = 0
+            self.n_data = 0
 
         self.model.eval()
+        self.mean = parameters_to_vector(self.model.parameters()).detach()
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
@@ -472,7 +471,7 @@ class ParametricLaplace(BaseLaplace):
             self.loss += loss_batch
             self.H += H_batch
 
-        self.n_data = N
+        self.n_data += N
 
     @property
     def scatter(self):
@@ -524,12 +523,96 @@ class ParametricLaplace(BaseLaplace):
         """
         return self.log_det_posterior_precision - self.log_det_prior_precision
 
-    def _log_marginal_likelihood(self):
+    def square_norm(self, value):
+        """Compute the square norm under post. Precision with `value-self.mean` as 𝛥:
+        \\[
+            \\Delta^\top P \\Delta
+        \\]
+        Returns
+        -------
+        square_form
+        """
+        raise NotImplementedError
+
+    def log_prob(self, value, normalized=True):
+        """Compute the log probability under the (current) Laplace approximation.
+
+        Parameters
+        ----------
+        normalized : bool, default=True
+            whether to return log of a properly normalized Gaussian or just the
+            terms that depend on `value`.
+
+        Returns
+        -------
+        log_prob : torch.Tensor
+        """
+        if not normalized:
+            return - self.square_norm(value) / 2
+        log_prob = - self.n_params / 2 * log(2 * pi) + self.log_det_posterior_precision / 2
+        log_prob -= self.square_norm(value) / 2
+        return log_prob
+
+    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+        """Compute the Laplace approximation to the log marginal likelihood subject
+        to specific Hessian approximations that subclasses implement.
+        Requires that the Laplace approximation has been fit before.
+        The resulting torch.Tensor is differentiable in `prior_precision` and
+        `sigma_noise` if these have gradients enabled.
+        By passing `prior_precision` or `sigma_noise`, the current value is
+        overwritten. This is useful for iterating on the log marginal likelihood.
+
+        Parameters
+        ----------
+        prior_precision : torch.Tensor, optional
+            prior precision if should be changed from current `prior_precision` value
+        sigma_noise : [type], optional
+            observation noise standard deviation if should be changed
+
+        Returns
+        -------
+        log_marglik : torch.Tensor
+        """
+        # update prior precision (useful when iterating on marglik)
+        if prior_precision is not None:
+            self.prior_precision = prior_precision
+
+        # update sigma_noise (useful when iterating on marglik)
+        if sigma_noise is not None:
+            if self.likelihood != 'regression':
+                raise ValueError('Can only change sigma_noise for regression.')
+            self.sigma_noise = sigma_noise
+
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100):
-        self._check_fit()
+        """Compute the posterior predictive on input data `X`.
 
+        Parameters
+        ----------
+        x : torch.Tensor
+            `(batch_size, input_shape)`
+
+        pred_type : {'glm', 'nn'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive. The GLM predictive is consistent with
+            the curvature approximations used here.
+
+        link_approx : {'mc', 'probit', 'bridge'}
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only 'mc' is possible.
+
+        n_samples : int
+            number of samples for `link_approx='mc'`.
+
+        Returns
+        -------
+        predictive: torch.Tensor or Tuple[torch.Tensor]
+            For `likelihood='classification'`, a torch.Tensor is returned with
+            a distribution over classes (similar to a Softmax).
+            For `likelihood='regression'`, a tuple of torch.Tensor is returned
+            with the mean and the predictive variance.
+        """
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
 
@@ -568,8 +651,6 @@ class ParametricLaplace(BaseLaplace):
         samples : torch.Tensor
             samples `(n_samples, batch_size, output_shape)`
         """
-        self._check_fit()
-
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
 
@@ -638,7 +719,7 @@ class ParametricLaplace(BaseLaplace):
     def optimize_prior_precision(self, method='marglik', pred_type='glm', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                 link_approx='probit', n_samples=100, verbose=False, 
+                                 link_approx='probit', n_samples=100, verbose=False,
                                  cv_loss_with_var=False):
         """
         `optimize_prior_precision_base` from `BaseLaplace` with `pred_type` in `{'glm', 'nn'}`
@@ -683,6 +764,10 @@ class FullLaplace(ParametricLaplace):
     def _curv_closure(self, X, y, N):
         return self.backend.full(X, y, N=N)
 
+    def fit(self, train_loader, override=True):
+        self._posterior_scale = None
+        return super().fit(train_loader, override=override)
+
     def _compute_scale(self):
         self._posterior_scale = invsqrt_precision(self.posterior_precision)
 
@@ -721,12 +806,15 @@ class FullLaplace(ParametricLaplace):
         precision : torch.tensor
             `(parameters, parameters)`
         """
-        self._check_fit()
         return self._H_factor * self.H + torch.diag(self.prior_precision_diag)
 
     @property
     def log_det_posterior_precision(self):
         return self.posterior_precision.logdet()
+
+    def square_norm(self, value):
+        delta = value - self.mean
+        return delta @ self.posterior_precision @ delta
 
     def functional_variance(self, Js):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
@@ -755,6 +843,7 @@ class KronLaplace(ParametricLaplace):
                  prior_mean=0., temperature=1., backend=BackPackGGN, damping=False,
                  **backend_kwargs):
         self.damping = damping
+        self.H_facs = None
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, **backend_kwargs)
 
@@ -764,12 +853,34 @@ class KronLaplace(ParametricLaplace):
     def _curv_closure(self, X, y, N):
         return self.backend.kron(X, y, N=N)
 
-    def fit(self, train_loader, keep_factors=False):
-        super().fit(train_loader)
-        # Kron requires postprocessing as all quantities depend on the decomposition.
-        if keep_factors:
+    @staticmethod
+    def _rescale_factors(kron, factor):
+        for F in kron.kfacs:
+            if len(F) == 2:
+                F[1] *= factor
+        return kron
+
+    def fit(self, train_loader, override=True):
+        if override:
+            self.H_facs = None
+
+        if self.H_facs is not None:
+            n_data_old = self.n_data
+            n_data_new = len(train_loader.dataset)
+            self._init_H()  # re-init H non-decomposed
+            # discount previous Kronecker factors to sum up properly together with new ones
+            self.H_facs = self._rescale_factors(self.H_facs, n_data_old / (n_data_old + n_data_new))
+
+        super().fit(train_loader, override=override)
+
+        if self.H_facs is None:
             self.H_facs = self.H
-        self.H = self.H.decompose(damping=self.damping)
+        else:
+            # discount new factors that were computed assuming N = n_data_new
+            self.H = self._rescale_factors(self.H, n_data_new / (n_data_new + n_data_old))
+            self.H_facs += self.H
+        # Decompose to self.H for all required quantities but keep H_facs for further inference
+        self.H = self.H_facs.decompose(damping=self.damping)
 
     @property
     def posterior_precision(self):
@@ -779,12 +890,19 @@ class KronLaplace(ParametricLaplace):
         -------
         precision : `laplace.matrix.KronDecomposed`
         """
-        self._check_fit()
         return self.H * self._H_factor + self.prior_precision
 
     @property
     def log_det_posterior_precision(self):
+        if type(self.H) is Kron:  # Fall back to diag prior
+            return self.prior_precision_diag.log().sum()
         return self.posterior_precision.logdet()
+
+    def square_norm(self, value):
+        delta = value - self.mean
+        if type(self.H) is Kron:  # fall back to prior
+            return (delta * self.prior_precision_diag) @ delta
+        return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
     def functional_variance(self, Js):
         return self.posterior_precision.inv_square_form(Js)
@@ -800,6 +918,105 @@ class KronLaplace(ParametricLaplace):
         super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
         if len(self.prior_precision) not in [1, self.n_layers]:
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
+
+
+class LowRankLaplace(ParametricLaplace):
+    """Laplace approximation with low-rank log likelihood Hessian (approximation). 
+    The low-rank matrix is represented by an eigendecomposition (vecs, values).
+    Based on the chosen `backend`, either a true Hessian or, for example, GGN
+    approximation could be used.
+    The posterior precision is computed as
+    \\( P = V diag(l) V^T + P_0.\\)
+    To sample, compute the functional variance, and log determinant, algebraic tricks 
+    are usedto reduce the costs of inversion to the that of a \\(K \times K\\) matrix
+    if we have a rank of K.
+    
+    See `BaseLaplace` for the full interface.
+    """
+    _key = ('all', 'lowrank')
+    def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, 
+                 temperature=1, backend=AsdlHessian, backend_kwargs=None):
+        super().__init__(model, likelihood, sigma_noise=sigma_noise, 
+                         prior_precision=prior_precision, prior_mean=prior_mean, 
+                         temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
+    
+    def _init_H(self):
+        pass
+
+    @property
+    def V(self):
+        (U, l), prior_prec_diag = self.posterior_precision
+        return U / prior_prec_diag.reshape(-1, 1)
+
+    @property
+    def Kinv(self):
+        (U, l), _ = self.posterior_precision
+        return torch.inverse(torch.diag(1 / l) + U.T @ self.V)
+
+    def fit(self, train_loader, override=True):
+        # override fit since output of eighessian not additive across batch
+        if not override:
+            # LowRankLA cannot be updated since eigenvalue representation not additive
+            raise ValueError('LowRank LA does not support updating.')
+
+        self.model.eval()
+        self.mean = parameters_to_vector(self.model.parameters()).detach()
+
+        X, _ = next(iter(train_loader))
+        with torch.no_grad():
+            try:
+                out = self.model(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                out = self.model(X.to(self._device))
+        self.n_outputs = out.shape[-1]
+        setattr(self.model, 'output_size', self.n_outputs)
+
+        eigenvectors, eigenvalues, loss = self.backend.eig_lowrank(train_loader)
+        self.H = (eigenvectors, eigenvalues)
+        self.loss = loss
+
+        self.n_data = len(train_loader.dataset)
+
+    @property
+    def posterior_precision(self):
+        """Return correctly scaled posterior precision that would be constructed
+        as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.
+
+        Returns
+        -------
+        H : tuple(eigenvectors, eigenvalues)
+            scaled self.H with temperature and loss factors.
+        prior_precision_diag : torch.Tensor
+            diagonal prior precision shape `parameters` to be added to H.
+        """
+        return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
+
+    def functional_variance(self, Jacs):
+        prior_var = torch.einsum('ncp,nkp->nck', Jacs / self.prior_precision_diag, Jacs)
+        Jacs_V = torch.einsum('ncp,pl->ncl', Jacs, self.V)
+        info_gain = torch.einsum('ncl,nkl->nck', Jacs_V @ self.Kinv, Jacs_V)
+        return prior_var - info_gain
+
+    def sample(self, n_samples):
+        samples = torch.randn(self.n_params, n_samples)
+        d = self.prior_precision_diag
+        Vs = self.V * d.sqrt().reshape(-1, 1)
+        VtV = Vs.T @ Vs
+        Ik = torch.eye(len(VtV))
+        A = torch.linalg.cholesky(VtV)
+        B = torch.linalg.cholesky(VtV + Ik)
+        A_inv = torch.inverse(A)
+        C = torch.inverse(A_inv.T @ (B - Ik) @ A_inv)
+        Kern_inv = torch.inverse(torch.inverse(C) + Vs.T @ Vs)
+        dinv_sqrt = (d).sqrt().reshape(-1, 1)
+        prior_sample = dinv_sqrt * samples
+        gain_sample = dinv_sqrt * Vs @ Kern_inv @ (Vs.T @ samples)
+        return self.mean + (prior_sample - gain_sample).T
+
+    @property
+    def log_det_posterior_precision(self):
+        (U, l), prior_prec_diag = self.posterior_precision
+        return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
 
 
 class DiagLaplace(ParametricLaplace):
@@ -826,7 +1043,6 @@ class DiagLaplace(ParametricLaplace):
         precision : torch.tensor
             `(parameters)`
         """
-        self._check_fit()
         return self._H_factor * self.H + self.prior_precision_diag
 
     @property
@@ -854,6 +1070,10 @@ class DiagLaplace(ParametricLaplace):
     @property
     def log_det_posterior_precision(self):
         return self.posterior_precision.log().sum()
+
+    def square_norm(self, value):
+        delta = value - self.mean
+        return delta @ (delta * self.posterior_precision)
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
