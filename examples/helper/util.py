@@ -37,4 +37,4 @@ def plot_regression(X_train, y_train, X_test, f_test, y_std, plot=True,
     if plot:
         plt.show()
     else:
-        plt.savefig(f'../docs/{file_name}.png')
+        plt.savefig(f'docs/{file_name}.png')
