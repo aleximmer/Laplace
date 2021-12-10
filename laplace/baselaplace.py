@@ -8,9 +8,9 @@ from torch.utils.data import DataLoader
 
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, SoDSampler
 from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN, BackPackEF, BackPackInterface, AsdlGGN, AsdlEF, AsdlInterface
+from laplace.curvature import BackPackGGN, BackPackEF, AsdlGGN, AsdlEF, AsdlInterface
 
-__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace']
+__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace', 'FunctionalLaplace']
 
 
 class BaseLaplace:
@@ -903,9 +903,9 @@ class FunctionalLaplace(BaseLaplace):
     _key = ('all', 'GP')
 
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackInterface, backend_kwargs=None,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None,
                  diagonal_kernel=False):
-        assert backend in [BackPackInterface], 'Only BackPack backend is supported in FunctionalLaplace (for now)'
+        assert backend in [BackPackGGN], 'Only BackPack backend is supported in FunctionalLaplace (for now)'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -1243,7 +1243,7 @@ class FunctionalLaplace(BaseLaplace):
         kernel : torch.tensor
             K_bb with shape (b * C, b * C)
         """
-        if isinstance(self.backend, BackPackInterface):
+        if isinstance(self.backend, BackPackGGN):
             jacobians_2, _ = self._jacobians(batch)
             P = jacobians.shape[-1]  # nr model params
             prior = self.prior_factor_sod / self.prior_precision_diag
@@ -1270,7 +1270,7 @@ class FunctionalLaplace(BaseLaplace):
             K_star with shape (b, C, C)
 
         """
-        if isinstance(self.backend, BackPackInterface):
+        if isinstance(self.backend, BackPackGGN):
             jacobians_2, _ = self._jacobians(batch)
             prior = self.prior_factor_sod / self.prior_precision_diag
             if self.diagonal_kernel:
@@ -1295,7 +1295,7 @@ class FunctionalLaplace(BaseLaplace):
         kernel : torch.tensor
             K_batch_star with shape (b1, b2, C, C)
         """
-        if isinstance(self.backend, BackPackInterface):
+        if isinstance(self.backend, BackPackGGN):
             jacobians_2, _ = self._jacobians(batch)
             prior = self.prior_factor_sod / self.prior_precision_diag
             if self.diagonal_kernel:

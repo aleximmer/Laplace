@@ -5,10 +5,10 @@ from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, Dia
 from laplace.feature_extractor import FeatureExtractor
 
 from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN, BackPackInterface
+from laplace.curvature import BackPackGGN
 
 
-__all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
+__all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace', 'FunctionalLLLaplace']
 
 
 class LLLaplace(ParametricLaplace):
@@ -216,7 +216,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
     _key = ('last_layer', 'GP')
 
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackInterface, last_layer_name=None,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  backend_kwargs=None, diagonal_kernel=False):
         super().__init__(model, likelihood, M=M, sigma_noise=sigma_noise, prior_precision=1.,
                          prior_mean=0., temperature=temperature, backend=backend,
