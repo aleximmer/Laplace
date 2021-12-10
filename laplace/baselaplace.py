@@ -1,4 +1,5 @@
 from math import sqrt, pi, log
+from laplace.curvature.asdl import AsdlHessian
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
@@ -327,8 +328,6 @@ class ParametricLaplace(BaseLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
-        assert backend in [BackPackGGN, BackPackEF, AsdlGGN, AsdlEF], \
-            'GGN or EF backends required in ParametricLaplace.'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
         try:
@@ -840,6 +839,105 @@ class KronLaplace(ParametricLaplace):
         super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
         if len(self.prior_precision) not in [1, self.n_layers]:
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
+
+
+class LowRankLaplace(ParametricLaplace):
+    """Laplace approximation with low-rank log likelihood Hessian (approximation). 
+    The low-rank matrix is represented by an eigendecomposition (vecs, values).
+    Based on the chosen `backend`, either a true Hessian or, for example, GGN
+    approximation could be used.
+    The posterior precision is computed as
+    \\( P = V diag(l) V^T + P_0.\\)
+    To sample, compute the functional variance, and log determinant, algebraic tricks 
+    are usedto reduce the costs of inversion to the that of a \\(K \times K\\) matrix
+    if we have a rank of K.
+    
+    See `BaseLaplace` for the full interface.
+    """
+    _key = ('all', 'lowrank')
+    def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, 
+                 temperature=1, backend=AsdlHessian, backend_kwargs=None):
+        super().__init__(model, likelihood, sigma_noise=sigma_noise, 
+                         prior_precision=prior_precision, prior_mean=prior_mean, 
+                         temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
+    
+    def _init_H(self):
+        pass
+
+    @property
+    def V(self):
+        (U, l), prior_prec_diag = self.posterior_precision
+        return U / prior_prec_diag.reshape(-1, 1)
+
+    @property
+    def Kinv(self):
+        (U, l), _ = self.posterior_precision
+        return torch.inverse(torch.diag(1 / l) + U.T @ self.V)
+
+    def fit(self, train_loader, override=True):
+        # override fit since output of eighessian not additive across batch
+        if not override:
+            # LowRankLA cannot be updated since eigenvalue representation not additive
+            raise ValueError('LowRank LA does not support updating.')
+
+        self.model.eval()
+        self.mean = parameters_to_vector(self.model.parameters()).detach()
+
+        X, _ = next(iter(train_loader))
+        with torch.no_grad():
+            try:
+                out = self.model(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                out = self.model(X.to(self._device))
+        self.n_outputs = out.shape[-1]
+        setattr(self.model, 'output_size', self.n_outputs)
+
+        eigenvectors, eigenvalues, loss = self.backend.eig_lowrank(train_loader)
+        self.H = (eigenvectors, eigenvalues)
+        self.loss = loss
+
+        self.n_data = len(train_loader.dataset)
+
+    @property
+    def posterior_precision(self):
+        """Return correctly scaled posterior precision that would be constructed
+        as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.
+
+        Returns
+        -------
+        H : tuple(eigenvectors, eigenvalues)
+            scaled self.H with temperature and loss factors.
+        prior_precision_diag : torch.Tensor
+            diagonal prior precision shape `parameters` to be added to H.
+        """
+        return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
+
+    def functional_variance(self, Jacs):
+        prior_var = torch.einsum('ncp,nkp->nck', Jacs / self.prior_precision_diag, Jacs)
+        Jacs_V = torch.einsum('ncp,pl->ncl', Jacs, self.V)
+        info_gain = torch.einsum('ncl,nkl->nck', Jacs_V @ self.Kinv, Jacs_V)
+        return prior_var - info_gain
+
+    def sample(self, n_samples):
+        samples = torch.randn(self.n_params, n_samples)
+        d = self.prior_precision_diag
+        Vs = self.V * d.sqrt().reshape(-1, 1)
+        VtV = Vs.T @ Vs
+        Ik = torch.eye(len(VtV))
+        A = torch.linalg.cholesky(VtV)
+        B = torch.linalg.cholesky(VtV + Ik)
+        A_inv = torch.inverse(A)
+        C = torch.inverse(A_inv.T @ (B - Ik) @ A_inv)
+        Kern_inv = torch.inverse(torch.inverse(C) + Vs.T @ Vs)
+        dinv_sqrt = (d).sqrt().reshape(-1, 1)
+        prior_sample = dinv_sqrt * samples
+        gain_sample = dinv_sqrt * Vs @ Kern_inv @ (Vs.T @ samples)
+        return self.mean + (prior_sample - gain_sample).T
+
+    @property
+    def log_det_posterior_precision(self):
+        (U, l), prior_prec_diag = self.posterior_precision
+        return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
 
 
 class DiagLaplace(ParametricLaplace):

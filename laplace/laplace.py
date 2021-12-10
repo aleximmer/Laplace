@@ -12,7 +12,7 @@ def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure
     likelihood : {'classification', 'regression'}
     subset_of_weights : {'last_layer', 'all'}, default='last_layer'
         subset of weights to consider for inference
-    hessian_structure : {'diag', 'kron', 'full'}, default='kron'
+    hessian_structure : {'diag', 'kron', 'full', 'lowrank'}, default='kron'
         structure of the Hessian approximation
 
     Returns
