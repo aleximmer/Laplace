@@ -3,6 +3,7 @@ from typing import Union
 import numpy as np
 import torch
 import torch.nn.functional as F
+from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 
@@ -186,3 +187,30 @@ def block_diag(blocks):
         M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
         p_cur += p_block
     return M
+
+
+def expand_prior_precision(prior_prec, model):
+    """Expand prior precision to match the shape of the model parameters.
+
+    Parameters
+    ----------
+    prior_prec : torch.Tensor 1-dimensional
+        prior precision 
+    model : torch.nn.Module
+        torch model with parameters that are regularized by prior_prec
+
+    Returns
+    -------
+    expanded_prior_prec : torch.Tensor 
+        expanded prior precision has the same shape as model parameters
+    """
+    theta = parameters_to_vector(model.parameters())
+    device, P = theta.device, len(theta)
+    assert prior_prec.ndim == 1
+    if len(prior_prec) == 1:  # scalar
+        return torch.ones(P, device=device) * prior_prec
+    elif len(prior_prec) == P:  # full diagonal
+        return prior_prec.to(device)
+    else:
+        return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
+                          in zip(prior_prec, model.parameters())])

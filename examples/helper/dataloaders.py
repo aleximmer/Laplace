@@ -31,3 +31,16 @@ def CIFAR10(train=True, batch_size=None, augm_flag=True):
                                          shuffle=train, num_workers=4)
 
     return loader
+
+
+def get_sinusoid_example(n_data=150, sigma_noise=0.3, batch_size=150):
+    # create simple sinusoid data set
+    X_train = (torch.rand(n_data) * 8).unsqueeze(-1)
+    y_train = torch.sin(X_train) + torch.randn_like(X_train) * sigma_noise
+    train_loader = data_utils.DataLoader(
+        data_utils.TensorDataset(X_train, y_train), 
+        batch_size=batch_size
+    )
+    X_test = torch.linspace(-5, 13, 500).unsqueeze(-1)
+    return X_train, y_train, train_loader, X_test
+    
