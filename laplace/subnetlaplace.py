@@ -6,10 +6,10 @@ from laplace.curvature import BackPackGGN
 from laplace.subnetmask import LargestVarianceDiagLaplaceSubnetMask
 
 
-__all__ = ['FullSubnetLaplace']
+__all__ = ['SubnetLaplace']
 
 
-class FullSubnetLaplace(FullLaplace):
+class SubnetLaplace(FullLaplace):
     """Class for subnetwork Laplace, which computes the Laplace approximation over
     just a subset of the model parameters (i.e. a subnetwork within the neural network).
     Subnetwork Laplace only supports a full Hessian approximation; other Hessian
