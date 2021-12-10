@@ -18,10 +18,6 @@ EPS = 1e-6
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
-        if likelihood != 'classification':
-            raise ValueError('This backend only supports classification currently.')
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
     def jacobians(self, model, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
