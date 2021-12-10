@@ -146,7 +146,6 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     expected = torch.tensor(0).reshape(-1)
     # assert expected.ndim == 0
     expected = ((mean -1) * 1e-2) @ (mean -1)
-    print(lap_scalar_mean.scatter, expected)
     assert torch.allclose(lap_scalar_mean.scatter, expected)
     assert lap_scalar_mean.scatter.shape == expected.shape
     assert torch.allclose(lap_tensor_mean.scatter, expected)
@@ -315,7 +314,6 @@ def test_log_prob_kron(model, class_loader):
     posterior = Normal(loc=lap.mean, scale=sqrt(1/0.24))
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta).sum())
     lap.fit(class_loader)
-    print(type(lap.H), type(lap.H_facs), lap._H_factor)
     posterior = MultivariateNormal(loc=lap.mean, precision_matrix=lap.posterior_precision.to_matrix())
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta))
 
