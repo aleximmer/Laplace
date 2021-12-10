@@ -3,7 +3,7 @@ from torch.nn.utils import parameters_to_vector
 
 from laplace.feature_extractor import FeatureExtractor
 
-__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LastLayerSubnetMask']
+__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LastLayerSubnetMask', 'LargestVarianceDiagLaplaceSubnetMask']
 
 
 class SubnetMask:
@@ -125,7 +125,7 @@ class ScoreBasedSubnetMask(SubnetMask):
 			raise ValueError('Parameter scores need to be of same shape as parameter vector.')
 
 	def get_subnet_mask(self, train_loader):
-		""" Get the subnetwork mask by ranking parameters based on their scores."""
+		""" Get the subnetwork mask by (descendingly) ranking parameters based on their scores."""
 
 		if self._param_scores is None:
 			self._param_scores = self.compute_param_scores(train_loader)
@@ -148,6 +148,27 @@ class LargestMagnitudeSubnetMask(ScoreBasedSubnetMask):
 	"""Subnetwork mask identifying the parameters with the largest magnitude. """
 	def compute_param_scores(self, train_loader):
 		return self.parameter_vector
+
+
+class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
+	"""Subnetwork mask identifying the parameters with the largest marginal variances
+	(estimated using a diagional Laplace approximation over all model parameters).
+
+	Parameters
+	----------
+	model : torch.nn.Module
+	n_params_subnet : int
+		the number of parameters in the subnetwork (i.e. the number of top-scoring parameters to select)
+    diag_laplace_model : `laplace.baselaplace.DiagLaplace`
+        diagonal Laplace model to use for variance estimation
+	"""
+	def __init__(self, model, n_params_subnet, diag_laplace_model):
+		super().__init__(model, n_params_subnet)
+		self.diag_laplace_model = diag_laplace_model
+
+	def compute_param_scores(self, train_loader):
+		self.diag_laplace_model.fit(train_loader)
+		return self.diag_laplace_model.posterior_variance
 
 
 class LastLayerSubnetMask(SubnetMask):

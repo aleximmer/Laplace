@@ -1,8 +1,9 @@
 import torch
 
-from laplace.baselaplace import FullLaplace
+from laplace.baselaplace import FullLaplace, DiagLaplace
 
 from laplace.curvature import BackPackGGN
+from laplace.subnetmask import LargestVarianceDiagLaplaceSubnetMask
 
 
 __all__ = ['FullSubnetLaplace']
@@ -70,6 +71,10 @@ class FullSubnetLaplace(FullLaplace):
                          prior_mean=prior_mean, temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
         self._subnetmask_kwargs = dict() if subnetmask_kwargs is None else subnetmask_kwargs
+        if subnetwork_mask == LargestVarianceDiagLaplaceSubnetMask:
+            # instantiate and pass diagonal Laplace model for largest variance subnetwork selection
+            self._subnetmask_kwargs.update(diag_laplace_model=DiagLaplace(self.model, likelihood, sigma_noise,
+                prior_precision, prior_mean, temperature, backend, backend_kwargs))
         self.subnetwork_mask = subnetwork_mask(self.model, **self._subnetmask_kwargs)
         self.n_params_subnet = None
 
