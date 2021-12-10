@@ -40,166 +40,166 @@ def reg_loader():
 
 @pytest.mark.parametrize('likelihood', likelihoods)
 def test_subnet_laplace_init(model, likelihood):
-	# use last-layer subnet mask for this test
-	subnetwork_mask = LastLayerSubnetMask
+    # use last-layer subnet mask for this test
+    subnetwork_mask = LastLayerSubnetMask
 
-	# subnet Laplace with full Hessian should work
-	hessian_structure = 'full'
-	lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
-	assert isinstance(lap, SubnetLaplace)
+    # subnet Laplace with full Hessian should work
+    hessian_structure = 'full'
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
+    assert isinstance(lap, SubnetLaplace)
 
-	# subnet Laplace with diag, kron or lowrank Hessians should raise errors
-	hessian_structure = 'diag'
-	with pytest.raises(ValueError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
-	hessian_structure = 'kron'
-	with pytest.raises(ValueError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
-	hessian_structure = 'lowrank'
-	with pytest.raises(ValueError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
+    # subnet Laplace with diag, kron or lowrank Hessians should raise errors
+    hessian_structure = 'diag'
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
+    hessian_structure = 'kron'
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
+    hessian_structure = 'lowrank'
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure=hessian_structure)
 
 
 @pytest.mark.parametrize('subnetwork_mask,likelihood', product(score_based_subnet_masks, likelihoods))
 def test_score_based_subnet_masks(model, likelihood, subnetwork_mask, class_loader, reg_loader):
-	loader = class_loader if likelihood == 'classification' else reg_loader
+    loader = class_loader if likelihood == 'classification' else reg_loader
 
-	# should raise error if we don't pass number of subnet parameters within the subnetmask_kwargs
-	subnetmask_kwargs = dict()
-	with pytest.raises(TypeError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    # should raise error if we don't pass number of subnet parameters within the subnetmask_kwargs
+    subnetmask_kwargs = dict()
+    with pytest.raises(TypeError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
 
-	# should raise error if we set number of subnet parameters to None
-	subnetmask_kwargs = dict(n_params_subnet=None)
-	with pytest.raises(ValueError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    # should raise error if we set number of subnet parameters to None
+    subnetmask_kwargs = dict(n_params_subnet=None)
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
 
-	# should raise error if we set number of subnet parameters to be larger than number of model parameters
-	subnetmask_kwargs = dict(n_params_subnet=99999)
-	with pytest.raises(ValueError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    # should raise error if we set number of subnet parameters to be larger than number of model parameters
+    subnetmask_kwargs = dict(n_params_subnet=99999)
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
 
-	# define valid subnet Laplace model
-	n_params_subnet = 32
-	subnetmask_kwargs = dict(n_params_subnet=n_params_subnet)
-	lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
-	assert isinstance(lap, SubnetLaplace)
-	assert isinstance(lap.subnetwork_mask, subnetwork_mask)
+    # define valid subnet Laplace model
+    n_params_subnet = 32
+    subnetmask_kwargs = dict(n_params_subnet=n_params_subnet)
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    assert isinstance(lap, SubnetLaplace)
+    assert isinstance(lap.subnetwork_mask, subnetwork_mask)
 
-	# should raise error if we try to access the subnet indices before the subnet has been selected
-	with pytest.raises(AttributeError):
-		lap.subnetwork_mask.indices
+    # should raise error if we try to access the subnet indices before the subnet has been selected
+    with pytest.raises(AttributeError):
+        lap.subnetwork_mask.indices
 
-	# select subnet mask
-	lap.subnetwork_mask.select(loader)
+    # select subnet mask
+    lap.subnetwork_mask.select(loader)
 
-	# should raise error if we try to select the subnet again
-	with pytest.raises(ValueError):
-		lap.subnetwork_mask.select(loader)
+    # should raise error if we try to select the subnet again
+    with pytest.raises(ValueError):
+        lap.subnetwork_mask.select(loader)
 
-	# re-define valid subnet Laplace model
-	n_params_subnet = 32
-	subnetmask_kwargs = dict(n_params_subnet=n_params_subnet)
-	lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
-	assert isinstance(lap, SubnetLaplace)
-	assert isinstance(lap.subnetwork_mask, subnetwork_mask)
+    # re-define valid subnet Laplace model
+    n_params_subnet = 32
+    subnetmask_kwargs = dict(n_params_subnet=n_params_subnet)
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    assert isinstance(lap, SubnetLaplace)
+    assert isinstance(lap.subnetwork_mask, subnetwork_mask)
 
-	# fit Laplace model (which internally selects the subnet mask)
-	lap.fit(loader)
+    # fit Laplace model (which internally selects the subnet mask)
+    lap.fit(loader)
 
-	# check some parameters
-	assert lap.subnetwork_mask.indices.equal(lap.backend.subnetwork_indices)
-	assert lap.subnetwork_mask.n_params_subnet == n_params_subnet
-	assert lap.n_params_subnet == n_params_subnet
+    # check some parameters
+    assert lap.subnetwork_mask.indices.equal(lap.backend.subnetwork_indices)
+    assert lap.subnetwork_mask.n_params_subnet == n_params_subnet
+    assert lap.n_params_subnet == n_params_subnet
 
-	# check that Hessian and prior precision is of correct shape
-	assert lap.H.shape == (n_params_subnet, n_params_subnet)
-	assert lap.prior_precision_diag.shape == (n_params_subnet,)
+    # check that Hessian and prior precision is of correct shape
+    assert lap.H.shape == (n_params_subnet, n_params_subnet)
+    assert lap.prior_precision_diag.shape == (n_params_subnet,)
 
-	# should raise error if we try to fit the Laplace mdoel again 
-	with pytest.raises(ValueError):
-		lap.fit(loader)
+    # should raise error if we try to fit the Laplace mdoel again 
+    with pytest.raises(ValueError):
+        lap.fit(loader)
 
 
 @pytest.mark.parametrize('likelihood', likelihoods)
 def test_last_layer_subnet_mask(model, likelihood, class_loader, reg_loader):
-	subnetwork_mask = LastLayerSubnetMask
-	loader = class_loader if likelihood == 'classification' else reg_loader
+    subnetwork_mask = LastLayerSubnetMask
+    loader = class_loader if likelihood == 'classification' else reg_loader
 
-	# should raise error if we pass number of subnet parameters
-	subnetmask_kwargs = dict(n_params_subnet=32)
-	with pytest.raises(TypeError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    # should raise error if we pass number of subnet parameters
+    subnetmask_kwargs = dict(n_params_subnet=32)
+    with pytest.raises(TypeError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
 
-	# should raise error if we pass invalid last-layer name 
-	subnetmask_kwargs = dict(last_layer_name='123')
-	with pytest.raises(KeyError):
-		lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    # should raise error if we pass invalid last-layer name 
+    subnetmask_kwargs = dict(last_layer_name='123')
+    with pytest.raises(KeyError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
 
-	# define valid last-layer subnet Laplace model (without passing the last-layer name)
-	subnetmask_kwargs = dict()
-	lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
-	assert isinstance(lap, SubnetLaplace)
-	assert isinstance(lap.subnetwork_mask, subnetwork_mask)
+    # define valid last-layer subnet Laplace model (without passing the last-layer name)
+    subnetmask_kwargs = dict()
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    assert isinstance(lap, SubnetLaplace)
+    assert isinstance(lap.subnetwork_mask, subnetwork_mask)
 
-	# define valid last-layer subnet Laplace model (with passing the last-layer name)
-	subnetmask_kwargs = dict(last_layer_name='1')
-	lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
-	assert isinstance(lap, SubnetLaplace)
-	assert isinstance(lap.subnetwork_mask, subnetwork_mask)
+    # define valid last-layer subnet Laplace model (with passing the last-layer name)
+    subnetmask_kwargs = dict(last_layer_name='1')
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
+    assert isinstance(lap, SubnetLaplace)
+    assert isinstance(lap.subnetwork_mask, subnetwork_mask)
 
-	# should raise error if we access number of subnet parameters before selecting the subnet
-	with pytest.raises(AttributeError):
-		n_params_subnet = lap.subnetwork_mask.n_params_subnet
+    # should raise error if we access number of subnet parameters before selecting the subnet
+    with pytest.raises(AttributeError):
+        n_params_subnet = lap.subnetwork_mask.n_params_subnet
 
-	# fit Laplace model
-	lap.fit(loader)
+    # fit Laplace model
+    lap.fit(loader)
 
-	# check some parameters
-	n_params_subnet = 42
-	assert lap.subnetwork_mask.indices.equal(lap.backend.subnetwork_indices)
-	assert lap.subnetwork_mask.n_params_subnet == n_params_subnet
-	assert lap.n_params_subnet == n_params_subnet
+    # check some parameters
+    n_params_subnet = 42
+    assert lap.subnetwork_mask.indices.equal(lap.backend.subnetwork_indices)
+    assert lap.subnetwork_mask.n_params_subnet == n_params_subnet
+    assert lap.n_params_subnet == n_params_subnet
 
-	# check that Hessian and prior precision is of correct shape
-	assert lap.H.shape == (n_params_subnet, n_params_subnet)
-	assert lap.prior_precision_diag.shape == (n_params_subnet,)
+    # check that Hessian and prior precision is of correct shape
+    assert lap.H.shape == (n_params_subnet, n_params_subnet)
+    assert lap.prior_precision_diag.shape == (n_params_subnet,)
 
-	# check that Hessian is identical to that of a full LLLaplace model
-	lllap = Laplace(model, likelihood=likelihood, subset_of_weights='last_layer', hessian_structure='full')
-	lllap.fit(loader)
-	assert lllap.H.equal(lap.H)
+    # check that Hessian is identical to that of a full LLLaplace model
+    lllap = Laplace(model, likelihood=likelihood, subset_of_weights='last_layer', hessian_structure='full')
+    lllap.fit(loader)
+    assert lllap.H.equal(lap.H)
 
 
 @pytest.mark.parametrize('likelihood', likelihoods)
 def test_full_subnet_mask(model, likelihood, class_loader, reg_loader):
-	loader = class_loader if likelihood == 'classification' else reg_loader
+    loader = class_loader if likelihood == 'classification' else reg_loader
 
-	# define full model 'subnet' mask class (i.e. where all parameters are part of the subnet)
-	class FullSubnetMask(SubnetMask):
-		@property
-		def n_params_subnet(self):
-			if self._n_params_subnet is None:
-				self._check_select()
-				self._n_params_subnet = len(self._indices)
-			return self._n_params_subnet
+    # define full model 'subnet' mask class (i.e. where all parameters are part of the subnet)
+    class FullSubnetMask(SubnetMask):
+        @property
+        def n_params_subnet(self):
+            if self._n_params_subnet is None:
+                self._check_select()
+                self._n_params_subnet = len(self._indices)
+            return self._n_params_subnet
 
-		def get_subnet_mask(self, train_loader):
-			return torch.ones(model.n_params).byte()
+        def get_subnet_mask(self, train_loader):
+            return torch.ones(model.n_params).byte()
 
-	# define and fit valid full subnet Laplace model
-	subnetwork_mask = FullSubnetMask
-	lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full')
-	lap.fit(loader)
-	assert isinstance(lap, SubnetLaplace)
-	assert isinstance(lap.subnetwork_mask, subnetwork_mask)
+    # define and fit valid full subnet Laplace model
+    subnetwork_mask = FullSubnetMask
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full')
+    lap.fit(loader)
+    assert isinstance(lap, SubnetLaplace)
+    assert isinstance(lap.subnetwork_mask, subnetwork_mask)
 
-	# check some parameters
-	assert lap.subnetwork_mask.indices.equal(torch.tensor(list(range(model.n_params))))
-	assert lap.subnetwork_mask.n_params_subnet == model.n_params
-	assert lap.n_params_subnet == model.n_params
+    # check some parameters
+    assert lap.subnetwork_mask.indices.equal(torch.tensor(list(range(model.n_params))))
+    assert lap.subnetwork_mask.n_params_subnet == model.n_params
+    assert lap.n_params_subnet == model.n_params
 
-	# check that the Hessian is identical to that of a all-weights FullLaplace model
-	full_lap = Laplace(model, likelihood=likelihood, subset_of_weights='all', hessian_structure='full')
-	full_lap.fit(loader)
-	assert full_lap.H.equal(lap.H)
+    # check that the Hessian is identical to that of a all-weights FullLaplace model
+    full_lap = Laplace(model, likelihood=likelihood, subset_of_weights='all', hessian_structure='full')
+    full_lap.fit(loader)
+    assert full_lap.H.equal(lap.H)
