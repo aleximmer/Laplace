@@ -19,7 +19,7 @@ def test_diagonal_add_scalar():
 def test_symeig_custom():
     X = torch.randn(20, 100)
     M = X @ X.T
-    l1, W1 = torch.symeig(M, eigenvectors=True)
+    l1, W1 = torch.linalg.eigh(M, UPLO='U')
     l2, W2 = symeig(M)
     assert torch.allclose(l1, l2)
     assert torch.allclose(W1, W2)
@@ -28,7 +28,7 @@ def test_symeig_custom():
 def test_symeig_custom_low_rank():
     X = torch.randn(1000, 10)
     M = X @ X.T
-    l1, W1 = torch.symeig(M, eigenvectors=True)
+    l1, W1 = torch.linalg.eigh(M, UPLO='U')
     l2, W2 = symeig(M)
     # symeig should fail for low-rank
     assert not torch.all(l1 >= 0.0)
