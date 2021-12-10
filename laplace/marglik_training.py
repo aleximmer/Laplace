@@ -191,7 +191,7 @@ def marglik_training(
             loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()
             optimizer.step()
-            epoch_loss += loss.cpu().item() / len(train_loader)
+            epoch_loss += loss.cpu().item() * len(y)
             if likelihood == 'regression':
                 epoch_perf += (f.detach() - y).square().sum()
             else:
@@ -203,7 +203,7 @@ def marglik_training(
 
         # compute validation error to report during training
         logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.' +
-                     f'Perf={epoch_perf:.3f}')
+                     f'Perf={epoch_perf/N:.3f}')
 
         # only update hyperparameters every marglik_frequency steps after burnin
         if (epoch % marglik_frequency) != 0 or epoch < n_epochs_burnin:
