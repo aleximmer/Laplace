@@ -1,11 +1,10 @@
-from abc import ABC, abstractmethod, abstractstaticmethod
 import torch
 from torch.nn import MSELoss, CrossEntropyLoss
 
 
 # TODO: handle differentiability requirement properly with an argument
 #       that enables jacobians, functions, etc to be differentiable throughout.
-class CurvatureInterface(ABC):
+class CurvatureInterface:
     """Interface to access curvature for a model and corresponding likelihood.
     A `CurvatureInterface` must inherit from this baseclass and implement the
     necessary functions `jacobians`, `full`, `kron`, and `diag`.
@@ -27,7 +26,7 @@ class CurvatureInterface(ABC):
         conversion factor between torch losses and base likelihoods
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
-    def __init__(self, model, likelihood, last_layer=False):
+    def __init__(self, model, likelihood, last_layer=False, differentiable=True):
         assert likelihood in ['regression', 'classification']
         self.likelihood = likelihood
         self.model = model
@@ -38,18 +37,30 @@ class CurvatureInterface(ABC):
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.
+        self.differentiable = differentiable
 
     @property
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
-    @abstractstaticmethod
-    def jacobians(model, x):
+    @property
+    def differentiable(self):
+        return self._differentiable
+
+    @differentiable.setter
+    def differentiable(self, value):
+        assert type(value) is bool
+        self._differentiable = value
+        if value:
+            self.backward_kwargs = dict(retain_graph=True, create_graph=True)
+        else:
+            self.backward_kwargs = dict()
+
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -92,7 +103,6 @@ class CurvatureInterface(ABC):
 
         return Js, f.detach()
 
-    @abstractstaticmethod
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter \\(\\theta\\).
 
@@ -110,7 +120,6 @@ class CurvatureInterface(ABC):
         """
         pass
 
-    @abstractmethod
     def full(self, x, y, **kwargs):
         """Compute a dense curvature (approximation) in the form of a \\(P \\times P\\) matrix
         \\(H\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
@@ -130,7 +139,6 @@ class CurvatureInterface(ABC):
         """
         pass
 
-    @abstractmethod
     def kron(self, x, y, **kwargs):
         """Compute a Kronecker factored curvature approximation (such as KFAC).
         The approximation to \\(H\\) takes the form of two Kronecker factors \\(Q, H\\),
@@ -153,7 +161,6 @@ class CurvatureInterface(ABC):
             Kronecker factored Hessian approximation.
         """
 
-    @abstractmethod
     def diag(self, x, y, **kwargs):
         """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a 
         vector of the dimensionality of parameters \\(\\theta\\).
@@ -219,7 +226,9 @@ class GGNInterface(CurvatureInterface):
             ps = torch.softmax(f, dim=-1)
             H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
             H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
-        return loss, H_ggn
+        if self.differentiable:
+            return loss, H_ggn
+        return loss.detach(), H_ggn.detach()
 
     def full(self, x, y, **kwargs):
         """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
@@ -245,10 +254,12 @@ class GGNInterface(CurvatureInterface):
         if self.last_layer:
             Js, f = self.last_layer_jacobians(self.model, x)
         else:
-            Js, f = self.jacobians(self.model, x)
+            Js, f = self.jacobians(x)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
-        return loss.detach(), H_ggn
+        if self.differentiable:
+            return loss, H_ggn
+        return loss.detach(), H_ggn.detach()
 
 
 class EFInterface(CurvatureInterface):

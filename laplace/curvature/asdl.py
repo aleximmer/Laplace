@@ -16,19 +16,17 @@ from laplace.utils import _is_batchnorm
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
-    def __init__(self, model, likelihood, last_layer=False):
+    def __init__(self, model, likelihood, last_layer=False, differentiable=True):
         if likelihood != 'classification':
             raise ValueError('This backend only supports classification currently.')
-        super().__init__(model, likelihood, last_layer)
+        super().__init__(model, likelihood, last_layer, differentiable)
 
-    @staticmethod
-    def jacobians(model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -40,14 +38,17 @@ class AsdlInterface(CurvatureInterface):
             output function `(batch, outputs)`
         """
         Js = list()
-        for i in range(model.output_size):
+        for i in range(self.model.output_size):
             def loss_fn(outputs, targets):
                 return outputs[:, i].sum()
 
-            f = batch_gradient(model, loss_fn, x, None).detach()
-            Js.append(_get_batch_grad(model))
+            f = batch_gradient(self.model, loss_fn, x, None, **self.backward_kwargs)
+            Js.append(_get_batch_grad(self.model))
         Js = torch.stack(Js, dim=1)
-        return Js, f
+
+        if self.differentiable:
+            return Js, f
+        return Js.detach(), f.detach()
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
@@ -65,10 +66,12 @@ class AsdlInterface(CurvatureInterface):
         Gs : torch.Tensor
             gradients `(batch, parameters)`
         """
-        f = batch_gradient(self.model, self.lossfunc, x, y).detach()
+        f = batch_gradient(self.model, self.lossfunc, x, y, **self.backward_kwargs)
         Gs = _get_batch_grad(self._model)
         loss = self.lossfunc(f, y)
-        return Gs, loss
+        if self.differentiable:
+            return Gs, loss
+        return Gs.detach(), loss.detach()
 
     @abstractproperty
     def _ggn_type(self):
@@ -114,8 +117,11 @@ class AsdlInterface(CurvatureInterface):
                 f = self.model(X)
             loss = self.lossfunc(f, y)
         curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_DIAG,
-                                        inputs=X, targets=y)
+                                        inputs=X, targets=y, **self.backward_kwargs)
         diag_ggn = curv.matrices_to_vector(None)
+
+        if self.differentiable:
+            return self.factor * loss, self.factor * diag_ggn
         return self.factor * loss, self.factor * diag_ggn
 
     def kron(self, X, y, N, **wkwargs) -> [torch.Tensor, Kron]:
@@ -126,18 +132,21 @@ class AsdlInterface(CurvatureInterface):
                 f = self.model(X)
             loss = self.lossfunc(f, y)
         curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_KRON,
-                                        inputs=X, targets=y)
+                                        inputs=X, targets=y, **self.backward_kwargs)
         M = len(y)
         kron = self._get_kron_factors(curv, M)
         kron = self._rescale_kron_factors(kron, N)
-        return self.factor * loss, self.factor * kron
+
+        if self.differentiable:
+            return self.factor * loss, self.factor * kron
+        return self.factor * loss.detach(), self.factor * kron
 
 
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(self, model, likelihood, last_layer=False, differentiable=True, stochastic=False):
+        super().__init__(model, likelihood, last_layer, differentiable)
         self.stochastic = stochastic
 
     @property

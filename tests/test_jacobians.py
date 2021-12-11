@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn.utils.convert_parameters import parameters_to_vector
 from asdfghjkl.operations import Scale, Bias, Conv2dAug
 
-from laplace.curvature import AsdlInterface, BackPackInterface, AugBackPackInterface, AugAsdlInterface, AugAsdlGGN
+from laplace.curvature import AsdlInterface, BackPackInterface, AugBackPackInterface, AugAsdlInterface
 from laplace.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive, jacobians_naive_aug, gradients_naive_aug
 
@@ -82,7 +82,8 @@ def X_aug():
 @pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_linear_jacobians(linear_model, X, backend):
     # jacobian of linear model is input X.
-    Js, f = backend.jacobians(linear_model, X)
+    backend = backend(linear_model, 'classification')
+    Js, f = backend.jacobians(X)
     # into Jacs shape (batch_size, output_size, params)
     true_Js = X.reshape(len(X), 1, -1)
     assert true_Js.shape == Js.shape
@@ -93,7 +94,8 @@ def test_linear_jacobians(linear_model, X, backend):
 @pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_jacobians_singleoutput(singleoutput_model, X, backend):
     model = singleoutput_model
-    Js, f = backend.jacobians(model, X)
+    backend = backend(model, 'classification')
+    Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
@@ -104,7 +106,8 @@ def test_jacobians_singleoutput(singleoutput_model, X, backend):
 @pytest.mark.parametrize('backend', [AsdlInterface, BackPackInterface])
 def test_jacobians_multioutput(multioutput_model, X, backend):
     model = multioutput_model
-    Js, f = backend.jacobians(model, X)
+    backend = backend(model, 'classification')
+    Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
@@ -114,7 +117,8 @@ def test_jacobians_multioutput(multioutput_model, X, backend):
 
 def test_jacobians_cnn(complex_model, complex_X):
     model = complex_model
-    Js, f = AsdlInterface.jacobians(model, complex_X)
+    backend = AsdlInterface(model, 'classification')
+    Js, f = backend.jacobians(complex_X)
     Js_naive, f_naive = jacobians_naive(model, complex_X)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
@@ -148,7 +152,8 @@ def test_last_layer_jacobians_multioutput(multioutput_model, X, backend):
 
 @pytest.mark.parametrize('backend', [AugAsdlInterface, AugBackPackInterface])
 def test_jacobians_augmented(multioutput_model, X_aug, backend):
-    Js, f = backend.jacobians(multioutput_model, X_aug)
+    backend = backend(multioutput_model, 'classification')
+    Js, f = backend.jacobians(X_aug)
     Js_naive, f_naive = jacobians_naive_aug(multioutput_model, X_aug)
     assert Js.shape == Js_naive.shape
     assert torch.abs(Js-Js_naive).max() < 1e-6
@@ -158,7 +163,8 @@ def test_jacobians_augmented(multioutput_model, X_aug, backend):
     
 def test_jacobians_cnn_augmented(complex_model_aug, complex_X_aug):
     model = complex_model_aug
-    Js, f = AugAsdlInterface.jacobians(model, complex_X_aug)
+    backend = AugAsdlInterface(model, 'classification')
+    Js, f = backend.jacobians(complex_X_aug)
     Js_naive, f_naive = jacobians_naive_aug(model, complex_X_aug)
     assert Js.shape == Js_naive.shape
     assert torch.allclose(model(complex_X_aug).mean(dim=1), f_naive)
@@ -172,7 +178,7 @@ def test_gradients_augmented(multioutput_model, X_aug, likelihood):
         y = torch.randn(len(X_aug), 2)
     else:
         y = torch.empty(len(X_aug), dtype=torch.long).random_(2)
-    backend = AugAsdlGGN(multioutput_model, likelihood)
+    backend = AugAsdlInterface(multioutput_model, likelihood)
     Gs, loss = backend.gradients(X_aug, y)
     Gs_naive, loss_naive = gradients_naive_aug(multioutput_model, X_aug, y, likelihood)
     assert torch.allclose(loss, loss_naive)

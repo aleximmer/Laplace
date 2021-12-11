@@ -11,19 +11,17 @@ from laplace.matrix import Kron
 class BackPackInterface(CurvatureInterface):
     """Interface for Backpack backend.
     """
-    def __init__(self, model, likelihood, last_layer=False):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(self, model, likelihood, last_layer=False, differentiable=True):
+        super().__init__(model, likelihood, last_layer, differentiable)
         extend(self._model)
         extend(self.lossfunc)
 
-    @staticmethod
-    def jacobians(model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension.
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -34,29 +32,35 @@ class BackPackInterface(CurvatureInterface):
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        model = extend(model)
+        self.model = extend(self.model)
         to_stack = []
-        for i in range(model.output_size):
-            model.zero_grad()
-            out = model(x)
+        for i in range(self.model.output_size):
+            self.model.zero_grad()
+            out = self.model(x)
             with backpack(BatchGrad()):
-                if model.output_size > 1:
-                    out[:, i].sum().backward()
+                if self.model.output_size > 1:
+                    out[:, i].sum().backward(**self.backward_kwargs)
                 else:
-                    out.sum().backward()
+                    out.sum().backward(**self.backward_kwargs)
                 to_cat = []
-                for param in model.parameters():
-                    to_cat.append(param.grad_batch.detach().reshape(x.shape[0], -1))
+                for param in self.model.parameters():
+                    to_cat.append(param.grad_batch.reshape(x.shape[0], -1))
                     delattr(param, 'grad_batch')
-                Jk = torch.cat(to_cat, dim=1)
+                if self.differentiable:
+                    Jk = torch.cat(to_cat, dim=1)
+                else:
+                    Jk = torch.cat(to_cat, dim=1).detach()
             to_stack.append(Jk)
             if i == 0:
-                f = out.detach()
+                f = out
 
-        model.zero_grad()
+        if not self.differentiable:
+            f = f.detach()
+
+        self.model.zero_grad()
         CTX.remove_hooks()
-        _cleanup(model)
-        if model.output_size > 1:
+        _cleanup(self.model)
+        if self.model.output_size > 1:
             return torch.stack(to_stack, dim=2).transpose(1, 2), f
         else:
             return Jk.unsqueeze(-1).transpose(1, 2), f
@@ -80,10 +84,13 @@ class BackPackInterface(CurvatureInterface):
         f = self.model(x)
         loss = self.lossfunc(f, y)
         with backpack(BatchGrad()):
-            loss.backward()
+            loss.backward(**self.backward_kwargs)
         Gs = torch.cat([p.grad_batch.data.flatten(start_dim=1)
                         for p in self._model.parameters()], dim=1)
-        return Gs, loss.detach()
+
+        if self.differentiable:
+            return Gs, loss
+        return Gs.detach(), loss.detach()
 
 
 class BackPackGGN(BackPackInterface, GGNInterface):
@@ -119,21 +126,25 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         f = self.model(X)
         loss = self.lossfunc(f, y)
         with backpack(context()):
-            loss.backward()
+            loss.backward(**self.backward_kwargs)
         dggn = self._get_diag_ggn()
 
-        return self.factor * loss.detach(), self.factor * dggn
+        if self.differentiable:
+            return self.factor * loss, self.factor * dggn
+        return self.factor * loss.detach(), self.factor * dggn.detach()
 
     def kron(self, X, y, N, **kwargs) -> [torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         loss = self.lossfunc(f, y)
         with backpack(context()):
-            loss.backward()
+            loss.backward(**self.backward_kwargs)
         kron = self._get_kron_factors()
         kron = self._rescale_kron_factors(kron, len(y), N)
 
-        return self.factor * loss.detach(), self.factor * kron
+        if self.differentiable:
+            return self.factor * loss, self.factor * kron
+        return self.factor * loss.detach(), self.factor * kron  # TODO: implement detach on Kron
 
 
 class BackPackEF(BackPackInterface, EFInterface):
@@ -144,11 +155,13 @@ class BackPackEF(BackPackInterface, EFInterface):
         f = self.model(X)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
-            loss.backward()
+            loss.backward(**self.backward_kwargs)
         diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
                              for p in self._model.parameters()])
 
-        return self.factor * loss.detach(), self.factor * diag_EF
+        if self.differentiable:
+            return self.factor * loss, self.factor * diag_EF
+        return self.factor * loss.detach(), self.factor * diag_EF.detach()
 
     def kron(self, X, y, **kwargs):
         raise NotImplementedError('Unavailable through Backpack.')

@@ -13,13 +13,12 @@ class AugBackPackInterface(CurvatureInterface):
     This ensures that Jacobians, gradients, and the Hessian approximation remain differentiable
     and deals with S-augmented sized inputs (additional to the batch-dimension).
     """
-    def __init__(self, model, likelihood, last_layer=False):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(self, model, likelihood, last_layer=False, differentiable=True):
+        super().__init__(model, likelihood, last_layer, differentiable)
         extend(self._model)
         extend(self.lossfunc)
 
-    @staticmethod
-    def jacobians(model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension.
 
@@ -39,33 +38,38 @@ class AugBackPackInterface(CurvatureInterface):
         batch_size, n_augs = x.shape[:2]
         x_aug = x
         x = x.flatten(start_dim=0, end_dim=1)
-        model = extend(model)
         to_stack = []
-        for i in range(model.output_size):
-            model.zero_grad()
-            out = model(x)
+        for i in range(self.model.output_size):
+            self.model.zero_grad()
+            out = self.model(x)
             with backpack(BatchGrad()):
-                if model.output_size > 1:
-                    out[:, i].sum().backward(retain_graph=True, create_graph=True)
+                if self.model.output_size > 1:
+                    out[:, i].sum().backward(**self.backward_kwargs)
                 else:
-                    out.sum().backward(retain_graph=True, create_graph=True)
+                    out.sum().backward(**self.backward_kwargs)
                 to_cat = []
-                for param in model.parameters():
+                for param in self.model.parameters():
                     to_cat.append(param.grad_batch.reshape(x.shape[0], -1))
                     delattr(param, 'grad_batch')
                 Jk = torch.cat(to_cat, dim=1).reshape(batch_size, n_augs, -1).mean(dim=1)
+                if not self.differentiable:
+                    Jk = Jk.detach()
+                    
             to_stack.append(Jk)
             if i == 0:
                 f = out.reshape(batch_size, n_augs, -1).mean(dim=1)
 
+        if not self.differentiable:
+            f = f.detach()
+
         # set gradients to zero, differentiation here only serves Jacobian computation
-        model.zero_grad()
+        self.model.zero_grad()
         if x_aug.grad is not None:
             x_aug.grad.zero_()
 
         CTX.remove_hooks()
-        _cleanup(model)
-        if model.output_size > 1:
+        _cleanup(self.model)
+        if self.model.output_size > 1:
             return torch.stack(to_stack, dim=2).transpose(1, 2), f
         else:
             return Jk.unsqueeze(-1).transpose(1, 2), f
@@ -105,7 +109,7 @@ class AugBackPackGGN(AugBackPackInterface, GGNInterface):
         if self.last_layer:
             raise ValueError('Not yet tested/implemented for last layer.')
 
-        Js, f = self.jacobians(self.model, x)
+        Js, f = self.jacobians(x)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn
