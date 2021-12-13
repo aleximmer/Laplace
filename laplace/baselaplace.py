@@ -1105,10 +1105,6 @@ class FunctionalLaplace(BaseLaplace):
         # MAP estimate of NN parameters (used in regression marginal likelihood)
         self.map_estimate = parameters_to_vector(self.model.parameters()).detach()
 
-    def _check_fit(self):
-        if (self.K_MM is None) or (self.Sigma_inv is None) or (self.train_loader is None):
-            raise AttributeError('Laplace not fitted. Run fit() first.')
-
     def _init_K_MM(self):
         if self.diagonal_kernel:
             self.K_MM = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
@@ -1217,8 +1213,6 @@ class FunctionalLaplace(BaseLaplace):
         if pred_type not in ['gp']:
             raise ValueError('Only gp supported as prediction type.')
 
-        self._check_fit()
-
         f_mu, f_var = self.gp_posterior(x)
         # regression
         if self.likelihood == 'regression':
@@ -1242,7 +1236,6 @@ class FunctionalLaplace(BaseLaplace):
         samples : torch.Tensor
             samples `(n_samples, batch_size, output_shape)`
         """
-        self._check_fit()
 
         f_mu, f_var = self.gp_posterior(x)
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
@@ -1291,8 +1284,6 @@ class FunctionalLaplace(BaseLaplace):
             test data points \\(X \in \mathbb{R}^{N_{test} \\times C} \\)
         """
 
-        self._check_fit()
-
         K_star = self._kernel_star(Js_star, X_star)
 
         K_M_star = []
@@ -1340,8 +1331,6 @@ class FunctionalLaplace(BaseLaplace):
         -------
         log_marglik : torch.Tensor
         """
-        # make sure we can differentiate wrt prior and sigma_noise for regression
-        self._check_fit()
 
         # update prior precision (useful when iterating on marglik)
         if prior_precision is not None:
