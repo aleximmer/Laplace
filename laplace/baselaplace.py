@@ -65,9 +65,6 @@ class BaseLaplace:
         self.n_outputs = None
         self.n_data = 0
 
-        # MAP estimate of parameters (for ParametricLaplace this corresponds to the posterior mean)
-        self.map_estimate = parameters_to_vector(self.model.parameters()).detach()
-
     @property
     def backend(self):
         if self._backend is None:
@@ -449,7 +446,7 @@ class ParametricLaplace(BaseLaplace):
         [type]
             [description]
         """
-        delta = (self.map_estimate - self.prior_mean)
+        delta = (self.mean - self.prior_mean)
         return (delta * self.prior_precision_diag) @ delta
 
     @property
@@ -642,7 +639,7 @@ class ParametricLaplace(BaseLaplace):
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.parameters())
             fs.append(self.model(X.to(self._device)).detach())
-        vector_to_parameters(self.map_estimate, self.model.parameters())
+        vector_to_parameters(self.mean, self.model.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
@@ -785,7 +782,7 @@ class FullLaplace(ParametricLaplace):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
 
     def sample(self, n_samples=100):
-        dist = MultivariateNormal(loc=self.map_estimate, scale_tril=self.posterior_scale)
+        dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
         return dist.sample((n_samples,))
 
 
@@ -875,7 +872,7 @@ class KronLaplace(ParametricLaplace):
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
-        return self.map_estimate.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
+        return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
 
     @BaseLaplace.prior_precision.setter
     def prior_precision(self, prior_precision):
@@ -1047,7 +1044,7 @@ class DiagLaplace(ParametricLaplace):
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = samples * self.posterior_scale.reshape(1, self.n_params)
-        return self.map_estimate.reshape(1, self.n_params) + samples
+        return self.mean.reshape(1, self.n_params) + samples
 
 
 class FunctionalLaplace(BaseLaplace):
@@ -1085,14 +1082,12 @@ class FunctionalLaplace(BaseLaplace):
     See `BaseLaplace` class for the full interface.
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('all', 'GP')
+    _key = ('all', 'gp')
 
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None,
                  diagonal_kernel=False):
         assert backend in [BackPackGGN, AsdlGGN]
-        if isinstance(backend, AsdlGGN):
-            assert likelihood == 'classification'
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -1106,6 +1101,9 @@ class FunctionalLaplace(BaseLaplace):
         self.prior_factor_sod = None
         self.mu = None  # mean in the scatter term of the log marginal likelihood
         self.L = None
+
+        # MAP estimate of NN parameters (used in regression marginal likelihood)
+        self.map_estimate = parameters_to_vector(self.model.parameters()).detach()
 
     def _check_fit(self):
         if (self.K_MM is None) or (self.Sigma_inv is None) or (self.train_loader is None):
@@ -1198,17 +1196,15 @@ class FunctionalLaplace(BaseLaplace):
         self._init_Sigma_inv()
 
         f, lambdas, mu = [], [], []
-        for i, batch in enumerate(train_loader):
-            X, y = batch
+        for i, (X, y) in enumerate(train_loader):
             X, y = X.to(self._device), y.to(self._device)
             loss_batch, Js_batch, f_batch, lambdas_batch = self._curv_closure(X, y)
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
             f.append(f_batch)
             mu.append(self._mean_scatter_term_batch(Js_batch, f_batch, y))  # needed for marginal likelihood
-            for j, batch_2 in enumerate(train_loader):
+            for j, (X2, y2) in enumerate(train_loader):
                 if j >= i:
-                    X2, _ = batch_2
                     X2 = X2.to(self._device)
                     K_batch = self._kernel_batch(Js_batch, X2)
                     self._store_K_batch(K_batch, i, j)

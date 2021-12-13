@@ -217,7 +217,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     #       + 1/2 logdet prior_prec - 1/2 log det post_prec
     lml = log_lik_true
     theta = parameters_to_vector(model.parameters()).detach()
-    assert torch.allclose(theta, lap.map_estimate)
+    assert torch.allclose(theta, lap.mean)
     prior_prec = torch.diag(lap.prior_precision_diag)
     assert prior_prec.shape == torch.Size([len(theta), len(theta)])
     lml = lml - 1/2 * theta @ prior_prec @ theta
@@ -238,7 +238,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     samples = lap.sample(n_samples=1000000)
     assert samples.shape == torch.Size([1000000, len(theta)])
     mu_comp = samples.mean(dim=0)
-    mu_true = lap.map_estimate
+    mu_true = lap.mean
     assert torch.allclose(mu_comp, mu_true, atol=1e-2)
 
     # test functional variance
