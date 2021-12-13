@@ -6,6 +6,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
+from torchvision.models import wide_resnet50_2
 
 from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
 from laplace.feature_extractor import FeatureExtractor
@@ -21,6 +22,12 @@ flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     setattr(model, 'output_size', 2)
+    return model
+
+
+@pytest.fixture
+def large_model():
+    model = wide_resnet50_2()
     return model
 
 
@@ -41,6 +48,11 @@ def reg_loader():
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init(laplace, model):
     lap = laplace(model, 'classification', last_layer_name='1')
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_large_init(laplace, large_model):
+    lap = laplace(large_model, 'classification')
 
 
 @pytest.mark.parametrize('laplace', flavors)

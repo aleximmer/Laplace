@@ -9,6 +9,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
+from torchvision.models import wide_resnet50_2
 
 from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from laplace.matrix import KronDecomposed
@@ -32,6 +33,12 @@ def model():
 
 
 @pytest.fixture
+def large_model():
+    model = wide_resnet50_2()
+    return model
+
+
+@pytest.fixture
 def class_loader():
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
@@ -48,6 +55,11 @@ def reg_loader():
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init(laplace, model):
     lap = laplace(model, 'classification')
+
+
+@pytest.mark.xfail(strict=True)
+def test_laplace_large_init(laplace, large_model):
+    lap = FullLaplace(large_model, 'classification')
 
 
 @pytest.mark.parametrize('laplace', flavors)
