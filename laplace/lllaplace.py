@@ -2,14 +2,13 @@ from copy import deepcopy
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import ParametricLaplace, FullLaplaceBase, KronLaplaceBase, DiagLaplaceBase
 from laplace.feature_extractor import FeatureExtractor
-
 from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 
 
-__all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
+__all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
 
 class LLLaplace(ParametricLaplace):
@@ -66,6 +65,7 @@ class LLLaplace(ParametricLaplace):
         self.model = FeatureExtractor(deepcopy(model), last_layer_name=last_layer_name)
         if self.model.last_layer is None:
             self.mean = prior_mean
+            self.H = None
             self.n_params = None
             self.n_layers = None
             # ignore checks of prior mean setter temporarily, check on .fit()
@@ -76,7 +76,9 @@ class LLLaplace(ParametricLaplace):
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
-            self.mean = self.prior_mean 
+            # posterior mean/mode
+            self.mean = self.prior_mean
+            self._init_H()
         self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader, override=True):
@@ -106,9 +108,6 @@ class LLLaplace(ParametricLaplace):
             # here, check the already set prior precision again
             self.prior_precision = self._prior_precision
             self.prior_mean = self._prior_mean
-            self._init_H()
-
-        if override:
             self._init_H()
 
         super().fit(train_loader, override=override)
@@ -149,7 +148,7 @@ class LLLaplace(ParametricLaplace):
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
 
 
-class FullLLLaplace(LLLaplace, FullLaplace):
+class FullLLLaplace(LLLaplace, FullLaplaceBase):
     """Last-layer Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
     and hence posterior precision. Based on the chosen `backend` parameter, the full
     approximation can be, for example, a generalized Gauss-Newton matrix.
@@ -159,14 +158,8 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'full')
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
 
-
-class KronLLLaplace(LLLaplace, KronLaplace):
+class KronLLLaplace(LLLaplace, KronLaplaceBase):
     """Last-layer Laplace approximation with Kronecker factored log likelihood Hessian approximation
     and hence posterior precision.
     Mathematically, we have for the last parameter group, i.e., torch.nn.Linear,
@@ -192,7 +185,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
 
-class DiagLLLaplace(LLLaplace, DiagLaplace):
+class DiagLLLaplace(LLLaplace, DiagLaplaceBase):
     """Last-layer Laplace approximation with diagonal log likelihood Hessian approximation
     and hence posterior precision.
     Mathematically, we have \\(P \\approx \\textrm{diag}(P)\\).
@@ -200,9 +193,3 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'diag')
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)

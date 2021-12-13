@@ -1,5 +1,4 @@
 from math import sqrt, pi, log
-from laplace.curvature.asdl import AsdlHessian
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
@@ -7,10 +6,12 @@ from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
 from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN, BackPackEF, AsdlGGN, AsdlEF
+from laplace.curvature import BackPackGGN, AsdlHessian
 
 
-__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace']
+__all__ = ['BaseLaplace', 'ParametricLaplace', 'ALLaplace',
+           'FullLaplaceBase', 'KronLaplaceBase', 'DiagLaplaceBase',
+           'FullLaplace', 'KronLaplace', 'DiagLaplace', 'LowRankLaplace']
 
 
 class BaseLaplace:
@@ -44,11 +45,6 @@ class BaseLaplace:
 
         self.model = model
         self._device = next(model.parameters()).device
-
-        self.n_params = len(parameters_to_vector(self.model.parameters()).detach())
-        self.n_layers = len(list(self.model.parameters()))
-        self.prior_precision = prior_precision
-        self.prior_mean = prior_mean
         if sigma_noise != 1 and likelihood != 'regression':
             raise ValueError('Sigma noise != 1 only available for regression.')
         self.likelihood = likelihood
@@ -325,17 +321,6 @@ class ParametricLaplace(BaseLaplace):
     In particular, we assume a scalar, layer-wise, or diagonal prior precision so that in
     all cases \\(P_0 = \\textrm{diag}(p_0)\\) and the structure of \\(p_0\\) can be varied.
     """
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs)
-        try:
-            self._init_H()
-        except AttributeError:  # necessary information not yet available
-            pass
-        # posterior mean/mode
-        self.mean = self.prior_mean
 
     def _init_H(self):
         raise NotImplementedError
@@ -663,21 +648,50 @@ class ParametricLaplace(BaseLaplace):
         raise NotImplementedError
 
 
-class FullLaplace(ParametricLaplace):
-    """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
+class ALLaplace(ParametricLaplace):
+    """Baseclass for all Laplace approximations over all layers in this library.
+    (subset_of_weights _key 'all')
+    Parameters
+    ----------
+    model : torch.nn.Module
+    likelihood : {'classification', 'regression'}
+        determines the log likelihood Hessian approximation
+    sigma_noise : torch.Tensor or float, default=1
+        observation noise for the regression setting; must be 1 for classification
+    prior_precision : torch.Tensor or float, default=1
+        prior precision of a Gaussian prior (= weight decay);
+        can be scalar, per-layer, or diagonal in the most general case
+    prior_mean : torch.Tensor or float, default=0
+        prior mean of a Gaussian prior, useful for continual learning
+    temperature : float, default=1
+        temperature of the likelihood; lower temperature leads to more
+        concentrated posterior and vice versa.
+    backend : subclasses of `laplace.curvature.CurvatureInterface`
+        backend for access to curvature/Hessian approximations
+    backend_kwargs : dict, default=None
+        arguments passed to the backend on initialization, for example to
+        set the number of MC samples for stochastic approximations.
+    """
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         prior_mean, temperature, backend, backend_kwargs)
+        self.n_params = len(parameters_to_vector(self.model.parameters()).detach())
+        self.n_layers = len(list(self.model.parameters()))
+        self.prior_precision = prior_precision
+        self.prior_mean = prior_mean
+        # posterior mean/mode
+        self.mean = self.prior_mean
+        self._init_H()
+
+
+class FullLaplaceBase(ParametricLaplace):
+    """Base-class for Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
     and hence posterior precision. Based on the chosen `backend` parameter, the full
     approximation can be, for example, a generalized Gauss-Newton matrix.
     Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
     See `BaseLaplace` for the full interface.
     """
-    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('all', 'full')
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs)
-        self._posterior_scale = None
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
@@ -745,28 +759,35 @@ class FullLaplace(ParametricLaplace):
         return dist.sample((n_samples,))
 
 
-class KronLaplace(ParametricLaplace):
-    """Laplace approximation with Kronecker factored log likelihood Hessian approximation
-    and hence posterior precision.
+class FullLaplace(ALLaplace, FullLaplaceBase):
+    """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
+    and hence posterior precision over all weights. Based on the chosen `backend` parameter, 
+    the full approximation can be, for example, a generalized Gauss-Newton matrix.
+    Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
+    See `BaseLaplace` for the full interface.
+    """
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    _key = ('all', 'full')
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         prior_mean, temperature, backend, backend_kwargs)
+        self._posterior_scale = None
+
+
+class KronLaplaceBase(ParametricLaplace):
+    """Base-class for Laplace approximation with Kronecker factored log likelihood 
+    Hessian approximation and hence posterior precision.
     Mathematically, we have for each parameter group, e.g., torch.nn.Module,
     that \\P\\approx Q \\otimes H\\.
-    See `BaseLaplace` for the full interface and see
-    `laplace.matrix.Kron` and `laplace.matrix.KronDecomposed` for the structure of
+    See `BaseLaplace` for the full interface and see `laplace.matrix.Kron`
+    and `laplace.matrix.KronDecomposed` for the structure of
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
     Damping can be enabled by setting `damping=True`.
     """
-    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('all', 'kron')
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, damping=False,
-                 **backend_kwargs):
-        self.damping = damping
-        self.H_facs = None
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
@@ -836,12 +857,36 @@ class KronLaplace(ParametricLaplace):
     @BaseLaplace.prior_precision.setter
     def prior_precision(self, prior_precision):
         # Extend setter from Laplace to restrict prior precision structure.
-        super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
+        super(KronLaplaceBase, type(self)).prior_precision.fset(self, prior_precision)
         if len(self.prior_precision) not in [1, self.n_layers]:
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
 
-class LowRankLaplace(ParametricLaplace):
+class KronLaplace(ALLaplace, KronLaplaceBase):
+    """Laplace approximation with Kronecker factored log likelihood Hessian approximation
+    and hence posterior precision over all weights.
+    Mathematically, we have for each parameter group, e.g., torch.nn.Module,
+    that \\P\\approx Q \\otimes H\\.
+    See `BaseLaplace` for the full interface and see
+    `laplace.matrix.Kron` and `laplace.matrix.KronDecomposed` for the structure of
+    the Kronecker factors. `Kron` is used to aggregate factors by summing up and
+    `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
+    and computing posterior covariances, marginal likelihood, etc.
+    Damping can be enabled by setting `damping=True`.
+    """
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    _key = ('all', 'kron')
+
+    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, damping=False,
+                 backend_kwargs=None):
+        self.damping = damping
+        self.H_facs = None
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         prior_mean, temperature, backend, backend_kwargs)
+
+
+class LowRankLaplace(ALLaplace):
     """Laplace approximation with low-rank log likelihood Hessian (approximation). 
     The low-rank matrix is represented by an eigendecomposition (vecs, values).
     Based on the chosen `backend`, either a true Hessian or, for example, GGN
@@ -855,11 +900,11 @@ class LowRankLaplace(ParametricLaplace):
     See `BaseLaplace` for the full interface.
     """
     _key = ('all', 'lowrank')
+
     def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, 
                  temperature=1, backend=AsdlHessian, backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise=sigma_noise, 
-                         prior_precision=prior_precision, prior_mean=prior_mean, 
-                         temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
+        super().__init__(model, likelihood, sigma_noise, prior_precision,
+                         prior_mean, temperature, backend, backend_kwargs)
     
     def _init_H(self):
         pass
@@ -940,14 +985,12 @@ class LowRankLaplace(ParametricLaplace):
         return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
 
 
-class DiagLaplace(ParametricLaplace):
+class DiagLaplaceBase(ParametricLaplace):
     """Laplace approximation with diagonal log likelihood Hessian approximation
     and hence posterior precision.
     Mathematically, we have \\(P \\approx \\textrm{diag}(P)\\).
     See `BaseLaplace` for the full interface.
     """
-    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('all', 'diag')
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params, device=self._device)
@@ -1004,6 +1047,16 @@ class DiagLaplace(ParametricLaplace):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = samples * self.posterior_scale.reshape(1, self.n_params)
         return self.mean.reshape(1, self.n_params) + samples
+
+
+class DiagLaplace(ALLaplace, DiagLaplaceBase):
+    """Laplace approximation with diagonal log likelihood Hessian approximation
+    and hence posterior precision.
+    Mathematically, we have \\(P \\approx \\textrm{diag}(P)\\).
+    See `BaseLaplace` for the full interface.
+    """
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    _key = ('all', 'diag')
 
 
 class FunctionalLaplace(BaseLaplace):
