@@ -115,7 +115,7 @@ class AsdlInterface(CurvatureInterface):
         diag_ggn = curv.matrices_to_vector(None)
         return self.factor * loss, self.factor * diag_ggn
 
-    def kron(self, X, y, N, **wkwargs) -> [torch.Tensor, Kron]:
+    def kron(self, X, y, N, **wkwargs):
         with torch.no_grad():
             if self.last_layer:
                 f, X = self.model.forward_with_features(X)
