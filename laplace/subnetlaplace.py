@@ -1,4 +1,5 @@
 import torch
+from torch.distributions import MultivariateNormal
 
 from laplace.baselaplace import FullLaplace, DiagLaplace
 
@@ -75,7 +76,7 @@ class SubnetLaplace(FullLaplace):
             # instantiate and pass diagonal Laplace model for largest variance subnetwork selection
             self._subnetmask_kwargs.update(diag_laplace_model=DiagLaplace(self.model, likelihood, sigma_noise,
                 prior_precision, prior_mean, temperature, backend, backend_kwargs))
-        self.subnetwork_mask = subnetwork_mask(self.model, **self._subnetmask_kwargs)
+        self._subnetwork_mask = subnetwork_mask(self.model, **self._subnetmask_kwargs)
         self.n_params_subnet = None
 
     def _init_H(self):
@@ -110,9 +111,20 @@ class SubnetLaplace(FullLaplace):
         """
 
         # select subnetwork and pass it to backend
-        self.subnetwork_mask.select(train_loader)
-        self.backend.subnetwork_indices = self.subnetwork_mask.indices
-        self.n_params_subnet = self.subnetwork_mask.n_params_subnet
+        self._subnetwork_mask.select(train_loader)
+        self.backend.subnetwork_indices = self._subnetwork_mask.indices
+        self.n_params_subnet = self._subnetwork_mask.n_params_subnet
 
         # fit Laplace approximation over subnetwork
         super().fit(train_loader)
+
+    def sample(self, n_samples=100):
+        # sample parameters just of the subnetwork
+        subnet_mean = self.mean[self._subnetwork_mask.indices]
+        dist = MultivariateNormal(loc=subnet_mean, scale_tril=self.posterior_scale)
+        subnet_samples = dist.sample((n_samples,))
+
+        # set all other parameters to their MAP estimates
+        full_samples = self.mean.repeat(n_samples, 1)
+        full_samples[:, self._subnetwork_mask.indices] = subnet_samples
+        return full_samples
