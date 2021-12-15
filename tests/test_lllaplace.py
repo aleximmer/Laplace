@@ -6,6 +6,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
+from torchvision.models import wide_resnet50_2
 
 from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
 from laplace.feature_extractor import FeatureExtractor
@@ -21,6 +22,12 @@ flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     setattr(model, 'output_size', 2)
+    return model
+
+
+@pytest.fixture
+def large_model():
+    model = wide_resnet50_2()
     return model
 
 
@@ -41,6 +48,47 @@ def reg_loader():
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init(laplace, model):
     lap = laplace(model, 'classification', last_layer_name='1')
+    assert torch.allclose(lap.mean, lap.prior_mean)
+    if laplace != KronLLLaplace:
+        H = lap.H.clone()
+        lap._init_H()
+        assert torch.allclose(H, lap.H)
+    else:
+        H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
+        lap._init_H()
+        for kfac1, kfac2 in zip(H, lap.H.kfacs):
+            for k1, k2 in zip(kfac1, kfac2):
+                assert torch.allclose(k1, k2)
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_init_nollname(laplace, model):
+    lap = laplace(model, 'classification')
+    assert lap.mean is None
+    assert lap.H is None
+
+
+@pytest.mark.parametrize('laplace', [KronLLLaplace, DiagLLLaplace])
+def test_laplace_large_init(laplace, large_model):
+    lap = laplace(large_model, 'classification', last_layer_name='fc')
+    assert torch.allclose(lap.mean, lap.prior_mean)
+    if laplace == DiagLLLaplace:
+        H = lap.H.clone()
+        lap._init_H()
+        assert torch.allclose(H, lap.H)
+    else:
+        H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
+        lap._init_H()
+        for kfac1, kfac2 in zip(H, lap.H.kfacs):
+            for k1, k2 in zip(kfac1, kfac2):
+                assert torch.allclose(k1, k2)
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_laplace_large_init_nollname(laplace, large_model):
+    lap = laplace(large_model, 'classification')
+    assert lap.mean is None
+    assert lap.H is None
 
 
 @pytest.mark.parametrize('laplace', flavors)
