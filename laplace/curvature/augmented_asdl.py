@@ -125,7 +125,7 @@ class AugAsdlInterface(CurvatureInterface):
 
         if self.differentiable:
             return self.factor * loss, self.factor * kron
-        return self.factor * loss.detach(), self.factor * kron
+        return self.factor * loss.detach(), self.factor * kron.detach()
 
 
 class AugAsdlGGN(AugAsdlInterface, GGNInterface):

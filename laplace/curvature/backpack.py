@@ -133,7 +133,7 @@ class BackPackGGN(BackPackInterface, GGNInterface):
             return self.factor * loss, self.factor * dggn
         return self.factor * loss.detach(), self.factor * dggn.detach()
 
-    def kron(self, X, y, N, **kwargs) -> [torch.Tensor, Kron]:
+    def kron(self, X, y, N, **kwargs):
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         loss = self.lossfunc(f, y)
@@ -144,7 +144,7 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 
         if self.differentiable:
             return self.factor * loss, self.factor * kron
-        return self.factor * loss.detach(), self.factor * kron  # TODO: implement detach on Kron
+        return self.factor * loss.detach(), self.factor * kron.detach()
 
 
 class BackPackEF(BackPackInterface, EFInterface):

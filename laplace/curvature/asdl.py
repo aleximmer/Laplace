@@ -124,7 +124,7 @@ class AsdlInterface(CurvatureInterface):
             return self.factor * loss, self.factor * diag_ggn
         return self.factor * loss, self.factor * diag_ggn
 
-    def kron(self, X, y, N, **wkwargs) -> [torch.Tensor, Kron]:
+    def kron(self, X, y, N, **kwargs):
         with torch.no_grad():
             if self.last_layer:
                 f, X = self.model.forward_with_features(X)
@@ -139,7 +139,7 @@ class AsdlInterface(CurvatureInterface):
 
         if self.differentiable:
             return self.factor * loss, self.factor * kron
-        return self.factor * loss.detach(), self.factor * kron
+        return self.factor * loss.detach(), self.factor * kron.detach()
 
 
 class AsdlGGN(AsdlInterface, GGNInterface):
