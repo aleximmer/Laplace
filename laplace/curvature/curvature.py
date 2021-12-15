@@ -196,9 +196,9 @@ class GGNInterface(CurvatureInterface):
     stochastic : bool, default=False
         Fisher if stochastic else GGN
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+    def __init__(self, model, likelihood, last_layer=False, differentiable=True, stochastic=False):
         self.stochastic = stochastic
-        super().__init__(model, likelihood, last_layer)
+        super().__init__(model, likelihood, last_layer, differentiable)
 
     def _get_full_ggn(self, Js, f, y):
         """Compute full GGN from Jacobians.
