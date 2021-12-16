@@ -101,7 +101,7 @@ class ScoreBasedSubnetMask(SubnetMask):
     ----------
     model : torch.nn.Module
     n_params_subnet : int
-        the number of parameters in the subnetwork (i.e. the number of top-scoring parameters to select)
+        number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
     """
     def __init__(self, model, n_params_subnet):
         super().__init__(model)
@@ -152,13 +152,13 @@ class LargestMagnitudeSubnetMask(ScoreBasedSubnetMask):
 
 class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
     """Subnetwork mask identifying the parameters with the largest marginal variances
-    (estimated using a diagional Laplace approximation over all model parameters).
+    (estimated using a diagonal Laplace approximation over all model parameters).
 
     Parameters
     ----------
     model : torch.nn.Module
     n_params_subnet : int
-        the number of parameters in the subnetwork (i.e. the number of top-scoring parameters to select)
+        number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
     diag_laplace_model : `laplace.baselaplace.DiagLaplace`
         diagonal Laplace model to use for variance estimation
     """
@@ -203,7 +203,7 @@ class LastLayerSubnetMask(SubnetMask):
 
         subnet_mask_list = []
         for name, layer in self.model.model.named_modules():
-            if len(list(layer.children())) > 0:
+            if len(list(layer.children())) > 0 or len(list(layer.parameters())) == 0:
                 continue
             if name == self.model._last_layer_name:
                 mask_method = torch.ones_like
