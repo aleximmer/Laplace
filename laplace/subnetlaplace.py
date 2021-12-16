@@ -12,8 +12,8 @@ __all__ = ['SubnetLaplace']
 
 class SubnetLaplace(FullLaplace):
     """Class for subnetwork Laplace, which computes the Laplace approximation over
-    just a subset of the model parameters (i.e. a subnetwork within the neural network).
-    Subnetwork Laplace only supports a full Hessian approximation; other Hessian
+    just a subset of the model parameters (i.e. a subnetwork within the neural network),
+    as proposed in [1]. Subnetwork Laplace only supports a full Hessian approximation; other
     approximations could be used in theory, but would not make as much sense conceptually.
 
     A Laplace approximation is represented by a MAP which is given by the
@@ -37,6 +37,12 @@ class SubnetLaplace(FullLaplace):
     parameter, the full approximation can be, for example, a generalized Gauss-Newton
     matrix.  Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
     See `FullLaplace` and `BaseLaplace` for the full interface.
+
+    References
+    ----------
+    [1] Daxberger, E., Nalisnick, E., Allingham, JU., Antorán, J., Hernández-Lobato, JM.
+    [*Bayesian Deep Learning via Subnetwork Inference*](https://arxiv.org/abs/2010.14689). 
+    ICML 2021.
 
     Parameters
     ----------
