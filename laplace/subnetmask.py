@@ -1,9 +1,11 @@
+from copy import deepcopy
+
 import torch
 from torch.nn.utils import parameters_to_vector
 
 from laplace.feature_extractor import FeatureExtractor
 
-__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LastLayerSubnetMask', 'LargestVarianceDiagLaplaceSubnetMask']
+__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LargestVarianceDiagLaplaceSubnetMask', 'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask']
 
 
 class SubnetMask:
@@ -21,10 +23,6 @@ class SubnetMask:
         self._indices = None
         self._n_params_subnet = None
 
-    @property
-    def n_params_subnet(self):
-        raise NotImplementedError
-
     def _check_select(self):
         if self._indices is None:
             raise AttributeError('Subnetwork mask not selected. Run select() first.')
@@ -33,6 +31,13 @@ class SubnetMask:
     def indices(self):
         self._check_select()
         return self._indices
+
+    @property
+    def n_params_subnet(self):
+        if self._n_params_subnet is None:
+            self._check_select()
+            self._n_params_subnet = len(self._indices)
+        return self._n_params_subnet
 
     def convert_subnet_mask_to_indices(self, subnet_mask):
         """Converts a subnetwork mask into subnetwork indices.
@@ -113,10 +118,6 @@ class ScoreBasedSubnetMask(SubnetMask):
         self._n_params_subnet = n_params_subnet
         self._param_scores = None
 
-    @property
-    def n_params_subnet(self):
-        return self._n_params_subnet
-
     def compute_param_scores(self, train_loader):
         raise NotImplementedError
 
@@ -171,7 +172,97 @@ class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
         return self.diag_laplace_model.posterior_variance
 
 
-class LastLayerSubnetMask(SubnetMask):
+class ParamNameSubnetMask(SubnetMask):
+    """Subnetwork mask corresponding to the specified parameters of the neural network.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+    parameter_names: List[str]
+        list of names of the parameters (as in `model.named_parameters()`) that define the subnetwork
+    """
+    def __init__(self, model, parameter_names):
+        super().__init__(model)
+        self._parameter_names = parameter_names
+        self._n_params_subnet = None
+
+    def _check_param_names(self):
+        param_names = deepcopy(self._parameter_names)
+        if len(param_names) == 0:
+            raise ValueError(f'Parameter name list cannot be empty.')
+
+        for name, _ in self.model.named_parameters():
+            if name in param_names:
+                param_names.remove(name)
+        if len(param_names) > 0:
+            raise ValueError(f'Parameters {param_names} do not exist in model.')
+
+    def get_subnet_mask(self, train_loader):
+        """ Get the subnetwork mask identifying the specified parameters."""
+
+        self._check_param_names()
+
+        subnet_mask_list = []
+        for name, param in self.model.named_parameters():
+            if name in self._parameter_names:
+                mask_method = torch.ones_like
+            else:
+                mask_method = torch.zeros_like
+            subnet_mask_list.append(mask_method(parameters_to_vector(param)))
+        subnet_mask = torch.cat(subnet_mask_list).byte()
+        return subnet_mask
+
+
+class ModuleNameSubnetMask(SubnetMask):
+    """Subnetwork mask corresponding to the specified modules of the neural network.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+    parameter_names: List[str]
+        list of names of the modules (as in `model.named_modules()`) that define the subnetwork;
+        the modules cannot have children, i.e. need to be leaf modules
+    """
+    def __init__(self, model, module_names):
+        super().__init__(model)
+        self._module_names = module_names
+        self._n_params_subnet = None
+
+    def _check_module_names(self):
+        module_names = deepcopy(self._module_names)
+        if len(module_names) == 0:
+            raise ValueError(f'Module name list cannot be empty.')
+
+        for name, module in self.model.named_modules():
+            if name in module_names:
+                if len(list(module.children())) > 0:
+                    raise ValueError(f'Module "{name}" has children, which is not supported.')
+                elif len(list(module.parameters())) == 0:
+                    raise ValueError(f'Module "{name}" does not have any parameters.')
+                else:
+                    module_names.remove(name)
+        if len(module_names) > 0:
+            raise ValueError(f'Modules {module_names} do not exist in model.')
+
+    def get_subnet_mask(self, train_loader):
+        """ Get the subnetwork mask identifying the specified modules."""
+
+        self._check_module_names()
+
+        subnet_mask_list = []
+        for name, module in self.model.named_modules():
+            if len(list(module.children())) > 0 or len(list(module.parameters())) == 0:
+                continue
+            if name in self._module_names:
+                mask_method = torch.ones_like
+            else:
+                mask_method = torch.zeros_like
+            subnet_mask_list.append(mask_method(parameters_to_vector(module.parameters())))
+        subnet_mask = torch.cat(subnet_mask_list).byte()
+        return subnet_mask
+
+
+class LastLayerSubnetMask(ModuleNameSubnetMask):
     """Subnetwork mask corresponding to the last layer of the neural network.
 
     Parameters
@@ -181,34 +272,18 @@ class LastLayerSubnetMask(SubnetMask):
         name of the model's last layer, if None it will be determined automatically
     """
     def __init__(self, model, last_layer_name=None):
-        super().__init__(model)
-        self.model = FeatureExtractor(self.model, last_layer_name=last_layer_name)
+        super().__init__(model, None)
+        self._feature_extractor = FeatureExtractor(self.model, last_layer_name=last_layer_name)
         self._n_params_subnet = None
-
-    @property
-    def n_params_subnet(self):
-        if self._n_params_subnet is None:
-            self._check_select()
-            self._n_params_subnet = len(self._indices)
-        return self._n_params_subnet
 
     def get_subnet_mask(self, train_loader):
         """ Get the subnetwork mask identifying the last layer."""
 
-        self.model.eval()
-        if self.model.last_layer is None:
-            X, _ = next(iter(train_loader))
+        self._feature_extractor.eval()
+        if self._feature_extractor.last_layer is None:
+            X = next(iter(train_loader))[0]
             with torch.no_grad():
-                self.model.find_last_layer(X[:1].to(self._device))
+                self._feature_extractor.find_last_layer(X[:1].to(self._device))
+        self._module_names = [self._feature_extractor._last_layer_name]
 
-        subnet_mask_list = []
-        for name, layer in self.model.model.named_modules():
-            if len(list(layer.children())) > 0 or len(list(layer.parameters())) == 0:
-                continue
-            if name == self.model._last_layer_name:
-                mask_method = torch.ones_like
-            else:
-                mask_method = torch.zeros_like
-            subnet_mask_list.append(mask_method(parameters_to_vector(layer.parameters())))
-        subnet_mask = torch.cat(subnet_mask_list).byte()
-        return subnet_mask
+        return super().get_subnet_mask(train_loader)
