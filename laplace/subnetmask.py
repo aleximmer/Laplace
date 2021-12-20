@@ -55,9 +55,9 @@ class SubnetMask:
         """
         if not isinstance(subnet_mask, torch.Tensor):
             raise ValueError('Subnetwork mask needs to be torch.Tensor!')
-        elif subnet_mask.type() not in ['torch.ByteTensor', 'torch.IntTensor', 'torch.LongTensor'] or\
+        elif subnet_mask.dtype not in [torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8, torch.bool] or\
                 len(subnet_mask.shape) != 1:
-                raise ValueError('Subnetwork mask needs to be 1-dimensional torch.{Byte,Int,Long}Tensor!')
+                raise ValueError('Subnetwork mask needs to be 1-dimensional integral or boolean tensor!')
         elif len(subnet_mask) != self._n_params or\
                 len(subnet_mask[subnet_mask == 0]) + len(subnet_mask[subnet_mask == 1]) != self._n_params:
             raise ValueError('Subnetwork mask needs to be a binary vector of size (n_params) where 1s'\
@@ -134,7 +134,7 @@ class ScoreBasedSubnetMask(SubnetMask):
 
         idx = torch.argsort(self._param_scores, descending=True)[:self._n_params_subnet]
         idx = idx.sort()[0]
-        subnet_mask = torch.zeros_like(self.parameter_vector).byte()
+        subnet_mask = torch.zeros_like(self.parameter_vector).bool()
         subnet_mask[idx] = 1
         return subnet_mask
 
@@ -209,7 +209,7 @@ class ParamNameSubnetMask(SubnetMask):
             else:
                 mask_method = torch.zeros_like
             subnet_mask_list.append(mask_method(parameters_to_vector(param)))
-        subnet_mask = torch.cat(subnet_mask_list).byte()
+        subnet_mask = torch.cat(subnet_mask_list).bool()
         return subnet_mask
 
 
@@ -258,7 +258,7 @@ class ModuleNameSubnetMask(SubnetMask):
             else:
                 mask_method = torch.zeros_like
             subnet_mask_list.append(mask_method(parameters_to_vector(module.parameters())))
-        subnet_mask = torch.cat(subnet_mask_list).byte()
+        subnet_mask = torch.cat(subnet_mask_list).bool()
         return subnet_mask
 
 
