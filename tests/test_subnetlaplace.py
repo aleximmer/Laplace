@@ -7,12 +7,12 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import Laplace, SubnetLaplace
-from laplace.subnetmask import SubnetMask, RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask, ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask
+from laplace.subnetmask import SubnetMask, RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask, LargestVarianceSWAGSubnetMask, ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask
 
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-score_based_subnet_masks = [RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask]
+score_based_subnet_masks = [RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask, LargestVarianceSWAGSubnetMask]
 layer_subnet_masks = [ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask]
 all_subnet_masks = score_based_subnet_masks + layer_subnet_masks
 likelihoods = ['classification', 'regression']
@@ -66,7 +66,7 @@ def test_subnet_laplace_init(model, likelihood):
 def test_score_based_subnet_masks(model, likelihood, subnetwork_mask, class_loader, reg_loader):
     loader = class_loader if likelihood == 'classification' else reg_loader
     model_params = parameters_to_vector(model.parameters())
-    subnetmask_kwargs = dict()
+    subnetmask_kwargs = dict(likelihood=likelihood) if subnetwork_mask == LargestVarianceSWAGSubnetMask else dict()
 
     # should raise error if we don't pass number of subnet parameters within the subnetmask_kwargs
     with pytest.raises(TypeError):
@@ -300,6 +300,7 @@ def test_regression_predictive(model, reg_loader, subnetwork_mask):
         subnetmask_kwargs = dict(module_names=['0'])
     else:
         subnetmask_kwargs = dict()
+    subnetmask_kwargs.update(dict(likelihood='regression') if subnetwork_mask == LargestVarianceSWAGSubnetMask else dict())
     lap = Laplace(model, likelihood='regression', subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
     assert isinstance(lap, SubnetLaplace)
     assert isinstance(lap._subnetwork_mask, subnetwork_mask)
@@ -335,6 +336,7 @@ def test_classification_predictive(model, class_loader, subnetwork_mask):
         subnetmask_kwargs = dict(module_names=['0'])
     else:
         subnetmask_kwargs = dict()
+    subnetmask_kwargs.update(dict(likelihood='classification') if subnetwork_mask == LargestVarianceSWAGSubnetMask else dict())
     lap = Laplace(model, likelihood='classification', subset_of_weights='subnetwork', subnetwork_mask=subnetwork_mask, hessian_structure='full', subnetmask_kwargs=subnetmask_kwargs)
     assert isinstance(lap, SubnetLaplace)
     assert isinstance(lap._subnetwork_mask, subnetwork_mask)

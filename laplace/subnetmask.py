@@ -1,11 +1,13 @@
 from copy import deepcopy
 
 import torch
+from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 
 from laplace.feature_extractor import FeatureExtractor
+from laplace.swag import fit_diagonal_swag
 
-__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LargestVarianceDiagLaplaceSubnetMask', 'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask']
+__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LargestVarianceDiagLaplaceSubnetMask', 'LargestVarianceSWAGSubnetMask', 'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask']
 
 
 class SubnetMask:
@@ -170,6 +172,40 @@ class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
     def compute_param_scores(self, train_loader):
         self.diag_laplace_model.fit(train_loader)
         return self.diag_laplace_model.posterior_variance
+
+
+class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
+    """Subnetwork mask identifying the parameters with the largest marginal variances
+    (estimated using diagonal SWAG over all model parameters).
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+    n_params_subnet : int
+        number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
+    likelihood : str
+        'classification' or 'regression'
+	swag_n_snapshots : int
+		number of model snapshots to collect for SWAG
+	swag_snapshot_freq : int
+		SWAG snapshot collection frequency (in epochs)
+    swag_lr : float
+        learning rate for SWAG snapshot collection
+    """
+    def __init__(self, model, n_params_subnet, likelihood='classification', swag_n_snapshots=40, swag_snapshot_freq=1, swag_lr=0.01):
+        super().__init__(model, n_params_subnet)
+        self.likelihood = likelihood
+        self.swag_n_snapshots = swag_n_snapshots
+        self.swag_snapshot_freq = swag_snapshot_freq
+        self.swag_lr = swag_lr
+
+    def compute_param_scores(self, train_loader):
+        if self.likelihood == 'classification':
+            criterion = CrossEntropyLoss(reduction='mean')
+        elif self.likelihood == 'regression':
+            criterion = MSELoss(reduction='mean')
+        param_variances = fit_diagonal_swag(self.model, train_loader, criterion, n_snapshots_total=self.swag_n_snapshots, snapshot_freq=self.swag_snapshot_freq, lr=self.swag_lr)
+        return param_variances
 
 
 class ParamNameSubnetMask(SubnetMask):
