@@ -9,6 +9,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
+from torchvision.models import wide_resnet50_2
 
 from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from laplace.matrix import KronDecomposed
@@ -32,6 +33,12 @@ def model():
 
 
 @pytest.fixture
+def large_model():
+    model = wide_resnet50_2()
+    return model
+
+
+@pytest.fixture
 def class_loader():
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
@@ -48,6 +55,24 @@ def reg_loader():
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init(laplace, model):
     lap = laplace(model, 'classification')
+    assert torch.allclose(lap.mean, lap.prior_mean)
+    if laplace in [FullLaplace, DiagLaplace]:
+        H = lap.H.clone()
+        lap._init_H()
+        assert torch.allclose(H, lap.H)
+    elif laplace == LowRankLaplace:
+        assert lap.H is None
+    else:
+        H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
+        lap._init_H()
+        for kfac1, kfac2 in zip(H, lap.H.kfacs):
+            for k1, k2 in zip(kfac1, kfac2):
+                assert torch.allclose(k1, k2)
+
+
+@pytest.mark.xfail(strict=True)
+def test_laplace_large_init(large_model):
+    lap = FullLaplace(large_model, 'classification')
 
 
 @pytest.mark.parametrize('laplace', flavors)
