@@ -74,6 +74,7 @@ class SubnetLaplace(FullLaplace):
 
     def __init__(self, model, likelihood, subnetwork_mask, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None, subnetmask_kwargs=None):
+        self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_precision,
                          prior_mean=prior_mean, temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
