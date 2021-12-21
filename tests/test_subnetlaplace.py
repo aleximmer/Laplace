@@ -269,13 +269,6 @@ def test_full_subnet_mask(model, likelihood, class_loader, reg_loader):
 
     # define full model 'subnet' mask class (i.e. where all parameters are part of the subnet)
     class FullSubnetMask(SubnetMask):
-        @property
-        def n_params_subnet(self):
-            if self._n_params_subnet is None:
-                self._check_select()
-                self._n_params_subnet = len(self._indices)
-            return self._n_params_subnet
-
         def get_subnet_mask(self, train_loader):
             return torch.ones(model.n_params).byte()
 
