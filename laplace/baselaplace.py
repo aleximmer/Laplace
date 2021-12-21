@@ -1,5 +1,4 @@
 from math import sqrt, pi, log
-from laplace.curvature.asdl import AsdlHessian
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
@@ -7,10 +6,11 @@ from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
 from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN, BackPackEF, AsdlGGN, AsdlEF
+from laplace.curvature import BackPackGGN, AsdlHessian
 
 
-__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace']
+__all__ = ['BaseLaplace', 'ParametricLaplace',
+           'FullLaplace', 'KronLaplace', 'DiagLaplace', 'LowRankLaplace']
 
 
 class BaseLaplace:
@@ -330,15 +330,17 @@ class ParametricLaplace(BaseLaplace):
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
-        try:
+        if not hasattr(self, 'H'):
             self._init_H()
-        except AttributeError:  # necessary information not yet available
-            pass
-        # posterior mean/mode
-        self.mean = self.prior_mean
+            # posterior mean/mode
+            self.mean = self.prior_mean
 
     def _init_H(self):
         raise NotImplementedError
+
+    def _check_H_init(self):
+        if self.H is None:
+            raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def fit(self, train_loader, override=True):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -727,6 +729,7 @@ class FullLaplace(ParametricLaplace):
         precision : torch.tensor
             `(parameters, parameters)`
         """
+        self._check_H_init()
         return self._H_factor * self.H + torch.diag(self.prior_precision_diag)
 
     @property
@@ -811,6 +814,7 @@ class KronLaplace(ParametricLaplace):
         -------
         precision : `laplace.matrix.KronDecomposed`
         """
+        self._check_H_init()
         return self.H * self._H_factor + self.prior_precision
 
     @property
@@ -862,7 +866,7 @@ class LowRankLaplace(ParametricLaplace):
                          temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
     
     def _init_H(self):
-        pass
+        self.H = None
 
     @property
     def V(self):
@@ -910,6 +914,7 @@ class LowRankLaplace(ParametricLaplace):
         prior_precision_diag : torch.Tensor
             diagonal prior precision shape `parameters` to be added to H.
         """
+        self._check_H_init()
         return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
 
     def functional_variance(self, Jacs):
@@ -964,6 +969,7 @@ class DiagLaplace(ParametricLaplace):
         precision : torch.tensor
             `(parameters)`
         """
+        self._check_H_init()
         return self._H_factor * self.H + self.prior_precision_diag
 
     @property

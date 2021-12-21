@@ -9,7 +9,7 @@ from laplace.matrix import Kron
 from laplace.curvature import BackPackGGN
 
 
-__all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
+__all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
 
 class LLLaplace(ParametricLaplace):
@@ -60,12 +60,13 @@ class LLLaplace(ParametricLaplace):
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  backend_kwargs=None):
+        self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
                          prior_mean=0., temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(deepcopy(model), last_layer_name=last_layer_name)
         if self.model.last_layer is None:
-            self.mean = prior_mean
+            self.mean = None
             self.n_params = None
             self.n_layers = None
             # ignore checks of prior mean setter temporarily, check on .fit()
@@ -76,7 +77,8 @@ class LLLaplace(ParametricLaplace):
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
-            self.mean = self.prior_mean 
+            self.mean = self.prior_mean
+            self._init_H()
         self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader, override=True):
@@ -91,6 +93,9 @@ class LLLaplace(ParametricLaplace):
             whether to initialize H, loss, and n_data again; setting to False is useful for
             online learning settings to accumulate a sequential posterior approximation.
         """
+        if not override:
+            raise ValueError('Last-layer Laplace approximations do not support `override=False`.')
+
         self.model.eval()
 
         if self.model.last_layer is None:
@@ -106,9 +111,6 @@ class LLLaplace(ParametricLaplace):
             # here, check the already set prior precision again
             self.prior_precision = self._prior_precision
             self.prior_mean = self._prior_mean
-            self._init_H()
-
-        if override:
             self._init_H()
 
         super().fit(train_loader, override=override)
@@ -159,12 +161,6 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'full')
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
-
 
 class KronLLLaplace(LLLaplace, KronLaplace):
     """Last-layer Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -200,9 +196,3 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'diag')
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
