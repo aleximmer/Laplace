@@ -185,10 +185,10 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
     likelihood : str
         'classification' or 'regression'
-	swag_n_snapshots : int
-		number of model snapshots to collect for SWAG
-	swag_snapshot_freq : int
-		SWAG snapshot collection frequency (in epochs)
+    swag_n_snapshots : int
+        number of model snapshots to collect for SWAG
+    swag_snapshot_freq : int
+        SWAG snapshot collection frequency (in epochs)
     swag_lr : float
         learning rate for SWAG snapshot collection
     """
