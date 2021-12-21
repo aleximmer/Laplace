@@ -1,5 +1,4 @@
 from copy import deepcopy
-from tqdm import tqdm
 
 import torch
 from torch.nn.utils import parameters_to_vector
@@ -63,7 +62,7 @@ def fit_diagonal_swag(model, train_loader, criterion, n_snapshots_total=40, snap
 	# run SGD to collect model snapshots
 	optimizer = torch.optim.SGD(_model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
 	n_epochs = snapshot_freq * n_snapshots_total
-	for epoch in tqdm(range(n_epochs)):
+	for epoch in range(n_epochs):
 		for inputs, targets in train_loader:
 			inputs, targets = inputs.to(device), targets.to(device)
 			optimizer.zero_grad()
