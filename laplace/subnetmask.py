@@ -148,7 +148,7 @@ class RandomSubnetMask(ScoreBasedSubnetMask):
 class LargestMagnitudeSubnetMask(ScoreBasedSubnetMask):
     """Subnetwork mask identifying the parameters with the largest magnitude. """
     def compute_param_scores(self, train_loader):
-        return self.parameter_vector
+        return self.parameter_vector.abs()
 
 
 class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
