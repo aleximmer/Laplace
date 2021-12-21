@@ -4,7 +4,7 @@
 
 [![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
 
-The laplace package facilitates the application of Laplace approximations for entire neural networks (NNs), subnetworks of NNs, or just their last layer.
+The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
 The library documentation is available at [https://aleximmer.github.io/Laplace](https://aleximmer.github.io/Laplace).
 
@@ -39,7 +39,7 @@ pytest tests/
 ## Structure
 The laplace package consists of two main components:
 
-1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'` and `'diag'`). This results in eight currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`,  and `laplace.DiagLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), `laplace.SubnetLaplace` (which only supports a `'full'` Hessian approximation) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
+1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'` and `'diag'`). This results in _eight_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`,  and `laplace.DiagLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), `laplace.SubnetLaplace` (which only supports a `'full'` Hessian approximation) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
 2. The backends in [`laplace.curvature`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/) which provide access to Hessian approximations of
 the corresponding sparsity structures, for example, the diagonal GGN.
 
@@ -48,9 +48,9 @@ decomposing a neural network into feature extractor and last layer for `LLLaplac
 and
 effectively dealing with Kronecker factors ([`laplace.matrix`](https://github.com/AlexImmer/Laplace/blob/main/laplace/matrix.py)).
 
-Finally, the package implements several options to select/specify the subnetwork for `laplace.SubnetLaplace` (as subclasses of ([`laplace.subnetmask.SubnetMask`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetmask.py)).
-Automatic subnetwork selection strategies include: uniformly at random (`laplace.subnetmask.RandomSubnetMask`), by largest parameter magnitudes (`laplace.subnetmask.LargestMagnitudeSubnetMask`) and by largest marginal parameter variances (`laplace.subnetmask.LargestVarianceDiagLaplaceSubnetMask` and `laplace.subnetmask.LargestVarianceSWAGSubnetMask`).
-In addition to that, subnetworks can also be specified manually, by listing the names of either the model parameters (`laplace.subnetmask.ParamNameSubnetMask`) or modules (`laplace.subnetmask.ModuleNameSubnetMask`) to perform Laplace inference over.
+Finally, the package implements several options to select/specify a subnetwork for `laplace.SubnetLaplace` (as subclasses of [`laplace.subnetmask.SubnetMask`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetmask.py).
+Automatic subnetwork selection strategies include: uniformly at random (`laplace.subnetmask.RandomSubnetMask`), by largest parameter magnitudes (`LargestMagnitudeSubnetMask`), and by largest marginal parameter variances (`LargestVarianceDiagLaplaceSubnetMask` and `LargestVarianceSWAGSubnetMask`).
+In addition to that, subnetworks can also be specified manually, by listing the names of either the model parameters (`ParamNameSubnetMask`) or modules (`ModuleNameSubnetMask`) to perform Laplace inference over.
 
 ## Extendability
 To extend the laplace package, new `BaseLaplace` subclasses can be designed, for example,
