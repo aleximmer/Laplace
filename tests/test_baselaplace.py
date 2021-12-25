@@ -17,6 +17,10 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 
+def get_grad(model):
+    return torch.cat([e.grad.flatten() for e in model.parameters()])
+
+
 @pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))

@@ -110,27 +110,25 @@ class AsdlInterface(CurvatureInterface):
         return kron
 
     def diag(self, X, y, **kwargs):
-        with torch.no_grad():
-            if self.last_layer:
-                f, X = self.model.forward_with_features(X)
-            else:
-                f = self.model(X)
-            loss = self.lossfunc(f, y)
+        if self.last_layer:
+            f, X = self.model.forward_with_features(X)
+        else:
+            f = self.model(X)
+        loss = self.lossfunc(f, y)
         curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_DIAG,
                                         inputs=X, targets=y, **self.backward_kwargs)
         diag_ggn = curv.matrices_to_vector(None)
 
         if self.differentiable:
             return self.factor * loss, self.factor * diag_ggn
-        return self.factor * loss, self.factor * diag_ggn
+        return self.factor * loss.detach(), self.factor * diag_ggn.detach()
 
     def kron(self, X, y, N, **kwargs):
-        with torch.no_grad():
-            if self.last_layer:
-                f, X = self.model.forward_with_features(X)
-            else:
-                f = self.model(X)
-            loss = self.lossfunc(f, y)
+        if self.last_layer:
+            f, X = self.model.forward_with_features(X)
+        else:
+            f = self.model(X)
+        loss = self.lossfunc(f, y)
         curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_KRON,
                                         inputs=X, targets=y, **self.backward_kwargs)
         M = len(y)

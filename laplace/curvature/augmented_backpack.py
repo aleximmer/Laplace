@@ -35,6 +35,7 @@ class AugBackPackInterface(CurvatureInterface):
         f : torch.Tensor
             averaged output function over `n_augs` of shape `(batch, outputs)`
         """
+        self.model = extend(self.model)
         batch_size, n_augs = x.shape[:2]
         x_aug = x
         x = x.flatten(start_dim=0, end_dim=1)
@@ -82,8 +83,8 @@ class AugBackPackInterface(CurvatureInterface):
 class AugBackPackGGN(AugBackPackInterface, GGNInterface):
     """Implementation of the `GGNInterface` using Backpack.
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(self, model, likelihood, last_layer=False, differentiable=True, stochastic=False):
+        super().__init__(model, likelihood, last_layer, differentiable)
         self.stochastic = stochastic
 
     def full(self, x, y, **kwargs):
