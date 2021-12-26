@@ -138,7 +138,7 @@ def symeig(M):
     except RuntimeError:  # did not converge
         logging.info('SYMEIG: adding jitter, did not converge.')
         # use W L W^T + I = W (L + I) W^T
-        M = M + torch.eye(M.shape[0])
+        M = M + torch.eye(M.shape[0]).to(M.device)
         try:
             L, W = torch.linalg.eigh(M, UPLO='U')
             L -= 1.
