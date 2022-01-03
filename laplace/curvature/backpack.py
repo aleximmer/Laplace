@@ -5,7 +5,7 @@ from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSqua
 from backpack.context import CTX
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
-from laplace.matrix import Kron
+from laplace.utils.matrix import Kron
 
 
 class BackPackInterface(CurvatureInterface):

@@ -1,10 +1,9 @@
 import pytest
 import torch
 from torch import nn
-from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import AsdlInterface, BackPackInterface
-from laplace.feature_extractor import FeatureExtractor
+from laplace.utils.feature_extractor import FeatureExtractor
 from tests.utils import jacobians_naive
 
 

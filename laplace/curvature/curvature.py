@@ -11,7 +11,7 @@ class CurvatureInterface:
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
@@ -143,7 +143,7 @@ class CurvatureInterface:
         Returns
         -------
         loss : torch.Tensor
-        H : `laplace.matrix.Kron`
+        H : `laplace.utils.matrix.Kron`
             Kronecker factored Hessian approximation.
         """
         raise NotImplementedError
@@ -175,7 +175,7 @@ class GGNInterface(CurvatureInterface):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
@@ -254,7 +254,7 @@ class EFInterface(CurvatureInterface):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False

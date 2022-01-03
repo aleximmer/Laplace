@@ -4,10 +4,10 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.matrix import Kron, KronDecomposed
-from laplace.utils import kron as kron_prod
+from laplace.utils.matrix import Kron
+from laplace.utils.utils import kron as kron_prod
 from laplace.curvature import BackPackGGN
-from laplace.utils import block_diag
+from laplace.utils.utils import block_diag
 from tests.utils import get_psd_matrix, jacobians_naive
 
 

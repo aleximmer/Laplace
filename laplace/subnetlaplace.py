@@ -4,7 +4,7 @@ from torch.distributions import MultivariateNormal
 from laplace.baselaplace import FullLaplace, DiagLaplace
 
 from laplace.curvature import BackPackGGN
-from laplace.subnetmask import LargestVarianceDiagLaplaceSubnetMask
+from laplace.utils.subnetmask import LargestVarianceDiagLaplaceSubnetMask
 
 
 __all__ = ['SubnetLaplace']
@@ -46,10 +46,10 @@ class SubnetLaplace(FullLaplace):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : {'classification', 'regression'}
         determines the log likelihood Hessian approximation
-    subnetwork_mask : subclasses of `laplace.subnetmask.SubnetMask`, default=None
+    subnetwork_mask : subclasses of `laplace.utils.subnetmask.SubnetMask`, default=None
         mask defining the subnetwork to apply the Laplace approximation over
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification

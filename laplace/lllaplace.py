@@ -3,9 +3,9 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
-from laplace.feature_extractor import FeatureExtractor
+from laplace.utils.feature_extractor import FeatureExtractor
 
-from laplace.matrix import Kron
+from laplace.utils.matrix import Kron
 from laplace.curvature import BackPackGGN
 
 
@@ -36,7 +36,7 @@ class LLLaplace(ParametricLaplace):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : {'classification', 'regression'}
         determines the log likelihood Hessian approximation
     sigma_noise : torch.Tensor or float, default=1
@@ -168,7 +168,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     Mathematically, we have for the last parameter group, i.e., torch.nn.Linear,
     that \\P\\approx Q \\otimes H\\.
     See `KronLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface and see
-    `laplace.matrix.Kron` and `laplace.matrix.KronDecomposed` for the structure of
+    `laplace.utils.matrix.Kron` and `laplace.utils.matrix.KronDecomposed` for the structure of
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.

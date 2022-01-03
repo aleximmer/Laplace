@@ -9,7 +9,7 @@ import logging
 
 from laplace import Laplace
 from laplace.curvature import AsdlGGN
-from laplace.utils import expand_prior_precision
+from laplace.utils.utils import expand_prior_precision
 
 
 def marglik_training(
