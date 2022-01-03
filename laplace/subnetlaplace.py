@@ -47,7 +47,7 @@ class SubnetLaplace(FullLaplace):
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : {'classification', 'regression'}
         determines the log likelihood Hessian approximation
-    subnetwork_indices : torch.Tensor, default=None
+    subnetwork_indices : torch.LongTensor
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
     sigma_noise : torch.Tensor or float, default=1
@@ -69,7 +69,7 @@ class SubnetLaplace(FullLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('subnetwork', 'full')
 
-    def __init__(self, model, likelihood, subnetwork_indices=None, sigma_noise=1., prior_precision=1.,
+    def __init__(self, model, likelihood, subnetwork_indices, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_precision,

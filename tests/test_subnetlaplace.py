@@ -54,6 +54,10 @@ def test_subnet_laplace_init(model, likelihood):
     lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetmask.indices, hessian_structure=hessian_structure)
     assert isinstance(lap, SubnetLaplace)
 
+    # subnet Laplace without specifying subnetwork indices should raise an error
+    with pytest.raises(TypeError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', hessian_structure=hessian_structure)
+
     # subnet Laplace with diag, kron or lowrank Hessians should raise errors
     hessian_structure = 'diag'
     with pytest.raises(ValueError):
