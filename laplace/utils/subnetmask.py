@@ -68,12 +68,12 @@ class SubnetMask:
         subnet_mask_indices = subnet_mask.nonzero(as_tuple=True)[0]
         return subnet_mask_indices
 
-    def select(self, train_loader):
+    def select(self, train_loader=None):
         """ Select the subnetwork mask.
 
         Parameters
         ----------
-        train_loader : torch.data.utils.DataLoader
+        train_loader : torch.data.utils.DataLoader, default=None
             each iterate is a training batch (X, y);
             `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
         """
@@ -170,6 +170,9 @@ class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
         self.diag_laplace_model = diag_laplace_model
 
     def compute_param_scores(self, train_loader):
+        if train_loader is None:
+            raise ValueError('Need to pass train loader for subnet selection.')
+
         self.diag_laplace_model.fit(train_loader)
         return self.diag_laplace_model.posterior_variance
 
@@ -200,6 +203,9 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         self.swag_lr = swag_lr
 
     def compute_param_scores(self, train_loader):
+        if train_loader is None:
+            raise ValueError('Need to pass train loader for subnet selection.')
+
         if self.likelihood == 'classification':
             criterion = CrossEntropyLoss(reduction='mean')
         elif self.likelihood == 'regression':
@@ -314,6 +320,9 @@ class LastLayerSubnetMask(ModuleNameSubnetMask):
 
     def get_subnet_mask(self, train_loader):
         """ Get the subnetwork mask identifying the last layer."""
+
+        if train_loader is None:
+            raise ValueError('Need to pass train loader for subnet selection.')
 
         self._feature_extractor.eval()
         if self._feature_extractor.last_layer is None:

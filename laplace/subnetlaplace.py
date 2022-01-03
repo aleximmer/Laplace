@@ -1,10 +1,8 @@
 import torch
 from torch.distributions import MultivariateNormal
 
-from laplace.baselaplace import FullLaplace, DiagLaplace
-
+from laplace.baselaplace import FullLaplace
 from laplace.curvature import BackPackGGN
-from laplace.utils.subnetmask import LargestVarianceDiagLaplaceSubnetMask
 
 
 __all__ = ['SubnetLaplace']
@@ -49,8 +47,9 @@ class SubnetLaplace(FullLaplace):
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : {'classification', 'regression'}
         determines the log likelihood Hessian approximation
-    subnetwork_mask : subclasses of `laplace.utils.subnetmask.SubnetMask`, default=None
-        mask defining the subnetwork to apply the Laplace approximation over
+    subnetwork_indices : torch.Tensor, default=None
+        indices of the vectorized model parameters that define the subnetwork
+        to apply the Laplace approximation over
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification
     prior_precision : torch.Tensor or float, default=1
@@ -66,28 +65,37 @@ class SubnetLaplace(FullLaplace):
     backend_kwargs : dict, default=None
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
-    subnetmask_kwargs : dict, default=None
-        arguments passed to the subnetwork mask on initialization.
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('subnetwork', 'full')
 
-    def __init__(self, model, likelihood, subnetwork_mask, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None, subnetmask_kwargs=None):
+    def __init__(self, model, likelihood, subnetwork_indices=None, sigma_noise=1., prior_precision=1.,
+                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_precision,
                          prior_mean=prior_mean, temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
-        self._subnetmask_kwargs = dict() if subnetmask_kwargs is None else subnetmask_kwargs
-        if subnetwork_mask == LargestVarianceDiagLaplaceSubnetMask:
-            # instantiate and pass diagonal Laplace model for largest variance subnetwork selection
-            self._subnetmask_kwargs.update(diag_laplace_model=DiagLaplace(self.model, likelihood, sigma_noise,
-                prior_precision, prior_mean, temperature, backend, backend_kwargs))
-        self._subnetwork_mask = subnetwork_mask(self.model, **self._subnetmask_kwargs)
-        self.n_params_subnet = None
+        # check validity of subnetwork indices and pass them to backend
+        self._check_subnetwork_indices(subnetwork_indices)
+        self.backend.subnetwork_indices = subnetwork_indices
+        self.n_params_subnet = len(subnetwork_indices)
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params_subnet, self.n_params_subnet, device=self._device)
+
+    def _check_subnetwork_indices(self, subnetwork_indices):
+        """Check that subnetwork indices are valid indices of the vectorized model parameters.
+        """
+        if subnetwork_indices is None:
+            raise ValueError('Subnetwork indices cannot be None.')
+        elif not (isinstance(subnetwork_indices, torch.Tensor) and len(subnetwork_indices.shape) == 1 and\
+            subnetwork_indices.dtype in [torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8]):
+            raise ValueError('Subnetwork indices need to be 1-dimensional integral torch.Tensor!')
+        elif not (len(subnetwork_indices[subnetwork_indices < 0]) == 0 and\
+            len(subnetwork_indices[subnetwork_indices >= self.n_params]) == 0):
+            raise ValueError(f'Subnetwork indices must lie between 0 and n_params={self.n_params}.')
+        elif not (subnetwork_indices.sort()[0].equal(torch.unique(subnetwork_indices, sorted=True))):
+            raise ValueError('Subnetwork indices must be unique.')
 
     @property
     def prior_precision_diag(self):
@@ -107,31 +115,13 @@ class SubnetLaplace(FullLaplace):
         else:
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
 
-    def fit(self, train_loader):
-        """Fit the local Laplace approximation at the parameters of the subnetwork.
-
-        Parameters
-        ----------
-        train_loader : torch.data.utils.DataLoader
-            each iterate is a training batch (X, y);
-            `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
-        """
-
-        # select subnetwork and pass it to backend
-        self._subnetwork_mask.select(train_loader)
-        self.backend.subnetwork_indices = self._subnetwork_mask.indices
-        self.n_params_subnet = self._subnetwork_mask.n_params_subnet
-
-        # fit Laplace approximation over subnetwork
-        super().fit(train_loader)
-
     def sample(self, n_samples=100):
         # sample parameters just of the subnetwork
-        subnet_mean = self.mean[self._subnetwork_mask.indices]
+        subnet_mean = self.mean[self.backend.subnetwork_indices]
         dist = MultivariateNormal(loc=subnet_mean, scale_tril=self.posterior_scale)
         subnet_samples = dist.sample((n_samples,))
 
         # set all other parameters to their MAP estimates
         full_samples = self.mean.repeat(n_samples, 1)
-        full_samples[:, self._subnetwork_mask.indices] = subnet_samples
+        full_samples[:, self.backend.subnetwork_indices] = subnet_samples
         return full_samples
