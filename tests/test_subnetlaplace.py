@@ -66,6 +66,90 @@ def test_subnet_laplace_init(model, likelihood):
         lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetmask.indices, hessian_structure=hessian_structure)
 
 
+@pytest.mark.parametrize('likelihood', likelihoods)
+def test_custom_subnetwork_indices(model, likelihood, class_loader, reg_loader):
+    loader = class_loader if likelihood == 'classification' else reg_loader
+
+    # subnetwork indices that are None should raise an error
+    subnetwork_indices = None
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are not PyTorch tensors should raise an error
+    subnetwork_indices = [0, 5, 11, 42]
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are empty tensors should raise an error
+    subnetwork_indices = torch.LongTensor([])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are not 1D PyTorch tensors should raise an error
+    subnetwork_indices = torch.LongTensor([[0, 5], [11, 42]])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are double tensors should raise an error
+    subnetwork_indices = torch.DoubleTensor([0.0, 5.0, 11.0, 42.0])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are float tensors should raise an error
+    subnetwork_indices = torch.FloatTensor([0.0, 5.0, 11.0, 42.0])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are half tensors should raise an error
+    subnetwork_indices = torch.HalfTensor([0.0, 5.0, 11.0, 42.0])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are int tensors should raise an error
+    subnetwork_indices = torch.IntTensor([0, 5, 11, 42])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are short tensors should raise an error
+    subnetwork_indices = torch.ShortTensor([0, 5, 11, 42])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are char tensors should raise an error
+    subnetwork_indices = torch.CharTensor([0, 5, 11, 42])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that are bool tensors should raise an error
+    subnetwork_indices = torch.BoolTensor([0, 5, 11, 42])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that contain elements smaller than zero should raise an error
+    subnetwork_indices = torch.LongTensor([0, -1, -11])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that contain elements larger than n_params should raise an error
+    subnetwork_indices = torch.LongTensor([model.n_params + 1, model.n_params + 42])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # subnetwork indices that contain duplicate entries should raise an error
+    subnetwork_indices = torch.LongTensor([0, 0, 5, 11, 11, 42])
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
+    # Non-empty, 1-dimensional torch.LongTensor with valid entries should work
+    subnetwork_indices = torch.LongTensor([0, 5, 11, 42])
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+    lap.fit(loader)
+    assert isinstance(lap, SubnetLaplace)
+    assert lap.n_params_subnet == 4
+    assert lap.H.shape == (4, 4)
+    assert lap.backend.subnetwork_indices.equal(subnetwork_indices)
+
+
 @pytest.mark.parametrize('subnetwork_mask,likelihood', product(score_based_subnet_masks, likelihoods))
 def test_score_based_subnet_masks(model, likelihood, subnetwork_mask, class_loader, reg_loader):
     loader = class_loader if likelihood == 'classification' else reg_loader
