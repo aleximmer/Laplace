@@ -39,7 +39,7 @@ pytest tests/
 ## Structure
 The laplace package consists of two main components:
 
-1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'` and `'diag'`). This results in _eight_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`,  and `laplace.DiagLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), `laplace.SubnetLaplace` (which only supports a `'full'` Hessian approximation) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
+1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'` and `'diag'`). This results in _eight_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`,  and `laplace.DiagLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), [`laplace.SubnetLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py) (which only supports a `'full'` Hessian approximation) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
 2. The backends in [`laplace.curvature`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/) which provide access to Hessian approximations of
 the corresponding sparsity structures, for example, the diagonal GGN.
 
@@ -48,7 +48,7 @@ decomposing a neural network into feature extractor and last layer for `LLLaplac
 and
 effectively dealing with Kronecker factors ([`laplace.utils.matrix`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/matrix.py)).
 
-Finally, the package implements several options to select/specify a subnetwork for `laplace.SubnetLaplace` (as subclasses of [`laplace.utils.subnetmask.SubnetMask`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/subnetmask.py).
+Finally, the package implements several options to select/specify a subnetwork for `SubnetLaplace` (as subclasses of [`laplace.utils.subnetmask.SubnetMask`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/subnetmask.py)).
 Automatic subnetwork selection strategies include: uniformly at random (`laplace.utils.subnetmask.RandomSubnetMask`), by largest parameter magnitudes (`LargestMagnitudeSubnetMask`), and by largest marginal parameter variances (`LargestVarianceDiagLaplaceSubnetMask` and `LargestVarianceSWAGSubnetMask`).
 In addition to that, subnetworks can also be specified manually, by listing the names of either the model parameters (`ParamNameSubnetMask`) or modules (`ModuleNameSubnetMask`) to perform Laplace inference over.
 
@@ -78,7 +78,7 @@ the `'probit'` predictive for classification.
 ```python
 from laplace import Laplace
 
-# pre-trained model
+# Pre-trained model
 model = load_map_model()  
 
 # User-specified LA flavor
@@ -94,7 +94,7 @@ pred = la(x, link_approx='probit')
 
 ### Differentiating the log marginal likelihood w.r.t. hyperparameters
 
-The marginal likelihood can be used for model selection and is differentiable
+The marginal likelihood can be used for model selection [10] and is differentiable
 for continuous hyperparameters like the prior precision or observation noise.
 Here, we fit the library default, KFAC last-layer LA and differentiate
 the log marginal likelihood.
@@ -112,6 +112,45 @@ la.fit(train_loader)
 # ML w.r.t. prior precision and observation noise
 ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
+```
+
+### Applying the LA over only a subset of the model parameters
+
+This example shows how to fit the Laplace approximation over only
+a subnetwork within a neural network (while keeping all other parameters
+fixed at their MAP estimates), as proposed in [11]. It also exemplifies
+different ways to specify the subnetwork to perform inference over.
+
+```python
+from laplace import Laplace
+
+# Pre-trained model
+model = load_model()
+
+# Examples of different ways to specify the subnetwork
+# via indices of the vectorized model parameters
+#
+# Example 1: select the 128 parameters with the largest magnitude
+from laplace.utils.subnetmask import LargestMagnitudeSubnetMask
+subnetwork_mask = LargestMagnitudeSubnetMask(model, n_params_subnet=128)
+subnetwork_indices = subnetwork_mask.select()
+
+# Example 2: specify the layers that define the subnetwork
+from laplace.utils.subnetmask import ModuleNameSubnetMask
+subnetwork_mask = ModuleNameSubnetMask(model, module_names=['layer.1', 'layer.3'])
+subnetwork_mask.select()
+subnetwork_indices = subnetwork_mask.indices
+
+# Example 3: manually define the subnetwork via custom subnetwork indices
+import torch
+subnetwork_indices = torch.tensor([0, 4, 11, 42, 123, 2021])
+
+# Define and fit subnetwork LA using the specified subnetwork indices
+la = Laplace(model, 'classification',
+             subset_of_weights='subnetwork',
+             hessian_structure='full',
+             subnetwork_indices=subnetwork_indices)
+la.fit(train_loader)
 ```
 
 ## Documentation
