@@ -89,6 +89,11 @@ def test_custom_subnetwork_indices(model, likelihood, class_loader, reg_loader):
     with pytest.raises(ValueError):
         lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
 
+    # subnetwork indices that are scalar tensors should raise an error
+    subnetwork_indices = torch.LongTensor(11)
+    with pytest.raises(ValueError):
+        lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork', subnetwork_indices=subnetwork_indices, hessian_structure='full')
+
     # subnetwork indices that are not 1D PyTorch tensors should raise an error
     subnetwork_indices = torch.LongTensor([[0, 5], [11, 42]])
     with pytest.raises(ValueError):
