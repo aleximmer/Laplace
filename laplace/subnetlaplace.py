@@ -48,8 +48,9 @@ class SubnetLaplace(FullLaplace):
     likelihood : {'classification', 'regression'}
         determines the log likelihood Hessian approximation
     subnetwork_indices : torch.LongTensor
-        indices of the vectorized model parameters that define the subnetwork
-        to apply the Laplace approximation over
+        indices of the vectorized model parameters
+        (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
+        that define the subnetwork to apply the Laplace approximation over
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification
     prior_precision : torch.Tensor or float, default=1
@@ -84,18 +85,19 @@ class SubnetLaplace(FullLaplace):
         self.H = torch.zeros(self.n_params_subnet, self.n_params_subnet, device=self._device)
 
     def _check_subnetwork_indices(self, subnetwork_indices):
-        """Check that subnetwork indices are valid indices of the vectorized model parameters.
+        """Check that subnetwork indices are valid indices of the vectorized model parameters
+           (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`).
         """
         if subnetwork_indices is None:
             raise ValueError('Subnetwork indices cannot be None.')
-        elif not (isinstance(subnetwork_indices, torch.Tensor) and subnetwork_indices.numel() > 0\
-            and len(subnetwork_indices.shape) == 1 and subnetwork_indices.dtype == torch.int64):
+        elif not (isinstance(subnetwork_indices, torch.LongTensor) and\
+            subnetwork_indices.numel() > 0 and len(subnetwork_indices.shape) == 1):
             raise ValueError('Subnetwork indices must be non-empty, 1-dimensional torch.LongTensor.')
         elif not (len(subnetwork_indices[subnetwork_indices < 0]) == 0 and\
             len(subnetwork_indices[subnetwork_indices >= self.n_params]) == 0):
             raise ValueError(f'Subnetwork indices must lie between 0 and n_params={self.n_params}.')
         elif not (subnetwork_indices.sort()[0].equal(torch.unique(subnetwork_indices, sorted=True))):
-            raise ValueError('Subnetwork indices must be unique.')
+            raise ValueError('Subnetwork indices must not contain duplicate entries.')
 
     @property
     def prior_precision_diag(self):
