@@ -49,11 +49,14 @@ class SubnetMask:
         subnet_mask : torch.Tensor
             a binary vector of size (n_params) where 1s locate the subnetwork parameters
             within the vectorized model parameters
+            (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
 
         Returns
         -------
-        subnet_mask_indices : torch.Tensor
-            a vector of indices of the vectorized model parameters that define the subnetwork
+        subnet_mask_indices : torch.LongTensor
+            a vector of indices of the vectorized model parameters
+            (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
+            that define the subnetwork
         """
         if not isinstance(subnet_mask, torch.Tensor):
             raise ValueError('Subnetwork mask needs to be torch.Tensor!')
@@ -63,7 +66,8 @@ class SubnetMask:
         elif len(subnet_mask) != self._n_params or\
                 len(subnet_mask[subnet_mask == 0]) + len(subnet_mask[subnet_mask == 1]) != self._n_params:
             raise ValueError('Subnetwork mask needs to be a binary vector of size (n_params) where 1s'\
-                             'locate the subnetwork parameters within the vectorized model parameters!')
+                             'locate the subnetwork parameters within the vectorized model parameters'\
+                             '(i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)!')
 
         subnet_mask_indices = subnet_mask.nonzero(as_tuple=True)[0]
         return subnet_mask_indices
@@ -76,12 +80,20 @@ class SubnetMask:
         train_loader : torch.data.utils.DataLoader, default=None
             each iterate is a training batch (X, y);
             `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+
+        Returns
+        -------
+        subnet_mask_indices : torch.LongTensor
+            a vector of indices of the vectorized model parameters
+            (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
+            that define the subnetwork
         """
         if self._indices is not None:
             raise ValueError('Subnetwork mask already selected.')
 
         subnet_mask = self.get_subnet_mask(train_loader)
         self._indices = self.convert_subnet_mask_to_indices(subnet_mask)
+        return self._indices
 
     def get_subnet_mask(self, train_loader):
         """ Get the subnetwork mask.
@@ -97,6 +109,7 @@ class SubnetMask:
         subnet_mask: torch.Tensor
             a binary vector of size (n_params) where 1s locate the subnetwork parameters
             within the vectorized model parameters
+            (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
         """
         raise NotImplementedError
 
