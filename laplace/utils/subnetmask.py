@@ -7,8 +7,9 @@ from torch.nn.utils import parameters_to_vector
 from laplace.utils import FeatureExtractor, fit_diagonal_swag
 
 
-__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LargestVarianceDiagLaplaceSubnetMask',
-           'LargestVarianceSWAGSubnetMask', 'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask']
+__all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask',
+           'LargestVarianceDiagLaplaceSubnetMask', 'LargestVarianceSWAGSubnetMask',
+           'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask']
 
 
 class SubnetMask:
