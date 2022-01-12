@@ -11,7 +11,8 @@ def _param_vector(model):
     return parameters_to_vector(model.parameters()).detach()
 
 
-def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1, lr=0.01, momentum=0.9, weight_decay=3e-4, min_var=1e-30):
+def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1,
+                          lr=0.01, momentum=0.9, weight_decay=3e-4, min_var=1e-30):
     """
     Fit diagonal SWAG [1], which estimates marginal variances of model parameters by
     computing the first and second moment of SGD iterates with a large learning rate.
@@ -63,7 +64,8 @@ def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, 
     n_snapshots = 0
 
     # run SGD to collect model snapshots
-    optimizer = torch.optim.SGD(_model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+    optimizer = torch.optim.SGD(
+        _model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
     n_epochs = snapshot_freq * n_snapshots_total
     for epoch in range(n_epochs):
         for inputs, targets in train_loader:
@@ -75,8 +77,9 @@ def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, 
 
         if epoch % snapshot_freq == 0:
             # update running estimates of first and second moment of model parameters
-            mean = mean * n_snapshots / (n_snapshots + 1) + _param_vector(_model) / (n_snapshots + 1)
-            sq_mean = sq_mean * n_snapshots / (n_snapshots + 1) + _param_vector(_model) ** 2 / (n_snapshots + 1)
+            old_fac, new_fac = n_snapshots / (n_snapshots + 1), 1 / (n_snapshots + 1)
+            mean = mean * old_fac + _param_vector(_model) * new_fac
+            sq_mean = sq_mean * old_fac + _param_vector(_model) ** 2 * new_fac
             n_snapshots += 1
 
     # compute marginal parameter variances, Var[P] = E[P^2] - E[P]^2

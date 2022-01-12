@@ -73,9 +73,9 @@ class SubnetLaplace(FullLaplace):
     def __init__(self, model, likelihood, subnetwork_indices, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
         self.H = None
-        super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=prior_precision,
-                         prior_mean=prior_mean, temperature=temperature, backend=backend,
-                         backend_kwargs=backend_kwargs)
+        super().__init__(model, likelihood, sigma_noise=sigma_noise,
+                         prior_precision=prior_precision, prior_mean=prior_mean,
+                         temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
         # check validity of subnetwork indices and pass them to backend
         self._check_subnetwork_indices(subnetwork_indices)
         self.backend.subnetwork_indices = subnetwork_indices
@@ -90,10 +90,10 @@ class SubnetLaplace(FullLaplace):
         """
         if subnetwork_indices is None:
             raise ValueError('Subnetwork indices cannot be None.')
-        elif not (isinstance(subnetwork_indices, torch.LongTensor) and\
+        elif not (isinstance(subnetwork_indices, torch.LongTensor) and
             subnetwork_indices.numel() > 0 and len(subnetwork_indices.shape) == 1):
-            raise ValueError('Subnetwork indices must be non-empty, 1-dimensional torch.LongTensor.')
-        elif not (len(subnetwork_indices[subnetwork_indices < 0]) == 0 and\
+            raise ValueError('Subnetwork indices must be non-empty 1-dimensional torch.LongTensor.')
+        elif not (len(subnetwork_indices[subnetwork_indices < 0]) == 0 and
             len(subnetwork_indices[subnetwork_indices >= self.n_params]) == 0):
             raise ValueError(f'Subnetwork indices must lie between 0 and n_params={self.n_params}.')
         elif not (len(subnetwork_indices.unique()) == len(subnetwork_indices)):

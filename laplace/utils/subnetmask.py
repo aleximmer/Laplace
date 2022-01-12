@@ -62,13 +62,15 @@ class SubnetMask:
         """
         if not isinstance(subnet_mask, torch.Tensor):
             raise ValueError('Subnetwork mask needs to be torch.Tensor!')
-        elif subnet_mask.dtype not in [torch.int64, torch.int32, torch.int16, torch.int8, torch.uint8, torch.bool] or\
-                len(subnet_mask.shape) != 1:
-                raise ValueError('Subnetwork mask needs to be 1-dimensional integral or boolean tensor!')
-        elif len(subnet_mask) != self._n_params or\
-                len(subnet_mask[subnet_mask == 0]) + len(subnet_mask[subnet_mask == 1]) != self._n_params:
-            raise ValueError('Subnetwork mask needs to be a binary vector of size (n_params) where 1s'\
-                             'locate the subnetwork parameters within the vectorized model parameters'\
+        elif subnet_mask.dtype not in [torch.int64, torch.int32, torch.int16, torch.int8,
+            torch.uint8, torch.bool] or len(subnet_mask.shape) != 1:
+            raise ValueError(
+                'Subnetwork mask needs to be 1-dimensional integral or boolean tensor!')
+        elif (len(subnet_mask) != self._n_params or len(subnet_mask[subnet_mask == 0])
+            + len(subnet_mask[subnet_mask == 1]) != self._n_params):
+            raise ValueError('Subnetwork mask needs to be a binary vector of'
+                             'size (n_params) where 1s locate the subnetwork'
+                             'parameters within the vectorized model parameters'
                              '(i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)!')
 
         subnet_mask_indices = subnet_mask.nonzero(as_tuple=True)[0]
@@ -117,7 +119,8 @@ class SubnetMask:
 
 
 class ScoreBasedSubnetMask(SubnetMask):
-    """Baseclass for subnetwork masks defined by selecting the top-scoring parameters according to some criterion.
+    """Baseclass for subnetwork masks defined by selecting
+    the top-scoring parameters according to some criterion.
 
     Parameters
     ----------
@@ -129,9 +132,11 @@ class ScoreBasedSubnetMask(SubnetMask):
         super().__init__(model)
 
         if n_params_subnet is None:
-            raise ValueError(f'Need to pass number of subnetwork parameters when using subnetwork Laplace.')
+            raise ValueError(
+                'Need to pass number of subnetwork parameters when using subnetwork Laplace.')
         if n_params_subnet > self._n_params:
-            raise ValueError(f'Subnetwork ({n_params_subnet}) cannot be larger than model ({self._n_params}).')
+            raise ValueError(
+                f'Subnetwork ({n_params_subnet}) cannot be larger than model ({self._n_params}).')
         self._n_params_subnet = n_params_subnet
         self._param_scores = None
 
@@ -210,7 +215,8 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
     swag_lr : float
         learning rate for SWAG snapshot collection
     """
-    def __init__(self, model, n_params_subnet, likelihood='classification', swag_n_snapshots=40, swag_snapshot_freq=1, swag_lr=0.01):
+    def __init__(self, model, n_params_subnet, likelihood='classification',
+                 swag_n_snapshots=40, swag_snapshot_freq=1, swag_lr=0.01):
         super().__init__(model, n_params_subnet)
         self.likelihood = likelihood
         self.swag_n_snapshots = swag_n_snapshots
@@ -225,7 +231,10 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
             criterion = CrossEntropyLoss(reduction='mean')
         elif self.likelihood == 'regression':
             criterion = MSELoss(reduction='mean')
-        param_variances = fit_diagonal_swag_var(self.model, train_loader, criterion, n_snapshots_total=self.swag_n_snapshots, snapshot_freq=self.swag_snapshot_freq, lr=self.swag_lr)
+        param_variances = fit_diagonal_swag_var(self.model, train_loader, criterion,
+                                                n_snapshots_total=self.swag_n_snapshots,
+                                                snapshot_freq=self.swag_snapshot_freq,
+                                                lr=self.swag_lr)
         return param_variances
 
 
@@ -236,7 +245,8 @@ class ParamNameSubnetMask(SubnetMask):
     ----------
     model : torch.nn.Module
     parameter_names: List[str]
-        list of names of the parameters (as in `model.named_parameters()`) that define the subnetwork
+        list of names of the parameters (as in `model.named_parameters()`)
+        that define the subnetwork
     """
     def __init__(self, model, parameter_names):
         super().__init__(model)
