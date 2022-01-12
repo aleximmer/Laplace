@@ -5,6 +5,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
+from torchvision.models import wide_resnet50_2
 
 from laplace import Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
@@ -27,6 +28,12 @@ def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     model_params = list(model.parameters())
     setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
+def large_model():
+    model = wide_resnet50_2()
     return model
 
 
@@ -76,6 +83,24 @@ def test_subnet_laplace_init(model, likelihood):
     with pytest.raises(ValueError):
         lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork',
                       subnetwork_indices=subnetmask.indices, hessian_structure=hessian_structure)
+
+
+@pytest.mark.parametrize('likelihood', likelihoods)
+def test_subnet_laplace_large_init(large_model, likelihood):
+    # use random subnet mask for this test
+    subnetwork_mask = RandomSubnetMask
+    n_param_subnet = 10
+    subnetmask_kwargs = dict(model=large_model, n_params_subnet=n_param_subnet)
+    subnetmask = subnetwork_mask(**subnetmask_kwargs)
+    subnetmask.select()
+
+    lap = Laplace(large_model, likelihood=likelihood, subset_of_weights='subnetwork',
+                  subnetwork_indices=subnetmask.indices, hessian_structure='full')
+    assert lap.n_params_subnet == n_param_subnet
+    assert lap.H.shape == (lap.n_params_subnet, lap.n_params_subnet)
+    H = lap.H.clone()
+    lap._init_H()
+    assert torch.allclose(H, lap.H)
 
 
 @pytest.mark.parametrize('likelihood', likelihoods)
