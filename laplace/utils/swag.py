@@ -4,7 +4,10 @@ import torch
 from torch.nn.utils import parameters_to_vector
 
 
-def param_vector(model):
+__all__ = ['fit_diagonal_swag']
+
+
+def _param_vector(model):
     return parameters_to_vector(model.parameters()).detach()
 
 
@@ -55,8 +58,8 @@ def fit_diagonal_swag(model, train_loader, criterion, n_snapshots_total=40, snap
     device = next(_model.parameters()).device
 
     # initialize running estimates of first and second moment of model parameters
-    mean = torch.zeros_like(param_vector(_model))
-    sq_mean = torch.zeros_like(param_vector(_model))
+    mean = torch.zeros_like(_param_vector(_model))
+    sq_mean = torch.zeros_like(_param_vector(_model))
     n_snapshots = 0
 
     # run SGD to collect model snapshots
@@ -72,8 +75,8 @@ def fit_diagonal_swag(model, train_loader, criterion, n_snapshots_total=40, snap
 
         if epoch % snapshot_freq == 0:
             # update running estimates of first and second moment of model parameters
-            mean = mean * n_snapshots / (n_snapshots + 1) + param_vector(_model) / (n_snapshots + 1)
-            sq_mean = sq_mean * n_snapshots / (n_snapshots + 1) + param_vector(_model) ** 2 / (n_snapshots + 1)
+            mean = mean * n_snapshots / (n_snapshots + 1) + _param_vector(_model) / (n_snapshots + 1)
+            sq_mean = sq_mean * n_snapshots / (n_snapshots + 1) + _param_vector(_model) ** 2 / (n_snapshots + 1)
             n_snapshots += 1
 
     # compute marginal parameter variances, Var[P] = E[P^2] - E[P]^2
