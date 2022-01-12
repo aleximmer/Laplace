@@ -3,9 +3,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
-from laplace.utils.feature_extractor import FeatureExtractor
-
-from laplace.utils.matrix import Kron
+from laplace.utils import FeatureExtractor, Kron
 from laplace.curvature import BackPackGGN
 
 

@@ -9,7 +9,7 @@ from torch.distributions import Normal, Categorical
 from torchvision.models import wide_resnet50_2
 
 from laplace.lllaplace import FullLLLaplace, KronLLLaplace, DiagLLLaplace
-from laplace.utils.feature_extractor import FeatureExtractor
+from laplace.utils import FeatureExtractor
 from tests.utils import jacobians_naive
 
 

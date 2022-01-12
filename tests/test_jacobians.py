@@ -3,7 +3,7 @@ import torch
 from torch import nn
 
 from laplace.curvature import AsdlInterface, BackPackInterface
-from laplace.utils.feature_extractor import FeatureExtractor
+from laplace.utils import FeatureExtractor
 from tests.utils import jacobians_naive
 
 

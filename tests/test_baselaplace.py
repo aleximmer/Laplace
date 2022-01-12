@@ -12,7 +12,7 @@ from torch.distributions import Normal, Categorical
 from torchvision.models import wide_resnet50_2
 
 from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
-from laplace.utils.matrix import KronDecomposed
+from laplace.utils import KronDecomposed
 from tests.utils import jacobians_naive
 
 

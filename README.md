@@ -131,12 +131,12 @@ model = load_model()
 # via indices of the vectorized model parameters
 #
 # Example 1: select the 128 parameters with the largest magnitude
-from laplace.utils.subnetmask import LargestMagnitudeSubnetMask
+from laplace.utils import LargestMagnitudeSubnetMask
 subnetwork_mask = LargestMagnitudeSubnetMask(model, n_params_subnet=128)
 subnetwork_indices = subnetwork_mask.select()
 
 # Example 2: specify the layers that define the subnetwork
-from laplace.utils.subnetmask import ModuleNameSubnetMask
+from laplace.utils import ModuleNameSubnetMask
 subnetwork_mask = ModuleNameSubnetMask(model, module_names=['layer.1', 'layer.3'])
 subnetwork_mask.select()
 subnetwork_indices = subnetwork_mask.indices

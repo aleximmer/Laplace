@@ -1,5 +1,5 @@
 import torch
-from laplace.utils.utils import invsqrt_precision, diagonal_add_scalar, symeig
+from laplace.utils import invsqrt_precision, diagonal_add_scalar, symeig
 
 
 def test_sqrt_precision():

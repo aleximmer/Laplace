@@ -4,8 +4,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
-from laplace.utils.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
-from laplace.utils.matrix import Kron
+from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, Kron
 from laplace.curvature import BackPackGGN, AsdlHessian
 
 

@@ -3,7 +3,7 @@ import torch
 import numpy as np
 from typing import Union
 
-from laplace.utils.utils import _is_valid_scalar, symeig, kron, block_diag
+from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
 
 
 class Kron:

@@ -9,8 +9,7 @@ from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
 from asdfghjkl.gradient import batch_gradient
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
-from laplace.utils.matrix import Kron
-from laplace.utils.utils import _is_batchnorm
+from laplace.utils import Kron, _is_batchnorm
 
 EPS = 1e-6
 

@@ -1,5 +1,5 @@
 import pytest
-from itertools import product 
+from itertools import product
 
 import torch
 from torch import nn
@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
-from laplace.utils.subnetmask import SubnetMask, RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask, LargestVarianceSWAGSubnetMask, ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask
+from laplace.utils import SubnetMask, RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask, LargestVarianceSWAGSubnetMask, ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask
 
 
 torch.manual_seed(240)
