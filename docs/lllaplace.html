@@ -33,6 +33,103 @@
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
+<dt id="laplace.lllaplace.LLLaplace"><code class="flex name class">
+<span>class <span class="ident">LLLaplace</span></span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, backend_kwargs=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Baseclass for all last-layer Laplace approximations in this library.
+Subclasses specify the structure of the Hessian approximation.
+See <code>BaseLaplace</code> for the full interface.</p>
+<p>A Laplace approximation is represented by a MAP which is given by the
+<code>model</code> parameter and a posterior precision or covariance specifying
+a Gaussian distribution <span><span class="MathJax_Preview">\mathcal{N}(\theta_{MAP}, P^{-1})</span><script type="math/tex">\mathcal{N}(\theta_{MAP}, P^{-1})</script></span>.
+Here, only the parameters of the last layer of the neural network
+are treated probabilistically.
+The goal of this class is to compute the posterior precision <span><span class="MathJax_Preview">P</span><script type="math/tex">P</script></span>
+which sums as
+<span><span class="MathJax_Preview">
+P = \sum_{n=1}^N \nabla^2_\theta \log p(\mathcal{D}_n \mid \theta)
+\vert_{\theta_{MAP}} + \nabla^2_\theta \log p(\theta) \vert_{\theta_{MAP}}.
+</span><script type="math/tex; mode=display">
+P = \sum_{n=1}^N \nabla^2_\theta \log p(\mathcal{D}_n \mid \theta)
+\vert_{\theta_{MAP}} + \nabla^2_\theta \log p(\theta) \vert_{\theta_{MAP}}.
+</script></span>
+Every subclass implements different approximations to the log likelihood Hessians,
+for example, a diagonal one. The prior is assumed to be Gaussian and therefore we have
+a simple form for <span><span class="MathJax_Preview">\nabla^2_\theta \log p(\theta) \vert_{\theta_{MAP}} = P_0 </span><script type="math/tex">\nabla^2_\theta \log p(\theta) \vert_{\theta_{MAP}} = P_0 </script></span>.
+In particular, we assume a scalar or diagonal prior precision so that in
+all cases <span><span class="MathJax_Preview">P_0 = \textrm{diag}(p_0)</span><script type="math/tex">P_0 = \textrm{diag}(p_0)</script></span> and the structure of <span><span class="MathJax_Preview">p_0</span><script type="math/tex">p_0</script></span> can be varied.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code> or <code><a title="laplace.utils.feature_extractor.FeatureExtractor" href="utils/feature_extractor.html#laplace.utils.feature_extractor.FeatureExtractor">FeatureExtractor</a></code></dt>
+<dd>&nbsp;</dd>
+<dt><strong><code>likelihood</code></strong> :&ensp;<code>{'classification', 'regression'}</code></dt>
+<dd>determines the log likelihood Hessian approximation</dd>
+<dt><strong><code>sigma_noise</code></strong> :&ensp;<code>torch.Tensor</code> or <code>float</code>, default=<code>1</code></dt>
+<dd>observation noise for the regression setting; must be 1 for classification</dd>
+<dt><strong><code>prior_precision</code></strong> :&ensp;<code>torch.Tensor</code> or <code>float</code>, default=<code>1</code></dt>
+<dd>prior precision of a Gaussian prior (= weight decay);
+can be scalar, per-layer, or diagonal in the most general case</dd>
+<dt><strong><code>prior_mean</code></strong> :&ensp;<code>torch.Tensor</code> or <code>float</code>, default=<code>0</code></dt>
+<dd>prior mean of a Gaussian prior, useful for continual learning</dd>
+<dt><strong><code>temperature</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
+<dd>temperature of the likelihood; lower temperature leads to more
+concentrated posterior and vice versa.</dd>
+<dt><strong><code>backend</code></strong> :&ensp;<code>subclasses</code> of <code><a title="laplace.curvature.CurvatureInterface" href="curvature/index.html#laplace.curvature.CurvatureInterface">CurvatureInterface</a></code></dt>
+<dd>backend for access to curvature/Hessian approximations</dd>
+<dt><strong><code>last_layer_name</code></strong> :&ensp;<code>str</code>, default=<code>None</code></dt>
+<dd>name of the model's last layer, if None it will be determined automatically</dd>
+<dt><strong><code>backend_kwargs</code></strong> :&ensp;<code>dict</code>, default=<code>None</code></dt>
+<dd>arguments passed to the backend on initialization, for example to
+set the number of MC samples for stochastic approximations.</dd>
+</dl></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></li>
+<li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="laplace.lllaplace.DiagLLLaplace" href="#laplace.lllaplace.DiagLLLaplace">DiagLLLaplace</a></li>
+<li><a title="laplace.lllaplace.FullLLLaplace" href="#laplace.lllaplace.FullLLLaplace">FullLLLaplace</a></li>
+<li><a title="laplace.lllaplace.KronLLLaplace" href="#laplace.lllaplace.KronLLLaplace">KronLLLaplace</a></li>
+</ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="laplace.lllaplace.LLLaplace.prior_precision_diag"><code class="name">var <span class="ident">prior_precision_diag</span></code></dt>
+<dd>
+<div class="desc"><p>Obtain the diagonal prior precision <span><span class="MathJax_Preview">p_0</span><script type="math/tex">p_0</script></span> constructed from either
+a scalar or diagonal prior precision.</p>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>prior_precision_diag</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 <dt id="laplace.lllaplace.FullLLLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLLLaplace</span></span>
 <span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, backend_kwargs=None)</span>
@@ -42,33 +139,39 @@
 and hence posterior precision. Based on the chosen <code>backend</code> parameter, the full
 approximation can be, for example, a generalized Gauss-Newton matrix.
 Mathematically, we have <span><span class="MathJax_Preview">P \in \mathbb{R}^{P \times P}</span><script type="math/tex">P \in \mathbb{R}^{P \times P}</script></span>.
-See <code>FullLaplace</code>, <code>LLLaplace</code>, and <code>BaseLaplace</code> for the full interface.</p></div>
+See <code>FullLaplace</code>, <code><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></code>, and <code>BaseLaplace</code> for the full interface.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li>laplace.lllaplace.LLLaplace</li>
+<li><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></li>
 <li><a title="laplace.baselaplace.FullLaplace" href="baselaplace.html#laplace.baselaplace.FullLaplace">FullLaplace</a></li>
 <li><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></li>
 <li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
+<li><code><b><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.prior_precision_diag" href="#laplace.lllaplace.LLLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
+</ul>
+</li>
 <li><code><b><a title="laplace.baselaplace.FullLaplace" href="baselaplace.html#laplace.baselaplace.FullLaplace">FullLaplace</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.baselaplace.FullLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.posterior_covariance" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_covariance">posterior_covariance</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.posterior_scale" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_scale">posterior_scale</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
 </ul>
 </li>
 </ul>
@@ -82,36 +185,38 @@ See <code>FullLaplace</code>, <code>LLLaplace</code>, and <code>BaseLaplace</cod
 and hence posterior precision.
 Mathematically, we have for the last parameter group, i.e., torch.nn.Linear,
 that \P\approx Q \otimes H.
-See <code>KronLaplace</code>, <code>LLLaplace</code>, and <code>BaseLaplace</code> for the full interface and see
-<code><a title="laplace.matrix.Kron" href="matrix.html#laplace.matrix.Kron">Kron</a></code> and <code><a title="laplace.matrix.KronDecomposed" href="matrix.html#laplace.matrix.KronDecomposed">KronDecomposed</a></code> for the structure of
+See <code>KronLaplace</code>, <code><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></code>, and <code>BaseLaplace</code> for the full interface and see
+<code><a title="laplace.utils.matrix.Kron" href="utils/matrix.html#laplace.utils.matrix.Kron">Kron</a></code> and <code><a title="laplace.utils.matrix.KronDecomposed" href="utils/matrix.html#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code> for the structure of
 the Kronecker factors. <code>Kron</code> is used to aggregate factors by summing up and
 <code>KronDecomposed</code> is used to add the prior, a Hessian factor (e.g. temperature),
 and computing posterior covariances, marginal likelihood, etc.
 Use of <code>damping</code> is possible by initializing or setting <code>damping=True</code>.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li>laplace.lllaplace.LLLaplace</li>
+<li><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></li>
 <li><a title="laplace.baselaplace.KronLaplace" href="baselaplace.html#laplace.baselaplace.KronLaplace">KronLaplace</a></li>
 <li><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></li>
 <li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
-<li><code><b><a title="laplace.baselaplace.KronLaplace" href="baselaplace.html#laplace.baselaplace.KronLaplace">KronLaplace</a></b></code>:
+<li><code><b><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.baselaplace.KronLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.KronLaplace.posterior_precision">posterior_precision</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
-<li><code><a title="laplace.baselaplace.KronLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.prior_precision_diag" href="#laplace.lllaplace.LLLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
 </ul>
 </li>
 </ul>
@@ -124,33 +229,39 @@ Use of <code>damping</code> is possible by initializing or setting <code>damping
 <div class="desc"><p>Last-layer Laplace approximation with diagonal log likelihood Hessian approximation
 and hence posterior precision.
 Mathematically, we have <span><span class="MathJax_Preview">P \approx \textrm{diag}(P)</span><script type="math/tex">P \approx \textrm{diag}(P)</script></span>.
-See <code>DiagLaplace</code>, <code>LLLaplace</code>, and <code>BaseLaplace</code> for the full interface.</p></div>
+See <code>DiagLaplace</code>, <code><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></code>, and <code>BaseLaplace</code> for the full interface.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li>laplace.lllaplace.LLLaplace</li>
+<li><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></li>
 <li><a title="laplace.baselaplace.DiagLaplace" href="baselaplace.html#laplace.baselaplace.DiagLaplace">DiagLaplace</a></li>
 <li><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></li>
 <li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
 </ul>
 <h3>Inherited members</h3>
 <ul class="hlist">
+<li><code><b><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.prior_precision_diag" href="#laplace.lllaplace.LLLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
+</ul>
+</li>
 <li><code><b><a title="laplace.baselaplace.DiagLaplace" href="baselaplace.html#laplace.baselaplace.DiagLaplace">DiagLaplace</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.baselaplace.DiagLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.posterior_scale" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_scale">posterior_scale</a></code></li>
 <li><code><a title="laplace.baselaplace.DiagLaplace.posterior_variance" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_variance">posterior_variance</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
-<li><code><a title="laplace.baselaplace.DiagLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
 </ul>
 </li>
 </ul>
@@ -171,6 +282,9 @@ See <code>DiagLaplace</code>, <code>LLLaplace</code>, and <code>BaseLaplace</cod
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
+<li>
+<h4><code><a title="laplace.lllaplace.LLLaplace" href="#laplace.lllaplace.LLLaplace">LLLaplace</a></code></h4>
+</li>
 <li>
 <h4><code><a title="laplace.lllaplace.FullLLLaplace" href="#laplace.lllaplace.FullLLLaplace">FullLLLaplace</a></code></h4>
 </li>
