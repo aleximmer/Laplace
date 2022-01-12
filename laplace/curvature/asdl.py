@@ -156,8 +156,9 @@ class AsdlHessian(AsdlInterface):
         mask = (eigvals > EPS)
         eigvecs = torch.stack([torch.cat([p.flatten() for p in params])
                                for params in eigvecs], dim=1)[:, mask]
-        eigvals = eigvals[mask].to(eigvecs.dtype).to(eigvecs.device)
-        loss = sum([self.lossfunc(self.model(x).detach(), y) for x, y in data_loader])
+        device = eigvecs.device
+        eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
+        loss = sum([self.lossfunc(self.model(x.to(device)).detach(), y.to(device)) for x, y in data_loader])
         return eigvecs, self.factor * eigvals, self.factor * loss
 
 
