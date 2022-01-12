@@ -4,14 +4,14 @@ import torch
 from torch.nn.utils import parameters_to_vector
 
 
-__all__ = ['fit_diagonal_swag']
+__all__ = ['fit_diagonal_swag_var']
 
 
 def _param_vector(model):
     return parameters_to_vector(model.parameters()).detach()
 
 
-def fit_diagonal_swag(model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1, lr=0.01, momentum=0.9, weight_decay=3e-4, min_var=1e-30):
+def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1, lr=0.01, momentum=0.9, weight_decay=3e-4, min_var=1e-30):
     """
     Fit diagonal SWAG [1], which estimates marginal variances of model parameters by
     computing the first and second moment of SGD iterates with a large learning rate.

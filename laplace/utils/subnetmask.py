@@ -4,7 +4,7 @@ import torch
 from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 
-from laplace.utils import FeatureExtractor, fit_diagonal_swag
+from laplace.utils import FeatureExtractor, fit_diagonal_swag_var
 
 
 __all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask',
@@ -225,7 +225,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
             criterion = CrossEntropyLoss(reduction='mean')
         elif self.likelihood == 'regression':
             criterion = MSELoss(reduction='mean')
-        param_variances = fit_diagonal_swag(self.model, train_loader, criterion, n_snapshots_total=self.swag_n_snapshots, snapshot_freq=self.swag_snapshot_freq, lr=self.swag_lr)
+        param_variances = fit_diagonal_swag_var(self.model, train_loader, criterion, n_snapshots_total=self.swag_n_snapshots, snapshot_freq=self.swag_snapshot_freq, lr=self.swag_lr)
         return param_variances
 
 
