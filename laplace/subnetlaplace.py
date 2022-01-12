@@ -80,6 +80,7 @@ class SubnetLaplace(FullLaplace):
         self._check_subnetwork_indices(subnetwork_indices)
         self.backend.subnetwork_indices = subnetwork_indices
         self.n_params_subnet = len(subnetwork_indices)
+        self._init_H()
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params_subnet, self.n_params_subnet, device=self._device)
