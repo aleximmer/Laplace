@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
-<title>laplace.matrix API documentation</title>
+<title>laplace.utils.matrix API documentation</title>
 <meta name="description" content="" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
@@ -20,7 +20,7 @@
 <main>
 <article id="content">
 <header>
-<h1 class="title">Module <code>laplace.matrix</code></h1>
+<h1 class="title">Module <code>laplace.utils.matrix</code></h1>
 </header>
 <section id="section-intro">
 </section>
@@ -33,7 +33,7 @@
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
-<dt id="laplace.matrix.Kron"><code class="flex name class">
+<dt id="laplace.utils.matrix.Kron"><code class="flex name class">
 <span>class <span class="ident">Kron</span></span>
 <span>(</span><span>kfacs)</span>
 </code></dt>
@@ -51,7 +51,7 @@ or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 </dl></div>
 <h3>Static methods</h3>
 <dl>
-<dt id="laplace.matrix.Kron.init_from_model"><code class="name flex">
+<dt id="laplace.utils.matrix.Kron.init_from_model"><code class="name flex">
 <span>def <span class="ident">init_from_model</span></span>(<span>model, device)</span>
 </code></dt>
 <dd>
@@ -65,18 +65,18 @@ or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
-<dt><strong><code>kron</code></strong> :&ensp;<code><a title="laplace.matrix.Kron" href="#laplace.matrix.Kron">Kron</a></code></dt>
+<dt><strong><code>kron</code></strong> :&ensp;<code><a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></code></dt>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
 </dl>
 <h3>Methods</h3>
 <dl>
-<dt id="laplace.matrix.Kron.decompose"><code class="name flex">
+<dt id="laplace.utils.matrix.Kron.decompose"><code class="name flex">
 <span>def <span class="ident">decompose</span></span>(<span>self, damping=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Eigendecompose Kronecker factors and turn into <code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code>.
+<div class="desc"><p>Eigendecompose Kronecker factors and turn into <code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code>.
 Parameters</p>
 <hr>
 <dl>
@@ -85,11 +85,11 @@ Parameters</p>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
-<dt><strong><code>kron_decomposed</code></strong> :&ensp;<code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code></dt>
+<dt><strong><code>kron_decomposed</code></strong> :&ensp;<code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code></dt>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
-<dt id="laplace.matrix.Kron.bmm"><code class="name flex">
+<dt id="laplace.utils.matrix.Kron.bmm"><code class="name flex">
 <span>def <span class="ident">bmm</span></span>(<span>self, W: torch.Tensor, exponent: float = 1) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
@@ -102,7 +102,7 @@ based on Kronecker factors as in continual learning.</p>
 <dt><strong><code>W</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>matrix <code>(batch, classes, params)</code></dd>
 <dt><strong><code>exponent</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
-<dd>only can be <code>1</code> for Kron, requires <code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code> for other
+<dd>only can be <code>1</code> for Kron, requires <code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code> for other
 exponent values of the Kronecker factors.</dd>
 </dl>
 <h2 id="returns">Returns</h2>
@@ -111,7 +111,7 @@ exponent values of the Kronecker factors.</dd>
 <dd>result <code>(batch, classes, params)</code></dd>
 </dl></div>
 </dd>
-<dt id="laplace.matrix.Kron.logdet"><code class="name flex">
+<dt id="laplace.utils.matrix.Kron.logdet"><code class="name flex">
 <span>def <span class="ident">logdet</span></span>(<span>self) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
@@ -123,7 +123,7 @@ This corresponds to the log determinant of the entire Hessian approximation.</p>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
-<dt id="laplace.matrix.Kron.diag"><code class="name flex">
+<dt id="laplace.utils.matrix.Kron.diag"><code class="name flex">
 <span>def <span class="ident">diag</span></span>(<span>self) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
@@ -134,7 +134,7 @@ This corresponds to the log determinant of the entire Hessian approximation.</p>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
-<dt id="laplace.matrix.Kron.to_matrix"><code class="name flex">
+<dt id="laplace.utils.matrix.Kron.to_matrix"><code class="name flex">
 <span>def <span class="ident">to_matrix</span></span>(<span>self) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
@@ -149,24 +149,24 @@ large amounts of memory for big architectures.</p>
 </dd>
 </dl>
 </dd>
-<dt id="laplace.matrix.KronDecomposed"><code class="flex name class">
+<dt id="laplace.utils.matrix.KronDecomposed"><code class="flex name class">
 <span>class <span class="ident">KronDecomposed</span></span>
 <span>(</span><span>eigenvectors, eigenvalues, deltas=None, damping=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Decomposed Kronecker factored approximate curvature representation
 for a corresponding neural network.
-Each matrix in <code><a title="laplace.matrix.Kron" href="#laplace.matrix.Kron">Kron</a></code> is decomposed to obtain <code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code>.
+Each matrix in <code><a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></code> is decomposed to obtain <code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code>.
 Front-loading decomposition allows cheap repeated computation
 of inverses and log determinants.
-In contrast to <code><a title="laplace.matrix.Kron" href="#laplace.matrix.Kron">Kron</a></code>, we can add scalar or layerwise scalars but
-we cannot add other <code><a title="laplace.matrix.Kron" href="#laplace.matrix.Kron">Kron</a></code> or <code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code> anymore.</p>
+In contrast to <code><a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></code>, we can add scalar or layerwise scalars but
+we cannot add other <code><a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></code> or <code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code> anymore.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>eigenvectors</code></strong> :&ensp;<code>list[Tuple[torch.Tensor]]</code></dt>
-<dd>eigenvectors corresponding to matrices in a corresponding <code><a title="laplace.matrix.Kron" href="#laplace.matrix.Kron">Kron</a></code></dd>
+<dd>eigenvectors corresponding to matrices in a corresponding <code><a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></code></dd>
 <dt><strong><code>eigenvalues</code></strong> :&ensp;<code>list[Tuple[torch.Tensor]]</code></dt>
-<dd>eigenvalues corresponding to matrices in a corresponding <code><a title="laplace.matrix.Kron" href="#laplace.matrix.Kron">Kron</a></code></dd>
+<dd>eigenvalues corresponding to matrices in a corresponding <code><a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></code></dd>
 <dt><strong><code>deltas</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>addend for each group of Kronecker factors representing, for example,
 a prior precision</dd>
@@ -175,19 +175,19 @@ a prior precision</dd>
 </dl></div>
 <h3>Methods</h3>
 <dl>
-<dt id="laplace.matrix.KronDecomposed.detach"><code class="name flex">
+<dt id="laplace.utils.matrix.KronDecomposed.detach"><code class="name flex">
 <span>def <span class="ident">detach</span></span>(<span>self)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt id="laplace.matrix.KronDecomposed.logdet"><code class="name flex">
+<dt id="laplace.utils.matrix.KronDecomposed.logdet"><code class="name flex">
 <span>def <span class="ident">logdet</span></span>(<span>self) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute log determinant of the Kronecker factors and sums them up.
 This corresponds to the log determinant of the entire Hessian approximation.
-In contrast to <code><a title="laplace.matrix.Kron.logdet" href="#laplace.matrix.Kron.logdet">Kron.logdet()</a></code>, additive <code>deltas</code> corresponding to prior
+In contrast to <code><a title="laplace.utils.matrix.Kron.logdet" href="#laplace.utils.matrix.Kron.logdet">Kron.logdet()</a></code>, additive <code>deltas</code> corresponding to prior
 precisions are added.</p>
 <h2 id="returns">Returns</h2>
 <dl>
@@ -195,19 +195,19 @@ precisions are added.</p>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
-<dt id="laplace.matrix.KronDecomposed.inv_square_form"><code class="name flex">
+<dt id="laplace.utils.matrix.KronDecomposed.inv_square_form"><code class="name flex">
 <span>def <span class="ident">inv_square_form</span></span>(<span>self, W: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt id="laplace.matrix.KronDecomposed.bmm"><code class="name flex">
+<dt id="laplace.utils.matrix.KronDecomposed.bmm"><code class="name flex">
 <span>def <span class="ident">bmm</span></span>(<span>self, W: torch.Tensor, exponent: float = -1) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Batched matrix multiplication with the decomposed Kronecker factors.
 This is useful for computing the predictive or a regularization loss.
-Compared to <code><a title="laplace.matrix.Kron.bmm" href="#laplace.matrix.Kron.bmm">Kron.bmm()</a></code>, a prior can be added here in form of <code>deltas</code>
+Compared to <code><a title="laplace.utils.matrix.Kron.bmm" href="#laplace.utils.matrix.Kron.bmm">Kron.bmm()</a></code>, a prior can be added here in form of <code>deltas</code>
 and the exponent can be other than just 1.
 Computes <span><span class="MathJax_Preview">H^{exponent} W</span><script type="math/tex">H^{exponent} W</script></span>.</p>
 <h2 id="parameters">Parameters</h2>
@@ -223,7 +223,7 @@ Computes <span><span class="MathJax_Preview">H^{exponent} W</span><script type="
 <dd>result <code>(batch, classes, params)</code></dd>
 </dl></div>
 </dd>
-<dt id="laplace.matrix.KronDecomposed.to_matrix"><code class="name flex">
+<dt id="laplace.utils.matrix.KronDecomposed.to_matrix"><code class="name flex">
 <span>def <span class="ident">to_matrix</span></span>(<span>self, exponent: float = 1) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
@@ -249,30 +249,30 @@ large amounts of memory for big architectures.</p>
 <ul id="index">
 <li><h3>Super-module</h3>
 <ul>
-<li><code><a title="laplace" href="index.html">laplace</a></code></li>
+<li><code><a title="laplace.utils" href="index.html">laplace.utils</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
 <li>
-<h4><code><a title="laplace.matrix.Kron" href="#laplace.matrix.Kron">Kron</a></code></h4>
+<h4><code><a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></code></h4>
 <ul class="two-column">
-<li><code><a title="laplace.matrix.Kron.init_from_model" href="#laplace.matrix.Kron.init_from_model">init_from_model</a></code></li>
-<li><code><a title="laplace.matrix.Kron.decompose" href="#laplace.matrix.Kron.decompose">decompose</a></code></li>
-<li><code><a title="laplace.matrix.Kron.bmm" href="#laplace.matrix.Kron.bmm">bmm</a></code></li>
-<li><code><a title="laplace.matrix.Kron.logdet" href="#laplace.matrix.Kron.logdet">logdet</a></code></li>
-<li><code><a title="laplace.matrix.Kron.diag" href="#laplace.matrix.Kron.diag">diag</a></code></li>
-<li><code><a title="laplace.matrix.Kron.to_matrix" href="#laplace.matrix.Kron.to_matrix">to_matrix</a></code></li>
+<li><code><a title="laplace.utils.matrix.Kron.init_from_model" href="#laplace.utils.matrix.Kron.init_from_model">init_from_model</a></code></li>
+<li><code><a title="laplace.utils.matrix.Kron.decompose" href="#laplace.utils.matrix.Kron.decompose">decompose</a></code></li>
+<li><code><a title="laplace.utils.matrix.Kron.bmm" href="#laplace.utils.matrix.Kron.bmm">bmm</a></code></li>
+<li><code><a title="laplace.utils.matrix.Kron.logdet" href="#laplace.utils.matrix.Kron.logdet">logdet</a></code></li>
+<li><code><a title="laplace.utils.matrix.Kron.diag" href="#laplace.utils.matrix.Kron.diag">diag</a></code></li>
+<li><code><a title="laplace.utils.matrix.Kron.to_matrix" href="#laplace.utils.matrix.Kron.to_matrix">to_matrix</a></code></li>
 </ul>
 </li>
 <li>
-<h4><code><a title="laplace.matrix.KronDecomposed" href="#laplace.matrix.KronDecomposed">KronDecomposed</a></code></h4>
+<h4><code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code></h4>
 <ul class="">
-<li><code><a title="laplace.matrix.KronDecomposed.detach" href="#laplace.matrix.KronDecomposed.detach">detach</a></code></li>
-<li><code><a title="laplace.matrix.KronDecomposed.logdet" href="#laplace.matrix.KronDecomposed.logdet">logdet</a></code></li>
-<li><code><a title="laplace.matrix.KronDecomposed.inv_square_form" href="#laplace.matrix.KronDecomposed.inv_square_form">inv_square_form</a></code></li>
-<li><code><a title="laplace.matrix.KronDecomposed.bmm" href="#laplace.matrix.KronDecomposed.bmm">bmm</a></code></li>
-<li><code><a title="laplace.matrix.KronDecomposed.to_matrix" href="#laplace.matrix.KronDecomposed.to_matrix">to_matrix</a></code></li>
+<li><code><a title="laplace.utils.matrix.KronDecomposed.detach" href="#laplace.utils.matrix.KronDecomposed.detach">detach</a></code></li>
+<li><code><a title="laplace.utils.matrix.KronDecomposed.logdet" href="#laplace.utils.matrix.KronDecomposed.logdet">logdet</a></code></li>
+<li><code><a title="laplace.utils.matrix.KronDecomposed.inv_square_form" href="#laplace.utils.matrix.KronDecomposed.inv_square_form">inv_square_form</a></code></li>
+<li><code><a title="laplace.utils.matrix.KronDecomposed.bmm" href="#laplace.utils.matrix.KronDecomposed.bmm">bmm</a></code></li>
+<li><code><a title="laplace.utils.matrix.KronDecomposed.to_matrix" href="#laplace.utils.matrix.KronDecomposed.to_matrix">to_matrix</a></code></li>
 </ul>
 </li>
 </ul>

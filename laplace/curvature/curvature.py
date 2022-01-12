@@ -11,11 +11,14 @@ class CurvatureInterface:
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
         only consider curvature of last layer
+    subnetwork_indices : torch.Tensor, default=None
+        indices of the vectorized model parameters that define the subnetwork
+        to apply the Laplace approximation over
 
     Attributes
     ----------
@@ -24,11 +27,12 @@ class CurvatureInterface:
         conversion factor between torch losses and base likelihoods
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
-    def __init__(self, model, likelihood, last_layer=False):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
         assert likelihood in ['regression', 'classification']
         self.likelihood = likelihood
         self.model = model
         self.last_layer = last_layer
+        self.subnetwork_indices = subnetwork_indices
         if likelihood == 'regression':
             self.lossfunc = MSELoss(reduction='sum')
             self.factor = 0.5
@@ -40,13 +44,11 @@ class CurvatureInterface:
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
-    @staticmethod
-    def jacobians(model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -59,14 +61,12 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
-    @staticmethod
-    def last_layer_jacobians(model, x):
+    def last_layer_jacobians(self, x):
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\) 
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
         Parameters
         ----------
-        model : laplace.feature_extractor.FeatureExtractor
         x : torch.Tensor
 
         Returns
@@ -76,7 +76,7 @@ class CurvatureInterface:
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        f, phi = model.forward_with_features(x)
+        f, phi = self.model.forward_with_features(x)
         bsize = phi.shape[0]
         output_size = f.shape[-1]
 
@@ -84,7 +84,7 @@ class CurvatureInterface:
         identity = torch.eye(output_size, device=x.device).unsqueeze(0).tile(bsize, 1, 1)
         # Jacobians are batch x output x params
         Js = torch.einsum('kp,kij->kijp', phi, identity).reshape(bsize, output_size, -1)
-        if model.last_layer.bias is not None:
+        if self.model.last_layer.bias is not None:
             Js = torch.cat([Js, identity], dim=2)
 
         return Js, f.detach()
@@ -143,7 +143,7 @@ class CurvatureInterface:
         Returns
         -------
         loss : torch.Tensor
-        H : `laplace.matrix.Kron`
+        H : `laplace.utils.matrix.Kron`
             Kronecker factored Hessian approximation.
         """
         raise NotImplementedError
@@ -175,17 +175,20 @@ class GGNInterface(CurvatureInterface):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
         only consider curvature of last layer
+    subnetwork_indices : torch.Tensor, default=None
+        indices of the vectorized model parameters that define the subnetwork
+        to apply the Laplace approximation over
     stochastic : bool, default=False
         Fisher if stochastic else GGN
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
         self.stochastic = stochastic
-        super().__init__(model, likelihood, last_layer)
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
     def _get_full_ggn(self, Js, f, y):
         """Compute full GGN from Jacobians.
@@ -237,9 +240,9 @@ class GGNInterface(CurvatureInterface):
             raise ValueError('Stochastic approximation not implemented for full GGN.')
 
         if self.last_layer:
-            Js, f = self.last_layer_jacobians(self.model, x)
+            Js, f = self.last_layer_jacobians(x)
         else:
-            Js, f = self.jacobians(self.model, x)
+            Js, f = self.jacobians(x)
         loss, H_ggn = self._get_full_ggn(Js, f, y)
 
         return loss, H_ggn
@@ -251,11 +254,14 @@ class EFInterface(CurvatureInterface):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
         only consider curvature of last layer
+    subnetwork_indices : torch.Tensor, default=None
+        indices of the vectorized model parameters that define the subnetwork
+        to apply the Laplace approximation over
 
     Attributes
     ----------

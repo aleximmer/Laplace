@@ -9,8 +9,7 @@ from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
 from asdfghjkl.gradient import batch_gradient
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
-from laplace.matrix import Kron
-from laplace.utils import _is_batchnorm
+from laplace.utils import Kron, _is_batchnorm
 
 EPS = 1e-6
 
@@ -19,14 +18,12 @@ class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
 
-    @staticmethod
-    def jacobians(model, x):
+    def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.
 
         Parameters
         ----------
-        model : torch.nn.Module
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
 
@@ -38,12 +35,15 @@ class AsdlInterface(CurvatureInterface):
             output function `(batch, outputs)`
         """
         Js = list()
-        for i in range(model.output_size):
+        for i in range(self.model.output_size):
             def loss_fn(outputs, targets):
                 return outputs[:, i].sum()
 
-            f = batch_gradient(model, loss_fn, x, None).detach()
-            Js.append(_get_batch_grad(model))
+            f = batch_gradient(self.model, loss_fn, x, None).detach()
+            Jk = _get_batch_grad(self.model)
+            if self.subnetwork_indices is not None:
+                Jk = Jk[:, self.subnetwork_indices]
+            Js.append(Jk)
         Js = torch.stack(Js, dim=1)
         return Js, f
 
@@ -65,6 +65,8 @@ class AsdlInterface(CurvatureInterface):
         """
         f = batch_gradient(self.model, self.lossfunc, x, y).detach()
         Gs = _get_batch_grad(self._model)
+        if self.subnetwork_indices is not None:
+            Gs = Gs[:, self.subnetwork_indices]
         loss = self.lossfunc(f, y)
         return Gs, loss
 
@@ -163,10 +165,10 @@ class AsdlHessian(AsdlInterface):
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, stochastic=False):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
         if likelihood != 'classification':
             raise ValueError('This backend only supports classification currently.')
-        super().__init__(model, likelihood, last_layer)
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
         self.stochastic = stochastic
 
     @property

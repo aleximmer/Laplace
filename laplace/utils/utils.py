@@ -8,6 +8,10 @@ from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 
 
+__all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
+           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision']
+
+
 def get_nll(out_dist, targets):
     return F.nll_loss(torch.log(out_dist), targets)
 

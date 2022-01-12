@@ -4,8 +4,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
-from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate
-from laplace.matrix import Kron
+from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, Kron
 from laplace.curvature import BackPackGGN, AsdlHessian
 
 
@@ -594,7 +593,7 @@ class ParametricLaplace(BaseLaplace):
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X):
-        Js, f_mu = self.backend.jacobians(self.model, X)
+        Js, f_mu = self.backend.jacobians(X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
@@ -754,7 +753,7 @@ class KronLaplace(ParametricLaplace):
     Mathematically, we have for each parameter group, e.g., torch.nn.Module,
     that \\P\\approx Q \\otimes H\\.
     See `BaseLaplace` for the full interface and see
-    `laplace.matrix.Kron` and `laplace.matrix.KronDecomposed` for the structure of
+    `laplace.utils.matrix.Kron` and `laplace.utils.matrix.KronDecomposed` for the structure of
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
@@ -812,7 +811,7 @@ class KronLaplace(ParametricLaplace):
 
         Returns
         -------
-        precision : `laplace.matrix.KronDecomposed`
+        precision : `laplace.utils.matrix.KronDecomposed`
         """
         self._check_H_init()
         return self.H * self._H_factor + self.prior_precision
