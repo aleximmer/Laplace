@@ -96,7 +96,7 @@ class SubnetLaplace(FullLaplace):
         elif not (len(subnetwork_indices[subnetwork_indices < 0]) == 0 and\
             len(subnetwork_indices[subnetwork_indices >= self.n_params]) == 0):
             raise ValueError(f'Subnetwork indices must lie between 0 and n_params={self.n_params}.')
-        elif not (subnetwork_indices.sort()[0].equal(torch.unique(subnetwork_indices, sorted=True))):
+        elif not (len(subnetwork_indices.unique()) == len(subnetwork_indices)):
             raise ValueError('Subnetwork indices must not contain duplicate entries.')
 
     @property
