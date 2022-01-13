@@ -103,7 +103,7 @@ class BaseLaplace(ABC):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader, only_diff_last=None):
+    def fit(self, train_loader, only_diff_last=None, diff_on_cpu=False):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -115,6 +115,8 @@ class BaseLaplace(ABC):
             in case this variable is an integer, the H and loss are only differentiable w.r.t.
             the 'only_diff_last' batches. All batches before this number are detached from the
             computational graph, resulting in a cheaper (unbiased) stochastic gradient estimate.
+        diff_on_cpu : (bool)
+            perform computation of differentiated batches on cpu. Typically used to save GPU memory.
         """
         if self.H is not None:
             raise ValueError('Already fit.')
@@ -134,7 +136,26 @@ class BaseLaplace(ABC):
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
             detach_batch = (only_diff_last is not None) and (batch_i + only_diff_last < N_batches)
-            X = X.detach() if detach_batch else X
+
+            print(detach_batch)
+
+            if diff_on_cpu:
+                if detach_batch:
+                    print('detach')
+                    X = X.detach()
+                else:
+                    print('diffing on cpu')
+                    X = X.cpu()
+                    y = y.cpu()
+
+                    self.loss = self.loss.cpu()
+                    self.H = self.H.cpu()
+
+                    self.model.cpu()
+            else:
+                X = X.detach() if detach_batch else X
+
+            print('curv')
             loss_batch, H_batch = self._curv_closure(X, y, N)
 
             if detach_batch:
@@ -143,6 +164,10 @@ class BaseLaplace(ABC):
             else:
                 self.loss += loss_batch
                 self.H += H_batch
+
+            # if diff_on_cpu:
+            #     print('model ', self._device)
+            #     self.model.to(self._device)
 
         self.n_data = N
 
@@ -441,14 +466,14 @@ class BaseLaplace(ABC):
         prior_precision_diag : torch.Tensor
         """
         if len(self.prior_precision) == 1:  # scalar
-            return self.prior_precision * torch.ones_like(self.mean, device=self._device)
+            return self.prior_precision * torch.ones_like(self.mean, device=self.prior_precision.device)
 
         elif len(self.prior_precision) == self.n_params:  # diagonal
             return self.prior_precision
 
         elif len(self.prior_precision) == self.n_layers:  # per layer
             n_params_per_layer = parameters_per_layer(self.model)
-            return torch.cat([prior * torch.ones(n_params, device=self._device) for prior, n_params
+            return torch.cat([prior * torch.ones(n_params, device=self.prior_precision.device) for prior, n_params
                               in zip(self.prior_precision, n_params_per_layer)])
 
         else:
@@ -722,8 +747,8 @@ class KronLaplace(BaseLaplace):
     def _curv_closure(self, X, y, N):
         return self.backend.kron(X, y, N=N)
 
-    def fit(self, train_loader, only_diff_last=None, keep_factors=False):
-        super().fit(train_loader, only_diff_last=only_diff_last)
+    def fit(self, train_loader, only_diff_last=None, diff_on_cpu=False, keep_factors=False):
+        super().fit(train_loader, only_diff_last=only_diff_last, diff_on_cpu=diff_on_cpu)
         # Kron requires postprocessing as all quantities depend on the decomposition.
         if keep_factors:
             self.H_facs = self.H

@@ -250,6 +250,13 @@ class Kron:
 
         return Kron([[Hi.detach() for Hi in F] for F in self.kfacs])
 
+    def cpu(self):
+        """ Returns a new Kron object on cpu. """
+
+        return Kron([[Hi.cpu() for Hi in F] for F in self.kfacs])
+
+
+
     # for commutative operations
     __radd__ = __add__
     __rmul__ = __mul__
