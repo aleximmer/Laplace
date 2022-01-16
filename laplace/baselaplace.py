@@ -137,14 +137,11 @@ class BaseLaplace(ABC):
             X, y = X.to(self._device), y.to(self._device)
             detach_batch = (only_diff_last is not None) and (batch_i + only_diff_last < N_batches)
 
-            print(detach_batch)
-
             if diff_on_cpu:
+                # if detached, don't move to cpu
                 if detach_batch:
-                    print('detach')
                     X = X.detach()
                 else:
-                    print('diffing on cpu')
                     X = X.cpu()
                     y = y.cpu()
 
@@ -155,7 +152,6 @@ class BaseLaplace(ABC):
             else:
                 X = X.detach() if detach_batch else X
 
-            print('curv')
             loss_batch, H_batch = self._curv_closure(X, y, N)
 
             if detach_batch:
@@ -164,10 +160,6 @@ class BaseLaplace(ABC):
             else:
                 self.loss += loss_batch
                 self.H += H_batch
-
-            # if diff_on_cpu:
-            #     print('model ', self._device)
-            #     self.model.to(self._device)
 
         self.n_data = N
 
