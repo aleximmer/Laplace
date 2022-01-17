@@ -141,7 +141,7 @@ def symeig(M):
         M = M + torch.eye(M.shape[0]).to(M.device)
         try:
             L, W = torch.linalg.eigh(M, UPLO='U')
-            L -= 1.
+            L = L - 1
         except RuntimeError:
             stats = f'diag: {M.diagonal()}, max: {M.abs().max()}, '
             stats = stats + f'min: {M.abs().min()}, mean: {M.abs().mean()}'
