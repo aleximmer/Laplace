@@ -72,6 +72,24 @@ class Kron:
                  for Fi, Fj in zip(self.kfacs, other.kfacs)]
         return Kron(kfacs)
 
+    def __sub__(self, other):
+        """Subtract `other` Kronecker factors from `self`.
+
+        Parameters
+        ----------
+        other : Kron
+
+        Returns
+        -------
+        kron : Kron
+        """
+        if not isinstance(other, Kron):
+            raise ValueError('Can only add Kron to Kron.')
+
+        kfacs = [[Hi.sub(Hj) for Hi, Hj in zip(Fi, Fj)]
+                 for Fi, Fj in zip(self.kfacs, other.kfacs)]
+        return Kron(kfacs)
+
     def __mul__(self, scalar: Union[float, torch.Tensor]):
         """Multiply all Kronecker factors by scalar.
         The multiplication is distributed across the number of factors

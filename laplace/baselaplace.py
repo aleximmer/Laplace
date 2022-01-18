@@ -103,7 +103,7 @@ class BaseLaplace(ABC):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader, only_diff_last=None, diff_on_cpu=False):
+    def fit(self, train_loader, only_diff_last=None, diff_on_cpu=False, **kwargs):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -162,6 +162,11 @@ class BaseLaplace(ABC):
                 self.H += H_batch
 
         self.n_data = N
+
+    def fit_partial(self, X, y):
+        loss_batch, H_batch = self._curv_closure(X, y, self.n_data)
+        self.loss = self.loss.detach() - loss_batch.detach() + loss_batch
+        self.H = self.H.detach() - H_batch.detach() + H_batch
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the log marginal likelihood subject
@@ -744,6 +749,14 @@ class KronLaplace(BaseLaplace):
         # Kron requires postprocessing as all quantities depend on the decomposition.
         if keep_factors:
             self.H_facs = self.H
+        self.H = self.H.decompose(damping=self.damping)
+
+    def fit_partial(self, X, y):
+        if not hasattr(self, 'H_facs'):
+            raise ValueError('Need keep_factors=True on fit for partial fit.')
+        self.H = self.H_facs
+        super().fit_partial(X, y)
+        self.H_facs = self.H
         self.H = self.H.decompose(damping=self.damping)
 
     @property
