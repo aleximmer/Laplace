@@ -103,7 +103,7 @@ class BaseLaplace(ABC):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader, only_diff_last=None, diff_on_cpu=False, **kwargs):
+    def fit(self, train_loader, only_diff_last=None, **kwargs):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -115,8 +115,6 @@ class BaseLaplace(ABC):
             in case this variable is an integer, the H and loss are only differentiable w.r.t.
             the 'only_diff_last' batches. All batches before this number are detached from the
             computational graph, resulting in a cheaper (unbiased) stochastic gradient estimate.
-        diff_on_cpu : (bool)
-            perform computation of differentiated batches on cpu. Typically used to save GPU memory.
         """
         if self.H is not None:
             raise ValueError('Already fit.')
@@ -129,6 +127,7 @@ class BaseLaplace(ABC):
         with torch.no_grad():
             self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
+        original_backend_diff = self.backend.differentiable
 
         N = len(train_loader.dataset)
         N_batches = len(train_loader)
@@ -137,30 +136,17 @@ class BaseLaplace(ABC):
             X, y = X.to(self._device), y.to(self._device)
             detach_batch = (only_diff_last is not None) and (batch_i + only_diff_last < N_batches)
 
-            if diff_on_cpu:
-                # if detached, don't move to cpu
-                if detach_batch:
-                    X = X.detach()
-                else:
-                    X = X.cpu()
-                    y = y.cpu()
-
-                    self.loss = self.loss.cpu()
-                    self.H = self.H.cpu()
-
-                    self.model.cpu()
+            if detach_batch:
+                X = X.detach()
+                self.backend.differentiable = False
             else:
-                X = X.detach() if detach_batch else X
+                self.backend.differentiable = original_backend_diff
 
             loss_batch, H_batch = self._curv_closure(X, y, N)
+            self.loss += loss_batch
+            self.H += H_batch
 
-            if detach_batch:
-                self.loss += loss_batch.detach()
-                self.H += H_batch.detach()
-            else:
-                self.loss += loss_batch
-                self.H += H_batch
-
+        self.backend.differentiable = original_backend_diff
         self.n_data = N
 
     def fit_partial(self, X, y):
