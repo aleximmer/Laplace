@@ -26,7 +26,7 @@ def complex_model():
 def complex_model_aug():
     torch.manual_seed(711)
     model = torch.nn.Sequential(Conv2dAug(3, 4, 2, 2), nn.Flatten(start_dim=2), nn.Tanh(),
-                                nn.Linear(16, 20), nn.Tanh(), nn.Linear(20, 2))
+                                nn.Linear(16, 20), nn.Tanh(), Scale(), Bias(), nn.Linear(20, 2))
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups
