@@ -2,11 +2,11 @@ import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
-from asdfghjkl.operations.conv_aug import Conv2dAug
+from asdfghjkl.operations import Conv2dAug, Bias, Scale
 
 from asdfghjkl.operations import Bias, Scale
 
-from laplace.curvature import AugAsdlGGN, AugAsdlEF
+from laplace.curvature import AugAsdlGGN, AugAsdlEF, AsdlGGN
 from laplace.curvature import AugBackPackGGN
 
 
@@ -41,14 +41,14 @@ def class_Xy_single():
 def complex_model():
     torch.manual_seed(711)
     model = torch.nn.Sequential(Conv2dAug(3, 4, 2, 2), nn.Flatten(start_dim=2), nn.Tanh(),
-                                nn.Linear(16, 20), nn.Tanh(), nn.Linear(20, 2))
+                                nn.Linear(16, 20), Scale(), Bias(), nn.Tanh(), nn.Linear(20, 2))
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups
     setattr(model, 'n_params', len(parameters_to_vector(model_params)))
     return model
 
-
+    
 @pytest.fixture
 def complex_class_Xy():
     torch.manual_seed(711)
@@ -72,7 +72,7 @@ def complex_class_Xy_single_aug():
     y = torch.randint(2, (10,))
     return X, y
 
-
+    
 def test_full_ggn_against_backpack(class_Xy, model):
     X, y = class_Xy
     backend_backpack = AugBackPackGGN(model, 'classification')
@@ -106,16 +106,11 @@ def test_diag_ggn_against_diagonalized_full(class_Xy, model):
     assert torch.allclose(h, h_cmp)
     assert torch.allclose(xgrad, xgrad_cmp)
 
-<<<<<<< HEAD
-    
-def test_kron_ggn_against_diagonal_ggn(class_Xy_single, model):
-=======
 
 @pytest.mark.parametrize('Backend', [AugAsdlEF, AugAsdlGGN])
 def test_kron_against_diagonal(class_Xy_single, model, Backend):
     model.zero_grad()
     torch.manual_seed(723)
->>>>>>> 546df4b (Use more complex model for kron aug test)
     X, y = class_Xy_single
     backend = AugAsdlGGN(model, 'classification')
     loss_cmp, h_cmp = backend.diag(X.repeat(5, 11, 1), y.repeat(5))
@@ -213,3 +208,40 @@ def test_kron_against_diagonal_approx_cnn(complex_class_Xy_single, complex_model
     # this is because for CNN,  Kron != diagonal even for a single input
     assert torch.allclose(h, h_cmp, atol=1e-1, rtol=1e-2)
     assert torch.allclose(xgrad, xgrad_cmp, atol=1e-1, rtol=1e-2)
+
+
+def test_kron_aug_against_kron_fc(model):
+    X = torch.randn(11, 1, 3, requires_grad=True)
+    y = torch.randint(2, (11,))
+    backend = AsdlGGN(model, 'classification')
+    loss, H_kron = backend.kron(X.squeeze(), y, len(X))
+    (loss + H_kron.diag().sum()).backward()
+    grad = X.grad.data.clone()
+    X.grad = None
+    backend_aug = AugAsdlGGN(model, 'classification')
+    loss_aug, H_kron_aug = backend_aug.kron(X, y, len(X))
+    (loss_aug + H_kron_aug.diag().sum()).backward()
+    grad_aug = X.grad.data.clone()
+    assert torch.allclose(loss_aug, loss)
+    assert torch.allclose(H_kron.diag(), H_kron_aug.diag())
+    assert torch.allclose(grad, grad_aug)
+
+
+def test_kron_aug_against_kron_cnn(complex_model):
+    torch.manual_seed(711)
+    model = torch.nn.Sequential(nn.Conv2d(3, 4, 2, 2), nn.Flatten(), nn.Tanh(),
+                                nn.Linear(16, 20), Scale(), Bias(), nn.Tanh(), nn.Linear(20, 2))
+    X = torch.randn(11, 1, 3, 5, 5, requires_grad=True)
+    y = torch.randint(2, (11,))
+    backend = AsdlGGN(model, 'classification')
+    loss, H_kron = backend.kron(X.squeeze(), y, len(X))
+    (loss + H_kron.diag().sum()).backward()
+    grad = X.grad.data.clone()
+    X.grad = None
+    backend_aug = AugAsdlGGN(complex_model, 'classification')
+    loss_aug, H_kron_aug = backend_aug.kron(X, y, len(X))
+    (loss_aug + H_kron_aug.diag().sum()).backward()
+    grad_aug = X.grad.data.clone()
+    assert torch.allclose(loss_aug, loss)
+    assert torch.allclose(H_kron.diag(), H_kron_aug.diag())
+    assert torch.allclose(grad, grad_aug)
