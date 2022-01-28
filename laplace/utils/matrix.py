@@ -39,7 +39,10 @@ class Kron:
         kron : Kron
         """
         kfacs = list()
-        for p in model.parameters():
+        for n, p in model.named_parameters():
+            if ((".Fixup" in str(type(model)) and (('bias' in n and 'fc' not in n) or 'scale' in n)) or
+               (".ResNet" in str(type(model)) and ('bn' in n or '.1.weight' in n or '.1.bias' in n))):
+                continue
             if p.ndim == 1:  # bias
                 P = p.size(0)
                 kfacs.append([torch.zeros(P, P, device=device)])

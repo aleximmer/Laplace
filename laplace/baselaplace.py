@@ -113,6 +113,29 @@ class BaseLaplace:
         if p != self.n_params:
             raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
 
+    def get_layer_name(self, name, model_name):
+        if (('fixup' in model_name and name in ['bias1', 'bias2', 'conv1.weight']) or
+            ('resnet' in model_name and 'fixup' not in model_name and name.split('.')[0] == 'conv1')):
+            layer_name =  'first'
+        elif (('fixup' in model_name and 'fc' in name) or
+            ('resnet' in model_name and 'fixup' not in model_name and 'output_block' in name)):
+            layer_name =  'last'
+        else:
+            layer_name = '.'.join(name.split('.')[:2])
+            param_name = name.split('.')[2]
+            if '1' in param_name or 'downsample' in param_name:
+                layer_name += '.1'
+            elif '2' in param_name or (model_name == 'fixup_resnet18' and 'scale' in param_name):
+                layer_name += '.2'
+            elif '3' in param_name or (model_name == 'fixup_resnet50' and 'scale' in param_name):
+                layer_name += '.3'
+            else:
+                raise ValueError(f"Layer {name} does not exist in {model_name}!")
+        return layer_name
+
+    def layer_idx(self, name):
+        return list(self.model.layer_names.keys()).index(self.get_layer_name(name, self.model.name))
+
     @property
     def prior_precision_diag(self):
         """Obtain the diagonal prior precision \\(p_0\\) constructed from either
@@ -132,6 +155,9 @@ class BaseLaplace:
             n_params_per_layer = parameters_per_layer(self.model)
             return torch.cat([prior * torch.ones(n_params, device=self._device) for prior, n_params
                               in zip(self.prior_precision, n_params_per_layer)])
+
+        elif len(self.prior_precision) == len(self.model.layer_names):  # actual per layer
+            return torch.cat([self.prior_precision[self.layer_idx(n)] * torch.ones(p.numel(), device=self._device) for n, p in self.model.named_parameters()])
 
         else:
             raise ValueError('Mismatch of prior and model. Diagonal, scalar, or per-layer prior.')
@@ -170,7 +196,7 @@ class BaseLaplace:
                 # make dimensional
                 self._prior_precision = prior_precision.reshape(-1).to(self._device)
             elif prior_precision.ndim == 1:
-                if len(prior_precision) not in [1, self.n_layers, self.n_params]:
+                if len(prior_precision) not in [1, self.n_layers, self.n_params, len(self.model.layer_names)]:
                     raise ValueError('Length of prior precision does not align with architecture.')
                 self._prior_precision = prior_precision.to(self._device)
             else:
@@ -354,7 +380,8 @@ class ParametricLaplace(BaseLaplace):
             online learning settings to accumulate a sequential posterior approximation.
         """
         if override:
-            self._init_H()
+            #self._init_H()
+            self.H *= 0
             self.loss = 0
             self.n_data = 0
 
@@ -371,11 +398,26 @@ class ParametricLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
 
         N = len(train_loader.dataset)
-        for X, y in train_loader:
+        from tqdm import tqdm
+        for X, y in tqdm(train_loader):
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
             loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
+            """
+            print("H:", len(self.H.kfacs))
+            for i, k in enumerate(self.H.kfacs):
+                print(f"\t#{i+1}: {[k_.shape for k_ in k]}")
+            print("H_batch:", len(H_batch.kfacs))
+            for i, k in enumerate(H_batch.kfacs):
+                print(f"\t#{i+1}: {[k_.shape for k_ in k]}")
+            i = 0
+            for n, p in self.model.named_parameters():
+                if ('bias' in n and 'fc' not in n) or 'scale' in n:
+                    continue
+                print(f'#{i+1}: {n}: {p.shape}')
+                i += 1
+            """
             self.H += H_batch
 
         self.n_data += N
@@ -392,6 +434,10 @@ class ParametricLaplace(BaseLaplace):
             [description]
         """
         delta = (self.mean - self.prior_mean)
+        return (delta * self.prior_precision_diag) @ delta
+
+    def scatter_mean(self, mean):
+        delta = (mean - self.prior_mean)
         return (delta * self.prior_precision_diag) @ delta
 
     @property
@@ -460,7 +506,7 @@ class ParametricLaplace(BaseLaplace):
         log_prob -= self.square_norm(value) / 2
         return log_prob
 
-    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None, mean=None):
         """Compute the Laplace approximation to the log marginal likelihood subject
         to specific Hessian approximations that subclasses implement.
         Requires that the Laplace approximation has been fit before.
@@ -490,7 +536,8 @@ class ParametricLaplace(BaseLaplace):
                 raise ValueError('Can only change sigma_noise for regression.')
             self.sigma_noise = sigma_noise
 
-        return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
+        scatter = self.scatter if mean is None else self.scatter_mean(mean)
+        return self.log_likelihood - 0.5 * (self.log_det_ratio + scatter)
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100):
         """Compute the posterior predictive on input data `X`.
@@ -814,7 +861,15 @@ class KronLaplace(ParametricLaplace):
         precision : `laplace.utils.matrix.KronDecomposed`
         """
         self._check_H_init()
-        return self.H * self._H_factor + self.prior_precision
+        if len(self.prior_precision) == 1:
+            return self.H * self._H_factor + self.prior_precision
+        else:
+            msk = []
+            for n, _ in self.model.named_parameters():
+                if ((".Fixup" in str(type(self.model)) and not (('bias' in n and 'fc' not in n) or 'scale' in n)) or
+                (".ResNet" in str(type(self.model)) and not ('bn' in n or '.1.weight' in n or '.1.bias' in n))):
+                    msk.append(self.layer_idx(n))
+            return self.H * self._H_factor + self.prior_precision[msk]
 
     @property
     def log_det_posterior_precision(self):
@@ -840,7 +895,7 @@ class KronLaplace(ParametricLaplace):
     def prior_precision(self, prior_precision):
         # Extend setter from Laplace to restrict prior precision structure.
         super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
-        if len(self.prior_precision) not in [1, self.n_layers]:
+        if len(self.prior_precision) not in [1, self.n_layers, len(self.model.layer_names)]:
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
 
