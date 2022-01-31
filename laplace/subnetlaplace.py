@@ -118,6 +118,15 @@ class SubnetLaplace(FullLaplace):
 
         else:
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
+    
+    @property
+    def mean_subnet(self):
+        return self.mean[self.backend.subnetwork_indices]
+
+    @property
+    def scatter(self):
+        delta = (self.mean_subnet - self.prior_mean)
+        return (delta * self.prior_precision_diag) @ delta
 
     def sample(self, n_samples=100):
         # sample parameters just of the subnetwork
