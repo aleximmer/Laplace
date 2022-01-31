@@ -159,6 +159,15 @@ class DiagSubnetLaplace(SubnetLaplace, DiagLaplace):
     def _init_H(self):
         self.H = torch.zeros(self.n_params_subnet, device=self._device)
 
+    def _check_jacobians(self, Js):
+        if not isinstance(Js, torch.Tensor):
+            raise ValueError('Jacobians have to be torch.Tensor.')
+        if not Js.device == self._device:
+            raise ValueError('Jacobians need to be on the same device as Laplace.')
+        m, k, p = Js.size()
+        if p != self.n_params_subnet:
+            raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
+
     def sample(self, n_samples=100):
         # sample only subnetwork parameters and set all other parameters to their MAP estimates
         samples = torch.randn(n_samples, self.n_params_subnet, device=self._device)
