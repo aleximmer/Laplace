@@ -568,3 +568,30 @@ def test_classification_predictive(model, class_loader, subnetwork_mask, hessian
     f_pred = lap(X, pred_type='nn', n_samples=100)
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+
+
+@pytest.mark.parametrize('subnetwork_mask,likelihood,hessian_structure', 
+                         product(all_subnet_masks, likelihoods, hessian_structures))
+def test_subnet_marginal_likelihood(model, subnetwork_mask, likelihood, hessian_structure, class_loader, reg_loader):
+    subnetmask_kwargs = dict(model=model)
+    if subnetwork_mask in score_based_subnet_masks:
+        subnetmask_kwargs.update(n_params_subnet=32)
+        if subnetwork_mask == LargestVarianceSWAGSubnetMask:
+            subnetmask_kwargs.update(likelihood=likelihood)
+        elif subnetwork_mask == LargestVarianceDiagLaplaceSubnetMask:
+            diag_laplace_model = DiagLaplace(model, likelihood)
+            subnetmask_kwargs.update(diag_laplace_model=diag_laplace_model)
+    elif subnetwork_mask == ParamNameSubnetMask:
+        subnetmask_kwargs.update(parameter_names=['0.weight', '1.bias'])
+    elif subnetwork_mask == ModuleNameSubnetMask:
+        subnetmask_kwargs.update(module_names=['0'])
+
+    subnetmask = subnetwork_mask(**subnetmask_kwargs)
+    loader = class_loader if likelihood == 'classification' else reg_loader
+    subnetmask.select(loader)
+    lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork',
+                  subnetwork_indices=subnetmask.indices, hessian_structure=hessian_structure)
+    assert isinstance(lap, SubnetLaplace)
+
+    lap.fit(loader)
+    lap.log_marginal_likelihood()
