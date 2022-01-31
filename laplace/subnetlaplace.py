@@ -91,7 +91,8 @@ class SubnetLaplace(FullLaplace):
         """
         if subnetwork_indices is None:
             raise ValueError('Subnetwork indices cannot be None.')
-        elif not (isinstance(subnetwork_indices, torch.LongTensor) and
+        elif not ((isinstance(subnetwork_indices, torch.LongTensor) or
+            isinstance(subnetwork_indices, torch.cuda.LongTensor)) and
             subnetwork_indices.numel() > 0 and len(subnetwork_indices.shape) == 1):
             raise ValueError('Subnetwork indices must be non-empty 1-dimensional torch.LongTensor.')
         elif not (len(subnetwork_indices[subnetwork_indices < 0]) == 0 and
