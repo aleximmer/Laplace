@@ -10,7 +10,7 @@ def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure
     ----------
     model : torch.nn.Module
     likelihood : {'classification', 'regression'}
-    subset_of_weights : {'last_layer', 'all'}, default='last_layer'
+    subset_of_weights : {'last_layer', 'subnetwork', 'all'}, default='last_layer'
         subset of weights to consider for inference
     hessian_structure : {'diag', 'kron', 'full', 'lowrank', 'gp'}, default='kron'
         structure of the Hessian approximation (note that in case of hessian_structure='GP',
@@ -21,7 +21,10 @@ def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure
     laplace : BaseLaplace
         chosen subclass of BaseLaplace instantiated with additional arguments
     """
-    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(BaseLaplace)
+    if subset_of_weights == 'subnetwork' and hessian_structure != 'full':
+        raise ValueError('Subnetwork Laplace requires using a full Hessian approximation!')
+
+    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(ParametricLaplace)
                    if hasattr(subclass, '_key')}
     laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
     return laplace_class(model, likelihood, *args, **kwargs)

@@ -1,5 +1,4 @@
 from math import sqrt, pi, log
-from laplace.curvature.asdl import AsdlHessian
 import numpy as np
 import torch
 import warnings
@@ -7,11 +6,12 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 from torch.utils.data import DataLoader
 
-from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, SoDSampler
-from laplace.matrix import Kron
-from laplace.curvature import BackPackGGN, BackPackEF, AsdlGGN, AsdlEF
+from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, Kron, SoDSampler
+from laplace.curvature import BackPackGGN, AsdlHessian, AsdlGGN
 
-__all__ = ['BaseLaplace', 'FullLaplace', 'KronLaplace', 'DiagLaplace', 'ParametricLaplace', 'FunctionalLaplace']
+
+__all__ = ['BaseLaplace', 'ParametricLaplace', 'FunctionalLaplace',
+           'FullLaplace', 'KronLaplace', 'DiagLaplace', 'LowRankLaplace']
 
 
 class BaseLaplace:
@@ -386,15 +386,17 @@ class ParametricLaplace(BaseLaplace):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
-        try:
+        if not hasattr(self, 'H'):
             self._init_H()
-        except AttributeError:  # necessary information not yet available
-            pass
-        # posterior mean/mode
-        self.mean = self.prior_mean
+            # posterior mean/mode
+            self.mean = self.prior_mean
 
     def _init_H(self):
         raise NotImplementedError
+
+    def _check_H_init(self):
+        if self.H is None:
+            raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def fit(self, train_loader, override=True):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -630,7 +632,7 @@ class ParametricLaplace(BaseLaplace):
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X):
-        Js, f_mu = self.backend.jacobians(self.model, X)
+        Js, f_mu = self.backend.jacobians(X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
@@ -768,6 +770,7 @@ class FullLaplace(ParametricLaplace):
         precision : torch.tensor
             `(parameters, parameters)`
         """
+        self._check_H_init()
         return self._H_factor * self.H + torch.diag(self.prior_precision_diag)
 
     @property
@@ -792,7 +795,7 @@ class KronLaplace(ParametricLaplace):
     Mathematically, we have for each parameter group, e.g., torch.nn.Module,
     that \\P\\approx Q \\otimes H\\.
     See `BaseLaplace` for the full interface and see
-    `laplace.matrix.Kron` and `laplace.matrix.KronDecomposed` for the structure of
+    `laplace.utils.matrix.Kron` and `laplace.utils.matrix.KronDecomposed` for the structure of
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
@@ -850,8 +853,9 @@ class KronLaplace(ParametricLaplace):
 
         Returns
         -------
-        precision : `laplace.matrix.KronDecomposed`
+        precision : `laplace.utils.matrix.KronDecomposed`
         """
+        self._check_H_init()
         return self.H * self._H_factor + self.prior_precision
 
     @property
@@ -903,7 +907,7 @@ class LowRankLaplace(ParametricLaplace):
                          temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
     
     def _init_H(self):
-        pass
+        self.H = None
 
     @property
     def V(self):
@@ -951,6 +955,7 @@ class LowRankLaplace(ParametricLaplace):
         prior_precision_diag : torch.Tensor
             diagonal prior precision shape `parameters` to be added to H.
         """
+        self._check_H_init()
         return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
 
     def functional_variance(self, Jacs):
@@ -1005,6 +1010,7 @@ class DiagLaplace(ParametricLaplace):
         precision : torch.tensor
             `(parameters)`
         """
+        self._check_H_init()
         return self._H_factor * self.H + self.prior_precision_diag
 
     @property
@@ -1506,7 +1512,7 @@ class FunctionalLaplace(BaseLaplace):
         A wrapper function to compute jacobians - this enables reusing same kernel methods (kernel_batch etc.)
         in FunctionalLaplace and FunctionalLLLaplace by simply overwriting this method instead of all kernel methods.
         """
-        return self.backend.jacobians(self.model, X)
+        return self.backend.jacobians(X)
 
     def _mean_scatter_term_batch(self, Js, f, y):
         """

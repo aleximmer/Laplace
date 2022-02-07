@@ -6,9 +6,10 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
+from torchvision.models import wide_resnet50_2
 
-from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace, FunctionalLLLaplace
-from laplace.feature_extractor import FeatureExtractor
+from laplace.lllaplace import FullLLLaplace, KronLLLaplace, DiagLLLaplace, FunctionalLLLaplace
+from laplace.utils import FeatureExtractor
 from tests.utils import jacobians_naive
 
 
@@ -26,6 +27,12 @@ def model():
 
 
 @pytest.fixture
+def large_model():
+    model = wide_resnet50_2()
+    return model
+
+
+@pytest.fixture
 def class_loader():
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
@@ -39,9 +46,50 @@ def reg_loader():
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
-@pytest.mark.parametrize('laplace', flavors)
+@pytest.mark.parametrize('laplace', flavors_parametric)
 def test_laplace_init(laplace, model):
     lap = laplace(model, 'classification', last_layer_name='1')
+    assert torch.allclose(lap.mean, lap.prior_mean)
+    if laplace != KronLLLaplace:
+        H = lap.H.clone()
+        lap._init_H()
+        assert torch.allclose(H, lap.H)
+    else:
+        H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
+        lap._init_H()
+        for kfac1, kfac2 in zip(H, lap.H.kfacs):
+            for k1, k2 in zip(kfac1, kfac2):
+                assert torch.allclose(k1, k2)
+
+
+@pytest.mark.parametrize('laplace', flavors_parametric)
+def test_laplace_init_nollname(laplace, model):
+    lap = laplace(model, 'classification')
+    assert lap.mean is None
+    assert lap.H is None
+
+
+@pytest.mark.parametrize('laplace', [KronLLLaplace, DiagLLLaplace])
+def test_laplace_large_init(laplace, large_model):
+    lap = laplace(large_model, 'classification', last_layer_name='fc')
+    assert torch.allclose(lap.mean, lap.prior_mean)
+    if laplace == DiagLLLaplace:
+        H = lap.H.clone()
+        lap._init_H()
+        assert torch.allclose(H, lap.H)
+    else:
+        H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
+        lap._init_H()
+        for kfac1, kfac2 in zip(H, lap.H.kfacs):
+            for k1, k2 in zip(kfac1, kfac2):
+                assert torch.allclose(k1, k2)
+
+
+@pytest.mark.parametrize('laplace', flavors_parametric)
+def test_laplace_large_init_nollname(laplace, large_model):
+    lap = laplace(large_model, 'classification')
+    assert lap.mean is None
+    assert lap.H is None
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -262,7 +310,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     Js, f = jacobians_naive(feature_extractor.last_layer, phi)
     true_f_var = torch.einsum('mkp,pq,mcq->mkc', Js, Sigma, Js)
     # test last-layer Jacobians
-    comp_Js, comp_f = lap.backend.last_layer_jacobians(lap.model, X)
+    comp_Js, comp_f = lap.backend.last_layer_jacobians(X)
     assert torch.allclose(Js, comp_Js)
     assert torch.allclose(f, comp_f)
     comp_f_var = lap.functional_variance(comp_Js)

@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.curvature.asdl.AsdlInterface"><code class="flex name class">
 <span>class <span class="ident">AsdlInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -49,18 +49,16 @@
 <li><a title="laplace.curvature.asdl.AsdlGGN" href="#laplace.curvature.asdl.AsdlGGN">AsdlGGN</a></li>
 <li><a title="laplace.curvature.asdl.AsdlHessian" href="#laplace.curvature.asdl.AsdlHessian">AsdlHessian</a></li>
 </ul>
-<h3>Static methods</h3>
+<h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.asdl.AsdlInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>model, x)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
 using asdfghjkl's gradient per output dimension.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
-<dd>&nbsp;</dd>
 <dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>input data <code>(batch, input_shape)</code> on compatible device with model.</dd>
 </dl>
@@ -72,9 +70,6 @@ using asdfghjkl's gradient per output dimension.</p>
 <dd>output function <code>(batch, outputs)</code></dd>
 </dl></div>
 </dd>
-</dl>
-<h3>Methods</h3>
-<dl>
 <dt id="laplace.curvature.asdl.AsdlInterface.gradients"><code class="name flex">
 <span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
 </code></dt>
@@ -145,7 +140,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.asdl.AsdlGGN"><code class="flex name class">
 <span>class <span class="ident">AsdlGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>GGNInterface</code> using asdfghjkl.</p></div>

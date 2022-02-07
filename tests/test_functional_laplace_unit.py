@@ -177,7 +177,7 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
         raise ValueError
 
     # mocking jacobians
-    def mock_jacobians(self, model, x):
+    def mock_jacobians(self, x):
         return jacobians_2, None
     mocker.patch('laplace.curvature.BackPackInterface.jacobians', mock_jacobians)
 

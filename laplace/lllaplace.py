@@ -1,14 +1,13 @@
 from copy import deepcopy
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace, FunctionalLaplace
-from laplace.feature_extractor import FeatureExtractor
 
-from laplace.matrix import Kron
+from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace, FunctionalLaplace
+from laplace.utils import FeatureExtractor, Kron
 from laplace.curvature import BackPackGGN
 
 
-__all__ = ['FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace', 'FunctionalLLLaplace']
+__all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace', 'FunctionalLLLaplace']
 
 
 class LLLaplace(ParametricLaplace):
@@ -35,7 +34,7 @@ class LLLaplace(ParametricLaplace):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : {'classification', 'regression'}
         determines the log likelihood Hessian approximation
     sigma_noise : torch.Tensor or float, default=1
@@ -59,12 +58,13 @@ class LLLaplace(ParametricLaplace):
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
                  backend_kwargs=None):
+        self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
                          prior_mean=0., temperature=temperature, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(deepcopy(model), last_layer_name=last_layer_name)
         if self.model.last_layer is None:
-            self.mean = prior_mean
+            self.mean = None
             self.n_params = None
             self.n_layers = None
             # ignore checks of prior mean setter temporarily, check on .fit()
@@ -75,7 +75,8 @@ class LLLaplace(ParametricLaplace):
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
-            self.mean = self.prior_mean 
+            self.mean = self.prior_mean
+            self._init_H()
         self._backend_kwargs['last_layer'] = True
 
     def fit(self, train_loader, override=True):
@@ -90,6 +91,9 @@ class LLLaplace(ParametricLaplace):
             whether to initialize H, loss, and n_data again; setting to False is useful for
             online learning settings to accumulate a sequential posterior approximation.
         """
+        if not override:
+            raise ValueError('Last-layer Laplace approximations do not support `override=False`.')
+
         self.model.eval()
 
         if self.model.last_layer is None:
@@ -107,14 +111,11 @@ class LLLaplace(ParametricLaplace):
             self.prior_mean = self._prior_mean
             self._init_H()
 
-        if override:
-            self._init_H()
-
         super().fit(train_loader, override=override)
         self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
 
     def _glm_predictive_distribution(self, X):
-        Js, f_mu = self.backend.last_layer_jacobians(self.model, X)
+        Js, f_mu = self.backend.last_layer_jacobians(X)
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
@@ -158,12 +159,6 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'full')
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
-
 
 class KronLLLaplace(LLLaplace, KronLaplace):
     """Last-layer Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -171,7 +166,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     Mathematically, we have for the last parameter group, i.e., torch.nn.Linear,
     that \\P\\approx Q \\otimes H\\.
     See `KronLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface and see
-    `laplace.matrix.Kron` and `laplace.matrix.KronDecomposed` for the structure of
+    `laplace.utils.matrix.Kron` and `laplace.utils.matrix.KronDecomposed` for the structure of
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
@@ -199,12 +194,6 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'diag')
-
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
 
 
 class FunctionalLLLaplace(FunctionalLaplace):
@@ -270,4 +259,4 @@ class FunctionalLLLaplace(FunctionalLaplace):
         """
         A helper function to compute jacobians.
         """
-        return self.backend.last_layer_jacobians(self.model, X)
+        return self.backend.last_layer_jacobians(X)

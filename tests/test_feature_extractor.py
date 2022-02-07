@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 
-from laplace.feature_extractor import FeatureExtractor
+from laplace.utils import FeatureExtractor
 
 
 class CNN(nn.Module):

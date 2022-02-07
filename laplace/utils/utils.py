@@ -9,6 +9,10 @@ from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torch.utils.data import Sampler
 
 
+__all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
+           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision', 'SoDSampler']
+
+
 def get_nll(out_dist, targets):
     return F.nll_loss(torch.log(out_dist), targets)
 
