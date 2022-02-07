@@ -24,7 +24,7 @@ def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure
     if subset_of_weights == 'subnetwork' and hessian_structure != 'full':
         raise ValueError('Subnetwork Laplace requires using a full Hessian approximation!')
 
-    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(ParametricLaplace)
+    laplace_map = {subclass._key: subclass for subclass in _all_subclasses(BaseLaplace)
                    if hasattr(subclass, '_key')}
     laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
     return laplace_class(model, likelihood, *args, **kwargs)
