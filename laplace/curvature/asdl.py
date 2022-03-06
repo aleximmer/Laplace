@@ -115,6 +115,8 @@ class AsdlInterface(CurvatureInterface):
         curv = fisher_for_cross_entropy(self._model, self._ggn_type, SHAPE_DIAG,
                                         inputs=X, targets=y)
         diag_ggn = curv.matrices_to_vector(None)
+        if self.subnetwork_indices is not None:
+            diag_ggn = diag_ggn[self.subnetwork_indices]
         return self.factor * loss, self.factor * diag_ggn
 
     def kron(self, X, y, N, **wkwargs):

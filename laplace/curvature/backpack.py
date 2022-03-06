@@ -123,6 +123,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         with backpack(context()):
             loss.backward()
         dggn = self._get_diag_ggn()
+        if self.subnetwork_indices is not None:
+            dggn = dggn[self.subnetwork_indices]
 
         return self.factor * loss.detach(), self.factor * dggn
 
@@ -149,6 +151,8 @@ class BackPackEF(BackPackInterface, EFInterface):
             loss.backward()
         diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
                              for p in self._model.parameters()])
+        if self.subnetwork_indices is not None:
+            diag_EF = diag_EF[self.subnetwork_indices]
 
         return self.factor * loss.detach(), self.factor * diag_EF
 
