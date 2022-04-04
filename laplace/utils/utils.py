@@ -241,11 +241,11 @@ def normal_samples(mean, var, n_samples, generator=None):
     if mean.shape == var.shape:
         # diagonal covariance
         scaled_samples = var.sqrt().unsqueeze(-1) * randn_samples.unsqueeze(0)
-        return (mean.unsqueeze(-1) + scaled_samples).permute([2, 0, 1])
+        return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
     elif mean.shape == var.shape[:2] and var.shape[-1] == mean.shape[1]:
         # full covariance
         scale = torch.linalg.cholesky(var)
         scaled_samples = torch.matmul(scale, randn_samples.unsqueeze(0))  # expand batch dim
-        return (mean.unsqueeze(-1) + scaled_samples).permute([2, 0, 1])
+        return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
     else:
         raise ValueError('Invalid input shapes.')
