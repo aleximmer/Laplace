@@ -218,3 +218,34 @@ def expand_prior_precision(prior_prec, model):
     else:
         return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
                           in zip(prior_prec, model.parameters())])
+
+
+def normal_samples(mean, var, n_samples, generator=None):
+    """Produce samples from a batch of Normal distributions either parameterized
+    by a diagonal or full covariance given by `var`.
+
+    Parameters
+    ----------
+    mean : torch.Tensor
+        `(batch_size, output_dim)`
+    var : torch.Tensor
+        (co)variance of the Normal distribution
+        `(batch_size, output_dim, output_dim)` or `(batch_size, output_dim)`
+    generator : torch.Generator
+        random number generator
+    """
+    assert mean.ndim == 2, 'Invalid input shape of mean, should be 2-dimensional.'
+    _, output_dim = mean.shape
+    randn_samples = torch.randn((output_dim, n_samples), device=mean.device, generator=generator)
+    
+    if mean.shape == var.shape:
+        # diagonal covariance
+        scaled_samples = var.sqrt().unsqueeze(-1) * randn_samples.unsqueeze(0)
+        return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
+    elif mean.shape == var.shape[:2] and var.shape[-1] == mean.shape[1]:
+        # full covariance
+        scale = torch.linalg.cholesky(var)
+        scaled_samples = torch.matmul(scale, randn_samples.unsqueeze(0))  # expand batch dim
+        return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
+    else:
+        raise ValueError('Invalid input shapes.')
