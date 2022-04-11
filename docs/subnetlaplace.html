@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.subnetlaplace.SubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">SubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Class for subnetwork Laplace, which computes the Laplace approximation over just a subset
@@ -156,7 +156,7 @@ a scalar or diagonal prior precision.</p>
 </dd>
 <dt id="laplace.subnetlaplace.FullSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">FullSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with full, i.e., dense, log likelihood Hessian
@@ -202,7 +202,7 @@ See <code>FullLaplace</code>, <code><a title="laplace.subnetlaplace.SubnetLaplac
 </dd>
 <dt id="laplace.subnetlaplace.DiagSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with diagonal log likelihood Hessian approximation

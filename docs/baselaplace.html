@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.baselaplace.BaseLaplace"><code class="flex name class">
 <span>class <span class="ident">BaseLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all Laplace approximations in this library.</p>
@@ -174,7 +174,7 @@ For <code>pred_type='nn'</code>, only <code>'mc'</code> is possible.</dd>
 </dd>
 <dt id="laplace.baselaplace.ParametricLaplace"><code class="flex name class">
 <span>class <span class="ident">ParametricLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Parametric Laplace class.</p>
@@ -345,7 +345,7 @@ overwritten. This is useful for iterating on the log marginal likelihood.</p>
 </dl></div>
 </dd>
 <dt id="laplace.baselaplace.ParametricLaplace.predictive_samples"><code class="name flex">
-<span>def <span class="ident">predictive_samples</span></span>(<span>self, x, pred_type='glm', n_samples=100)</span>
+<span>def <span class="ident">predictive_samples</span></span>(<span>self, x, pred_type='glm', n_samples=100, diagonal_output=False, generator=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sample from the posterior predictive on input data <code>x</code>.
@@ -360,6 +360,11 @@ network sampling predictive. The GLM predictive is consistent with
 the curvature approximations used here.</dd>
 <dt><strong><code>n_samples</code></strong> :&ensp;<code>int</code></dt>
 <dd>number of samples</dd>
+<dt><strong><code>diagonal_output</code></strong> :&ensp;<code>bool</code></dt>
+<dd>whether to use a diagonalized glm posterior predictive on the outputs.
+Only applies when <code>pred_type='glm'</code>.</dd>
+<dt><strong><code>generator</code></strong> :&ensp;<code>torch.Generator</code>, optional</dt>
+<dd>random number generator to control the samples (if sampling used)</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
@@ -422,7 +427,7 @@ the output covariance matrix
 </dd>
 <dt id="laplace.baselaplace.FullLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -495,7 +500,7 @@ See <code><a title="laplace.baselaplace.BaseLaplace" href="#laplace.baselaplace.
 </dd>
 <dt id="laplace.baselaplace.KronLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, damping=False, **backend_kwargs)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -557,7 +562,7 @@ Damping can be enabled by setting <code>damping=True</code>.</p></div>
 </dd>
 <dt id="laplace.baselaplace.DiagLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with diagonal log likelihood Hessian approximation

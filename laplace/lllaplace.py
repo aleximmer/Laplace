@@ -4,7 +4,6 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.utils import FeatureExtractor, Kron
-from laplace.curvature import BackPackGGN
 
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
@@ -56,7 +55,7 @@ class LLLaplace(ParametricLaplace):
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 prior_mean=0., temperature=1., backend=None, last_layer_name=None,
                  backend_kwargs=None):
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
@@ -176,7 +175,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     _key = ('last_layer', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
+                 prior_mean=0., temperature=1., backend=None, last_layer_name=None,
                  damping=False, **backend_kwargs):
         self.damping = damping
         super().__init__(model, likelihood, sigma_noise, prior_precision,
