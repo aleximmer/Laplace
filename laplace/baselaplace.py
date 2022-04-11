@@ -536,7 +536,7 @@ class ParametricLaplace(BaseLaplace):
             raise ValueError(f'Unsupported link approximation {link_approx}.')
         
         if generator is not None:
-            if type(generator) is not torch.Generator or generator.device != x.device:
+            if not isinstance(generator, torch.Generator) or generator.device != x.device:
                 raise ValueError('Invalid random generator (check type and device).')
 
         if pred_type == 'glm':
