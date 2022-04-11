@@ -4,7 +4,8 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
-from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, Kron
+from laplace.utils import (parameters_per_layer, invsqrt_precision, 
+                           get_nll, validate, Kron, normal_samples)
 from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
 
 
@@ -495,8 +496,9 @@ class ParametricLaplace(BaseLaplace):
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
-    def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100):
-        """Compute the posterior predictive on input data `X`.
+    def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100, 
+                 diagonal_output=False, generator=None):
+        """Compute the posterior predictive on input data `x`.
 
         Parameters
         ----------
@@ -510,10 +512,17 @@ class ParametricLaplace(BaseLaplace):
 
         link_approx : {'mc', 'probit', 'bridge'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
+            For `pred_type='nn'`, only 'mc' is possible. 
 
         n_samples : int
             number of samples for `link_approx='mc'`.
+
+        diagonal_output : bool
+            whether to use a diagonalized posterior predictive on the outputs.
+            Only works for `pred_type='glm'` and `link_approx='mc'`.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
 
         Returns
         -------
@@ -528,6 +537,10 @@ class ParametricLaplace(BaseLaplace):
 
         if link_approx not in ['mc', 'probit', 'bridge']:
             raise ValueError(f'Unsupported link approximation {link_approx}.')
+        
+        if generator is not None:
+            if not isinstance(generator, torch.Generator) or generator.device != x.device:
+                raise ValueError('Invalid random generator (check type and device).')
 
         if pred_type == 'glm':
             f_mu, f_var = self._glm_predictive_distribution(x)
@@ -536,11 +549,8 @@ class ParametricLaplace(BaseLaplace):
                 return f_mu, f_var
             # classification
             if link_approx == 'mc':
-                try:
-                    dist = MultivariateNormal(f_mu, f_var)
-                except:
-                    dist = Normal(f_mu, torch.diagonal(f_var, dim1=1, dim2=2).sqrt())
-                return torch.softmax(dist.sample((n_samples,)), dim=-1).mean(dim=0)
+                return self.predictive_samples(x, pred_type='glm', n_samples=n_samples, 
+                                               diagonal_output=diagonal_output).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
                 return torch.softmax(kappa * f_mu, dim=-1)
@@ -557,7 +567,8 @@ class ParametricLaplace(BaseLaplace):
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
 
-    def predictive_samples(self, x, pred_type='glm', n_samples=100):
+    def predictive_samples(self, x, pred_type='glm', n_samples=100, 
+                           diagonal_output=False, generator=None):
         """Sample from the posterior predictive on input data `x`.
         Can be used, for example, for Thompson sampling.
 
@@ -574,6 +585,13 @@ class ParametricLaplace(BaseLaplace):
         n_samples : int
             number of samples
 
+        diagonal_output : bool
+            whether to use a diagonalized glm posterior predictive on the outputs.
+            Only applies when `pred_type='glm'`.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
+
         Returns
         -------
         samples : torch.Tensor
@@ -585,11 +603,12 @@ class ParametricLaplace(BaseLaplace):
         if pred_type == 'glm':
             f_mu, f_var = self._glm_predictive_distribution(x)
             assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
-            dist = MultivariateNormal(f_mu, f_var)
-            samples = dist.sample((n_samples,))
+            if diagonal_output:
+                f_var = torch.diagonal(f_var, dim1=1, dim2=2)
+            f_samples = normal_samples(f_mu, f_var, n_samples, generator)
             if self.likelihood == 'regression':
-                return samples
-            return torch.softmax(samples, dim=-1)
+                return f_samples
+            return torch.softmax(f_samples, dim=-1)
 
         else:  # 'nn'
             return self._nn_predictive_samples(x, n_samples)
