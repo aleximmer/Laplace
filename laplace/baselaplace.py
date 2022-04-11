@@ -5,7 +5,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
 from laplace.utils import parameters_per_layer, invsqrt_precision, get_nll, validate, Kron
-from laplace.curvature import BackPackGGN, AsdlHessian
+from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
 
 
 __all__ = ['BaseLaplace', 'ParametricLaplace',
@@ -37,7 +37,7 @@ class BaseLaplace:
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -53,6 +53,9 @@ class BaseLaplace:
         self.likelihood = likelihood
         self.sigma_noise = sigma_noise
         self.temperature = temperature
+
+        if backend is None:
+            backend = AsdlGGN if likelihood == 'classification' else BackPackGGN
         self._backend = None
         self._backend_cls = backend
         self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
@@ -326,7 +329,7 @@ class ParametricLaplace(BaseLaplace):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
         if not hasattr(self, 'H'):
@@ -675,7 +678,7 @@ class FullLaplace(ParametricLaplace):
     _key = ('all', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
         self._posterior_scale = None
@@ -763,7 +766,7 @@ class KronLaplace(ParametricLaplace):
     _key = ('all', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, damping=False,
+                 prior_mean=0., temperature=1., backend=None, damping=False,
                  **backend_kwargs):
         self.damping = damping
         self.H_facs = None
