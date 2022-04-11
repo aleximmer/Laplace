@@ -2,7 +2,7 @@ from laplace.utils.utils import get_nll, validate, parameters_per_layer, invsqrt
 from laplace.utils.feature_extractor import FeatureExtractor
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.swag import fit_diagonal_swag_var
-from laplace.utils.subnetmask import SubnetMask, RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask, LargestVarianceSWAGSubnetMask, ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask
+from laplace.utils.subnetmask import SubnetMask, RandomSubnetMask, LargestMagnitudeSubnetMask, LargestVarianceDiagLaplaceSubnetMask, LargestVarianceSWAGSubnetMask, ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask, GreedyMarginalLikelihoodSubnetMask
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
@@ -11,4 +11,5 @@ __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', '
            'Kron', 'KronDecomposed',
 		   'fit_diagonal_swag_var',
 		   'SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask', 'LargestVarianceDiagLaplaceSubnetMask',
-		   'LargestVarianceSWAGSubnetMask', 'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask']
+		   'LargestVarianceSWAGSubnetMask', 'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask',
+           'GreedyMarginalLikelihoodSubnetMask']

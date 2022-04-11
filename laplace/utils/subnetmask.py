@@ -9,6 +9,7 @@ from laplace.utils import FeatureExtractor, fit_diagonal_swag_var
 
 __all__ = ['SubnetMask', 'RandomSubnetMask', 'LargestMagnitudeSubnetMask',
            'LargestVarianceDiagLaplaceSubnetMask', 'LargestVarianceSWAGSubnetMask',
+           'GreedyMarginalLikelihoodSubnetMask'
            'ParamNameSubnetMask', 'ModuleNameSubnetMask', 'LastLayerSubnetMask']
 
 
@@ -236,6 +237,73 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
                                                 snapshot_freq=self.swag_snapshot_freq,
                                                 lr=self.swag_lr)
         return param_variances
+
+
+class GreedyMarginalLikelihoodSubnetMask(ScoreBasedSubnetMask):
+    """Subnetwork mask that greedily identifies the parameters with the largest
+    contribution to the marginal likelihood.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+    n_params_subnet : int
+        number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
+    diag_laplace_model : `laplace.baselaplace.DiagLaplace`
+        diagonal Laplace model to use for variance estimation
+    """
+    def __init__(self, model, n_params_subnet, laplace_model):
+        super().__init__(model, n_params_subnet)
+        self.laplace_model = laplace_model
+
+    def compute_param_scores(self, train_loader):
+        if train_loader is None:
+            raise ValueError('Need to pass train loader for subnet selection.')
+
+        import time
+
+        self.laplace_model.fit(train_loader)
+        posterior_precision = self.laplace_model.posterior_precision
+        print(posterior_precision.logdet())
+        n_params = self._n_params
+        param_idx = []
+        start_time = time.time()
+        log_det_min = 1.0
+        for i in range(self.n_params_subnet):
+            # find parameter that maximizes (the relevant part of) the marginal likelihood
+            param_idx_new = [torch.tensor(param_idx + [i]) for i in range(n_params) if i not in param_idx]
+            log_det_idx_to_param_idx = torch.tensor([i for i in range(n_params) if i not in param_idx])
+            if log_det_min == 1.0:
+                H_sub = torch.stack([posterior_precision.index_select(0, idx).index_select(1, idx) for idx in param_idx_new])
+                #start = time.time()
+                log_det_H_sub = (H_sub.logdet() - posterior_precision.logdet()).abs()
+                #print(f'\t{time.time() - start:.2f}')
+            if log_det_min != 1.0:
+                #start = time.time()
+                #A = torch.stack([posterior_precision.index_select(0, idx[:-1]).index_select(1, idx[:-1]) for idx in param_idx_new])
+                #D = torch.stack([posterior_precision.index_select(0, idx[-1]).index_select(1, idx[-1]) for idx in param_idx_new])
+                #C = torch.stack([posterior_precision.index_select(0, idx[-1]).index_select(1, idx[:-1]) for idx in param_idx_new])
+                H_sub = torch.stack([posterior_precision.index_select(0, idx).index_select(1, idx) for idx in param_idx_new])
+                A = torch.stack([H_[:-1, :-1] for H_ in H_sub])
+                D = torch.stack([H_[-1, -1].unsqueeze(dim=0).unsqueeze(dim=1) for H_ in H_sub])
+                C = torch.stack([H_[-1, :-1].unsqueeze(dim=0) for H_ in H_sub])
+                #print(A.shape)
+                #print(D.shape)
+                #print(C.shape)
+                A_inv = A.inverse()
+                log_det_H_sub = log_det_min - (D - C @ A_inv @ C.transpose(1, 2)).flatten().log()
+                #print(f'\t{time.time() - start:.2f}')
+                #assert log_det_H_sub2.(log_det_H_sub)
+                #print(f'1: {log_det_H_sub}, 2: {log_det_H_sub2}')
+            #nan_mask = ~torch.isnan(log_det_H_sub)
+            #log_det_H_sub = log_det_H_sub[nan_mask]
+            #log_det_idx_to_param_idx = log_det_idx_to_param_idx[nan_mask]
+            log_det_min, log_det_argmin = torch.min(log_det_H_sub, dim=0)
+            param_idx.append(log_det_idx_to_param_idx[log_det_argmin].item())
+            print(f'n_params_subnet={i+1:3d}: {param_idx[-1]:4d} (logdet={log_det_min:.3f}) [{time.time() - start_time:.2f}s]')
+
+        param_scores = torch.zeros_like(self.parameter_vector)
+        param_scores[param_idx] = 1
+        return param_scores
 
 
 class ParamNameSubnetMask(SubnetMask):
