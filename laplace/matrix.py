@@ -236,6 +236,22 @@ class Kron:
                 diags.append(torch.ger(F[0].diagonal(), F[1].diagonal()).flatten())
         return torch.cat(diags)
 
+    def flatten(self) -> torch.Tensor:
+        """Flatten all matrices and return vector
+        
+        Returns
+        -------
+        flats : torch.Tensor
+        """
+        flats = list()
+        for F in self.kfacs:
+            if len(F) == 1:
+                flats.append(F[0].flatten())
+            else:
+                flats.append(F[0].flatten())
+                flats.append(F[1].flatten())
+        return torch.cat(flats)
+
     def to_matrix(self) -> torch.Tensor:
         """Make the Kronecker factorization dense by computing the kronecker product.
         Warning: this should only be used for testing purposes as it will allocate
@@ -388,6 +404,29 @@ class KronDecomposed:
             else:
                 raise ValueError('Too many Kronecker factors. Something went wrong.')
         return logdet
+
+    def jvp_logdet(self) -> torch.Tensor:
+        """Computes the gradient of logdet(KronDecomposed^-1) wrt. Kron to use for
+        Jacobian-vector product.
+        
+        Returns
+        -------
+        vec: torch.Tensor
+        """
+        vecs = list()
+        for ls, vs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
+            if len(ls) == 1:  # not KFAC, just full (e.g. on biases)
+                h_inv = (vs[0] / (ls[0].reshape(1, -1) + delta)) @ vs[0].T
+                vecs.append(h_inv.flatten())
+            elif len(ls) == 2:  # KFAC jvp
+                eig_out_inv = 1 / (torch.outer(ls[0], ls[1]) + delta)
+                cp = eig_out_inv @ ls[1]
+                vec_q = (vs[0] * cp.reshape(1, -1)) @ vs[0].T
+                vecs.append(vec_q.flatten())
+                cq = eig_out_inv.T @ ls[0]
+                vec_h = (vs[1] * cq.reshape(1, -1)) @ vs[1].T
+                vecs.append(vec_h.flatten())
+        return torch.cat(vecs)
 
     def _bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
         """Implementation of `bmm`, i.e., `self ** exponent @ W`.
