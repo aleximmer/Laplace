@@ -18,6 +18,7 @@ There is also a corresponding paper, [*Laplace Redux — Effortless Bayesian Dee
   year={2021}
 }
 ```
+The [code](https://github.com/runame/laplace-redux) to reproduce the experiments in the paper is also publicly available; it provides examples of how to use our library for predictive uncertainty quantification, model selection, and continual learning.
 
 ## Setup
 
