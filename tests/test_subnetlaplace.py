@@ -518,7 +518,7 @@ def test_regression_predictive(model, reg_loader, subnetwork_mask, hessian_struc
     assert len(f_mu) == len(X)
 
     # NN predictive (only diagonal variance estimation)
-    f_mu, f_var = lap(X, pred_type='nn')
+    f_mu, f_var = lap(X, pred_type='nn', link_approx='mc')
     assert f_mu.shape == f_var.shape
     assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
     assert len(f_mu) == len(X)
@@ -563,9 +563,12 @@ def test_classification_predictive(model, class_loader, subnetwork_mask, hessian
     f_pred = lap(X, pred_type='glm', link_approx='bridge')
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    f_pred = lap(X, pred_type='glm', link_approx='bridge_norm')
+    assert f_pred.shape == f.shape
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
     # NN predictive
-    f_pred = lap(X, pred_type='nn', n_samples=100)
+    f_pred = lap(X, pred_type='nn', link_approx='mc', n_samples=100)
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
