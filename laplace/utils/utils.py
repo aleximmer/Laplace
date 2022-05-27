@@ -236,7 +236,8 @@ def normal_samples(mean, var, n_samples, generator=None):
     """
     assert mean.ndim == 2, 'Invalid input shape of mean, should be 2-dimensional.'
     _, output_dim = mean.shape
-    randn_samples = torch.randn((output_dim, n_samples), device=mean.device, generator=generator)
+    randn_samples = torch.randn((output_dim, n_samples), device=mean.device, 
+                                dtype=mean.dtype, generator=generator)
     
     if mean.shape == var.shape:
         # diagonal covariance

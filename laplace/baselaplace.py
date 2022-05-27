@@ -510,7 +510,7 @@ class ParametricLaplace(BaseLaplace):
             network sampling predictive. The GLM predictive is consistent with
             the curvature approximations used here.
 
-        link_approx : {'mc', 'probit', 'bridge'}
+        link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only 'mc' is possible. 
 
@@ -535,8 +535,11 @@ class ParametricLaplace(BaseLaplace):
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
 
-        if link_approx not in ['mc', 'probit', 'bridge']:
+        if link_approx not in ['mc', 'probit', 'bridge', 'bridge_norm']:
             raise ValueError(f'Unsupported link approximation {link_approx}.')
+
+        if pred_type == 'nn' and link_approx != 'mc':
+            raise ValueError('Only mc link approximation is supported for nn prediction type.')
         
         if generator is not None:
             if not isinstance(generator, torch.Generator) or generator.device != x.device:
@@ -554,13 +557,24 @@ class ParametricLaplace(BaseLaplace):
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
                 return torch.softmax(kappa * f_mu, dim=-1)
-            elif link_approx == 'bridge':
+            elif 'bridge' in link_approx:
+                # zero mean correction
+                f_mu -= (f_var.sum(-1) * f_mu.sum(-1).reshape(-1, 1) /
+                         f_var.sum(dim=(1, 2)).reshape(-1, 1))
+                f_var -= (torch.einsum('bi,bj->bij', f_var.sum(-1), f_var.sum(-2)) /
+                          f_var.sum(dim=(1, 2)).reshape(-1, 1, 1))
+                # Laplace Bridge
                 _, K = f_mu.size(0), f_mu.size(-1)
                 f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
-                sum_exp = torch.sum(torch.exp(-f_mu), dim=1).unsqueeze(-1)
-                alpha = 1/f_var_diag * (1 - 2/K + torch.exp(f_mu)/(K**2) * sum_exp)
-                dist = Dirichlet(alpha)
-                return torch.nan_to_num(dist.mean, nan=1.0)
+                # optional: variance correction
+                if link_approx == 'bridge_norm':
+                    f_var_diag_mean = f_var_diag.mean(dim=1)
+                    f_var_diag_mean /= torch.as_tensor([K/2], device=self._device).sqrt()
+                    f_mu /= f_var_diag_mean.sqrt().unsqueeze(-1)
+                    f_var_diag /= f_var_diag_mean.unsqueeze(-1)
+                sum_exp = torch.exp(-f_mu).sum(dim=1).unsqueeze(-1)
+                alpha = (1 - 2/K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
+                return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
         else:
             samples = self._nn_predictive_samples(x, n_samples)
             if self.likelihood == 'regression':
