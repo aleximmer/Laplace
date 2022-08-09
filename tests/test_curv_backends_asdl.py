@@ -124,8 +124,6 @@ def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
     backend = BackPackEF(model, 'regression')
     loss_bp, dggn_bp = backend.diag(X, y)
     assert torch.allclose(loss, loss_bp)
-    print(dggn)
-    print(dggn_bp)
     assert torch.allclose(dggn, dggn_bp)# H_ggn.diagonal())
 
 
@@ -198,6 +196,8 @@ def test_kron_asdl_vs_diag_reg(reg_Xy, model, Backend):
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
     loss, kron = backend.kron(X[:1], y[:1], N=1)
+    print(dggn)
+    print(kron.diag())
     assert torch.allclose(kron.diag(), dggn)
 
 
@@ -287,8 +287,10 @@ def test_kron_summation_ggn_class(class_Xy, model):
     backend = AsdlGGN(model, 'classification', stochastic=False)
     loss_dg, diag = backend.diag(X, y)
     loss, kron = backend.kron(X, y, N=7)
-    assert torch.allclose(kron.diag(), diag)
     assert torch.allclose(loss_dg, loss)
+    print(diag, diag.shape)
+    print(kron.diag(), kron.diag().shape)
+    assert torch.allclose(kron.diag(), diag)
 
 
 def test_kron_summation_ggn_reg(reg_Xy, model):
@@ -298,8 +300,8 @@ def test_kron_summation_ggn_reg(reg_Xy, model):
     backend = AsdlGGN(model, 'regression', stochastic=False)
     loss_dg, diag = backend.diag(X, y)
     loss, kron = backend.kron(X, y, N=7)
-    assert torch.allclose(kron.diag(), diag)
     assert torch.allclose(loss_dg, loss)
+    assert torch.allclose(kron.diag(), diag)
 
 
 def test_kron_normalization_ggn_class(class_Xy, model):
