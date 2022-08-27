@@ -78,7 +78,7 @@ class CurvatureInterface:
         """
         f, phi = self.model.forward_with_features(x)
         bsize = phi.shape[0]
-        output_size = f.shape[-1]
+        output_size = int(f.numel() / bsize)
 
         # calculate Jacobians using the feature vector 'phi'
         identity = torch.eye(output_size, device=x.device).unsqueeze(0).tile(bsize, 1, 1)
