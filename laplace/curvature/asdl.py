@@ -2,10 +2,10 @@ import warnings
 import numpy as np
 import torch
 
-from asdfghjkl import (
-    FISHER_EXACT, FISHER_MC, FISHER_EMP, SHAPE_KRON, SHAPE_DIAG, 
-    SHAPE_FULL, LOSS_MSE, LOSS_CROSS_ENTROPY
+from asdfghjkl.matrices import (
+    FISHER_EXACT, FISHER_MC, FISHER_EMP, SHAPE_KRON, SHAPE_DIAG, SHAPE_FULL
 )
+from asdfghjkl.fisher import LOSS_MSE, LOSS_CROSS_ENTROPY
 from asdfghjkl.fisher import calculate_fisher
 from asdfghjkl.hessian import calculate_hessian, hessian_eig
 from asdfghjkl.gradient import batch_gradient
