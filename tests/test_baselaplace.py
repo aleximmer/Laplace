@@ -6,9 +6,10 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
-from laplace.curvature.augmented_asdl import AugAsdlGGN
 
-from laplace.laplace import Laplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.curvature import AsdlGGN, AsdlEF, BackPackEF, BackPackGGN
+from laplace.curvature.augmented_asdl import AugAsdlGGN
+from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace
 from tests.utils import jacobians_naive
 
 
@@ -43,6 +44,20 @@ def reg_loader():
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
     return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def aug_class_loader():
+    X = torch.randn(12, 7, 3)
+    y = torch.randint(2, (12,))
+    return DataLoader(TensorDataset(X, y), batch_size=3, shuffle=True)
+
+
+@pytest.fixture
+def aug_reg_loader():
+    X = torch.randn(12, 7, 3)
+    y = torch.randn(12, 2)
+    return DataLoader(TensorDataset(X, y), batch_size=3, shuffle=True)
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -338,3 +353,133 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
+
+@pytest.mark.parametrize('curv_type,laplace', 
+                         product(['ggn', 'ef'], [FullLaplace, DiagLaplace, KronLaplace]))
+def test_differentiable_marglik_backends_class(laplace, model, class_loader, curv_type):
+    if curv_type == 'ef' and laplace is KronLaplace:
+        # not to be tested since backpack doesn't have Kron-EF
+        return
+    if curv_type == 'ggn':
+        ba, bb = AsdlGGN, BackPackGGN
+    else:
+        ba, bb = AsdlEF, BackPackEF
+    backend_kwargs = dict(differentiable=True)
+
+    lap = laplace(model, 'classification', backend=ba, backend_kwargs=backend_kwargs)
+    lap.fit(class_loader)
+    model.zero_grad()
+    marglik = lap.log_marginal_likelihood()
+    marglik.backward()
+    grad = get_grad(model).clone()
+
+    lap = laplace(model, 'classification', backend=bb, backend_kwargs=backend_kwargs)
+    lap.fit(class_loader)
+    model.zero_grad()
+    marglikb = lap.log_marginal_likelihood()
+    marglikb.backward()
+    gradb = get_grad(model).clone()
+
+    assert torch.allclose(marglik, marglikb)
+    if not (curv_type == 'ggn' and laplace in [DiagLaplace, KronLaplace]):
+        assert torch.allclose(grad, gradb)
+
+
+@pytest.mark.parametrize('backend', [AsdlGGN, BackPackGGN])
+def test_differentiable_marglik_diag(model, class_loader, backend):
+    backend_kwargs = dict(differentiable=True)
+    lap = FullLaplace(model, 'classification', backend=backend, backend_kwargs=backend_kwargs)
+    lap.fit(class_loader)
+    model.zero_grad()
+    diag_posterior_prec = lap.posterior_precision.diagonal()
+    pps = diag_posterior_prec.sum()
+    pps.backward()
+    grad = get_grad(model).clone()
+
+    lap = DiagLaplace(model, 'classification', backend=backend, backend_kwargs=backend_kwargs)
+    lap.fit(class_loader)
+    model.zero_grad()
+    ppsb = lap.posterior_precision.sum()
+    ppsb.backward()
+    gradb = get_grad(model).clone()
+
+    assert torch.allclose(pps, ppsb)
+    if backend == BackPackGGN:
+        # BackPackGGN backpropagates not differentiably when using GGN, at least in parts incorrect
+        with pytest.raises(AssertionError):
+            assert torch.allclose(grad, gradb)
+    elif backend == AsdlGGN:  # should work
+        assert torch.allclose(grad, gradb)
+
+
+@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+def test_laplace_stochastic_gradient_estimate(laplace, lh, model, aug_reg_loader, aug_class_loader):
+    model.zero_grad()
+    torch.manual_seed(711)
+    if lh == 'classification':
+        loader = aug_class_loader
+        sigma_noise = 1.
+    else:
+        loader = aug_reg_loader
+        sigma_noise = 0.3
+
+    x = loader.dataset.tensors[0]
+    x.requires_grad = True
+
+    if laplace == KronLaplace:
+        lap = laplace(model, lh, backend=AugAsdlGGN, sigma_noise=sigma_noise, prior_precision=0.7)
+        lap.fit(loader)
+        lml = lap.log_marginal_likelihood()
+        lml.backward()
+        real_grad = x.grad.mean(1) # <- aug dim
+
+        last_lap = laplace(model, lh, backend=AugAsdlGGN, sigma_noise=sigma_noise, prior_precision=0.7)
+        last_lap.fit(loader, only_diff_last=1)
+        last_lml = last_lap.log_marginal_likelihood()
+        x.grad.zero_()
+        last_lml.backward()
+        stoch_grad = x.grad.mean(1) # <- aug dim
+
+        # assert log marginal likelihood and partially detached log marginal likelihood are equal
+        assert torch.allclose(lml, last_lml)
+        
+        # assert gradients and stochastic gradients are different
+        assert not torch.allclose(real_grad, stoch_grad)
+
+        # assert stochastic gradients are the same in expectation (tests unbiased estimate)
+        sum_stoch_grad = stoch_grad * 0.0
+        for stoch_i in range(1, 1001):
+            last_lap.H = None
+            last_lap.loss = 0.0
+            last_lap.fit(loader, only_diff_last=1)
+            last_lml = last_lap.log_marginal_likelihood()
+
+            x.grad.zero_()
+            last_lml.backward()
+
+            N = len(loader.dataset)
+            B = loader.batch_size
+
+            # find samples with gradient
+            # ideally, we should be able to get these from the dataloader, but with these checks this should suffice
+            samples_i = torch.nonzero(x.grad.std([1, 2])).flatten()
+            assert len(samples_i) == B                  # assert num samples with a grad equals the batch size
+            for i in samples_i:
+                if not i in samples_i:
+                    assert torch.all(x.grad[i] == 0.0)  # assert other samples are all zero everywhere
+
+            stoch_grad = x.grad.mean(1) # <- aug dim
+
+            # sum the stochastic gradients
+            sum_stoch_grad += stoch_grad
+
+            # average (/ stoch_i) and multiply with (N / B) to account for stochastic sampling
+            # and obtain unbiased estimate
+            exp_stoch_grad = sum_stoch_grad * (N / B) / stoch_i
+
+            mean_abs_error = torch.mean(torch.abs(exp_stoch_grad - real_grad))
+            max_abs_error = torch.max(torch.abs(exp_stoch_grad - real_grad))
+            # if (stoch_i < 10) or (stoch_i % 50 == 0):
+            #     print(f"Sample {stoch_i},\tmean_abs_error: {mean_abs_error:.5f}\tmax_abs_error: {max_abs_error:.5f}")
+
+        assert torch.allclose(exp_stoch_grad, real_grad, atol=0.1)
