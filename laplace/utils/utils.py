@@ -184,7 +184,7 @@ def block_diag(blocks):
     M : torch.Tensor
     """
     P = sum([b.shape[0] for b in blocks])
-    M = torch.zeros(P, P)
+    M = torch.zeros(P, P, dtype=blocks[0].dtype, device=blocks[0].device)
     p_cur = 0
     for block in blocks:
         p_block = block.shape[0]
