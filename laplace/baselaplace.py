@@ -1405,7 +1405,6 @@ class FunctionalLaplace(BaseLaplace):
                 raise ValueError('Can only change sigma_noise for regression.')
             self.sigma_noise = sigma_noise
 
-        # self.fit(self.train_loader)
         if self.likelihood == 'classification':
             if not self.diagonal_kernel:
                 warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
