@@ -1164,6 +1164,8 @@ class FunctionalLaplace(BaseLaplace):
         # MAP estimate of NN parameters (used in regression marginal likelihood)
         self.map_estimate = parameters_to_vector(self.model.parameters()).detach()
 
+        self._fitted = False
+
     def _init_K_MM(self):
         if self.diagonal_kernel:
             self.K_MM = [torch.zeros(size=(self.M, self.M), device=self._device) for _ in range(self.n_outputs)]
@@ -1204,10 +1206,10 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_Sigma_inv(self):
         if self.diagonal_kernel:
-            return [torch.linalg.cholesky(self.K_MM[c] + torch.diag(1. / lambda_c)) for c, lambda_c in
+            return [torch.linalg.cholesky(self.K_MM[c] + torch.diag(torch.nan_to_num(1. / lambda_c, posinf=10.))) for c, lambda_c in
                     enumerate(self.L)]
         else:
-            return torch.linalg.cholesky(self.K_MM + torch.diag(1 / self.L))
+            return torch.linalg.cholesky(self.K_MM + torch.diag(torch.nan_to_num(1 / self.L, posinf=10.)))
 
     def _get_SoD_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
@@ -1258,7 +1260,7 @@ class FunctionalLaplace(BaseLaplace):
             lambdas.append(lambdas_batch)
             f.append(f_batch)
             mu.append(self._mean_scatter_term_batch(Js_batch, f_batch, y))  # needed for marginal likelihood
-            for j, (X2, y2) in enumerate(train_loader):
+            for j, (X2, _) in enumerate(train_loader):
                 if j >= i:
                     X2 = X2.to(self._device)
                     K_batch = self._kernel_batch(Js_batch, X2)
@@ -1267,6 +1269,7 @@ class FunctionalLaplace(BaseLaplace):
         self.L = self._build_L(lambdas)
         self.Sigma_inv = self._build_Sigma_inv()
         self.mu = torch.cat(mu, dim=0)
+        self._fitted = True
 
     def __call__(self, x, pred_type='gp', link_approx='probit', n_samples=100):
         if pred_type not in ['gp']:
@@ -1347,7 +1350,7 @@ class FunctionalLaplace(BaseLaplace):
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_M_star_batch = self._kernel_batch_star(Js_star, X_batch)
+            K_M_star_batch = self._kernel_batch_star(Js_star, X_batch.to(self._device))
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)
@@ -1390,6 +1393,7 @@ class FunctionalLaplace(BaseLaplace):
         -------
         log_marglik : torch.Tensor
         """
+        assert self._fitted, "Call laplace.fit() before evaluating marginal likelihood"
 
         # update prior precision (useful when iterating on marglik)
         if prior_precision is not None:
@@ -1401,14 +1405,14 @@ class FunctionalLaplace(BaseLaplace):
                 raise ValueError('Can only change sigma_noise for regression.')
             self.sigma_noise = sigma_noise
 
-        self.fit(self.train_loader)
+        # self.fit(self.train_loader)
         if self.likelihood == 'classification':
             if not self.diagonal_kernel:
                 warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
                               'independent GP kernels.')
             return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
         elif self.likelihood == 'regression':
-            return - 0.5 * (self.log_det_K + self.scatter_lml + self.M * self.n_outputs * np.log(2 * np.pi))
+            return  - 0.5 * (self.log_det_K + self.scatter_lml + self.M * self.n_outputs * np.log(2 * np.pi))
 
     @property
     def log_det_K(self):
@@ -1427,23 +1431,23 @@ class FunctionalLaplace(BaseLaplace):
         """
         if self.likelihood == "regression":
             if self.diagonal_kernel:
-                log_det = 0.
+                log_det = torch.tensor(0., requires_grad=True)
                 for c in range(self.n_outputs):
-                    log_det += torch.logdet(
-                        self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * self.sigma_noise.square())
+                    log_det = log_det + torch.logdet(
+                        self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0], device=self._device) * self.sigma_noise.square())
                 return log_det
             else:
-                return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * self.sigma_noise.square())
+                return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0], device=self._device) * self.sigma_noise.square())
         else:
             if self.diagonal_kernel:
-                log_det = 0.
+                log_det = torch.tensor(0., requires_grad=True)
                 for c in range(self.n_outputs):
                     W = torch.sqrt(self.L[c])
-                    log_det += torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0]))
+                    log_det = log_det + torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0], device=self._device))
                 return log_det
             else:
                 W = torch.sqrt(self.L)
-                return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0]))
+                return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0], device=self._device))
 
     @property
     def scatter_lml(self, eps=0.001):
@@ -1467,12 +1471,12 @@ class FunctionalLaplace(BaseLaplace):
         else:
             noise = eps
         if self.diagonal_kernel:
-            scatter = 0.
+            scatter = torch.tensor(0., requires_grad=True)
             for c in range(self.n_outputs):
-                K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0]) * noise)
-                scatter += torch.dot(self.mu[:, c], torch.matmul(K_inv, self.mu[:, c]))
+                K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0], device=self._device) * noise)
+                scatter = scatter + torch.dot(self.mu[:, c], torch.matmul(K_inv, self.mu[:, c]))
         else:
-            K_inv = torch.inverse(self.K_MM + torch.eye(n=self.K_MM.shape[0]) * noise)
+            K_inv = torch.inverse(self.K_MM + torch.eye(n=self.K_MM.shape[0], device=self._device) * noise)
             scatter = torch.dot(self.mu.reshape(-1), torch.matmul(K_inv, self.mu.reshape(-1)))
 
         return scatter

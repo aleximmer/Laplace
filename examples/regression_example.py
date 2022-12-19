@@ -34,7 +34,9 @@ for i in range(n_epochs):
         optimizer.step()
 
 la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
-# la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='GP')
+# TODO: remove GP code before merging
+# la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='gp')
+
 la.fit(train_loader)
 log_prior, log_sigma = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
 hyper_optimizer = torch.optim.Adam([log_prior, log_sigma], lr=1e-1)
@@ -54,7 +56,7 @@ f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 
 plot_regression(X_train, y_train, x, f_mu, pred_std, 
-                file_name='regression_example', plot=False)
+                file_name='regression_example', plot=True)
 
 # alternatively, optimize parameters and hyperparameters of the prior jointly
 model = get_model()
@@ -72,4 +74,4 @@ f_mu = f_mu.squeeze().detach().cpu().numpy()
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 plot_regression(X_train, y_train, x, f_mu, pred_std, 
-                file_name='regression_example_online', plot=False)
+                file_name='regression_example_online', plot=True)

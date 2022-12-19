@@ -9,11 +9,11 @@ class BasicBlock(nn.Module):
         super(BasicBlock, self).__init__()
 
         self.bn1 = nn.BatchNorm2d(in_planes)
-        self.relu1 = nn.ReLU(inplace=True)
+        self.relu1 = nn.ReLU()  # remove inplace=True
         self.conv1 = nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride, padding=1, bias=False)
 
         self.bn2 = nn.BatchNorm2d(out_planes)
-        self.relu2 = nn.ReLU(inplace=True)
+        self.relu2 = nn.ReLU()  # remove inplace=True
         self.conv2 = nn.Conv2d(out_planes, out_planes, kernel_size=3, stride=1, padding=1, bias=False)
         self.droprate = dropRate
         self.equalInOut = (in_planes == out_planes)
@@ -75,7 +75,7 @@ class WideResNet(nn.Module):
         self.block3 = NetworkBlock(n, nChannels[2], nChannels[3], block, 2, dropRate)
         # global average pooling and classifier
         self.bn1 = nn.BatchNorm2d(nChannels[3])
-        self.relu = nn.ReLU(inplace=True)
+        self.relu = nn.ReLU()  # remove inplace=True
         self.fc = nn.Linear(nChannels[3], num_classes)
 
         self.nChannels = nChannels[3]
