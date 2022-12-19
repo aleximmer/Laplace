@@ -4,6 +4,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace, FunctionalLaplace
 from laplace.utils import FeatureExtractor, Kron
+from laplace.curvature import BackPackGGN
 
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace', 'FunctionalLLLaplace']
