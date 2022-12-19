@@ -56,8 +56,8 @@ pytest tests/
 <h2 id="structure">Structure</h2>
 <p>The laplace package consists of two main components:</p>
 <ol>
-<li>The subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py"><code>laplace.BaseLaplace</code></a> that implement different sparsity structures: different subsets of weights (<code>'all'</code>, <code>'subnetwork'</code> and <code>'last_layer'</code>) and different structures of the Hessian approximation (<code>'full'</code>, <code>'kron'</code>, <code>'lowrank'</code> and <code>'diag'</code>). This results in <em>eight</em> currently available options: <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace</a></code>, <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code>, <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>, the corresponding last-layer variations <code><a title="laplace.FullLLLaplace" href="#laplace.FullLLLaplace">FullLLLaplace</a></code>, <code><a title="laplace.KronLLLaplace" href="#laplace.KronLLLaplace">KronLLLaplace</a></code>,
-and <code><a title="laplace.DiagLLLaplace" href="#laplace.DiagLLLaplace">DiagLLLaplace</a></code> (which are all subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py"><code>laplace.LLLaplace</code></a>), <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py"><code>laplace.SubnetLaplace</code></a> (which only supports a <code>'full'</code> Hessian approximation) and <code><a title="laplace.LowRankLaplace" href="#laplace.LowRankLaplace">LowRankLaplace</a></code> (which only supports inference over <code>'all'</code> weights). All of these can be conveniently accessed via the <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py"><code>laplace.Laplace</code></a> function.</li>
+<li>The subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py"><code>laplace.BaseLaplace</code></a> that implement different sparsity structures: different subsets of weights (<code>'all'</code>, <code>'subnetwork'</code> and <code>'last_layer'</code>) and different structures of the Hessian approximation (<code>'full'</code>, <code>'kron'</code>, <code>'lowrank'</code> and <code>'diag'</code>). This results in <em>nine</em> currently available options: <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace</a></code>, <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code>, <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>, the corresponding last-layer variations <code><a title="laplace.FullLLLaplace" href="#laplace.FullLLLaplace">FullLLLaplace</a></code>, <code><a title="laplace.KronLLLaplace" href="#laplace.KronLLLaplace">KronLLLaplace</a></code>,
+and <code><a title="laplace.DiagLLLaplace" href="#laplace.DiagLLLaplace">DiagLLLaplace</a></code> (which are all subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py"><code>laplace.LLLaplace</code></a>), <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py"><code>laplace.SubnetLaplace</code></a> (which only supports <code>'full'</code> and <code>'diag'</code> Hessian approximations) and <code><a title="laplace.LowRankLaplace" href="#laplace.LowRankLaplace">LowRankLaplace</a></code> (which only supports inference over <code>'all'</code> weights). All of these can be conveniently accessed via the <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py"><code>laplace.Laplace</code></a> function.</li>
 <li>The backends in <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/"><code>laplace.curvature</code></a> which provide access to Hessian approximations of
 the corresponding sparsity structures, for example, the diagonal GGN.</li>
 </ol>
@@ -503,7 +503,7 @@ ICML 2021.</p>
 <dl>
 <dt id="laplace.BaseLaplace"><code class="flex name class">
 <span>class <span class="ident">BaseLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all Laplace approximations in this library.</p>
@@ -642,7 +642,7 @@ For <code>pred_type='nn'</code>, only <code>'mc'</code> is possible.</dd>
 </dd>
 <dt id="laplace.ParametricLaplace"><code class="flex name class">
 <span>class <span class="ident">ParametricLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Parametric Laplace class.</p>
@@ -677,6 +677,7 @@ all cases <span><span class="MathJax_Preview">P_0 = \textrm{diag}(p_0)</span><sc
 <li><a title="laplace.baselaplace.KronLaplace" href="baselaplace.html#laplace.baselaplace.KronLaplace">KronLaplace</a></li>
 <li><a title="laplace.baselaplace.LowRankLaplace" href="baselaplace.html#laplace.baselaplace.LowRankLaplace">LowRankLaplace</a></li>
 <li><a title="laplace.lllaplace.LLLaplace" href="lllaplace.html#laplace.lllaplace.LLLaplace">LLLaplace</a></li>
+<li><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></li>
 </ul>
 <h3>Instance variables</h3>
 <dl>
@@ -812,7 +813,7 @@ overwritten. This is useful for iterating on the log marginal likelihood.</p>
 </dl></div>
 </dd>
 <dt id="laplace.ParametricLaplace.predictive_samples"><code class="name flex">
-<span>def <span class="ident">predictive_samples</span></span>(<span>self, x, pred_type='glm', n_samples=100)</span>
+<span>def <span class="ident">predictive_samples</span></span>(<span>self, x, pred_type='glm', n_samples=100, diagonal_output=False, generator=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sample from the posterior predictive on input data <code>x</code>.
@@ -827,6 +828,11 @@ network sampling predictive. The GLM predictive is consistent with
 the curvature approximations used here.</dd>
 <dt><strong><code>n_samples</code></strong> :&ensp;<code>int</code></dt>
 <dd>number of samples</dd>
+<dt><strong><code>diagonal_output</code></strong> :&ensp;<code>bool</code></dt>
+<dd>whether to use a diagonalized glm posterior predictive on the outputs.
+Only applies when <code>pred_type='glm'</code>.</dd>
+<dt><strong><code>generator</code></strong> :&ensp;<code>torch.Generator</code>, optional</dt>
+<dd>random number generator to control the samples (if sampling used)</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
@@ -1049,7 +1055,7 @@ overwritten. This is useful for iterating on the log marginal likelihood.</p>
 </dd>
 <dt id="laplace.FullLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -1065,7 +1071,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="laplace.lllaplace.FullLLLaplace" href="lllaplace.html#laplace.lllaplace.FullLLLaplace">FullLLLaplace</a></li>
-<li><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></li>
+<li><a title="laplace.subnetlaplace.FullSubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.FullSubnetLaplace">FullSubnetLaplace</a></li>
 </ul>
 <h3>Instance variables</h3>
 <dl>
@@ -1123,7 +1129,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 </dd>
 <dt id="laplace.KronLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, damping=False, **backend_kwargs)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -1186,7 +1192,7 @@ Damping can be enabled by setting <code>damping=True</code>.</p></div>
 </dd>
 <dt id="laplace.DiagLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with diagonal log likelihood Hessian approximation
@@ -1201,6 +1207,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 <h3>Subclasses</h3>
 <ul class="hlist">
 <li><a title="laplace.lllaplace.DiagLLLaplace" href="lllaplace.html#laplace.lllaplace.DiagLLLaplace">DiagLLLaplace</a></li>
+<li><a title="laplace.subnetlaplace.DiagSubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.DiagSubnetLaplace">DiagSubnetLaplace</a></li>
 </ul>
 <h3>Instance variables</h3>
 <dl>
@@ -1325,7 +1332,7 @@ as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.</p>
 </dd>
 <dt id="laplace.LLLaplace"><code class="flex name class">
 <span>class <span class="ident">LLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all last-layer Laplace approximations in this library.
@@ -1423,7 +1430,7 @@ a scalar or diagonal prior precision.</p>
 </dd>
 <dt id="laplace.FullLLLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -1470,7 +1477,7 @@ See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace
 </dd>
 <dt id="laplace.KronLLLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, damping=False, **backend_kwargs)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -1516,7 +1523,7 @@ Use of <code>damping</code> is possible by initializing or setting <code>damping
 </dd>
 <dt id="laplace.DiagLLLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, last_layer_name=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with diagonal log likelihood Hessian approximation
@@ -1597,13 +1604,12 @@ of the penultimate NN layer.</p>
 </dd>
 <dt id="laplace.SubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">SubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=laplace.curvature.backpack.BackPackGGN, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Class for subnetwork Laplace, which computes the Laplace approximation over
-just a subset of the model parameters (i.e. a subnetwork within the neural network),
-as proposed in [1]. Subnetwork Laplace only supports a full Hessian approximation; other
-approximations could be used in theory, but would not make as much sense conceptually.</p>
+<div class="desc"><p>Class for subnetwork Laplace, which computes the Laplace approximation over just a subset
+of the model parameters (i.e. a subnetwork within the neural network), as proposed in [1].
+Subnetwork Laplace can only be used with either a full or a diagonal Hessian approximation.</p>
 <p>A Laplace approximation is represented by a MAP which is given by the
 <code>model</code> parameter and a posterior precision or covariance specifying
 a Gaussian distribution <span><span class="MathJax_Preview">\mathcal{N}(\theta_{MAP}, P^{-1})</span><script type="math/tex">\mathcal{N}(\theta_{MAP}, P^{-1})</script></span>.
@@ -1661,9 +1667,13 @@ set the number of MC samples for stochastic approximations.</dd>
 </dl></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
-<li><a title="laplace.baselaplace.FullLaplace" href="baselaplace.html#laplace.baselaplace.FullLaplace">FullLaplace</a></li>
 <li><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></li>
 <li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
+</ul>
+<h3>Subclasses</h3>
+<ul class="hlist">
+<li><a title="laplace.subnetlaplace.DiagSubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.DiagSubnetLaplace">DiagSubnetLaplace</a></li>
+<li><a title="laplace.subnetlaplace.FullSubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.FullSubnetLaplace">FullSubnetLaplace</a></li>
 </ul>
 <h3>Instance variables</h3>
 <dl>
@@ -1677,9 +1687,80 @@ a scalar or diagonal prior precision.</p>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
+<dt id="laplace.SubnetLaplace.mean_subnet"><code class="name">var <span class="ident">mean_subnet</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.SubnetLaplace.assemble_full_samples"><code class="name flex">
+<span>def <span class="ident">assemble_full_samples</span></span>(<span>self, subnet_samples)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 </dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
+<li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="laplace.FullSubnetLaplace"><code class="flex name class">
+<span>class <span class="ident">FullSubnetLaplace</span></span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Subnetwork Laplace approximation with full, i.e., dense, log likelihood Hessian
+approximation and hence posterior precision. Based on the chosen <code>backend</code> parameter,
+the full approximation can be, for example, a generalized Gauss-Newton matrix.
+Mathematically, we have <span><span class="MathJax_Preview">P \in \mathbb{R}^{P \times P}</span><script type="math/tex">P \in \mathbb{R}^{P \times P}</script></span>.
+See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace</a></code>, <code><a title="laplace.SubnetLaplace" href="#laplace.SubnetLaplace">SubnetLaplace</a></code>, and <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> for the full interface.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></li>
+<li><a title="laplace.baselaplace.FullLaplace" href="baselaplace.html#laplace.baselaplace.FullLaplace">FullLaplace</a></li>
+<li><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></li>
+<li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.prior_precision_diag" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
+</ul>
+</li>
 <li><code><b><a title="laplace.baselaplace.FullLaplace" href="baselaplace.html#laplace.baselaplace.FullLaplace">FullLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.FullLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
@@ -1693,12 +1774,52 @@ a scalar or diagonal prior precision.</p>
 <li><code><a title="laplace.baselaplace.FullLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.posterior_covariance" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_covariance">posterior_covariance</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.FullLaplace.posterior_scale" href="baselaplace.html#laplace.baselaplace.FullLaplace.posterior_scale">posterior_scale</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
-<li><code><a title="laplace.baselaplace.FullLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
+<dt id="laplace.DiagSubnetLaplace"><code class="flex name class">
+<span>class <span class="ident">DiagSubnetLaplace</span></span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Subnetwork Laplace approximation with diagonal log likelihood Hessian approximation
+and hence posterior precision.
+Mathematically, we have <span><span class="MathJax_Preview">P \approx \textrm{diag}(P)</span><script type="math/tex">P \approx \textrm{diag}(P)</script></span>.
+See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>, <code><a title="laplace.SubnetLaplace" href="#laplace.SubnetLaplace">SubnetLaplace</a></code>, and <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> for the full interface.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></li>
+<li><a title="laplace.baselaplace.DiagLaplace" href="baselaplace.html#laplace.baselaplace.DiagLaplace">DiagLaplace</a></li>
+<li><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></li>
+<li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
+</ul>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.prior_precision_diag" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.scatter" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.scatter">scatter</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.square_norm" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.square_norm">square_norm</a></code></li>
+</ul>
+</li>
+<li><code><b><a title="laplace.baselaplace.DiagLaplace" href="baselaplace.html#laplace.baselaplace.DiagLaplace">DiagLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.baselaplace.DiagLaplace.posterior_scale" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_scale">posterior_scale</a></code></li>
+<li><code><a title="laplace.baselaplace.DiagLaplace.posterior_variance" href="baselaplace.html#laplace.baselaplace.DiagLaplace.posterior_variance">posterior_variance</a></code></li>
 </ul>
 </li>
 </ul>
@@ -1818,6 +1939,15 @@ a scalar or diagonal prior precision.</p>
 </li>
 <li>
 <h4><code><a title="laplace.SubnetLaplace" href="#laplace.SubnetLaplace">SubnetLaplace</a></code></h4>
+<ul class="">
+<li><code><a title="laplace.SubnetLaplace.assemble_full_samples" href="#laplace.SubnetLaplace.assemble_full_samples">assemble_full_samples</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="laplace.FullSubnetLaplace" href="#laplace.FullSubnetLaplace">FullSubnetLaplace</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.DiagSubnetLaplace" href="#laplace.DiagSubnetLaplace">DiagSubnetLaplace</a></code></h4>
 </li>
 </ul>
 </li>

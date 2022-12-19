@@ -1,5 +1,5 @@
 import torch
-from laplace.utils import invsqrt_precision, diagonal_add_scalar, symeig
+from laplace.utils import invsqrt_precision, diagonal_add_scalar, symeig, normal_samples
 
 
 def test_sqrt_precision():
@@ -34,3 +34,30 @@ def test_symeig_custom_low_rank():
     assert not torch.all(l1 >= 0.0)
     # test clamping to zeros
     assert torch.all(l2 >= 0.0)
+
+    
+def test_diagonal_normal_samples():
+    mean = torch.randn(10, 2)
+    var = torch.exp(torch.randn(10, 2))
+    generator = torch.Generator()
+    gen_state = generator.get_state()
+    samples = normal_samples(mean, var, n_samples=100, generator=generator)
+    assert samples.shape == torch.Size([100, 10, 2])
+    # reset generator state
+    generator.set_state(gen_state)
+    same_samples = normal_samples(mean, var, n_samples=100, generator=generator)
+    assert torch.allclose(samples, same_samples)
+
+    
+def test_multivariate_normal_samples():
+    mean = torch.randn(10, 2)
+    rndns = torch.randn(10, 2, 10) / 100
+    var = torch.matmul(rndns, rndns.transpose(1, 2))
+    generator = torch.Generator()
+    gen_state = generator.get_state()
+    samples = normal_samples(mean, var, n_samples=100, generator=generator)
+    assert samples.shape == torch.Size([100, 10, 2])
+    # reset generator state
+    generator.set_state(gen_state)
+    same_samples = normal_samples(mean, var, n_samples=100, generator=generator)
+    assert torch.allclose(samples, same_samples)

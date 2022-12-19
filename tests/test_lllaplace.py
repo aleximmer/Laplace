@@ -342,7 +342,7 @@ def test_regression_predictive(laplace, model, reg_loader):
         assert len(f_mu) == len(X)
 
         # NN predictive (only diagonal variance estimation)
-        f_mu, f_var = lap(X, pred_type='nn')
+        f_mu, f_var = lap(X, pred_type='nn', link_approx='mc')
         assert f_mu.shape == f_var.shape
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
         assert len(f_mu) == len(X)
@@ -372,10 +372,13 @@ def test_classification_predictive(laplace, model, class_loader):
     f_pred = lap(X, pred_type=pred_type, link_approx='bridge')
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    f_pred = lap(X, pred_type='glm', link_approx='bridge_norm')
+    assert f_pred.shape == f.shape
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
     if laplace != FunctionalLLLaplace:
         # NN predictive
-        f_pred = lap(X, pred_type='nn', n_samples=100)
+        f_pred = lap(X, pred_type='nn', link_approx='mc', n_samples=100)
         assert f_pred.shape == f.shape
         assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
@@ -428,6 +431,6 @@ def test_classification_predictive_samples(laplace, model, class_loader):
         assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
         # NN predictive
-        f_pred = lap.predictive_samples(X, pred_type='nn', n_samples=100)
+        fsamples = lap.predictive_samples(X, pred_type='nn', n_samples=100)
         assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
         assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
