@@ -110,7 +110,7 @@ def test_laplace_init_noise(laplace, model):
         lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise)
 
 
-@pytest.mark.parametrize('laplace', flavors_parametric)
+@pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init_precision(laplace, model):
     # float
     precision = 10.6
@@ -123,15 +123,20 @@ def test_laplace_init_precision(laplace, model):
     lap = laplace(model, likelihood='regression', prior_precision=precision)
     # torch.tensor 1-dim param-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
-    if laplace == KronLaplace:
-        # Kron should not accept per parameter prior precision
+    if laplace == KronLaplace or laplace == FunctionalLaplace:
+        # Kron and FunctionalLaplace should not accept per parameter prior precision
         with pytest.raises(ValueError):
             lap = laplace(model, likelihood='regression', prior_precision=precision)
     else:
         lap = laplace(model, likelihood='regression', prior_precision=precision)
     # torch.tensor 1-dim layer-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
-    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    if laplace == FunctionalLaplace:
+        # FunctionalLaplace should not accept per layer prior precision
+        with pytest.raises(ValueError):
+            lap = laplace(model, likelihood='regression', prior_precision=precision)
+    else:
+        lap = laplace(model, likelihood='regression', prior_precision=precision)
 
     # other than that should fail
     # higher dim

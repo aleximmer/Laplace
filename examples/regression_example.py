@@ -7,13 +7,10 @@ from laplace import Laplace, marglik_training
 from helper.dataloaders import get_sinusoid_example
 from helper.util import plot_regression
 
-# import logging
-# logging.basicConfig(level=logging.INFO)
-
+# specify Laplace approximation type: full, kron, gp...
+la_type = 'gp'
 
 n_epochs = 1000
-# la_type = 'full'
-la_type = 'gp'
 torch.manual_seed(711)
 
 # create toy regression data
@@ -48,18 +45,17 @@ for i in range(n_epochs):
     neg_marglik.backward()
     hyper_optimizer.step()
 
-print(f'sigma={la.sigma_noise.item():.2f}',
-      f'prior precision={la.prior_precision.item():.2f}',
-      f'NLL={neg_marglik:.2f}')
-
 x = X_test.flatten().cpu().numpy()
 f_mu, f_var = la(X_test)
 f_mu = f_mu.squeeze().detach().cpu().numpy()
-print(f"MAE: {np.abs(x - f_mu).mean():.2f}")
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 
-plot_regression(X_train, y_train, x, f_mu, pred_std, 
+print(f'sigma={la.sigma_noise.item():.3f} | ',
+      f'prior precision={la.prior_precision.item():.3f} | ',
+      f'MAE: {np.abs(x - f_mu).mean():.3f}')
+
+plot_regression(X_train, y_train, x, f_mu, pred_std,
                 file_name='regression_example', plot=True, la_type=la_type)
 
 # alternatively, optimize parameters and hyperparameters of the prior jointly
@@ -70,13 +66,14 @@ la, model, margliks, losses = marglik_training(
     optimizer_kwargs={'lr': 1e-2}, prior_structure='scalar'
 )
 
-print(f'sigma={la.sigma_noise.item():.2f}',
-      f'prior precision={la.prior_precision.numpy()}')
-
 f_mu, f_var = la(X_test)
 f_mu = f_mu.squeeze().detach().cpu().numpy()
-print(f"MAE: {np.abs(x - f_mu).mean():.2f}")
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
-plot_regression(X_train, y_train, x, f_mu, pred_std, 
-                file_name='regression_example_online', plot=True, la_type=la_type + "marglik")
+
+print(f'sigma={la.sigma_noise.item():.3f} | ',
+      f'prior precision={la.prior_precision.numpy()[0]:.3f} | ',
+      f'MAE: {np.abs(x - f_mu).mean():.3f}')
+
+plot_regression(X_train, y_train, x, f_mu, pred_std,
+                file_name='regression_example_online', plot=True, la_type=la_type + " (online)")

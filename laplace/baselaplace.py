@@ -81,9 +81,6 @@ class BaseLaplace:
     def fit(self, train_loader):
         raise NotImplementedError
 
-    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
-        raise NotImplementedError
-
     @property
     def log_likelihood(self):
         """Compute log likelihood on the training data after `.fit()` has been called.
@@ -359,6 +356,46 @@ class BaseLaplace:
         sigma2 = self.sigma_noise.square()
         return 1 / sigma2 / self.temperature
 
+    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
+        """Compute the Laplace approximation to the log marginal likelihood subject
+        to specific Hessian approximations that subclasses implement.
+        Requires that the Laplace approximation has been fit before.
+        The resulting torch.Tensor is differentiable in `prior_precision` and
+        `sigma_noise` if these have gradients enabled.
+        By passing `prior_precision` or `sigma_noise`, the current value is
+        overwritten. This is useful for iterating on the log marginal likelihood.
+
+        Parameters
+        ----------
+        prior_precision : torch.Tensor, optional
+            prior precision if should be changed from current `prior_precision` value
+        sigma_noise : [type], optional
+            observation noise standard deviation if should be changed
+
+        Returns
+        -------
+        log_marglik : torch.Tensor
+        """
+        # update prior precision (useful when iterating on marglik)
+        if prior_precision is not None:
+            self.prior_precision = prior_precision
+
+        # update sigma_noise (useful when iterating on marglik)
+        if sigma_noise is not None:
+            if self.likelihood != 'regression':
+                raise ValueError('Can only change sigma_noise for regression.')
+            self.sigma_noise = sigma_noise
+
+        return self.log_likelihood - 0.5 * (self.log_det_term + self.scatter)
+
+    @property
+    def log_det_term(self):
+        raise NotImplementedError
+
+    @property
+    def scatter(self):
+        raise NotImplementedError
+
 
 class ParametricLaplace(BaseLaplace):
     """
@@ -478,7 +515,7 @@ class ParametricLaplace(BaseLaplace):
         raise NotImplementedError
 
     @property
-    def log_det_ratio(self):
+    def log_det_term(self):
         """Compute the log determinant ratio, a part of the log marginal likelihood.
         \\[
             \\log \\frac{\\det P}{\\det P_0} = \\log \\det P - \\log \\det P_0
@@ -486,7 +523,7 @@ class ParametricLaplace(BaseLaplace):
 
         Returns
         -------
-        log_det_ratio : torch.Tensor
+        log_det_term : torch.Tensor
         """
         return self.log_det_posterior_precision - self.log_det_prior_precision
 
@@ -519,38 +556,6 @@ class ParametricLaplace(BaseLaplace):
         log_prob = - self.n_params / 2 * log(2 * pi) + self.log_det_posterior_precision / 2
         log_prob -= self.square_norm(value) / 2
         return log_prob
-
-    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
-        """Compute the Laplace approximation to the log marginal likelihood subject
-        to specific Hessian approximations that subclasses implement.
-        Requires that the Laplace approximation has been fit before.
-        The resulting torch.Tensor is differentiable in `prior_precision` and
-        `sigma_noise` if these have gradients enabled.
-        By passing `prior_precision` or `sigma_noise`, the current value is
-        overwritten. This is useful for iterating on the log marginal likelihood.
-
-        Parameters
-        ----------
-        prior_precision : torch.Tensor, optional
-            prior precision if should be changed from current `prior_precision` value
-        sigma_noise : [type], optional
-            observation noise standard deviation if should be changed
-
-        Returns
-        -------
-        log_marglik : torch.Tensor
-        """
-        # update prior precision (useful when iterating on marglik)
-        if prior_precision is not None:
-            self.prior_precision = prior_precision
-
-        # update sigma_noise (useful when iterating on marglik)
-        if sigma_noise is not None:
-            if self.likelihood != 'regression':
-                raise ValueError('Can only change sigma_noise for regression.')
-            self.sigma_noise = sigma_noise
-
-        return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100, 
                  diagonal_output=False, generator=None):
@@ -1147,6 +1152,7 @@ class FunctionalLaplace(BaseLaplace):
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None,
                  diagonal_kernel=False):
         assert backend in [BackPackGGN, AsdlGGN]
+        self._check_prior_precision(prior_precision)
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, backend, backend_kwargs)
 
@@ -1165,6 +1171,12 @@ class FunctionalLaplace(BaseLaplace):
         self.map_estimate = parameters_to_vector(self.model.parameters()).detach()
 
         self._fitted = False
+
+    @staticmethod
+    def _check_prior_precision(prior_precision):
+        if torch.is_tensor(prior_precision):
+            if not (prior_precision.ndim == 0 or (prior_precision.ndim == 1 and len(prior_precision) == 1)):
+                raise ValueError('Only isotropic priors supported in FunctionalLaplace')
 
     def _init_K_MM(self):
         if self.diagonal_kernel:
@@ -1376,54 +1388,8 @@ class FunctionalLaplace(BaseLaplace):
             v = torch.linalg.solve(Sigma_inv, K_M_star)
             return torch.einsum('bcm,bcn->bmn', v, v)
 
-    def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
-        """Compute the approximation to the log marginal likelihood subject
-
-        Requires that the Laplace approximation has been fit before.
-        The resulting torch.Tensor is differentiable in `prior_precision` and
-        `sigma_noise` if these have gradients enabled.
-        By passing `prior_precision` or `sigma_noise`, the current value is
-        overwritten. This is useful for iterating on the log marginal likelihood.
-
-        Parameters
-        ----------
-        prior_precision : torch.Tensor, optional
-            prior precision if should be changed from current `prior_precision` value
-        sigma_noise : [type], optional
-            observation noise standard deviation if should be changed
-
-        Returns
-        -------
-        log_marglik : torch.Tensor
-        """
-        assert self._fitted, "Call laplace.fit() before evaluating marginal likelihood"
-
-        # update prior precision (useful when iterating on marglik)
-        if prior_precision is not None:
-            self.prior_precision = prior_precision
-
-        # update sigma_noise (useful when iterating on marglik)
-        if sigma_noise is not None:
-            if self.likelihood != 'regression':
-                raise ValueError('Can only change sigma_noise for regression.')
-            self.sigma_noise = sigma_noise
-
-        # if self.likelihood == 'classification':
-        #     if not self.diagonal_kernel:
-        #         warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
-        #                       'independent GP kernels.')
-        #     return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
-        # elif self.likelihood == 'regression':
-        #     return  - 0.5 * (self.log_det_K + self.scatter_lml +
-        #                      torch.tensor(self.M * self.n_outputs * np.log(2 * np.pi), requires_grad=True))
-
-        if self.likelihood == 'classification' and not self.diagonal_kernel:
-                warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
-                              'independent GP kernels.')
-        return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
-
     @property
-    def log_det_K(self):
+    def log_det_term(self):
         """
         Computes log determinant term in GP marginal likelihood
 
@@ -1458,7 +1424,7 @@ class FunctionalLaplace(BaseLaplace):
                 return torch.logdet(W[:, None] * self.gp_kernel_prior_variance * self.K_MM * W + torch.eye(n=self.K_MM.shape[0], device=self._device))
 
     @property
-    def scatter_lml(self, eps=0.001):
+    def scatter(self, eps=0.001):
         """
         Compute scatter term in GP log marginal likelihood.
 
