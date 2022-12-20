@@ -13,7 +13,7 @@ def download_pretrained_model():
 
 
 def plot_regression(X_train, y_train, X_test, f_test, y_std, plot=True, 
-                    file_name='regression_example'):
+                    file_name='regression_example', la_type='full'):
     fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, sharey=True,
                                 figsize=(4.5, 2.8))
     ax1.set_title('MAP')
@@ -21,7 +21,7 @@ def plot_regression(X_train, y_train, X_test, f_test, y_std, plot=True,
     ax1.plot(X_test, f_test, color='black', label='$f_{MAP}$')
     ax1.legend()
 
-    ax2.set_title('LA')
+    ax2.set_title(f'LA-{la_type}')
     ax2.scatter(X_train.flatten(), y_train.flatten(), alpha=0.3, color='tab:orange')
     ax2.plot(X_test, f_test, label='$\mathbb{E}[f]$')
     ax2.fill_between(X_test, f_test-y_std*2, f_test+y_std*2, 

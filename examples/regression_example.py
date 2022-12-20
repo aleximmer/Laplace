@@ -1,4 +1,3 @@
-from laplace.baselaplace import FullLaplace
 from laplace.curvature.backpack import BackPackGGN
 import numpy as np
 import torch
@@ -8,8 +7,13 @@ from laplace import Laplace, marglik_training
 from helper.dataloaders import get_sinusoid_example
 from helper.util import plot_regression
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
 
 n_epochs = 1000
+# la_type = 'full'
+la_type = 'gp'
 torch.manual_seed(711)
 
 # create toy regression data
@@ -33,9 +37,7 @@ for i in range(n_epochs):
         loss.backward()
         optimizer.step()
 
-la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
-# TODO: remove GP code before merging
-# la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='gp')
+la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure=la_type)
 
 la.fit(train_loader)
 log_prior, log_sigma = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
@@ -47,22 +49,24 @@ for i in range(n_epochs):
     hyper_optimizer.step()
 
 print(f'sigma={la.sigma_noise.item():.2f}',
-      f'prior precision={la.prior_precision.item():.2f}')
+      f'prior precision={la.prior_precision.item():.2f}',
+      f'NLL={neg_marglik:.2f}')
 
 x = X_test.flatten().cpu().numpy()
 f_mu, f_var = la(X_test)
 f_mu = f_mu.squeeze().detach().cpu().numpy()
+print(f"MAE: {np.abs(x - f_mu).mean():.2f}")
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 
 plot_regression(X_train, y_train, x, f_mu, pred_std, 
-                file_name='regression_example', plot=True)
+                file_name='regression_example', plot=True, la_type=la_type)
 
 # alternatively, optimize parameters and hyperparameters of the prior jointly
 model = get_model()
 la, model, margliks, losses = marglik_training(
     model=model, train_loader=train_loader, likelihood='regression',
-    hessian_structure='full', backend=BackPackGGN, n_epochs=n_epochs, 
+    hessian_structure=la_type, backend=BackPackGGN, n_epochs=n_epochs,
     optimizer_kwargs={'lr': 1e-2}, prior_structure='scalar'
 )
 
@@ -71,7 +75,8 @@ print(f'sigma={la.sigma_noise.item():.2f}',
 
 f_mu, f_var = la(X_test)
 f_mu = f_mu.squeeze().detach().cpu().numpy()
+print(f"MAE: {np.abs(x - f_mu).mean():.2f}")
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 plot_regression(X_train, y_train, x, f_mu, pred_std, 
-                file_name='regression_example_online', plot=True)
+                file_name='regression_example_online', plot=True, la_type=la_type)

@@ -245,7 +245,7 @@ class GGNInterface(CurvatureInterface):
 
         return loss, H_ggn
 
-    def H_log_likelihood(self, f, sigma_factor=None):
+    def H_log_likelihood(self, f):
         """
         Second derivative (Hessian) of log-likelihood w.r.t. the output of NN \\(f\\)
 
@@ -262,17 +262,15 @@ class GGNInterface(CurvatureInterface):
               Hessian of \\(p(y|f)\\) w.r.t. \\(f\\) (batch, output_shape, output_shape)
         """
         if self.likelihood == 'regression':
-            assert sigma_factor is not None, 'sigma_factor should be provided for regression'
-            # second derivative is (1 / sigma^2) * I_{C}
             b, C = f.shape
-            H_lik = sigma_factor * torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
+            H_lik = torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)
             H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
         return H_lik
 
-    def gp_quantities(self, X, y, sigma_factor):
+    def gp_quantities(self, X, y):
         """
          Parameters
         ----------
@@ -280,7 +278,6 @@ class GGNInterface(CurvatureInterface):
             input data `(batch, input_shape)`
         y : torch.Tensor
             labels `(batch, output_shape)`
-        sigma_factor: inverse of (scaled) likelihood noise
 
         Returns
         -------
@@ -296,7 +293,7 @@ class GGNInterface(CurvatureInterface):
             Js, f = self.last_layer_jacobians(X)
         else:
             Js, f = self.jacobians(X)
-        lambdas = self.H_log_likelihood(f, sigma_factor)
+        lambdas = self.H_log_likelihood(f)
         loss = self.factor * self.lossfunc(f, y)
         return loss.detach(), Js, f, lambdas
 

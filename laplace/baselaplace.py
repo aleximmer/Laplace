@@ -1157,7 +1157,7 @@ class FunctionalLaplace(BaseLaplace):
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
         self.train_loader = None  # needed in functional variance and marginal log likelihood
         self.batch_size = None
-        self.prior_factor_sod = None
+        self._prior_factor_sod = None
         self.mu = None  # mean in the scatter term of the log marginal likelihood
         self.L = None
 
@@ -1179,7 +1179,7 @@ class FunctionalLaplace(BaseLaplace):
             self.Sigma_inv = torch.zeros(size=(self.M * self.n_outputs, self.M * self.n_outputs), device=self._device)
 
     def _curv_closure(self, X, y):
-        return self.backend.gp_quantities(X, y, self._H_factor)
+        return self.backend.gp_quantities(X, y)
 
     def _store_K_batch(self, K_batch, i, j):
         if self.diagonal_kernel:
@@ -1206,10 +1206,10 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_Sigma_inv(self):
         if self.diagonal_kernel:
-            return [torch.linalg.cholesky(self.K_MM[c] + torch.diag(torch.nan_to_num(1. / lambda_c, posinf=10.))) for c, lambda_c in
+            return [torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM[c] + torch.diag(torch.nan_to_num(1. / (self._H_factor * lambda_c), posinf=10.))) for c, lambda_c in
                     enumerate(self.L)]
         else:
-            return torch.linalg.cholesky(self.K_MM + torch.diag(torch.nan_to_num(1 / self.L, posinf=10.)))
+            return torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
 
     def _get_SoD_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
         """
@@ -1247,7 +1247,7 @@ class FunctionalLaplace(BaseLaplace):
             self.M = N
         train_loader = self._get_SoD_data_loader(train_loader)
         self.train_loader = train_loader
-        self.prior_factor_sod = self.M / self.n_data
+        self._prior_factor_sod = self.M / self.n_data
 
         self._init_K_MM()
         self._init_Sigma_inv()
@@ -1267,7 +1267,6 @@ class FunctionalLaplace(BaseLaplace):
                     self._store_K_batch(K_batch, i, j)
 
         self.L = self._build_L(lambdas)
-        self.Sigma_inv = self._build_Sigma_inv()
         self.mu = torch.cat(mu, dim=0)
         self._fitted = True
 
@@ -1307,6 +1306,10 @@ class FunctionalLaplace(BaseLaplace):
             return samples
         return torch.softmax(samples, dim=-1)
 
+    @property
+    def gp_kernel_prior_variance(self):
+        return self._prior_factor_sod / self.prior_precision
+
     def gp_posterior(self, X_star):
         """
         \\(q(f_* | x_*, \mathcal{D}) = \mathcal{N} (f_*, \Sigma_*) \\), where
@@ -1345,23 +1348,23 @@ class FunctionalLaplace(BaseLaplace):
         X_star : torch.Tensor
             test data points \\(X \in \mathbb{R}^{N_{test} \\times C} \\)
         """
-
-        K_star = self._kernel_star(Js_star, X_star)
+        K_star = self.gp_kernel_prior_variance * self._kernel_star(Js_star, X_star)
 
         K_M_star = []
         for X_batch, _ in self.train_loader:
-            K_M_star_batch = self._kernel_batch_star(Js_star, X_batch.to(self._device))
+            K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(Js_star, X_batch.to(self._device))
             K_M_star.append(K_M_star_batch)
 
         f_var = K_star - self._build_K_star_M(K_M_star)
         return f_var
 
     def _build_K_star_M(self, K_M_star):
+        Sigma_inv = self._build_Sigma_inv()
         K_M_star = torch.cat(K_M_star, dim=1)
         if self.diagonal_kernel:
             prods = []
             for c in range(self.n_outputs):
-                v = torch.squeeze(torch.linalg.solve(self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
+                v = torch.squeeze(torch.linalg.solve(Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
                 prod = torch.einsum('bm,bm->b', v, v)
                 prods.append(prod.unsqueeze(1))
             prods = torch.cat(prods, dim=1)
@@ -1370,7 +1373,7 @@ class FunctionalLaplace(BaseLaplace):
         else:
             # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
             K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
-            v = torch.linalg.solve(self.Sigma_inv, K_M_star)
+            v = torch.linalg.solve(Sigma_inv, K_M_star)
             return torch.einsum('bcm,bcn->bmn', v, v)
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
@@ -1405,13 +1408,16 @@ class FunctionalLaplace(BaseLaplace):
                 raise ValueError('Can only change sigma_noise for regression.')
             self.sigma_noise = sigma_noise
 
+        # TODO: understand if refitting is needed in case of a GP
+        # self.fit(self.train_loader)
         if self.likelihood == 'classification':
             if not self.diagonal_kernel:
                 warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
                               'independent GP kernels.')
             return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
         elif self.likelihood == 'regression':
-            return  - 0.5 * (self.log_det_K + self.scatter_lml + self.M * self.n_outputs * np.log(2 * np.pi))
+            return  - 0.5 * (self.log_det_K + self.scatter_lml +
+                             torch.tensor(self.M * self.n_outputs * np.log(2 * np.pi), requires_grad=True))
 
     @property
     def log_det_K(self):
@@ -1433,20 +1439,20 @@ class FunctionalLaplace(BaseLaplace):
                 log_det = torch.tensor(0., requires_grad=True)
                 for c in range(self.n_outputs):
                     log_det = log_det + torch.logdet(
-                        self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0], device=self._device) * self.sigma_noise.square())
+                        self.gp_kernel_prior_variance * self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0], device=self._device) * self.sigma_noise.square())
                 return log_det
             else:
-                return torch.logdet(self.K_MM + torch.eye(n=self.K_MM.shape[0], device=self._device) * self.sigma_noise.square())
+                return torch.logdet(self.gp_kernel_prior_variance * self.K_MM + torch.eye(n=self.K_MM.shape[0], device=self._device) * self.sigma_noise.square())
         else:
             if self.diagonal_kernel:
                 log_det = torch.tensor(0., requires_grad=True)
                 for c in range(self.n_outputs):
-                    W = torch.sqrt(self.L[c])
-                    log_det = log_det + torch.logdet(W[:, None] * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0], device=self._device))
+                    W = torch.sqrt(self._H_factor * self.L[c])
+                    log_det = log_det + torch.logdet(W[:, None] * self.gp_kernel_prior_variance * self.K_MM[c] * W + torch.eye(n=self.K_MM[c].shape[0], device=self._device))
                 return log_det
             else:
-                W = torch.sqrt(self.L)
-                return torch.logdet(W[:, None] * self.K_MM * W + torch.eye(n=self.K_MM.shape[0], device=self._device))
+                W = torch.sqrt(self._H_factor * self.L)
+                return torch.logdet(W[:, None] * self.gp_kernel_prior_variance * self.K_MM * W + torch.eye(n=self.K_MM.shape[0], device=self._device))
 
     @property
     def scatter_lml(self, eps=0.001):
@@ -1472,10 +1478,10 @@ class FunctionalLaplace(BaseLaplace):
         if self.diagonal_kernel:
             scatter = torch.tensor(0., requires_grad=True)
             for c in range(self.n_outputs):
-                K_inv = torch.inverse(self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0], device=self._device) * noise)
+                K_inv = torch.inverse(self.gp_kernel_prior_variance * self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0], device=self._device) * noise)
                 scatter = scatter + torch.dot(self.mu[:, c], torch.matmul(K_inv, self.mu[:, c]))
         else:
-            K_inv = torch.inverse(self.K_MM + torch.eye(n=self.K_MM.shape[0], device=self._device) * noise)
+            K_inv = torch.inverse(self.gp_kernel_prior_variance * self.K_MM + torch.eye(n=self.K_MM.shape[0], device=self._device) * noise)
             scatter = torch.dot(self.mu.reshape(-1), torch.matmul(K_inv, self.mu.reshape(-1)))
 
         return scatter
@@ -1511,11 +1517,10 @@ class FunctionalLaplace(BaseLaplace):
         """
         jacobians_2, _ = self._jacobians(batch)
         P = jacobians.shape[-1]  # nr model params
-        prior = self.prior_factor_sod / self.prior_precision_diag
         if self.diagonal_kernel:
-            kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
+            kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2)
         else:
-            kernel = torch.einsum('ap,p,bp->ab', jacobians.reshape(-1, P), prior, jacobians_2.reshape(-1, P))
+            kernel = torch.einsum('ap,bp->ab', jacobians.reshape(-1, P), jacobians_2.reshape(-1, P))
         return kernel
 
     def _kernel_star(self, jacobians, batch):
@@ -1534,11 +1539,10 @@ class FunctionalLaplace(BaseLaplace):
 
         """
         jacobians_2, _ = self._jacobians(batch)
-        prior = self.prior_factor_sod / self.prior_precision_diag
         if self.diagonal_kernel:
-            kernel = torch.einsum('bcp,bcp->bc', jacobians, jacobians_2 * prior)
+            kernel = torch.einsum('bcp,bcp->bc', jacobians, jacobians_2)
         else:
-            kernel = torch.einsum('bcp,p,bep->bce', jacobians, prior, jacobians_2)
+            kernel = torch.einsum('bcp,bep->bce', jacobians, jacobians_2)
         return kernel
 
     def _kernel_batch_star(self, jacobians, batch):
@@ -1556,11 +1560,10 @@ class FunctionalLaplace(BaseLaplace):
             K_batch_star with shape (b1, b2, C, C)
         """
         jacobians_2, _ = self._jacobians(batch)
-        prior = self.prior_factor_sod / self.prior_precision_diag
         if self.diagonal_kernel:
-            kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2 * prior)
+            kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2)
         else:
-            kernel = torch.einsum('bcp,p,dep->bdce', jacobians, prior, jacobians_2)
+            kernel = torch.einsum('bcp,dep->bdce', jacobians, jacobians_2)
         return kernel
 
     def _jacobians(self, X):

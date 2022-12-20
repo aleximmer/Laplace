@@ -110,7 +110,7 @@ def test_laplace_init_noise(laplace, model):
         lap = laplace(model, likelihood='regression', sigma_noise=sigma_noise)
 
 
-@pytest.mark.parametrize('laplace', flavors)
+@pytest.mark.parametrize('laplace', flavors_parametric)
 def test_laplace_init_precision(laplace, model):
     # float
     precision = 10.6

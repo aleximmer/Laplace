@@ -250,6 +250,7 @@ def marglik_training(
         model.load_state_dict(best_model_dict)
         sigma_noise = best_sigma
         prior_prec = best_precision
+    logging.info(f'best params: {sigma_noise}, {prior_prec}')
     lap = Laplace(
         model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise, 
         prior_precision=prior_prec, temperature=temperature, backend=backend,
