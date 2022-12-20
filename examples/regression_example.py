@@ -7,8 +7,8 @@ from laplace import Laplace, marglik_training
 from helper.dataloaders import get_sinusoid_example
 from helper.util import plot_regression
 
-import logging
-logging.basicConfig(level=logging.INFO)
+# import logging
+# logging.basicConfig(level=logging.INFO)
 
 
 n_epochs = 1000
@@ -79,4 +79,4 @@ print(f"MAE: {np.abs(x - f_mu).mean():.2f}")
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 plot_regression(X_train, y_train, x, f_mu, pred_std, 
-                file_name='regression_example_online', plot=True, la_type=la_type)
+                file_name='regression_example_online', plot=True, la_type=la_type + "marglik")

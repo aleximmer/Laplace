@@ -1408,16 +1408,19 @@ class FunctionalLaplace(BaseLaplace):
                 raise ValueError('Can only change sigma_noise for regression.')
             self.sigma_noise = sigma_noise
 
-        # TODO: understand if refitting is needed in case of a GP
-        # self.fit(self.train_loader)
-        if self.likelihood == 'classification':
-            if not self.diagonal_kernel:
+        # if self.likelihood == 'classification':
+        #     if not self.diagonal_kernel:
+        #         warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
+        #                       'independent GP kernels.')
+        #     return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
+        # elif self.likelihood == 'regression':
+        #     return  - 0.5 * (self.log_det_K + self.scatter_lml +
+        #                      torch.tensor(self.M * self.n_outputs * np.log(2 * np.pi), requires_grad=True))
+
+        if self.likelihood == 'classification' and not self.diagonal_kernel:
                 warnings.warn('Classification log marginal likelihood is not well-defined without the assumption on '
                               'independent GP kernels.')
-            return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
-        elif self.likelihood == 'regression':
-            return  - 0.5 * (self.log_det_K + self.scatter_lml +
-                             torch.tensor(self.M * self.n_outputs * np.log(2 * np.pi), requires_grad=True))
+        return self.log_likelihood - 0.5 * (self.scatter_lml + self.log_det_K)
 
     @property
     def log_det_K(self):
