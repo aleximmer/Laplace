@@ -11,12 +11,6 @@ from netcal.metrics import ECE
 
 from laplace import Laplace
 
-# print(torch.has_mps)
-# print(torch.cuda.is_available())
-# print(torch.cuda.device_count())
-# print(torch.cuda.current_device())
-# print(torch.cuda.get_device_name(0))
-
 
 np.random.seed(7777)
 torch.manual_seed(7777)
@@ -55,18 +49,9 @@ nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
 print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 
-# Laplace
-# la = Laplace(model, 'classification',
-#              subset_of_weights='last_layer',
-#              hessian_structure='kron')
-
-# TODO: remove GP code before merging
-# # GP Laplace
 la = Laplace(model, 'classification',
-             subset_of_weights='all',
-             hessian_structure='gp',
-             diagonal_kernel=True, M=3200)
-
+             subset_of_weights='last_layer',
+             hessian_structure='kron')
 la.fit(train_loader)
 la.optimize_prior_precision(method='marglik')
 

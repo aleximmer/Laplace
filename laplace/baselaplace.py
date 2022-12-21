@@ -1150,7 +1150,7 @@ class FunctionalLaplace(BaseLaplace):
 
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, backend_kwargs=None,
-                 diagonal_kernel=False):
+                 diagonal_kernel=False, seed=0):
         assert backend in [BackPackGGN, AsdlGGN]
         self._check_prior_precision(prior_precision)
         super().__init__(model, likelihood, sigma_noise, prior_precision,
@@ -1158,6 +1158,7 @@ class FunctionalLaplace(BaseLaplace):
 
         self.M = M
         self.diagonal_kernel = diagonal_kernel
+        self.seed = seed
 
         self.K_MM = None
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
@@ -1223,13 +1224,12 @@ class FunctionalLaplace(BaseLaplace):
         else:
             return torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
 
-    def _get_SoD_data_loader(self, train_loader: DataLoader, seed: int = 0) -> DataLoader:
+    def _get_SoD_data_loader(self, train_loader: DataLoader) -> DataLoader:
         """
         Subset-of-Datapoints data loader
         """
-        np.random.seed(seed)
         return DataLoader(dataset=train_loader.dataset, batch_size=train_loader.batch_size,
-                          sampler=SoDSampler(N=len(train_loader.dataset), M=self.M), shuffle=False)
+                          sampler=SoDSampler(N=len(train_loader.dataset), M=self.M, seed=self.seed), shuffle=False)
 
     def fit(self, train_loader):
         """Fit the Laplace approximation of a GP posterior.

@@ -211,10 +211,10 @@ class FunctionalLLLaplace(FunctionalLaplace):
 
     def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None, diagonal_kernel=False):
+                 backend_kwargs=None, diagonal_kernel=False, seed=0):
         super().__init__(model, likelihood, M=M, sigma_noise=sigma_noise, prior_precision=1.,
                          prior_mean=0., temperature=temperature, backend=backend,
-                         backend_kwargs=backend_kwargs, diagonal_kernel=diagonal_kernel)
+                         backend_kwargs=backend_kwargs, diagonal_kernel=diagonal_kernel, seed=seed)
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
         if self.model.last_layer is None:
             self.map_estimate = None

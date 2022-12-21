@@ -8,7 +8,7 @@ from helper.dataloaders import get_sinusoid_example
 from helper.util import plot_regression
 
 # specify Laplace approximation type: full, kron, gp...
-la_type = 'gp'
+la_type = 'full'
 
 n_epochs = 1000
 torch.manual_seed(711)
