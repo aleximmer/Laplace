@@ -21,10 +21,10 @@ def predict(dataloader, model, laplace=False):
     return torch.cat(py).cpu()
 
 
-def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='last_layer') -> pd.DataFrame:
+def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='last_layer', M_arr=[10, 50, 100, 300, 500, 1000]) -> pd.DataFrame:
     targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
     metrics_df = pd.DataFrame()
-    for m in [10, 50, 100, 300, 500, 1000]:
+    for m in M_arr:
         for seed in range(5):
             la = Laplace(model, 'classification',
                          subset_of_weights=subset_of_weights,
