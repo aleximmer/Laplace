@@ -4,8 +4,15 @@ import pandas as pd
 import torch
 import torch.distributions as dists
 from netcal.metrics import ECE
-
+import wandb
 from laplace import Laplace
+import matplotlib.pyplot as plt
+import helper.wideresnet as wrn
+from  helper import util
+from helper.datasets import get_dataset
+from helper.models import get_model
+from torch.utils.data import DataLoader
+import helper.dataloaders as dl
 
 
 @torch.no_grad()
@@ -43,4 +50,60 @@ def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='las
 
             metrics_df = metrics_df.append({'M': m, 'seed': seed, 'acc_laplace': acc_laplace,
                                             'ece_laplace':ece_laplace, 'nll_laplace': nll_laplace}, ignore_index=True)
+    metrics_df["acc_laplace"] = metrics_df["acc_laplace"].apply(lambda x: x.cpu().item())
+    metrics_df["nll_laplace"] = metrics_df["nll_laplace"].apply(lambda x: x.cpu().item())
+
     return metrics_df
+
+
+def gp_calibration_eval_wandb(model, train_loader, test_loader, wandb_kwargs,
+                              subset_of_weights='last_layer', M_arr=[10, 50, 100, 300, 500, 1000]) -> pd.DataFrame:
+    with wandb.init(**wandb_kwargs) as run:
+        metrics_gp = gp_calibration_eval(model=model, train_loader=train_loader,
+                                         test_loader=test_loader, subset_of_weights=subset_of_weights, M_arr=M_arr)
+        run.log({'metrics': wandb.Table(dataframe=metrics_gp)})
+
+        for metric in ["acc_laplace", "ece_laplace", "nll_laplace"]:
+            fig, ax = plt.subplots()
+            metrics_gp.groupby(by="M")[[metric]].mean().rename({metric: "GPLaplace"}, axis=1).plot(style="-bo", ax=ax)
+            ax.set_title(metric[:3])
+            run.log({metric: wandb.Image(fig)})
+
+
+def load_model(repo: str, dataset: str, train_data):
+    if repo == "BNN-preds":
+        if dataset == "FMNIST":
+            model = get_model('CNN', train_data).to('cuda')
+            # state = torch.load("helper/models/FMNIST_CNN_117_4.6e-01.pt")
+            state = torch.load("helper/models/FMNIST_CNN_117_1.0e+01.pt")
+
+        elif dataset == "CIFAR10":
+            model = get_model('AllCNN', train_data).to('cuda')
+            state = torch.load("helper/models/CIFAR10_AllCNN_117_1.0e+01.pt")
+        model.load_state_dict(state['model'])
+        model = model.cuda()
+    else:
+        assert dataset == "CIFAR10"
+        # The model is a standard WideResNet 16-4
+        # Taken as is from https://github.com/hendrycks/outlier-exposure
+        model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
+        # print( sum(p.numel() for p in model.parameters()))
+
+        util.download_pretrained_model()
+        model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
+    return model
+
+
+def load_data(repo: str, dataset: str):
+    if repo == "BNN-preds":
+        ds_train, ds_test = get_dataset(dataset, False, 'cuda')
+        train_loader = DataLoader(ds_train, batch_size=128, shuffle=True)
+        test_loader = DataLoader(ds_test, batch_size=100, shuffle=False)
+    elif repo == "Laplace":
+        assert dataset == "CIFAR10"
+        train_loader = dl.CIFAR10(train=True)
+        test_loader = dl.CIFAR10(train=False)
+        ds_train = None
+    else:
+        raise ValueError()
+    return train_loader, test_loader, ds_train
