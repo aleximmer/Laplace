@@ -28,7 +28,8 @@ def predict(dataloader, model, laplace=False):
     return torch.cat(py).cpu()
 
 
-def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='last_layer', M_arr=[10, 50, 100, 300, 500, 1000]) -> pd.DataFrame:
+def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='last_layer',
+                        M_arr=[10, 50, 100, 300, 500, 1000], prior_precision=1.0) -> pd.DataFrame:
     targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
     metrics_df = pd.DataFrame()
     for m in M_arr:
@@ -36,9 +37,10 @@ def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='las
             la = Laplace(model, 'classification',
                          subset_of_weights=subset_of_weights,
                          hessian_structure='gp',
-                         diagonal_kernel=True, M=m, seed=seed)
+                         diagonal_kernel=True, M=m,
+                         seed=seed, prior_precision=prior_precision)
             la.fit(train_loader)
-            la.optimize_prior_precision(method='marglik')
+            # la.optimize_prior_precision(method='marglik')
 
             probs_laplace = predict(test_loader, la, laplace=True)
             acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
@@ -57,10 +59,12 @@ def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='las
 
 
 def gp_calibration_eval_wandb(model, train_loader, test_loader, wandb_kwargs,
-                              subset_of_weights='last_layer', M_arr=[10, 50, 100, 300, 500, 1000]) -> pd.DataFrame:
+                              subset_of_weights='last_layer', M_arr=[10, 50, 100, 300, 500, 1000],
+                              prior_precision=1.0) -> pd.DataFrame:
     with wandb.init(**wandb_kwargs) as run:
         metrics_gp = gp_calibration_eval(model=model, train_loader=train_loader,
-                                         test_loader=test_loader, subset_of_weights=subset_of_weights, M_arr=M_arr)
+                                         test_loader=test_loader, subset_of_weights=subset_of_weights,
+                                         M_arr=M_arr, prior_precision=prior_precision)
         run.log({'metrics': wandb.Table(dataframe=metrics_gp)})
 
         for metric in ["acc_laplace", "ece_laplace", "nll_laplace"]:
@@ -76,10 +80,14 @@ def load_model(repo: str, dataset: str, train_data):
             model = get_model('CNN', train_data).to('cuda')
             # state = torch.load("helper/models/FMNIST_CNN_117_4.6e-01.pt")
             state = torch.load("helper/models/FMNIST_CNN_117_1.0e+01.pt")
+            prior_precision = 10.
 
         elif dataset == "CIFAR10":
             model = get_model('AllCNN', train_data).to('cuda')
             state = torch.load("helper/models/CIFAR10_AllCNN_117_1.0e+01.pt")
+            prior_precision = 1.
+        else:
+            raise ValueError()
         model.load_state_dict(state['model'])
         model = model.cuda()
     else:
@@ -91,7 +99,8 @@ def load_model(repo: str, dataset: str, train_data):
 
         util.download_pretrained_model()
         model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
-    return model
+        prior_precision = 1.
+    return model, prior_precision
 
 
 def load_data(repo: str, dataset: str):

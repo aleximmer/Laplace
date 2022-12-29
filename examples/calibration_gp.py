@@ -28,12 +28,13 @@ if __name__ == "__main__":
     # SUBSET_OF_WEIGHTS = "last_layer"
     # SUBSET_OF_WEIGHTS = "all"
 
+
     for SUBSET_OF_WEIGHTS in ["last_layer", "all"]:
         for DEFAULT_TYPE in [torch.float32, torch.float64]:
             torch.set_default_dtype(DEFAULT_TYPE)
 
             train_loader, test_loader, ds_train = load_data(REPO, DATASET)
-            model = load_model(repo=REPO, dataset=DATASET, train_data=ds_train)
+            model, prior_precision = load_model(repo=REPO, dataset=DATASET, train_data=ds_train)
 
             wandb_kwargs = {
                     'project': 'laplace',
@@ -46,4 +47,4 @@ if __name__ == "__main__":
 
             gp_calibration_eval_wandb(model=model, train_loader=train_loader,wandb_kwargs=wandb_kwargs,
                                       subset_of_weights=SUBSET_OF_WEIGHTS, test_loader=test_loader,
-                                      M_arr=[50, 100, 200, 400, 800, 1600])
+                                      M_arr=[50, 100, 200, 400, 800, 1600], prior_precision=prior_precision)
