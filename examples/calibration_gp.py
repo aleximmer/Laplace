@@ -1,10 +1,13 @@
 import sys; sys.path.insert(0, "../")
-
+import os
 import warnings
 warnings.simplefilter("ignore", UserWarning)
 import torch
 import numpy as np
 from helper.calibration_gp_utils import gp_calibration_eval_wandb, load_data, load_model
+
+
+os.environ["WANDB_API_KEY"] = "e31842f98007cca7e04fd98359ea9bdadda29073"
 
 if __name__ == "__main__":
     np.random.seed(7777)
