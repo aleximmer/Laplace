@@ -22,7 +22,7 @@ MNIST_transform = transforms.ToTensor()
 class QuickDS(VisionDataset):
 
     def __init__(self, ds, device):
-        self.D = [(ds[i][0].to(device), torch.tensor(ds[i][1]).to(device))
+        self.D = [(ds[i][0].to(device).requires_grad_(), torch.tensor(ds[i][1]).to(device).requires_grad_())
                   for i in range(len(ds))]
         self.K = ds.K
         self.channels = ds.channels
