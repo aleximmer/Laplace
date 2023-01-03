@@ -44,7 +44,7 @@ if __name__ == "__main__":
                         'project': 'laplace',
                         'entity': 'metodj',
                         'notes': '',
-                        'mode': 'offline',
+                        'mode': 'online',
                         'config': {"repo": REPO,
                                    "dataset": DATASET,
                                    "subset_of_weights": SUBSET_OF_WEIGHTS,

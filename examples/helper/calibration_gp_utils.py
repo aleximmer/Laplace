@@ -81,8 +81,10 @@ def load_model(repo: str, dataset: str, train_data):
         if dataset == "FMNIST":
             model = get_model('CNN', train_data).to('cuda')
             # state = torch.load("helper/models/FMNIST_CNN_117_4.6e-01.pt")
-            state = torch.load("helper/models/FMNIST_CNN_117_1.0e+01.pt")
-            prior_precision = 10.
+            # state = torch.load("helper/models/FMNIST_CNN_117_1.0e+01.pt")
+            # prior_precision = 10.
+            state = torch.load("helper/models/FMNIST_CNN_10_2.2e+02.pt")
+            prior_precision = 215.44
 
         elif dataset == "CIFAR10":
             model = get_model('AllCNN', train_data).to('cuda')
