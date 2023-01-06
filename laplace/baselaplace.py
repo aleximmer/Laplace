@@ -1264,7 +1264,6 @@ class FunctionalLaplace(BaseLaplace):
 
         self._init_K_MM()
         self._init_Sigma_inv()
-        self._build_Sigma_inv()
 
         f, lambdas, mu = [], [], []
         for i, (X, y) in enumerate(train_loader):
@@ -1282,6 +1281,7 @@ class FunctionalLaplace(BaseLaplace):
 
         self.L = self._build_L(lambdas)
         self.mu = torch.cat(mu, dim=0)
+        self._build_Sigma_inv()
         self._fitted = True
 
     def __call__(self, x, pred_type='gp', link_approx='probit', n_samples=100):
