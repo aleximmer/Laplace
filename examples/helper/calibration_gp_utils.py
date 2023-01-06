@@ -78,6 +78,9 @@ def gp_calibration_eval_wandb(model, train_loader, test_loader, wandb_kwargs,
 
 
 def load_model(repo: str, dataset: str, train_data):
+    def count_parameters(_model):
+        return sum(p.numel() for p in _model.parameters() if p.requires_grad)
+
     if repo == "BNN-preds":
         if dataset == "FMNIST":
             model = get_model('CNN', train_data).to('cuda')
@@ -105,6 +108,7 @@ def load_model(repo: str, dataset: str, train_data):
         util.download_pretrained_model()
         model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
         prior_precision = 1.
+    print(f"Model params: {count_parameters(model)}")
     return model, prior_precision
 
 

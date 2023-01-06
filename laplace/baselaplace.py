@@ -1218,12 +1218,11 @@ class FunctionalLaplace(BaseLaplace):
             return L_diag
 
     def _build_Sigma_inv(self):
-        print(f'Delta sanity check: {self.gp_kernel_prior_variance}')
         if self.diagonal_kernel:
-            self.Sigma_inv = [torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM[c] + torch.diag(torch.nan_to_num(1. / (self._H_factor * lambda_c), posinf=10.))) for c, lambda_c in
+            self.Sigma_inv = [torch.linalg.cholesky(self.K_MM[c] + torch.diag(torch.nan_to_num(1. / (self._H_factor * lambda_c), posinf=10.))) for c, lambda_c in
                     enumerate(self.L)]
         else:
-            self.Sigma_inv = torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
+            self.Sigma_inv = torch.linalg.cholesky(self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
 
     def _get_SoD_data_loader(self, train_loader: DataLoader) -> DataLoader:
         """
@@ -1377,7 +1376,7 @@ class FunctionalLaplace(BaseLaplace):
         if self.diagonal_kernel:
             prods = []
             for c in range(self.n_outputs):
-                v = torch.squeeze(torch.linalg.solve(self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
+                v = torch.squeeze(torch.linalg.solve((1 / self.gp_kernel_prior_variance ) * self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
                 prod = torch.einsum('bm,bm->b', v, v)
                 prods.append(prod.unsqueeze(1))
             prods = torch.cat(prods, dim=1)
@@ -1386,7 +1385,7 @@ class FunctionalLaplace(BaseLaplace):
         else:
             # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
             K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
-            v = torch.linalg.solve(self.Sigma_inv, K_M_star)
+            v = torch.linalg.solve((1 / self.gp_kernel_prior_variance ) * self.Sigma_inv, K_M_star)
             return torch.einsum('bcm,bcn->bmn', v, v)
 
     @property
@@ -1488,9 +1487,18 @@ class FunctionalLaplace(BaseLaplace):
         jacobians_2, _ = self._jacobians(batch)
         P = jacobians.shape[-1]  # nr model params
         if self.diagonal_kernel:
+            # TODO: here we run into memory issues for large batch size, torch.einsum seems to be memory inefficient
             kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2)
+            # kernel = []
+            # for i in range(len(jacobians)):
+            #     kernel_i = []
+            #     for j in range(len(jacobians_2)):
+            #         kernel_i.append((jacobians[i] * jacobians_2[j]).sum(dim=1))
+            #     kernel.append(torch.stack(kernel_i))
+            # kernel = torch.stack(kernel)
         else:
             kernel = torch.einsum('ap,bp->ab', jacobians.reshape(-1, P), jacobians_2.reshape(-1, P))
+        del jacobians_2
         return kernel
 
     def _kernel_star(self, jacobians, batch):
