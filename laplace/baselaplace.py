@@ -1218,11 +1218,12 @@ class FunctionalLaplace(BaseLaplace):
             return L_diag
 
     def _build_Sigma_inv(self):
+        print(f'Delta sanity check: {self.gp_kernel_prior_variance}')
         if self.diagonal_kernel:
-            return [torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM[c] + torch.diag(torch.nan_to_num(1. / (self._H_factor * lambda_c), posinf=10.))) for c, lambda_c in
+            self.Sigma_inv = [torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM[c] + torch.diag(torch.nan_to_num(1. / (self._H_factor * lambda_c), posinf=10.))) for c, lambda_c in
                     enumerate(self.L)]
         else:
-            return torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
+            self.Sigma_inv = torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
 
     def _get_SoD_data_loader(self, train_loader: DataLoader) -> DataLoader:
         """
@@ -1263,6 +1264,7 @@ class FunctionalLaplace(BaseLaplace):
 
         self._init_K_MM()
         self._init_Sigma_inv()
+        self._build_Sigma_inv()
 
         f, lambdas, mu = [], [], []
         for i, (X, y) in enumerate(train_loader):
@@ -1371,13 +1373,11 @@ class FunctionalLaplace(BaseLaplace):
         return f_var
 
     def _build_K_star_M(self, K_M_star):
-        print(f'Delta sanity check: {self.gp_kernel_prior_variance}')
-        Sigma_inv = self._build_Sigma_inv()
         K_M_star = torch.cat(K_M_star, dim=1)
         if self.diagonal_kernel:
             prods = []
             for c in range(self.n_outputs):
-                v = torch.squeeze(torch.linalg.solve(Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
+                v = torch.squeeze(torch.linalg.solve(self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
                 prod = torch.einsum('bm,bm->b', v, v)
                 prods.append(prod.unsqueeze(1))
             prods = torch.cat(prods, dim=1)
@@ -1386,7 +1386,7 @@ class FunctionalLaplace(BaseLaplace):
         else:
             # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
             K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
-            v = torch.linalg.solve(Sigma_inv, K_M_star)
+            v = torch.linalg.solve(self.Sigma_inv, K_M_star)
             return torch.einsum('bcm,bcn->bmn', v, v)
 
     @property
