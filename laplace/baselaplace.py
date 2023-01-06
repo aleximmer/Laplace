@@ -1371,6 +1371,7 @@ class FunctionalLaplace(BaseLaplace):
         return f_var
 
     def _build_K_star_M(self, K_M_star):
+        print(f'Delta sanity check: {self.gp_kernel_prior_variance}')
         Sigma_inv = self._build_Sigma_inv()
         K_M_star = torch.cat(K_M_star, dim=1)
         if self.diagonal_kernel:

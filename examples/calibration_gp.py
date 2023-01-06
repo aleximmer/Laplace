@@ -31,10 +31,11 @@ if __name__ == "__main__":
     # SUBSET_OF_WEIGHTS = "last_layer"
     # SUBSET_OF_WEIGHTS = "all"
 
+    DEFAULT_TYPE = torch.float32
 
-    for SUBSET_OF_WEIGHTS in ["last_layer", "all"]:
-        for DEFAULT_TYPE in [torch.float32, torch.float64]:
-            for OPTIMIZE_PRIOR_PRECISION in [False, True]:
+    for SUBSET_OF_WEIGHTS in ["last_layer"]:
+    # for SUBSET_OF_WEIGHTS in ["last_layer", "all"]:
+        for OPTIMIZE_PRIOR_PRECISION in [False, True]:
                 torch.set_default_dtype(DEFAULT_TYPE)
 
                 train_loader, test_loader, ds_train = load_data(REPO, DATASET)
