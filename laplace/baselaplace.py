@@ -236,8 +236,8 @@ class BaseLaplace:
 
     def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
                                       init_prior_prec=1., val_loader=None, loss=get_nll,
-                                      log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                      link_approx='probit', n_samples=100, verbose=False,
+                                      log_prior_prec_min=-1, log_prior_prec_max=3, grid_size=13,
+                                      link_approx='probit', n_samples=100, verbose=True,
                                       cv_loss_with_var=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
@@ -287,6 +287,7 @@ class BaseLaplace:
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
                 neg_log_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
+                print(prior_prec, neg_log_marglik)
                 neg_log_marglik.backward()
                 optimizer.step()
             self.prior_precision = log_prior_prec.detach().exp()
@@ -328,6 +329,7 @@ class BaseLaplace:
                 result = np.inf
             results.append(result)
             prior_precs.append(prior_prec)
+            print(result)
         return prior_precs[np.argmin(results)]
 
     @property
@@ -1219,10 +1221,10 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_Sigma_inv(self):
         if self.diagonal_kernel:
-            self.Sigma_inv = [torch.linalg.cholesky(self.K_MM[c] + torch.diag(torch.nan_to_num(1. / (self._H_factor * lambda_c), posinf=10.))) for c, lambda_c in
+            self.Sigma_inv = [torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM[c] + torch.diag(torch.nan_to_num(1. / (self._H_factor * lambda_c), posinf=10.))) for c, lambda_c in
                     enumerate(self.L)]
         else:
-            self.Sigma_inv = torch.linalg.cholesky(self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
+            self.Sigma_inv = torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM + torch.diag(torch.nan_to_num(1 / (self._H_factor * self.L), posinf=10.)))
 
     def _get_SoD_data_loader(self, train_loader: DataLoader) -> DataLoader:
         """
@@ -1376,7 +1378,7 @@ class FunctionalLaplace(BaseLaplace):
         if self.diagonal_kernel:
             prods = []
             for c in range(self.n_outputs):
-                v = torch.squeeze(torch.linalg.solve((1 / self.gp_kernel_prior_variance ) * self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
+                v = torch.squeeze(torch.linalg.solve(self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)), 2)
                 prod = torch.einsum('bm,bm->b', v, v)
                 prods.append(prod.unsqueeze(1))
             prods = torch.cat(prods, dim=1)
@@ -1385,7 +1387,7 @@ class FunctionalLaplace(BaseLaplace):
         else:
             # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
             K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
-            v = torch.linalg.solve((1 / self.gp_kernel_prior_variance ) * self.Sigma_inv, K_M_star)
+            v = torch.linalg.solve(self.Sigma_inv, K_M_star)
             return torch.einsum('bcm,bcn->bmn', v, v)
 
     @property
@@ -1457,9 +1459,9 @@ class FunctionalLaplace(BaseLaplace):
 
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
-                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                 log_prior_prec_min=-1, log_prior_prec_max=3, grid_size=13,
                                  pred_type='gp', link_approx='probit', n_samples=100,
-                                 verbose=False):
+                                 verbose=True):
         """
         `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='GP'`
         """

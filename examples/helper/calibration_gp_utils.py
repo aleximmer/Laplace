@@ -30,7 +30,7 @@ def predict(dataloader, model, laplace=False):
 
 def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='last_layer',
                         M_arr=[10, 50, 100, 300, 500, 1000], prior_precision=1.0,
-                        optimize_prior_precision=True, n_seeds=1) -> pd.DataFrame:
+                        optimize_prior_precision=True, n_seeds=1, opt_type='marglik') -> pd.DataFrame:
     targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
     metrics_df = pd.DataFrame()
     for m in M_arr:
@@ -42,7 +42,7 @@ def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='las
                          seed=seed, prior_precision=prior_precision)
             la.fit(train_loader)
             if optimize_prior_precision:
-                la.optimize_prior_precision(method='marglik')
+                la.optimize_prior_precision(method=opt_type, val_loader=test_loader, init_prior_prec=prior_precision)
 
             probs_laplace = predict(test_loader, la, laplace=True)
             acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
@@ -62,12 +62,12 @@ def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='las
 
 def gp_calibration_eval_wandb(model, train_loader, test_loader, wandb_kwargs,
                               subset_of_weights='last_layer', M_arr=[10, 50, 100, 300, 500, 1000],
-                              prior_precision=1.0, optimize_prior_precision=True) -> pd.DataFrame:
+                              prior_precision=1.0, optimize_prior_precision=True, opt_type='marglik') -> pd.DataFrame:
     with wandb.init(**wandb_kwargs) as run:
         metrics_gp = gp_calibration_eval(model=model, train_loader=train_loader,
                                          test_loader=test_loader, subset_of_weights=subset_of_weights,
                                          M_arr=M_arr, prior_precision=prior_precision,
-                                         optimize_prior_precision=optimize_prior_precision)
+                                         optimize_prior_precision=optimize_prior_precision, opt_type=opt_type)
         run.log({'metrics': wandb.Table(dataframe=metrics_gp)})
 
         for metric in ["acc_laplace", "ece_laplace", "nll_laplace"]:
