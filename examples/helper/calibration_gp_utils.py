@@ -42,7 +42,8 @@ def gp_calibration_eval(model, train_loader, test_loader, subset_of_weights='las
                          seed=seed, prior_precision=prior_precision)
             la.fit(train_loader)
             if optimize_prior_precision:
-                la.optimize_prior_precision(method=opt_type, val_loader=test_loader, init_prior_prec=prior_precision)
+                la.optimize_prior_precision(method=opt_type, val_loader=test_loader,
+                                            init_prior_prec=prior_precision)
 
             probs_laplace = predict(test_loader, la, laplace=True)
             acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()

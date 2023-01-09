@@ -36,9 +36,9 @@ if __name__ == "__main__":
     for SUBSET_OF_WEIGHTS in ["all"]:
     # for SUBSET_OF_WEIGHTS in ["last_layer", "all"]:
         # for OPTIMIZE_PRIOR_PRECISION in [False, True]:
-        for OPTIMIZE_PRIOR_PRECISION in [False]:
+        for OPTIMIZE_PRIOR_PRECISION in [True]:
             # for OPTIMIZE_TYPE in ['CV', 'marglik']:
-            for OPTIMIZE_TYPE in ['marglik']:
+            for OPTIMIZE_TYPE in ['marglik', 'CV']:
                 torch.set_default_dtype(DEFAULT_TYPE)
 
                 train_loader, test_loader, ds_train = load_data(REPO, DATASET)

@@ -283,11 +283,12 @@ class BaseLaplace:
             log_prior_prec = self.prior_precision.log()
             log_prior_prec.requires_grad = True
             optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
-            for _ in range(n_steps):
+            for n in range(n_steps):
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
                 neg_log_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
-                print(prior_prec, neg_log_marglik)
+                if n % 10 == 0:
+                    print(prior_prec, neg_log_marglik)
                 neg_log_marglik.backward()
                 optimizer.step()
             self.prior_precision = log_prior_prec.detach().exp()
@@ -1460,8 +1461,7 @@ class FunctionalLaplace(BaseLaplace):
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-1, log_prior_prec_max=3, grid_size=13,
-                                 pred_type='gp', link_approx='probit', n_samples=100,
-                                 verbose=True):
+                                 pred_type='gp', link_approx='probit', n_samples=100, verbose=True):
         """
         `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='GP'`
         """
@@ -1471,6 +1471,7 @@ class FunctionalLaplace(BaseLaplace):
                                            log_prior_prec_min, log_prior_prec_max,
                                            grid_size, link_approx, n_samples,
                                            verbose)
+        self._build_Sigma_inv()
 
     def _kernel_batch(self, jacobians, batch):
         """
