@@ -2,6 +2,7 @@ import urllib.request
 import os.path
 import matplotlib.pyplot as plt
 import torch
+from contextlib import nullcontext
 
 
 def download_pretrained_model():
@@ -41,13 +42,14 @@ def plot_regression(X_train, y_train, X_test, f_test, y_std, plot=True,
         plt.savefig(f'docs/{file_name}.png')
 
 
-def predict(dataloader, model, laplace=False):
-    py = []
+def predict(dataloader, model, laplace=False, la_type='kron'):
+    with torch.no_grad() if (la_type != 'gp') else nullcontext():
+        py = []
 
-    for x, _ in dataloader:
-        if laplace:
-            py.append(model(x.cuda()))
-        else:
-            py.append(torch.softmax(model(x.cuda()), dim=-1))
+        for x, _ in dataloader:
+            if laplace:
+                py.append(model(x.cuda()))
+            else:
+                py.append(torch.softmax(model(x.cuda()), dim=-1))
 
-    return torch.cat(py).cpu()
+        return torch.cat(py).cpu()

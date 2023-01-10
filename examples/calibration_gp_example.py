@@ -9,8 +9,7 @@ import torch
 from torch.utils.data import DataLoader
 import torch.distributions as dists
 
-from helper.datasets import get_dataset
-from helper.models import CIFAR10Net
+from helper.util_gp import get_dataset, CIFAR10Net
 from helper.util import predict
 from laplace import Laplace
 
@@ -45,7 +44,7 @@ for m in [50, 200, 800, 1600]:
                      prior_precision=prior_precision)
         la.fit(train_loader)
 
-        probs_laplace = predict(test_loader, la, laplace=True)
+        probs_laplace = predict(test_loader, la, laplace=True, la_type='gp')
         acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
         ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy()).cpu().item()
         nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean().cpu().item()
