@@ -151,7 +151,8 @@ def test_laplace_init_precision(laplace, model):
     lap = laplace(model, likelihood='regression', prior_precision=precision,
                   last_layer_name='1')
     # torch.tensor 1-dim param-shape
-    if laplace == KronLLLaplace:  # kron only supports per layer
+    if laplace == KronLLLaplace or laplace == FunctionalLLLaplace:
+        # kron only supports per layer and functional laplace only supports scalar precision
         with pytest.raises(ValueError):
             precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
             lap = laplace(model, likelihood='regression', prior_precision=precision,
@@ -161,9 +162,16 @@ def test_laplace_init_precision(laplace, model):
         lap = laplace(model, likelihood='regression', prior_precision=precision,
                     last_layer_name='1')
     # torch.tensor 1-dim layer-shape
-    precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
-    lap = laplace(model, likelihood='regression', prior_precision=precision,
-                  last_layer_name='1')
+    if laplace == FunctionalLLLaplace:
+        # functional laplace only supports scalar precision
+        with pytest.raises(ValueError):
+            precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
+            lap = laplace(model, likelihood='regression', prior_precision=precision,
+                          last_layer_name='1')
+    else:
+        precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
+        lap = laplace(model, likelihood='regression', prior_precision=precision,
+                      last_layer_name='1')
 
     # other than that should fail
     # higher dim
