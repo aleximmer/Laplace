@@ -236,8 +236,8 @@ class BaseLaplace:
 
     def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
                                       init_prior_prec=1., val_loader=None, loss=get_nll,
-                                      log_prior_prec_min=-1, log_prior_prec_max=3, grid_size=13,
-                                      link_approx='probit', n_samples=100, verbose=True,
+                                      log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                      link_approx='probit', n_samples=100, verbose=False,
                                       cv_loss_with_var=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
@@ -1462,8 +1462,9 @@ class FunctionalLaplace(BaseLaplace):
 
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
-                                 log_prior_prec_min=-1, log_prior_prec_max=3, grid_size=13,
-                                 pred_type='gp', link_approx='probit', n_samples=100, verbose=True):
+                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                 pred_type='gp', link_approx='probit', n_samples=100,
+                                 verbose=False):
         """
         `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='GP'`
         """
@@ -1494,15 +1495,7 @@ class FunctionalLaplace(BaseLaplace):
         jacobians_2, _ = self._jacobians(batch)
         P = jacobians.shape[-1]  # nr model params
         if self.diagonal_kernel:
-            # TODO: here we run into memory issues for large batch size, torch.einsum seems to be memory inefficient
             kernel = torch.einsum('bcp,ecp->bec', jacobians, jacobians_2)
-            # kernel = []
-            # for i in range(len(jacobians)):
-            #     kernel_i = []
-            #     for j in range(len(jacobians_2)):
-            #         kernel_i.append((jacobians[i] * jacobians_2[j]).sum(dim=1))
-            #     kernel.append(torch.stack(kernel_i))
-            # kernel = torch.stack(kernel)
         else:
             kernel = torch.einsum('ap,bp->ab', jacobians.reshape(-1, P), jacobians_2.reshape(-1, P))
         del jacobians_2

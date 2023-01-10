@@ -17,10 +17,17 @@ def get_nll(out_dist, targets):
     return F.nll_loss(torch.log(out_dist), targets)
 
 
-# @torch.no_grad()
 def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
     if pred_type == 'gp':
         laplace._build_Sigma_inv()
+        preds = _validate(laplace, val_loader, pred_type, link_approx, n_samples)
+    else:
+        with torch.no_grad():
+            preds = _validate(laplace, val_loader, pred_type, link_approx, n_samples)
+    return preds
+
+
+def _validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
     laplace.model.eval()
     output_means, output_vars = list(), list()
     targets = list()
