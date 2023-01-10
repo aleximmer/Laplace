@@ -44,6 +44,8 @@ for i in range(n_epochs):
     neg_marglik = - la.log_marginal_likelihood(log_prior.exp(), log_sigma.exp())
     neg_marglik.backward()
     hyper_optimizer.step()
+if la_type == 'gp':
+    la._build_Sigma_inv()
 
 x = X_test.flatten().cpu().numpy()
 f_mu, f_var = la(X_test)
