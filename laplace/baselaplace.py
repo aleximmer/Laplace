@@ -287,7 +287,7 @@ class BaseLaplace:
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
                 neg_log_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
-                if n % 10 == 0:
+                if verbose and (n % 10 == 0):
                     print(prior_prec, neg_log_marglik)
                 neg_log_marglik.backward()
                 optimizer.step()
@@ -330,7 +330,6 @@ class BaseLaplace:
                 result = np.inf
             results.append(result)
             prior_precs.append(prior_prec)
-            print(result)
         return prior_precs[np.argmin(results)]
 
     @property
@@ -1427,7 +1426,7 @@ class FunctionalLaplace(BaseLaplace):
                 return torch.logdet(W[:, None] * self.gp_kernel_prior_variance * self.K_MM * W + torch.eye(n=self.K_MM.shape[0], device=self._device))
 
     @property
-    def scatter(self, eps=0.001):
+    def scatter(self, eps=0.00001):
         """
         Compute scatter term in GP log marginal likelihood.
 
@@ -1450,12 +1449,15 @@ class FunctionalLaplace(BaseLaplace):
         if self.diagonal_kernel:
             scatter = torch.tensor(0., requires_grad=True)
             for c in range(self.n_outputs):
-                K_inv = torch.inverse(self.gp_kernel_prior_variance * self.K_MM[c] + torch.eye(n=self.K_MM[c].shape[0], device=self._device) * noise)
-                scatter = scatter + torch.dot(self.mu[:, c], torch.matmul(K_inv, self.mu[:, c]))
+                m = self.K_MM[c].shape[0]
+                mu_term = torch.linalg.solve(torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM[c] + torch.diag(torch.ones(m, device=self._device) * noise)),
+                                             self.mu[:, c])
+                scatter = scatter + torch.dot(mu_term, mu_term)
         else:
-            K_inv = torch.inverse(self.gp_kernel_prior_variance * self.K_MM + torch.eye(n=self.K_MM.shape[0], device=self._device) * noise)
-            scatter = torch.dot(self.mu.reshape(-1), torch.matmul(K_inv, self.mu.reshape(-1)))
-
+            m = self.K_MM.shape[0]
+            mu_term = torch.linalg.solve(torch.linalg.cholesky(self.gp_kernel_prior_variance * self.K_MM + torch.diag(torch.ones(m, device=self._device) * noise)),
+                                         self.mu.reshape(-1))
+            scatter = torch.dot(mu_term, mu_term)
         return scatter
 
     def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
@@ -1466,6 +1468,8 @@ class FunctionalLaplace(BaseLaplace):
         `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='GP'`
         """
         assert pred_type == 'gp'
+        if method == 'marglik':
+            warnings.warn('Use of method=\'marglik\' in case of FunctionalLaplace is discouraged, rather use method=\'CV\'.')
         self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
                                            init_prior_prec, val_loader, loss,
                                            log_prior_prec_min, log_prior_prec_max,
@@ -1579,4 +1583,4 @@ class FunctionalLaplace(BaseLaplace):
         if self.likelihood == 'regression':
             return y - (f + torch.einsum('bcp,p->bc', Js, self.prior_mean - self.map_estimate))
         elif self.likelihood == "classification":
-            return f
+            return - torch.einsum('bcp,p->bc', Js, self.prior_mean - self.map_estimate)
