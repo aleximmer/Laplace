@@ -1,8 +1,11 @@
 import urllib.request
 import os.path
+from contextlib import nullcontext
+
 import matplotlib.pyplot as plt
 import torch
-from contextlib import nullcontext
+import torch.distributions as dists
+from netcal.metrics import ECE
 
 
 def download_pretrained_model():
@@ -53,3 +56,10 @@ def predict(dataloader, model, laplace=False, la_type='kron'):
                 py.append(torch.softmax(model(x.cuda()), dim=-1))
 
         return torch.cat(py).cpu()
+
+
+def get_metrics(probs, targets):
+    acc = (probs.argmax(-1) == targets).float().mean().cpu().item()
+    ece = ECE(bins=15).measure(probs.numpy(), targets.numpy())
+    nll = -dists.Categorical(probs).log_prob(targets).mean().cpu().item()
+    return acc, ece, nll

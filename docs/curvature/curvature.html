@@ -254,7 +254,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 </dl></div>
 </dd>
 <dt id="laplace.curvature.curvature.GGNInterface.H_log_likelihood"><code class="name flex">
-<span>def <span class="ident">H_log_likelihood</span></span>(<span>self, f, sigma_factor=None)</span>
+<span>def <span class="ident">H_log_likelihood</span></span>(<span>self, f)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Second derivative (Hessian) of log-likelihood w.r.t. the output of NN <span><span class="MathJax_Preview">f</span><script type="math/tex">f</script></span></p>
@@ -272,7 +272,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 </dl></div>
 </dd>
 <dt id="laplace.curvature.curvature.GGNInterface.gp_quantities"><code class="name flex">
-<span>def <span class="ident">gp_quantities</span></span>(<span>self, X, y, sigma_factor)</span>
+<span>def <span class="ident">gp_quantities</span></span>(<span>self, X, y)</span>
 </code></dt>
 <dd>
 <div class="desc"><h2 id="parameters">Parameters</h2>
@@ -281,8 +281,6 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 <dd>input data <code>(batch, input_shape)</code></dd>
 <dt><strong><code>y</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>labels <code>(batch, output_shape)</code></dd>
-<dt><strong><code>sigma_factor</code></strong> :&ensp;<code>inverse</code> of <code>(scaled) likelihood noise</code></dt>
-<dd>&nbsp;</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>

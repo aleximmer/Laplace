@@ -1460,9 +1460,9 @@ class FunctionalLaplace(BaseLaplace):
             scatter = torch.dot(mu_term, mu_term)
         return scatter
 
-    def optimize_prior_precision(self, method='marglik', n_steps=100, lr=1e-1,
+    def optimize_prior_precision(self, method='CV', n_steps=100, lr=1e-1,
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
-                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
+                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=10,
                                  pred_type='gp', link_approx='probit', n_samples=100,
                                  verbose=False):
         """

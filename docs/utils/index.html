@@ -227,6 +227,23 @@ NeurIPS 2019.</p>
 <dd>vector of marginal variances for each model parameter</dd>
 </dl></div>
 </dd>
+<dt id="laplace.utils.normal_samples"><code class="name flex">
+<span>def <span class="ident">normal_samples</span></span>(<span>mean, var, n_samples, generator=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Produce samples from a batch of Normal distributions either parameterized
+by a diagonal or full covariance given by <code>var</code>.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>mean</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd><code>(batch_size, output_dim)</code></dd>
+<dt><strong><code>var</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>(co)variance of the Normal distribution
+<code>(batch_size, output_dim, output_dim)</code> or <code>(batch_size, output_dim)</code></dd>
+<dt><strong><code>generator</code></strong> :&ensp;<code>torch.Generator</code></dt>
+<dd>random number generator</dd>
+</dl></div>
+</dd>
 </dl>
 </section>
 <section>
@@ -888,7 +905,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </dd>
 <dt id="laplace.utils.SoDSampler"><code class="flex name class">
 <span>class <span class="ident">SoDSampler</span></span>
-<span>(</span><span>N, M)</span>
+<span>(</span><span>N, M, seed: int = 0)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Base class for all Samplers.</p>
@@ -941,6 +958,7 @@ calculation involving the length of a :class:<code>~torch.utils.data.DataLoader<
 <li><code><a title="laplace.utils.block_diag" href="#laplace.utils.block_diag">block_diag</a></code></li>
 <li><code><a title="laplace.utils.expand_prior_precision" href="#laplace.utils.expand_prior_precision">expand_prior_precision</a></code></li>
 <li><code><a title="laplace.utils.fit_diagonal_swag_var" href="#laplace.utils.fit_diagonal_swag_var">fit_diagonal_swag_var</a></code></li>
+<li><code><a title="laplace.utils.normal_samples" href="#laplace.utils.normal_samples">normal_samples</a></code></li>
 </ul>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
