@@ -7,7 +7,6 @@ Note that a GPU with CUDA support is needed for this example. We recommend using
 ``` python
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
 
@@ -50,10 +49,12 @@ acc_map, ece_map, nll_map = get_metrics(probs_map, targets)
 print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 ```
 ```
-TODO: MAP results print output
+[MAP] Acc.: 91.7%; ECE: 1.6%; NLL: 0.253
 ```
 
-Next, we run Laplace-GP inference to calibrate neural network's predictions. Since running exact GP inference is computationally infeasible, we perform Subset-of-Datapoints (SoD) [3] approximation here. In the code below, `m`denotes the number of datapoints used in the SoD posterior.
+Next, we run Laplace-GP inference to calibrate neural network's predictions. Since running exact GP inference is computationally infeasible, we perform Subset-of-Datapoints (SoD) [3] approximation here. In the code below, `m`denotes the number of datapoints used in the SoD posterior. 
+
+Execution of the cell below can take between 10-20min (depending on the exact hardware used).
 
 ``` python
 metrics_df = pd.DataFrame()
@@ -78,14 +79,19 @@ for m in [50, 200, 800, 1600]:
 ```
 
 ```
-TODO: Laplace-GP results print output
+Fitting Laplace-GP for m=50
+[Laplace] Acc.: 91.6%; ECE: 1.5%; NLL: 0.252
+Fitting Laplace-GP for m=200
+[Laplace] Acc.: 91.5%; ECE: 1.1%; NLL: 0.252 
+Fitting Laplace-GP for m=800
+[Laplace] Acc.: 91.4%; ECE: 0.8%; NLL: 0.254 
+Fitting Laplace-GP for m=1600
+[Laplace] Acc.: 91.3%; ECE: 0.7%; NLL: 0.257 
 ```
 
-``` python
-# TODO: plot
-print(metrics_df)
-```
-Notice that the post-hoc Laplace-GP inference does not have a significant impact on the accuracy, yet it improves the calibration of the MAP model substantially.
+Notice that the post-hoc Laplace-GP inference does not have a significant impact on the accuracy, yet it improves the calibration (in terms of ECE) of the MAP model substantially.
+<br />
+<br />
 
 [1] Khan, Mohammad Emtiyaz E., et al. "Approximate inference turns deep networks into gaussian processes." Advances in neural information processing systems 32 (2019)
 
