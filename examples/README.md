@@ -1,4 +1,4 @@
-In addition to `laplace`, calibration examples additionally require the following packages:
+In addition to `laplace`, calibration examples require the following packages:
 ```
 deepobs
 tensorflow
