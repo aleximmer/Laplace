@@ -37,17 +37,6 @@ pip install -e .[tests]
 pytest tests/
 ```
 
-Calibration example additionally requires the following packages:
-```
-deepobs
-tensorflow
-pandas
-wandb
-netcal
-numpy==1.23.0
-```
-
-
 ## Structure
 The laplace package consists of two main components:
 

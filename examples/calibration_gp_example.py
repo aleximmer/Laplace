@@ -2,11 +2,8 @@ import warnings
 warnings.simplefilter("ignore", UserWarning)
 
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
 import torch
 from torch.utils.data import DataLoader
-
 
 from helper.util_gp import get_dataset, CIFAR10Net
 from helper.util import predict, get_metrics
@@ -37,7 +34,6 @@ probs_map = predict(test_loader, model, laplace=False)
 acc_map, ece_map, nll_map = get_metrics(probs_map, targets)
 print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 
-metrics_df = pd.DataFrame()
 for m in [50, 200, 800, 1600]:
     print(f'Fitting Laplace-GP for m={m}')
     la = Laplace(model, 'classification',
@@ -50,11 +46,3 @@ for m in [50, 200, 800, 1600]:
     probs_laplace = predict(test_loader, la, laplace=True, la_type='gp')
     acc_laplace, ece_laplace, nll_laplace = get_metrics(probs_laplace, targets)
     print(f'[Laplace-GP, m={m}] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
-
-    metrics_df = metrics_df.append({'M': m, 'acc_laplace': acc_laplace, 'ece_laplace':ece_laplace, 'nll_laplace': nll_laplace},
-                                   ignore_index=True)
-
-# TODO: plot
-print(metrics_df)
-
-

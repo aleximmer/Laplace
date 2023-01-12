@@ -49,18 +49,13 @@ nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
 print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 
+# Laplace
 la = Laplace(model, 'classification',
              subset_of_weights='last_layer',
              hessian_structure='kron')
-# la = Laplace(model, 'classification',
-#              subset_of_weights='last_layer',
-#              hessian_structure='gp',
-#              M=400, diagonal_kernel=True)
+
 la.fit(train_loader)
 la.optimize_prior_precision(method='marglik')
-# la.optimize_prior_precision(method='CV', log_prior_prec_min=-1,
-#                             log_prior_prec_max=3, grid_size=13,
-#                             val_loader=test_loader, verbose=True)
 
 probs_laplace = predict(test_loader, la, laplace=True)
 acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()

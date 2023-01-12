@@ -1,15 +1,15 @@
 ## Full example: Functional Laplace (GP) on FMNIST image classifier
-Usign GGN approximation of the Hessian matrix in Laplace approximation of a BNN gives rise to a generalized linear model which is equivalent to a GP model with a particular kernel [1, 2]. 
+Applying the General-Gauss-Newton (GGN) approximation to the Hessian in the Laplace approximation (LA) of the BNN posterior
+turns the underlying probabilistic model from a BNN into a generalized linear model (GLM).
+This GLM is equivalent to a Gaussian Process (GP) with a particular kernel [1, 2]. 
 
 In this notebook, we will show how to use `laplace` library to perform GP inference on top of a *pre-trained* neural network.
 
 Note that a GPU with CUDA support is needed for this example. We recommend using a GPU with at least 24 GB of memory. If less memory is available, we suggest reducing `BATCH_SIZE` below.
 ``` python
 import numpy as np
-import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-
 
 from helper.util_gp import get_dataset, CIFAR10Net
 from helper.util import predict, get_metrics
@@ -57,7 +57,6 @@ Next, we run Laplace-GP inference to calibrate neural network's predictions. Sin
 Execution of the cell below can take between 10-20min (depending on the exact hardware used).
 
 ``` python
-metrics_df = pd.DataFrame()
 for m in [50, 200, 800, 1600]:
     print(f'Fitting Laplace-GP for m={m}')
     la = Laplace(model, 'classification',
@@ -68,14 +67,9 @@ for m in [50, 200, 800, 1600]:
     la.fit(train_loader)
 
     probs_laplace = predict(test_loader, la, laplace=True, la_type='gp')
-    acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean().cpu().item()
-    ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
-    nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean().cpu().item()
+    acc_laplace, ece_laplace, nll_laplace = get_metrics(probs_laplace, targets)
 
     print(f'[Laplace-GP, m={m}] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
-
-    metrics_df = metrics_df.append({'M': m, 'acc_laplace': acc_laplace, 'ece_laplace':ece_laplace, 'nll_laplace': nll_laplace},
-                                   ignore_index=True)
 ```
 
 ```
