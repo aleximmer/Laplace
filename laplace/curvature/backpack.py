@@ -33,7 +33,10 @@ class BackPackInterface(CurvatureInterface):
             output function `(batch, outputs)`
         """
         model = extend(self.model)
-        P = len(parameters_to_vector(model.parameters()).detach())
+        if self.subnetwork_indices is not None:
+            P = len(self.subnetwork_indices)
+        else:
+            P = len(parameters_to_vector(model.parameters()).detach())
         Jks = torch.empty(model.output_size, x.shape[0], P, device=x.device)  # (C, b, P)
         for i in range(model.output_size):
             model.zero_grad()

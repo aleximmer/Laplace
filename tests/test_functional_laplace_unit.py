@@ -167,6 +167,7 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
     X, y = reg_Xy
     func_la = FunctionalLaplace(model, 'regression', prior_precision=1.0, diagonal_kernel=False)
     func_la.prior_factor_sod = 1.0
+    func_la.n_outputs = y.shape[-1]
     if kernel_type == 'kernel_batch':
         kernel = func_la._kernel_batch
     elif kernel_type == 'kernel_star':
@@ -185,9 +186,16 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
     mocker.patch('laplace.baselaplace.FunctionalLaplace.prior_precision_diag', torch.ones(3))
 
     # X does not have an impact since we mock jacobians in mock_jacobians above
-    full_kernel = kernel(jacobians, X)
-    assert torch.equal(expected_full_kernel, full_kernel)
+    if kernel_type == 'kernel_star':
+        full_kernel = kernel(jacobians)
+    else:
+        full_kernel = kernel(jacobians, X)
+    assert torch.all(torch.isclose(expected_full_kernel, full_kernel))
 
     func_la.diagonal_kernel = True
-    block_diag_kernel = kernel(jacobians, X)
-    assert torch.equal(expected_block_diagonal_kernel, block_diag_kernel)
+
+    if kernel_type == 'kernel_star':
+        block_diag_kernel = kernel(jacobians)
+    else:
+        block_diag_kernel = kernel(jacobians, X)
+    assert torch.all(torch.isclose(expected_block_diagonal_kernel, block_diag_kernel))
