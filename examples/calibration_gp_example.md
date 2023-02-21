@@ -54,7 +54,7 @@ print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 
 Next, we run Laplace-GP inference to calibrate neural network's predictions. Since running exact GP inference is computationally infeasible, we perform Subset-of-Datapoints (SoD) [3] approximation here. In the code below, `m`denotes the number of datapoints used in the SoD posterior. 
 
-Execution of the cell below can take between 10-20min (depending on the exact hardware used).
+Execution of the cell below can take up to 5min (depending on the exact hardware used).
 
 ``` python
 for m in [50, 200, 800, 1600]:
