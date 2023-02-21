@@ -27,7 +27,7 @@ assert torch.cuda.is_available()
 In the first step, we load the `FMNIST` dataset.
 ``` python
 DATASET = 'FMNIST'
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 ds_train, ds_test = get_dataset(DATASET, False, 'cuda')
 train_loader = DataLoader(ds_train, batch_size=BATCH_SIZE, shuffle=True)
 test_loader = DataLoader(ds_test, batch_size=BATCH_SIZE, shuffle=False)

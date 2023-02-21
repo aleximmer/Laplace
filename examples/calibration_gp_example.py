@@ -17,7 +17,7 @@ torch.backends.cudnn.benchmark = True
 assert torch.cuda.is_available()
 
 DATASET = 'FMNIST'
-BATCH_SIZE = 128
+BATCH_SIZE = 256
 ds_train, ds_test = get_dataset(DATASET, False, 'cuda')
 train_loader = DataLoader(ds_train, batch_size=BATCH_SIZE, shuffle=True)
 test_loader = DataLoader(ds_test, batch_size=BATCH_SIZE, shuffle=False)
@@ -43,7 +43,6 @@ for m in [50, 200, 800, 1600]:
                  prior_precision=prior_precision)
     la.fit(train_loader)
 
-    print(f'Predicting Laplace-GP for m={m}')
     probs_laplace = predict(test_loader, la, laplace=True, la_type='gp')
     acc_laplace, ece_laplace, nll_laplace = get_metrics(probs_laplace, targets)
     print(f'[Laplace-GP, m={m}] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
