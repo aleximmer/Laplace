@@ -43,6 +43,7 @@ for m in [50, 200, 800, 1600]:
                  prior_precision=prior_precision)
     la.fit(train_loader)
 
+    print(f'Predicting Laplace-GP for m={m}')
     probs_laplace = predict(test_loader, la, laplace=True, la_type='gp')
     acc_laplace, ece_laplace, nll_laplace = get_metrics(probs_laplace, targets)
     print(f'[Laplace-GP, m={m}] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
