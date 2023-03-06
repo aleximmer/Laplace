@@ -41,7 +41,7 @@ class BackPackInterface(CurvatureInterface):
                 if model.output_size > 1:
                     out[:, i].sum().backward()
                 else:
-                    out.sum().backward()
+                    out.sum().backward(retain_graph=True)
                 to_cat = []
                 for param in model.parameters():
                     to_cat.append(param.grad_batch.detach().reshape(x.shape[0], -1))
@@ -51,7 +51,7 @@ class BackPackInterface(CurvatureInterface):
                     Jk = Jk[:, self.subnetwork_indices]
             to_stack.append(Jk)
             if i == 0:
-                f = out.detach()
+                f = out
 
         model.zero_grad()
         CTX.remove_hooks()

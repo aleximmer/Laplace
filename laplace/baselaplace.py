@@ -363,7 +363,7 @@ class ParametricLaplace(BaseLaplace):
             self.n_data = 0
 
         self.model.eval()
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.mean = parameters_to_vector(self.model.parameters())
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
@@ -631,7 +631,7 @@ class ParametricLaplace(BaseLaplace):
     def _glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.jacobians(X)
         f_var = self.functional_variance(Js)
-        return f_mu.detach(), f_var.detach()
+        return f_mu, f_var
 
     def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()

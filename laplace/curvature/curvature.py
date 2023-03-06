@@ -87,7 +87,7 @@ class CurvatureInterface:
         if self.model.last_layer.bias is not None:
             Js = torch.cat([Js, identity], dim=2)
 
-        return Js, f.detach()
+        return Js, f
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter \\(\\theta\\).

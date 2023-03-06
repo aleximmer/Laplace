@@ -116,7 +116,7 @@ class LLLaplace(ParametricLaplace):
     def _glm_predictive_distribution(self, X):
         Js, f_mu = self.backend.last_layer_jacobians(X)
         f_var = self.functional_variance(Js)
-        return f_mu.detach(), f_var.detach()
+        return f_mu, f_var
 
     def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()
