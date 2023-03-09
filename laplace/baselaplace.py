@@ -496,8 +496,8 @@ class ParametricLaplace(BaseLaplace):
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
-    def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100, 
-                 diagonal_output=False, generator=None):
+    def __call__(self, x, pred_type='glm', joint=False, link_approx='probit', 
+                 n_samples=100, diagonal_output=False, generator=None):
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -513,6 +513,12 @@ class ParametricLaplace(BaseLaplace):
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only 'mc' is possible. 
+
+        joint : bool
+            Whether to output a joint predictive distribution in regression with
+            `pred_type='glm'`. If set to `True`, the predictive distribution
+            has the same form as GP posterior, i.e. N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
+            If `False`, then only outputs the marginal predictive distribution. 
 
         n_samples : int
             number of samples for `link_approx='mc'`.
@@ -531,6 +537,8 @@ class ParametricLaplace(BaseLaplace):
             a distribution over classes (similar to a Softmax).
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
             with the mean and the predictive variance.
+            For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor 
+            is returned with the mean and the predictive covariance. 
         """
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
@@ -546,7 +554,7 @@ class ParametricLaplace(BaseLaplace):
                 raise ValueError('Invalid random generator (check type and device).')
 
         if pred_type == 'glm':
-            f_mu, f_var = self._glm_predictive_distribution(x)
+            f_mu, f_var = self._glm_predictive_distribution(x, joint=joint)
             # regression
             if self.likelihood == 'regression':
                 return f_mu, f_var
@@ -628,9 +636,15 @@ class ParametricLaplace(BaseLaplace):
             return self._nn_predictive_samples(x, n_samples)
 
     @torch.enable_grad()
-    def _glm_predictive_distribution(self, X):
+    def _glm_predictive_distribution(self, X, joint=False):
         Js, f_mu = self.backend.jacobians(X)
-        f_var = self.functional_variance(Js)
+
+        if joint:
+            f_mu = f_mu.flatten()  # (batch*out)
+            f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
+        else:
+            f_var = self.functional_variance(Js)
+
         return f_mu, f_var
 
     def _nn_predictive_samples(self, X, n_samples=100):
@@ -663,6 +677,27 @@ class ParametricLaplace(BaseLaplace):
         -------
         f_var : torch.Tensor
             output covariance `(batch, outputs, outputs)`
+        """
+        raise NotImplementedError
+
+    def functional_covariance(self, Jacs):
+        """Compute functional covariance for the `'glm'` predictive:
+        `f_cov = Jacs @ P.inv() @ Jacs.T`, which is a batch*output x batch*output
+        predictive covariance matrix.
+
+        This emulates the GP posterior covariance N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]). 
+        Useful for joint predictions, such as in batched Bayesian optimization.
+
+        Parameters
+        ----------
+        Jacs : torch.Tensor
+            Jacobians of model output wrt parameters
+            `(batch*outputs, parameters)`
+
+        Returns
+        -------
+        f_cov : torch.Tensor
+            output covariance `(batch*outputs, batch*outputs)`
         """
         raise NotImplementedError
 
@@ -777,6 +812,11 @@ class FullLaplace(ParametricLaplace):
 
     def functional_variance(self, Js):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
+
+    def functional_covariance(self, Js):
+        n_batch, n_outs, n_params = Js.shape
+        Js = Js.reshape(n_batch*n_outs, n_params)
+        return torch.einsum('np,pq,mq->nm', Js, self.posterior_covariance, Js)
 
     def sample(self, n_samples=100):
         dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
