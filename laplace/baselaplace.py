@@ -907,6 +907,14 @@ class KronLaplace(ParametricLaplace):
     def functional_variance(self, Js):
         return self.posterior_precision.inv_square_form(Js)
 
+    def functional_covariance(self, Js):
+        self._check_jacobians(Js)
+        n_batch, n_outs, n_params = Js.shape
+        Js = Js.reshape(1, n_batch*n_outs, n_params)
+        cov = self.posterior_precision.inv_square_form(Js).squeeze()
+        assert cov.shape == (n_batch*n_outs, n_batch*n_outs)
+        return cov
+
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
@@ -998,6 +1006,16 @@ class LowRankLaplace(ParametricLaplace):
         info_gain = torch.einsum('ncl,nkl->nck', Jacs_V @ self.Kinv, Jacs_V)
         return prior_var - info_gain
 
+    def functional_covariance(self, Jacs):
+        n_batch, n_outs, n_params = Jacs.shape
+        Jacs = Jacs.reshape(n_batch*n_outs, n_params)
+        prior_cov = torch.einsum('np,mp->nm', Jacs / self.prior_precision_diag, Jacs)
+        Jacs_V = torch.einsum('np,pl->nl', Jacs, self.V)
+        info_gain = torch.einsum('nl,ml->nm', Jacs_V @ self.Kinv, Jacs_V)
+        cov = prior_cov - info_gain
+        assert cov.shape == (n_batch*n_outs, n_batch*n_outs)
+        return cov
+
     def sample(self, n_samples):
         samples = torch.randn(self.n_params, n_samples)
         d = self.prior_precision_diag
@@ -1080,6 +1098,13 @@ class DiagLaplace(ParametricLaplace):
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
         return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
+
+    def functional_covariance(self, Js):
+        self._check_jacobians(Js)
+        n_batch, n_outs, n_params = Js.shape
+        Js = Js.reshape(n_batch*n_outs, n_params)
+        cov = torch.einsum('np,p,mp->nm', Js, self.posterior_variance, Js)
+        return cov
 
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
