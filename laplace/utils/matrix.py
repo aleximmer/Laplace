@@ -218,7 +218,7 @@ class Kron:
             if len(F) == 1:
                 diags.append(F[0].diagonal())
             else:
-                diags.append(torch.ger(F[0].diagonal(), F[1].diagonal()).flatten())
+                diags.append(torch.outer(F[0].diagonal(), F[1].diagonal()).flatten())
         return torch.cat(diags)
 
     def to_matrix(self) -> torch.Tensor:
@@ -345,9 +345,9 @@ class KronDecomposed:
                 l1, l2 = ls
                 if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
-                    logdet += torch.log(torch.ger(l1d, l2d)).sum()
+                    logdet += torch.log(torch.outer(l1d, l2d)).sum()
                 else:
-                    logdet += torch.log(torch.ger(l1, l2) + delta).sum()
+                    logdet += torch.log(torch.outer(l1, l2) + delta).sum()
             else:
                 raise ValueError('Too many Kronecker factors. Something went wrong.')
         return logdet
@@ -386,9 +386,9 @@ class KronDecomposed:
                 p = len(l1) * len(l2)
                 if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
-                    ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
+                    ldelta_exp = torch.pow(torch.outer(l1d, l2d), exponent).unsqueeze(0)
                 else:
-                    ldelta_exp = torch.pow(torch.ger(l1, l2) + delta, exponent).unsqueeze(0)
+                    ldelta_exp = torch.pow(torch.outer(l1, l2) + delta, exponent).unsqueeze(0)
                 p_in, p_out = len(l1), len(l2)
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
                 W_p = (Q1.T @ W_p @ Q2) * ldelta_exp
@@ -455,9 +455,9 @@ class KronDecomposed:
                 l1, l2 = ls
                 if self.damping:
                     delta_sqrt = torch.sqrt(delta)
-                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                    l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
                 else:
-                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                    l = torch.pow(torch.outer(l1, l2) + delta, exponent)
                 d = torch.einsum('mp,nq,pq,mp,nq->mn', Q1, Q2, l, Q1, Q2).flatten()
                 diags.append(d)
         return torch.cat(diags)
@@ -487,9 +487,9 @@ class KronDecomposed:
                 Q = kron(Q1, Q2)
                 if self.damping:
                     delta_sqrt = torch.sqrt(delta)
-                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                    l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
                 else:
-                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                    l = torch.pow(torch.outer(l1, l2) + delta, exponent)
                 L = torch.diag(l.flatten())
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)
