@@ -218,7 +218,7 @@ class Kron:
             if len(F) == 1:
                 diags.append(F[0].diagonal())
             else:
-                diags.append(torch.ger(F[0].diagonal(), F[1].diagonal()).flatten())
+                diags.append(torch.outer(F[0].diagonal(), F[1].diagonal()).flatten())
         return torch.cat(diags)
 
     def to_matrix(self) -> torch.Tensor:
@@ -345,9 +345,9 @@ class KronDecomposed:
                 l1, l2 = ls
                 if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
-                    logdet += torch.log(torch.ger(l1d, l2d)).sum()
+                    logdet += torch.log(torch.outer(l1d, l2d)).sum()
                 else:
-                    logdet += torch.log(torch.ger(l1, l2) + delta).sum()
+                    logdet += torch.log(torch.outer(l1, l2) + delta).sum()
             else:
                 raise ValueError('Too many Kronecker factors. Something went wrong.')
         return logdet
@@ -386,9 +386,9 @@ class KronDecomposed:
                 p = len(l1) * len(l2)
                 if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
-                    ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
+                    ldelta_exp = torch.pow(torch.outer(l1d, l2d), exponent).unsqueeze(0)
                 else:
-                    ldelta_exp = torch.pow(torch.ger(l1, l2) + delta, exponent).unsqueeze(0)
+                    ldelta_exp = torch.pow(torch.outer(l1, l2) + delta, exponent).unsqueeze(0)
                 p_in, p_out = len(l1), len(l2)
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
                 W_p = (Q1.T @ W_p @ Q2) * ldelta_exp
@@ -432,10 +432,45 @@ class KronDecomposed:
         else:
             raise ValueError('Invalid shape for W')
 
+    def diag(self, exponent: float = 1) -> torch.Tensor:
+        """Extract diagonal of the entire decomposed Kronecker factorization.
+
+        Parameters
+        ----------
+        exponent: float, default=1
+            exponent of the Kronecker factorization
+
+        Returns
+        -------
+        diag : torch.Tensor
+        """
+        diags = list()
+        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.deltas):
+            if len(ls) == 1:
+                Ql = Qs[0] * torch.pow(ls[0] + delta, exponent).reshape(1, -1)
+                d = torch.einsum('mp,mp->m', Ql, Qs[0])  # only compute inner products for diag
+                diags.append(d)
+            else:  
+                Q1, Q2 = Qs
+                l1, l2 = ls
+                if self.damping:
+                    delta_sqrt = torch.sqrt(delta)
+                    l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                else:
+                    l = torch.pow(torch.outer(l1, l2) + delta, exponent)
+                d = torch.einsum('mp,nq,pq,mp,nq->mn', Q1, Q2, l, Q1, Q2).flatten()
+                diags.append(d)
+        return torch.cat(diags)
+
     def to_matrix(self, exponent: float = 1) -> torch.Tensor:
         """Make the Kronecker factorization dense by computing the kronecker product.
         Warning: this should only be used for testing purposes as it will allocate
         large amounts of memory for big architectures.
+
+        Parameters
+        ----------
+        exponent: float, default=1
+            exponent of the Kronecker factorization
 
         Returns
         -------
@@ -452,9 +487,9 @@ class KronDecomposed:
                 Q = kron(Q1, Q2)
                 if self.damping:
                     delta_sqrt = torch.sqrt(delta)
-                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                    l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
                 else:
-                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                    l = torch.pow(torch.outer(l1, l2) + delta, exponent)
                 L = torch.diag(l.flatten())
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)

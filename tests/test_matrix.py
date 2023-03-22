@@ -170,3 +170,15 @@ def test_matrix_consistent():
     M_true.diagonal().add_(3.4)
     kron_decomp += torch.tensor(3.4)
     assert torch.allclose(M_true, kron_decomp.to_matrix(exponent=1))
+
+    
+def test_diag():
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    torch.manual_seed(7171)
+    kfacs = [[get_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
+    kron = Kron(kfacs)
+    kron_decomp = kron.decompose()
+    assert torch.allclose(kron.diag(), kron_decomp.diag(exponent=1)) 
+    assert torch.allclose(kron.diag(), torch.diag(kron.to_matrix()))
+    assert torch.allclose(kron_decomp.diag(), torch.diag(kron_decomp.to_matrix()))
+    assert torch.allclose(kron_decomp.diag(exponent=-1), torch.diag(kron_decomp.to_matrix(exponent=-1)))
