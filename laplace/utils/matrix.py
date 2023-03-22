@@ -432,10 +432,45 @@ class KronDecomposed:
         else:
             raise ValueError('Invalid shape for W')
 
+    def diag(self, exponent: float = 1) -> torch.Tensor:
+        """Extract diagonal of the entire decomposed Kronecker factorization.
+
+        Parameters
+        ----------
+        exponent: float, default=1
+            exponent of the Kronecker factorization
+
+        Returns
+        -------
+        diag : torch.Tensor
+        """
+        diags = list()
+        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.deltas):
+            if len(ls) == 1:
+                Ql = Qs[0] * torch.pow(ls[0] + delta, exponent).reshape(1, -1)
+                d = torch.einsum('mp,mp->m', Ql, Qs[0])  # only compute inner products for diag
+                diags.append(d)
+            else:  
+                Q1, Q2 = Qs
+                l1, l2 = ls
+                if self.damping:
+                    delta_sqrt = torch.sqrt(delta)
+                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                else:
+                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                d = torch.einsum('mp,nq,pq,mp,nq->mn', Q1, Q2, l, Q1, Q2).flatten()
+                diags.append(d)
+        return torch.cat(diags)
+
     def to_matrix(self, exponent: float = 1) -> torch.Tensor:
         """Make the Kronecker factorization dense by computing the kronecker product.
         Warning: this should only be used for testing purposes as it will allocate
         large amounts of memory for big architectures.
+
+        Parameters
+        ----------
+        exponent: float, default=1
+            exponent of the Kronecker factorization
 
         Returns
         -------
