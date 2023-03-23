@@ -63,7 +63,7 @@ class AsdlInterface(CurvatureInterface):
         Gs : torch.Tensor
             gradients `(batch, parameters)`
         """
-        f = batch_gradient(self.model, self.lossfunc, x, y)
+        f = batch_gradient(self.model, self.lossfunc, x, y).detach()
         Gs = _get_batch_grad(self._model)
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
