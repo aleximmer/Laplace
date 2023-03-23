@@ -88,7 +88,7 @@ class LaplaceBNN(Model):
 
         # Posterior predictive distribution
         # mean_y is (batch_shape*q, k); cov_y is (batch_shape*q*k, batch_shape*q*k)
-        mean_y, cov_y = self._get_prediction(X, joint=True)
+        mean_y, cov_y = self._get_prediction(X, use_test_loader=False)
 
         # Mean in `(batch_shape, q*k)`
         K = self.num_outputs
@@ -152,7 +152,7 @@ class LaplaceBNN(Model):
             subset_of_weights='all', hessian_structure='kron',
         )
         self.bnn.fit(train_loader)
-        self.bnn.optimize_prior_precision(n_steps=30)
+        self.bnn.optimize_prior_precision(n_steps=100)
 
 
     def _get_prediction(self, test_x: torch.Tensor, joint=True, use_test_loader=False):
@@ -167,9 +167,10 @@ class LaplaceBNN(Model):
         """
         if self.bnn is None:
             print('Train your model first before making prediction!')
+            sys.exit(1)
 
         if not use_test_loader:
-            mean_y, cov_y = self.bnn(test_x, joint=joint)
+            mean_y, cov_y = self.bnn(test_x, joint=True, detach=False)
         else:
             test_loader = data_utils.DataLoader(
                 data_utils.TensorDataset(test_x, torch.zeros_like(test_x)),
@@ -179,7 +180,7 @@ class LaplaceBNN(Model):
             mean_y, cov_y = [], []
 
             for x_batch, _ in test_loader:
-                _mean_y, _cov_y = self.bnn(x_batch, joint=joint)
+                _mean_y, _cov_y = self.bnn(x_batch, joint=joint, detach=False)
                 mean_y.append(_mean_y)
                 cov_y.append(_cov_y)
 

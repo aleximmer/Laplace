@@ -18,6 +18,17 @@ def model():
 
 
 @pytest.fixture
+def model_singleoutput():
+    torch.manual_seed(711)
+    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 1))
+    setattr(model, 'output_size', 1)
+    model_params = list(model.parameters())
+    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
+    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
 def class_Xy():
     torch.manual_seed(711)
     X = torch.randn(10, 3)
@@ -240,3 +251,23 @@ def test_kron_normalization_class(class_Xy, model):
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
 
+
+def test_backprop_jacs(reg_Xy, model, model_singleoutput):
+    X, y = reg_Xy
+    X.requires_grad = True
+
+    for m in [model, model_singleoutput]:
+        backend = BackPackGGN(m, 'regression', stochastic=False)
+
+        try:
+            Js, f = backend.jacobians(X, enable_backprop=True)
+            grad_X_f = torch.autograd.grad(f.sum(), X)[0]
+
+            X.grad = None
+            Js, f = backend.jacobians(X, enable_backprop=True)
+            grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
+
+            assert grad_X_f.shape == X.shape
+            assert grad_X_Js.shape == X.shape
+        except RuntimeError:
+            assert False

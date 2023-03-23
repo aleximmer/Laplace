@@ -16,7 +16,7 @@ class BackPackInterface(CurvatureInterface):
         extend(self._model)
         extend(self.lossfunc)
 
-    def jacobians(self, x):
+    def jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension.
 
@@ -24,6 +24,9 @@ class BackPackInterface(CurvatureInterface):
         ----------
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
+
+        enable_backprop : bool, default = False
+            whether to enable backprop through the Js and f w.r.t. x
 
         Returns
         -------
@@ -39,12 +42,18 @@ class BackPackInterface(CurvatureInterface):
             out = model(x)
             with backpack(BatchGrad()):
                 if model.output_size > 1:
-                    out[:, i].sum().backward()
+                    out[:, i].sum().backward(
+                        create_graph=enable_backprop, 
+                        retain_graph=enable_backprop
+                    )
                 else:
-                    out.sum().backward(retain_graph=True)
+                    out.sum().backward(
+                        create_graph=enable_backprop, 
+                        retain_graph=enable_backprop
+                    )
                 to_cat = []
                 for param in model.parameters():
-                    to_cat.append(param.grad_batch.detach().reshape(x.shape[0], -1))
+                    to_cat.append(param.grad_batch.reshape(x.shape[0], -1))
                     delattr(param, 'grad_batch')
                 Jk = torch.cat(to_cat, dim=1)
                 if self.subnetwork_indices is not None:

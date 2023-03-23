@@ -1,4 +1,4 @@
-from math import sqrt
+from math import sqrt, prod
 import pytest
 from itertools import product
 import numpy as np
@@ -355,16 +355,28 @@ def test_regression_predictive(laplace, model, reg_loader):
         lap(X, pred_type='linear')
 
     # GLM predictive, functional variance tested already above.
-    f_mu, f_var = lap(X, pred_type='glm')
-    assert torch.allclose(f_mu, f)
-    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
-    assert len(f_mu) == len(X)
+    f_mu_glm, f_var_glm = lap(X, pred_type='glm')
+    assert torch.allclose(f_mu_glm, f)
+    assert f_var_glm.shape == torch.Size([f_mu_glm.shape[0], f_mu_glm.shape[1], f_mu_glm.shape[1]])
+    assert len(f_mu_glm) == len(X)
 
     # NN predictive (only diagonal variance estimation)
-    f_mu, f_var = lap(X, pred_type='nn', link_approx='mc')
-    assert f_mu.shape == f_var.shape
-    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
-    assert len(f_mu) == len(X)
+    f_mu_nn, f_var_nn = lap(X, pred_type='nn', link_approx='mc')
+    assert f_mu_nn.shape == f_var_nn.shape
+    assert f_var_nn.shape == torch.Size([f_mu_nn.shape[0], f_mu_nn.shape[1]])
+    assert len(f_mu_nn) == len(X)
+
+    # Test joint prediction 
+    f_mu_joint, f_cov_joint = lap(X, pred_type='glm', joint=True)
+    assert len(f_mu_joint.shape) == 1
+    assert f_mu_joint.shape[0] == prod(f_mu_glm.shape)
+    assert len(f_cov_joint.shape) == 2
+    assert f_cov_joint.shape == (f_mu_joint.shape[0], f_mu_joint.shape[0])
+
+    # The "diagonal" of the joint cov should equal the non-joint var
+    b, k = y.shape
+    f_var_joint = torch.einsum('bkbl->bkl', f_cov_joint.reshape(b, k, b, k))
+    assert torch.allclose(f_var_joint, f_var_glm)
 
 
 @pytest.mark.parametrize('laplace', flavors)

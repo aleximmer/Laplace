@@ -497,7 +497,7 @@ class ParametricLaplace(BaseLaplace):
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', joint=False, link_approx='probit', 
-                 n_samples=100, diagonal_output=False, generator=None):
+                 n_samples=100, diagonal_output=False, generator=None, detach=True):
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -519,6 +519,7 @@ class ParametricLaplace(BaseLaplace):
             `pred_type='glm'`. If set to `True`, the predictive distribution
             has the same form as GP posterior, i.e. N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
             If `False`, then only outputs the marginal predictive distribution. 
+            Only available for regression and GLM predictive.
 
         n_samples : int
             number of samples for `link_approx='mc'`.
@@ -529,6 +530,9 @@ class ParametricLaplace(BaseLaplace):
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
+
+        detach : bool, default = True
+            Detach the resulting prediction. Set to True to enable backprop.
 
         Returns
         -------
@@ -554,7 +558,9 @@ class ParametricLaplace(BaseLaplace):
                 raise ValueError('Invalid random generator (check type and device).')
 
         if pred_type == 'glm':
-            f_mu, f_var = self._glm_predictive_distribution(x, joint=joint)
+            f_mu, f_var = self._glm_predictive_distribution(
+                x, joint=joint and self.likelihood == 'regression', detach=detach
+            )
             # regression
             if self.likelihood == 'regression':
                 return f_mu, f_var
@@ -584,7 +590,7 @@ class ParametricLaplace(BaseLaplace):
                 alpha = (1 - 2/K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
                 return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
         else:
-            samples = self._nn_predictive_samples(x, n_samples)
+            samples = self._nn_predictive_samples(x, n_samples, detach=detach)
             if self.likelihood == 'regression':
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
@@ -636,8 +642,8 @@ class ParametricLaplace(BaseLaplace):
             return self._nn_predictive_samples(x, n_samples)
 
     @torch.enable_grad()
-    def _glm_predictive_distribution(self, X, joint=False):
-        Js, f_mu = self.backend.jacobians(X)
+    def _glm_predictive_distribution(self, X, joint=False, detach=True):
+        Js, f_mu = self.backend.jacobians(X, enable_backprop=not detach)
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
@@ -645,13 +651,14 @@ class ParametricLaplace(BaseLaplace):
         else:
             f_var = self.functional_variance(Js)
 
-        return f_mu, f_var
+        return (f_mu.detach(), f_var.detach()) if detach else (f_mu, f_var)
 
-    def _nn_predictive_samples(self, X, n_samples=100):
+    def _nn_predictive_samples(self, X, n_samples=100, detach=True):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.parameters())
-            fs.append(self.model(X.to(self._device)).detach())
+            f = self.model(X.to(self._device))
+            fs.append(f.detach() if detach else f)
         vector_to_parameters(self.mean, self.model.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
