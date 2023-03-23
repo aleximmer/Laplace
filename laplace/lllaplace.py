@@ -113,16 +113,23 @@ class LLLaplace(ParametricLaplace):
         super().fit(train_loader, override=override)
         self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
 
-    def _glm_predictive_distribution(self, X):
+    def _glm_predictive_distribution(self, X, joint=False, detach=True):
         Js, f_mu = self.backend.last_layer_jacobians(X)
-        f_var = self.functional_variance(Js)
-        return f_mu, f_var
+        
+        if joint:
+            f_mu = f_mu.flatten()  # (batch*out)
+            f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
+        else:
+            f_var = self.functional_variance(Js)
 
-    def _nn_predictive_samples(self, X, n_samples=100):
+        return (f_mu.detach(), f_var.detach()) if detach else (f_mu, f_var)
+
+    def _nn_predictive_samples(self, X, n_samples=100, detach=True):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            fs.append(self.model(X.to(self._device)).detach())
+            f = self.model(X.to(self._device))
+            fs.append(f.detach() if detach else f)
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':

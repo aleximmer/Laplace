@@ -94,3 +94,79 @@ def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     assert torch.abs(Js-Js_naive).max() < 1e-6
     assert torch.allclose(model(X), f_naive)
     assert torch.allclose(f, f_naive)
+
+
+@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
+    X.requires_grad = True
+    backend = backend_cls(singleoutput_model, 'regression')
+
+    try:
+        Js, f = backend.jacobians(X, enable_backprop=True)
+        grad_X_f = torch.autograd.grad(f.sum(), X)[0]
+
+        X.grad = None
+        Js, f = backend.jacobians(X, enable_backprop=True)
+        grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
+
+        assert grad_X_f.shape == X.shape
+        assert grad_X_Js.shape == X.shape
+    except RuntimeError:
+        assert False
+
+
+@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
+    X.requires_grad = True
+    backend = backend_cls(multioutput_model, 'regression')
+
+    try:
+        Js, f = backend.jacobians(X, enable_backprop=True)
+        grad_X_f = torch.autograd.grad(f.sum(), X)[0]
+
+        X.grad = None
+        Js, f = backend.jacobians(X, enable_backprop=True)
+        grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
+
+        assert grad_X_f.shape == X.shape
+        assert grad_X_Js.shape == X.shape
+    except RuntimeError:
+        assert False
+
+
+@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
+    X.requires_grad = True
+    backend = backend_cls(singleoutput_model, 'regression')
+
+    try:
+        Js, f = backend.last_layer_jacobians(X)
+        grad_X_f = torch.autograd.grad(f.sum(), X)[0]
+
+        X.grad = None
+        Js, f = backend.jacobians(X)
+        grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
+
+        assert grad_X_f.shape == X.shape
+        assert grad_X_Js.shape == X.shape
+    except RuntimeError:
+        assert False
+
+
+@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+def test_backprop_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
+    X.requires_grad = True
+    backend = backend_cls(multioutput_model, 'regression')
+
+    try:
+        Js, f = backend.last_layer_jacobians(X)
+        grad_X_f = torch.autograd.grad(f.sum(), X)[0]
+
+        X.grad = None
+        Js, f = backend.jacobians(X)
+        grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
+
+        assert grad_X_f.shape == X.shape
+        assert grad_X_Js.shape == X.shape
+    except RuntimeError:
+        assert False

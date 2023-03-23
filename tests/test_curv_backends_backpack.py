@@ -250,24 +250,3 @@ def test_kron_normalization_class(class_Xy, model):
     loss_test, kron_test  = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
-
-
-def test_backprop_jacs(reg_Xy, model, model_singleoutput):
-    X, y = reg_Xy
-    X.requires_grad = True
-
-    for m in [model, model_singleoutput]:
-        backend = BackPackGGN(m, 'regression', stochastic=False)
-
-        try:
-            Js, f = backend.jacobians(X, enable_backprop=True)
-            grad_X_f = torch.autograd.grad(f.sum(), X)[0]
-
-            X.grad = None
-            Js, f = backend.jacobians(X, enable_backprop=True)
-            grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
-
-            assert grad_X_f.shape == X.shape
-            assert grad_X_Js.shape == X.shape
-        except RuntimeError:
-            assert False
