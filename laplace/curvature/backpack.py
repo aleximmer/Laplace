@@ -24,7 +24,6 @@ class BackPackInterface(CurvatureInterface):
         ----------
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
-
         enable_backprop : bool, default = False
             whether to enable backprop through the Js and f w.r.t. x
 

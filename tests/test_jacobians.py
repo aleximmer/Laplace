@@ -105,7 +105,6 @@ def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
         Js, f = backend.jacobians(X, enable_backprop=True)
         grad_X_f = torch.autograd.grad(f.sum(), X)[0]
 
-        X.grad = None
         Js, f = backend.jacobians(X, enable_backprop=True)
         grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
 
@@ -137,13 +136,14 @@ def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
 @pytest.mark.parametrize('backend_cls', [BackPackInterface])
 def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     X.requires_grad = True
-    backend = backend_cls(FeatureExtractor(singleoutput_model), 'regression')
+    backend = backend_cls(
+        FeatureExtractor(singleoutput_model, enable_backprop=True), 'regression'
+    )
 
     try:
         Js, f = backend.last_layer_jacobians(X)
         grad_X_f = torch.autograd.grad(f.sum(), X)[0]
 
-        X.grad = None
         Js, f = backend.last_layer_jacobians(X)
         grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
 
@@ -156,13 +156,14 @@ def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backe
 @pytest.mark.parametrize('backend_cls', [BackPackInterface])
 def test_backprop_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     X.requires_grad = True
-    backend = backend_cls(FeatureExtractor(multioutput_model), 'regression')
+    backend = backend_cls(
+        FeatureExtractor(multioutput_model, enable_backprop=True), 'regression'
+    )
 
     try:
         Js, f = backend.last_layer_jacobians(X)
         grad_X_f = torch.autograd.grad(f.sum(), X)[0]
 
-        X.grad = None
         Js, f = backend.last_layer_jacobians(X)
         grad_X_Js = torch.autograd.grad(Js.sum(), X)[0]
 

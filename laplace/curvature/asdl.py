@@ -18,7 +18,7 @@ class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
 
-    def jacobians(self, x):
+    def jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.
 
@@ -26,6 +26,8 @@ class AsdlInterface(CurvatureInterface):
         ----------
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
+        enable_backprop : bool, default = False
+            whether to enable backprop through the Js and f w.r.t. x
 
         Returns
         -------

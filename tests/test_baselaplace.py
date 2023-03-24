@@ -450,3 +450,63 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     fsamples = lap.predictive_samples(X, pred_type='nn', n_samples=100)
     assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
+
+
+# TODO: Add LowRankLaplace
+@pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
+def test_backprop_glm(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, 'regression', enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap(X, pred_type='glm')
+
+    try:
+        grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+
+        assert grad_X_mu.shape == X.shape
+        assert grad_X_var.shape == X.shape
+    except ValueError:
+        assert False
+
+
+# TODO: Add LowRankLaplace
+@pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
+def test_backprop_glm_mc(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, 'regression', enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap(X, pred_type='glm', link_approx='mc')
+
+    try:
+        grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+
+        assert grad_X_mu.shape == X.shape
+        assert grad_X_var.shape == X.shape
+    except ValueError:
+        assert False
+
+
+# TODO: Add LowRankLaplace
+@pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
+def test_backprop_nn(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, 'regression', enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap(X, pred_type='nn', link_approx='mc', n_samples=10)
+
+    try:
+        grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+
+        assert grad_X_mu.shape == X.shape
+        assert grad_X_var.shape == X.shape
+    except ValueError:
+        assert False

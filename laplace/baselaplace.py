@@ -31,6 +31,9 @@ class BaseLaplace:
     temperature : float, default=1
         temperature of the likelihood; lower temperature leads to more
         concentrated posterior and vice versa.
+    enable_backprop: bool, default=False
+        whether to enable backprop to the input `x` through the Laplace predictive.
+        Useful for e.g. Bayesian optimization.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     backend_kwargs : dict, default=None
@@ -38,7 +41,8 @@ class BaseLaplace:
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., enable_backprop=False,
+                 backend=None, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -54,6 +58,7 @@ class BaseLaplace:
         self.likelihood = likelihood
         self.sigma_noise = sigma_noise
         self.temperature = temperature
+        self.enable_backprop = enable_backprop
 
         if backend is None:
             backend = AsdlGGN if likelihood == 'classification' else BackPackGGN
@@ -330,9 +335,10 @@ class ParametricLaplace(BaseLaplace):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., enable_backprop=False, 
+                 backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs)
+                         prior_mean, temperature, enable_backprop, backend, backend_kwargs)
         if not hasattr(self, 'H'):
             self._init_H()
             # posterior mean/mode
@@ -364,6 +370,9 @@ class ParametricLaplace(BaseLaplace):
 
         self.model.eval()
         self.mean = parameters_to_vector(self.model.parameters())
+
+        if not self.enable_backprop:
+            self.mean = self.mean.detach()
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
@@ -497,7 +506,7 @@ class ParametricLaplace(BaseLaplace):
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', joint=False, link_approx='probit', 
-                 n_samples=100, diagonal_output=False, generator=None, detach=True):
+                 n_samples=100, diagonal_output=False, generator=None):
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -529,10 +538,7 @@ class ParametricLaplace(BaseLaplace):
             Only works for `pred_type='glm'` and `link_approx='mc'`.
 
         generator : torch.Generator, optional
-            random number generator to control the samples (if sampling used)
-
-        detach : bool, default = True
-            Detach the resulting prediction. Set to True to enable backprop.
+            random number generator to control the samples (if sampling used)=
 
         Returns
         -------
@@ -559,7 +565,7 @@ class ParametricLaplace(BaseLaplace):
 
         if pred_type == 'glm':
             f_mu, f_var = self._glm_predictive_distribution(
-                x, joint=joint and self.likelihood == 'regression', detach=detach
+                x, joint=joint and self.likelihood == 'regression'
             )
             # regression
             if self.likelihood == 'regression':
@@ -590,7 +596,7 @@ class ParametricLaplace(BaseLaplace):
                 alpha = (1 - 2/K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
                 return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
         else:
-            samples = self._nn_predictive_samples(x, n_samples, detach=detach)
+            samples = self._nn_predictive_samples(x, n_samples)
             if self.likelihood == 'regression':
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
@@ -642,8 +648,8 @@ class ParametricLaplace(BaseLaplace):
             return self._nn_predictive_samples(x, n_samples)
 
     @torch.enable_grad()
-    def _glm_predictive_distribution(self, X, joint=False, detach=True):
-        Js, f_mu = self.backend.jacobians(X, enable_backprop=not detach)
+    def _glm_predictive_distribution(self, X, joint=False):
+        Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
@@ -651,14 +657,14 @@ class ParametricLaplace(BaseLaplace):
         else:
             f_var = self.functional_variance(Js)
 
-        return (f_mu.detach(), f_var.detach()) if detach else (f_mu, f_var)
+        return (f_mu.detach(), f_var.detach()) if not self.enable_backprop else (f_mu, f_var)
 
-    def _nn_predictive_samples(self, X, n_samples=100, detach=True):
+    def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.parameters())
             f = self.model(X.to(self._device))
-            fs.append(f.detach() if detach else f)
+            fs.append(f.detach() if not self.enable_backprop else f)
         vector_to_parameters(self.mean, self.model.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
@@ -753,9 +759,9 @@ class FullLaplace(ParametricLaplace):
     _key = ('all', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs)
+                         prior_mean, temperature, enable_backprop, backend, backend_kwargs)
         self._posterior_scale = None
 
     def _init_H(self):
@@ -846,12 +852,12 @@ class KronLaplace(ParametricLaplace):
     _key = ('all', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, damping=False,
-                 **backend_kwargs):
+                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, 
+                 damping=False, **backend_kwargs):
         self.damping = damping
         self.H_facs = None
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, **backend_kwargs)
+                         prior_mean, temperature, enable_backprop, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
@@ -950,10 +956,11 @@ class LowRankLaplace(ParametricLaplace):
     """
     _key = ('all', 'lowrank')
     def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, 
-                 temperature=1, backend=AsdlHessian, backend_kwargs=None):
+                 temperature=1, enable_backprop=False, backend=AsdlHessian, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, 
                          prior_precision=prior_precision, prior_mean=prior_mean, 
-                         temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
+                         temperature=temperature, enable_backprop=enable_backprop, 
+                         backend=backend, backend_kwargs=backend_kwargs)
     
     def _init_H(self):
         self.H = None
@@ -975,7 +982,10 @@ class LowRankLaplace(ParametricLaplace):
             raise ValueError('LowRank LA does not support updating.')
 
         self.model.eval()
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.mean = parameters_to_vector(self.model.parameters())
+
+        if not self.enable_backprop:
+            self.mean = self.mean.detach()
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
