@@ -58,8 +58,8 @@ f_mu, f_var = la(X_test)
 f_mu_joint, f_cov = la(X_test, joint=True)  
 
 # Both should be true
-print(torch.allclose(f_mu.flatten(), f_mu_joint))
-print(torch.allclose(f_var.flatten(), f_cov.diag()))
+assert torch.allclose(f_mu.flatten(), f_mu_joint)
+assert torch.allclose(f_var.flatten(), f_cov.diag())
 
 f_mu = f_mu.squeeze().detach().cpu().numpy()
 f_sigma = f_var.squeeze().detach().sqrt().cpu().numpy()
