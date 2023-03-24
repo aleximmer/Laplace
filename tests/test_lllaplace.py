@@ -433,6 +433,25 @@ def test_backprop_glm(laplace, model, reg_loader):
 
 
 @pytest.mark.parametrize('laplace', flavors)
+def test_backprop_glm_joint(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, 'regression', enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_cov = lap(X, pred_type='glm', joint=True)
+
+    try:
+        grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
+        grad_X_var = torch.autograd.grad(f_cov.sum(), X)[0] 
+
+        assert grad_X_mu.shape == X.shape
+        assert grad_X_var.shape == X.shape
+    except ValueError:
+        assert False
+
+
+@pytest.mark.parametrize('laplace', flavors)
 def test_backprop_glm_mc(laplace, model, reg_loader):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
