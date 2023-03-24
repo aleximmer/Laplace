@@ -62,7 +62,7 @@ class LaplaceBNN(Model):
             nn.Linear(train_X.shape[-1], 50),
             nn.ReLU(),
             nn.Linear(50, 50),
-            nn.Tanh(),
+            nn.ReLU(),
             nn.Linear(50, train_Y.shape[-1])
         )
         self.bnn = bnn
@@ -119,7 +119,7 @@ class LaplaceBNN(Model):
         return LaplaceBNN(
             # Added dataset & retrained BNN
             self.train_X, self.train_Y, self.bnn,
-            self.likelihood, self.batch_size
+            self.likelihood, self.batch_size,
         )
 
     @property
@@ -150,9 +150,10 @@ class LaplaceBNN(Model):
         self.bnn = Laplace(
             self.nn, self.likelihood,
             subset_of_weights='all', hessian_structure='kron',
+            enable_backprop=True
         )
         self.bnn.fit(train_loader)
-        self.bnn.optimize_prior_precision(n_steps=100)
+        self.bnn.optimize_prior_precision(n_steps=50)
 
 
     def _get_prediction(self, test_x: torch.Tensor, joint=True, use_test_loader=False):
@@ -170,7 +171,7 @@ class LaplaceBNN(Model):
             sys.exit(1)
 
         if not use_test_loader:
-            mean_y, cov_y = self.bnn(test_x, joint=True, detach=False)
+            mean_y, cov_y = self.bnn(test_x, joint=True)
         else:
             test_loader = data_utils.DataLoader(
                 data_utils.TensorDataset(test_x, torch.zeros_like(test_x)),
@@ -180,7 +181,7 @@ class LaplaceBNN(Model):
             mean_y, cov_y = [], []
 
             for x_batch, _ in test_loader:
-                _mean_y, _cov_y = self.bnn(x_batch, joint=joint, detach=False)
+                _mean_y, _cov_y = self.bnn(x_batch, joint=joint)
                 mean_y.append(_mean_y)
                 cov_y.append(_cov_y)
 
