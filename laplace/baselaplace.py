@@ -923,8 +923,8 @@ class KronLaplace(ParametricLaplace):
     def functional_covariance(self, Js):
         self._check_jacobians(Js)
         n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(1, n_batch*n_outs, n_params)
-        cov = self.posterior_precision.inv_square_form(Js).squeeze()
+        Js = Js.reshape(n_batch*n_outs, n_params).unsqueeze(0)
+        cov = self.posterior_precision.inv_square_form(Js).squeeze(0)
         assert cov.shape == (n_batch*n_outs, n_batch*n_outs)
         return cov
 
