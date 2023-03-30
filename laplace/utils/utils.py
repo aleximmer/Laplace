@@ -6,18 +6,28 @@ import torch.nn.functional as F
 from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torch.utils.data import Sampler
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
-           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision']
+           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision', 'SoDSampler']
 
 
 def get_nll(out_dist, targets):
     return F.nll_loss(torch.log(out_dist), targets)
 
 
-@torch.no_grad()
 def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
+    if pred_type == 'gp':
+        laplace._build_Sigma_inv()
+        preds = _validate(laplace, val_loader, pred_type, link_approx, n_samples)
+    else:
+        with torch.no_grad():
+            preds = _validate(laplace, val_loader, pred_type, link_approx, n_samples)
+    return preds
+
+
+def _validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
     laplace.model.eval()
     output_means, output_vars = list(), list()
     targets = list()
@@ -27,7 +37,6 @@ def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_sampl
             X, pred_type=pred_type,
             link_approx=link_approx,
             n_samples=n_samples)
-
         if type(out) == tuple:
             output_means.append(out[0])
             output_vars.append(out[1])
@@ -191,6 +200,19 @@ def block_diag(blocks):
         M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
         p_cur += p_block
     return M
+
+
+class SoDSampler(Sampler):
+
+    def __init__(self, N, M, seed: int = 0):
+        np.random.seed(seed)
+        self.indices = torch.tensor(np.random.choice(list(range(N)), M, replace=False))
+
+    def __iter__(self):
+        return (i for i in self.indices)
+
+    def __len__(self):
+        return len(self.indices)
 
 
 def expand_prior_precision(prior_prec, model):
