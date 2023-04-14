@@ -72,7 +72,7 @@ for a regression (MSELoss) loss function.
 In the following example, a pre-trained model is loaded,
 then the Laplace approximation is fit to the training data
 (using a diagonal Hessian approximation over all parameters),
-and the prior precision is optimized with cross-validation `'CV'`.
+and the prior precision is optimized with cross-validation `'gridsearch'`.
 After that, the resulting LA is used for prediction with
 the `'probit'` predictive for classification.
 
@@ -87,7 +87,7 @@ la = Laplace(model, 'classification',
              subset_of_weights='all',
              hessian_structure='diag')
 la.fit(train_loader)
-la.optimize_prior_precision(method='CV', val_loader=val_loader)
+la.optimize_prior_precision(method='gridsearch', val_loader=val_loader)
 
 # User-specified predictive approx.
 pred = la(x, link_approx='probit')

@@ -210,7 +210,7 @@ class BaseLaplace:
             type of posterior predictive, linearized GLM predictive or neural
             network sampling predictive or Gaussian Process (GP) inference.
             The GLM predictive is consistent with the curvature approximations used here.
-        method : {'marglik', 'CV'}, default='marglik'
+        method : {'marglik', 'gridsearch'}, default='marglik'
             specifies how the prior precision should be optimized.
         n_steps : int, default=100
             the number of gradient descent steps to take.
@@ -224,16 +224,16 @@ class BaseLaplace:
         val_loader : torch.data.utils.DataLoader, default=None
             DataLoader for the validation set; each iterate is a training batch (X, y).
         loss : callable, default=get_nll
-            loss function to use for CV.
+            loss function to use for gridsearch.
         cv_loss_with_var: bool, default=False
             if true, `loss` takes three arguments `loss(output_mean, output_var, target)`,
             otherwise, `loss` takes two arguments `loss(output_mean, target)`
         log_prior_prec_min : float, default=-4
-            lower bound of gridsearch interval for CV.
+            lower bound of gridsearch interval.
         log_prior_prec_max : float, default=4
-            upper bound of gridsearch interval for CV.
+            upper bound of gridsearch interval.
         grid_size : int, default=100
-            number of values to consider inside the gridsearch interval for CV.
+            number of values to consider inside the gridsearch interval.
         link_approx : {'mc', 'probit', 'bridge'}, default='probit'
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only `'mc'` is possible.
@@ -260,9 +260,9 @@ class BaseLaplace:
                 neg_log_marglik.backward()
                 optimizer.step()
             self.prior_precision = log_prior_prec.detach().exp()
-        elif method == 'CV':
+        elif method == 'gridsearch':
             if val_loader is None:
-                raise ValueError('CV requires a validation set DataLoader')
+                raise ValueError('gridsearch requires a validation set DataLoader')
             interval = torch.logspace(
                 log_prior_prec_min, log_prior_prec_max, grid_size
             )
@@ -271,7 +271,7 @@ class BaseLaplace:
                 link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var
             )
         else:
-            raise ValueError('For now only marglik and CV is implemented.')
+            raise ValueError('For now only marglik and gridsearch is implemented.')
         if verbose:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
