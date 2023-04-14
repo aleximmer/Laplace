@@ -190,7 +190,7 @@ class BaseLaplace:
         n_steps=100,
         lr=1e-1,
         init_prior_prec=1.,
-        prior_structure='layerwise',
+        prior_structure='scalar',
         val_loader=None,
         loss=get_nll,
         log_prior_prec_min=-4,
@@ -218,7 +218,7 @@ class BaseLaplace:
             the learning rate to use for gradient descent.
         init_prior_prec : float or tensor, default=1.0
             initial prior precision before the first optimization step.
-        prior_structure : {'scalar', 'layerwise', 'diag'}, default='layerwise'
+        prior_structure : {'scalar', 'layerwise', 'diag'}, default='scalar'
             if init_prior_prec is scalar, the prior precision is optimized with this structure.
             otherwise, the structure of init_prior_prec is maintained.
         val_loader : torch.data.utils.DataLoader, default=None
@@ -700,7 +700,7 @@ class ParametricLaplace(BaseLaplace):
         raise NotImplementedError
 
     def optimize_prior_precision(self, method='marglik', pred_type='glm', n_steps=100, lr=1e-1,
-                                 init_prior_prec=1., prior_structure='layerwise', val_loader=None,
+                                 init_prior_prec=1., prior_structure='scalar', val_loader=None,
                                  loss=get_nll, log_prior_prec_min=-4, log_prior_prec_max=4,
                                  grid_size=100, link_approx='probit', n_samples=100, verbose=False,
                                  cv_loss_with_var=False):
