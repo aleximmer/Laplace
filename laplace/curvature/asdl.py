@@ -2,13 +2,14 @@ import warnings
 import numpy as np
 import torch
 
-from asdfghjkl.matrices import (
+from asdl.matrices import (
     FISHER_EXACT, FISHER_MC, FISHER_EMP, SHAPE_KRON, SHAPE_DIAG, SHAPE_FULL
 )
-from asdfghjkl.fisher import LOSS_MSE, LOSS_CROSS_ENTROPY
-from asdfghjkl.fisher import calculate_fisher
-from asdfghjkl.hessian import calculate_hessian, hessian_eig
-from asdfghjkl.gradient import batch_gradient
+from asdl.grad_maker import LOSS_MSE, LOSS_CROSS_ENTROPY
+from asdl.fisher import FisherConfig, get_fisher_maker
+# from asdl.fisher import calculate_fisher
+from asdl.hessian import HessianMaker, HessianConfig
+from asdl.gradient import batch_gradient
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.utils import Kron, _is_batchnorm
@@ -87,14 +88,14 @@ class AsdlInterface(CurvatureInterface):
     def _ggn_type(self):
         raise NotImplementedError
 
-    def _get_kron_factors(self, curv, M):
+    def _get_kron_factors(self, M):
         kfacs = list()
-        for module in curv._model.modules():
+        for module in self.model.modules():
             if _is_batchnorm(module):
                 warnings.warn('BatchNorm unsupported for Kron, ignore.')
                 continue
 
-            stats = getattr(module, self._ggn_type, None)
+            stats = getattr(module, 'fisher', None)
             if stats is None:
                 continue
 
@@ -120,37 +121,51 @@ class AsdlInterface(CurvatureInterface):
         return kron
 
     def diag(self, X, y, **kwargs):
-        with torch.no_grad():
-            if self.last_layer:
-                f, X = self.model.forward_with_features(X)
-            else:
-                f = self.model(X)
-            loss = self.lossfunc(f, y)
-        curv = calculate_fisher(self._model, self._ggn_type, SHAPE_DIAG, self.loss_type,
-                                data_average=False, inputs=X, targets=y)
-        diag_ggn = curv.matrices_to_vector(None)
+        if self.last_layer:
+            _, X = self.model.forward_with_features(X)
+        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type, 
+                           fisher_shapes=[SHAPE_DIAG], data_size=1)
+        fisher_maker = get_fisher_maker(self.model, cfg)
+        if 'emp' in self._ggn_type:
+            dummy = fisher_maker.setup_model_call(self._model, X)
+            fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
+        else:
+            fisher_maker.setup_model_call(self._model, X)
+        f, _ = fisher_maker.forward_and_backward()
+        loss = self.lossfunc(f, y)
+        vec = list()
+        for module in self.model.modules():
+            stats = getattr(module, 'fisher', None)
+            if stats is None:
+                continue
+            vec.extend(stats.to_vector())
+        diag_ggn = torch.cat(vec)
         if self.subnetwork_indices is not None:
             diag_ggn = diag_ggn[self.subnetwork_indices]
         if type(self) is AsdlEF and self.likelihood == 'regression':
-            curv_factor = 2.0  # correct scaling for diag ef 
+            curv_factor = 0.5  # correct scaling for diag ef 
         else:
             curv_factor = 1.0   # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * diag_ggn
 
     def kron(self, X, y, N, **kwargs):
-        with torch.no_grad():
-            if self.last_layer:
-                f, X = self.model.forward_with_features(X)
-            else:
-                f = self.model(X)
-            loss = self.lossfunc(f, y)
-        curv = calculate_fisher(self._model, self._ggn_type, SHAPE_KRON, self.loss_type,
-                                data_average=False, inputs=X, targets=y)
+        if self.last_layer:
+            _, X = self.model.forward_with_features(X)
+        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type, 
+                           fisher_shapes=[SHAPE_KRON], data_size=1)
+        fisher_maker = get_fisher_maker(self.model, cfg)
+        if 'emp' in self._ggn_type:
+            dummy = fisher_maker.setup_model_call(self._model, X)
+            fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
+        else:
+            fisher_maker.setup_model_call(self._model, X)
+        f, _ = fisher_maker.forward_and_backward()
+        loss = self.lossfunc(f, y)
         M = len(y)
-        kron = self._get_kron_factors(curv, M)
+        kron = self._get_kron_factors(M)
         kron = self._rescale_kron_factors(kron, N)
         if type(self) is AsdlEF and self.likelihood == 'regression':
-            curv_factor = 2.0  # correct scaling for diag ef 
+            curv_factor = 0.5  # correct scaling for diag ef 
         else:
             curv_factor = 1.0   # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
@@ -167,13 +182,28 @@ class AsdlHessian(AsdlInterface):
         raise NotImplementedError()
 
     def full(self, x, y, **kwargs):
-        calculate_hessian(self.model, self.lossfunc, SHAPE_FULL, x, y)
+        if self.last_layer:
+            _, x = self.model.forward_with_features(x)
+        cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
+        hess_maker = HessianMaker(self.model, cfg)
+        dummy = hess_maker.setup_model_call(self._model, x)
+        hess_maker.setup_loss_call(self.lossfunc, dummy, y)
+        hess_maker.forward_and_backward()
         H = self._model.hessian.data
         loss = self.lossfunc(self.model(x), y).detach()
         return self.factor * loss, self.factor * H
 
     def eig_lowrank(self, data_loader):
+        # TODO: need to implement manually...
         # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
+        if self.last_layer:
+            _, x = self.model.forward_with_features(x)
+        cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
+        hess_maker = HessianMaker(self.model, cfg)
+        dummy = hess_maker.setup_model_call(self._model, x)
+        hess_maker.setup_loss_call(self.lossfunc, dummy, y)
+        # iteratively go through data loader and average eigendecomposition
+        # previously:
         eigvals, eigvecs = hessian_eig(self.model, self.lossfunc, data_loader=data_loader,
                                        top_n=self.low_rank, max_iters=self.low_rank*10)
         eigvals = torch.from_numpy(np.array(eigvals))
