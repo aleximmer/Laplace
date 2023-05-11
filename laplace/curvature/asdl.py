@@ -20,7 +20,7 @@ EPS = 1e-6
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, 
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None,
                  kfac_conv='kfac-expand'):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
         self.kfac_conv = kfac_conv
@@ -82,7 +82,7 @@ class AsdlInterface(CurvatureInterface):
             loss = self.lossfunc(self.model(x), y)
             loss.backward()
             return loss
-            
+
         Gs, loss = batch_gradient(self.model, closure, return_outputs=True)
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
@@ -127,7 +127,7 @@ class AsdlInterface(CurvatureInterface):
     def diag(self, X, y, **kwargs):
         if self.last_layer:
             _, X = self.model.forward_with_features(X)
-        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type, 
+        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_DIAG], data_size=1)
         fisher_maker = get_fisher_maker(self.model, cfg, self.kfac_conv)
         if 'emp' in self._ggn_type:
@@ -136,7 +136,7 @@ class AsdlInterface(CurvatureInterface):
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
-        loss = self.lossfunc(f, y)
+        loss = self.lossfunc(f.detach(), y)
         vec = list()
         for module in self.model.modules():
             stats = getattr(module, 'fisher', None)
@@ -147,7 +147,7 @@ class AsdlInterface(CurvatureInterface):
         if self.subnetwork_indices is not None:
             diag_ggn = diag_ggn[self.subnetwork_indices]
         if type(self) is AsdlEF and self.likelihood == 'regression':
-            curv_factor = 0.5  # correct scaling for diag ef 
+            curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0   # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * diag_ggn
@@ -155,7 +155,7 @@ class AsdlInterface(CurvatureInterface):
     def kron(self, X, y, N, **kwargs):
         if self.last_layer:
             _, X = self.model.forward_with_features(X)
-        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type, 
+        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_KRON], data_size=1)
         fisher_maker = get_fisher_maker(self.model, cfg, self.kfac_conv)
         if 'emp' in self._ggn_type:
@@ -164,12 +164,12 @@ class AsdlInterface(CurvatureInterface):
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
-        loss = self.lossfunc(f, y)
+        loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
         kron = self._rescale_kron_factors(kron, N)
         if type(self) is AsdlEF and self.likelihood == 'regression':
-            curv_factor = 0.5  # correct scaling for diag ef 
+            curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0   # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
