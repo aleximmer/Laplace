@@ -309,12 +309,12 @@ def test_online_fit(laplace, model, reg_loader):
         P = lap.H.to_matrix().clone()
     else:
         P = lap.H.clone()
-    loss, n_data = deepcopy(lap.loss), deepcopy(lap.n_data)
+    loss, n_data = deepcopy(lap.loss.item()), deepcopy(lap.n_data)
     # fit a second and third time but don't override
     lap.fit(reg_loader, override=False)
     lap.fit(reg_loader, override=False)
     # Hessian should be now roughly 3x the one before
-    assert torch.allclose(3 * loss, lap.loss)
+    assert torch.allclose(3 * torch.tensor(loss), lap.loss)
     assert (3 * n_data) == lap.n_data
     if type(lap.H) is KronDecomposed:
         assert torch.allclose(lap.H.to_matrix(), 3 * P)
