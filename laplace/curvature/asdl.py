@@ -20,6 +20,10 @@ EPS = 1e-6
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, 
+                 kfac_conv='kfac-expand'):
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        self.kfac_conv = kfac_conv
 
     @property
     def loss_type(self):
@@ -125,7 +129,7 @@ class AsdlInterface(CurvatureInterface):
             _, X = self.model.forward_with_features(X)
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type, 
                            fisher_shapes=[SHAPE_DIAG], data_size=1)
-        fisher_maker = get_fisher_maker(self.model, cfg)
+        fisher_maker = get_fisher_maker(self.model, cfg, self.kfac_conv)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
@@ -153,7 +157,7 @@ class AsdlInterface(CurvatureInterface):
             _, X = self.model.forward_with_features(X)
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type, 
                            fisher_shapes=[SHAPE_KRON], data_size=1)
-        fisher_maker = get_fisher_maker(self.model, cfg)
+        fisher_maker = get_fisher_maker(self.model, cfg, self.kfac_conv)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
@@ -218,8 +222,9 @@ class AsdlHessian(AsdlInterface):
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False,
+                 kfac_conv='kfac-expand'):
+        super().__init__(model, likelihood, last_layer, subnetwork_indices, kfac_conv=kfac_conv)
         self.stochastic = stochastic
 
     @property
@@ -230,8 +235,8 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(self, model, likelihood, last_layer=False, kfac_conv='kfac-expand'):
+        super().__init__(model, likelihood, last_layer, kfac_conv=kfac_conv)
 
     @property
     def _ggn_type(self):
