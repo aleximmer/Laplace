@@ -2,7 +2,8 @@
 	<img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
 </div>
 
-[![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
+![unit tests](https://github.com/AlexImmer/Laplace/actions/workflows/tests.yaml/badge.svg)
+[![documentation](https://github.com/AlexImmer/Laplace/actions/workflows/docs.yaml/badge.svg)](https://aleximmer.github.io/Laplace/)
 
 The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
@@ -22,7 +23,7 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Setup
 
-We assume `python3.8` since the package was developed with that version.
+We assume `python>=3.8` since the package was developed with that version.
 To install laplace with `pip`, run the following:
 ```bash
 pip install laplace-torch
@@ -31,11 +32,12 @@ pip install laplace-torch
 For development purposes, clone the repository and then install:
 ```bash
 # or after cloning the repository for development
-pip install -e .
+poetry shell
+poetry install
 # run tests
-pip install -e .[tests]
-pytest tests/
+pytest .
 ```
+This requires [poetry](https://python-poetry.org/)
 
 ## Structure
 The laplace package consists of two main components:

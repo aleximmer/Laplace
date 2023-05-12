@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# act (for testing github workflows locally)
+bin/act
+
 # Distribution / packaging
 .Python
 build/
@@ -130,3 +133,9 @@ dmypy.json
 
 # Data
 data/
+
+# emacs tmp files
+*~
+
+# example temp folder
+temp
