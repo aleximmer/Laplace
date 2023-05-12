@@ -1,0 +1,41 @@
+name: Unit-Tests
+
+on:
+  push:
+    branches: [master, vberenz/packaging]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+    steps:
+    - name: checkout repository
+      uses: actions/checkout@v3
+    - name: setup python3  
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.x
+    - name: cache poetry install
+      uses: actions/cache@v2
+      with:
+        path: ~/.local
+        key: poetry-1.4.2-0
+    - name: install poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: 1.4.2
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    - name: cache deps
+      id: cache-deps
+      uses: actions/cache@v2
+      with:
+          path: .venv
+          key: pydeps-${{ hashFiles('**/poetry.lock') }}
+    - name: poetry install of the project
+      run: poetry install --with dev 
+      if: steps.cache-deps.outputs.cache-hit != 'true'
+    - name: running pytest
+      run: poetry run pytest
