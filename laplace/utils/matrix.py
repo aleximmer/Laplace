@@ -2,6 +2,7 @@ from math import pow
 import torch
 import numpy as np
 from typing import Union
+import opt_einsum as oe 
 
 from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
 
@@ -458,7 +459,7 @@ class KronDecomposed:
                     l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
                 else:
                     l = torch.pow(torch.outer(l1, l2) + delta, exponent)
-                d = torch.einsum('mp,nq,pq,mp,nq->mn', Q1, Q2, l, Q1, Q2).flatten()
+                d = oe.contract('mp,nq,pq,mp,nq->mn', Q1, Q2, l, Q1, Q2).flatten()
                 diags.append(d)
         return torch.cat(diags)
 
