@@ -538,7 +538,7 @@ class ParametricLaplace(BaseLaplace):
             Only works for `pred_type='glm'` and `link_approx='mc'`.
 
         generator : torch.Generator, optional
-            random number generator to control the samples (if sampling used)=
+            random number generator to control the samples (if sampling used).
 
         Returns
         -------
