@@ -18,6 +18,17 @@ def model():
 
 
 @pytest.fixture
+def model_singleoutput():
+    torch.manual_seed(711)
+    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 1))
+    setattr(model, 'output_size', 1)
+    model_params = list(model.parameters())
+    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
+    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
 def class_Xy():
     torch.manual_seed(711)
     X = torch.randn(10, 3)
@@ -239,4 +250,3 @@ def test_kron_normalization_class(class_Xy, model):
     loss_test, kron_test  = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
-

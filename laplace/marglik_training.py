@@ -30,7 +30,8 @@ def marglik_training(
     marglik_frequency=1,
     prior_prec_init=1.,
     sigma_noise_init=1.,
-    temperature=1.
+    temperature=1.,
+    enable_backprop=False
 ):
     """Marginal-likelihood based training (Algorithm 1 in [1]). 
     Optimize model parameters and hyperparameters jointly.
@@ -103,6 +104,8 @@ def marglik_training(
         initial observation noise (for regression only)
     temperature : float, default=1.0
         factor for the likelihood for 'overcounting' data. Might be required for data augmentation.
+    enable_backprop : bool, default=False
+        make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
 
     Returns
     -------
@@ -253,7 +256,7 @@ def marglik_training(
     lap = Laplace(
         model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise, 
         prior_precision=prior_prec, temperature=temperature, backend=backend,
-        subset_of_weights='all'
+        subset_of_weights='all', enable_backprop=enable_backprop
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses

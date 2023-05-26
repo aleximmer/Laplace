@@ -1,0 +1,4 @@
+botorch==0.8.2
+gpytorch==1.9.1
+tqdm
+netcal==1.1.3

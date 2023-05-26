@@ -31,6 +31,9 @@ class BaseLaplace:
     temperature : float, default=1
         temperature of the likelihood; lower temperature leads to more
         concentrated posterior and vice versa.
+    enable_backprop: bool, default=False
+        whether to enable backprop to the input `x` through the Laplace predictive.
+        Useful for e.g. Bayesian optimization.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     backend_kwargs : dict, default=None
@@ -38,7 +41,8 @@ class BaseLaplace:
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., enable_backprop=False,
+                 backend=None, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -54,6 +58,7 @@ class BaseLaplace:
         self.likelihood = likelihood
         self.sigma_noise = sigma_noise
         self.temperature = temperature
+        self.enable_backprop = enable_backprop
 
         if backend is None:
             backend = AsdlGGN if likelihood == 'classification' else BackPackGGN
@@ -330,9 +335,10 @@ class ParametricLaplace(BaseLaplace):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., enable_backprop=False, 
+                 backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs)
+                         prior_mean, temperature, enable_backprop, backend, backend_kwargs)
         if not hasattr(self, 'H'):
             self._init_H()
             # posterior mean/mode
@@ -363,7 +369,10 @@ class ParametricLaplace(BaseLaplace):
             self.n_data = 0
 
         self.model.eval()
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.mean = parameters_to_vector(self.model.parameters())
+
+        if not self.enable_backprop:
+            self.mean = self.mean.detach()
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
@@ -496,8 +505,8 @@ class ParametricLaplace(BaseLaplace):
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
-    def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100, 
-                 diagonal_output=False, generator=None):
+    def __call__(self, x, pred_type='glm', joint=False, link_approx='probit', 
+                 n_samples=100, diagonal_output=False, generator=None):
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -514,6 +523,13 @@ class ParametricLaplace(BaseLaplace):
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only 'mc' is possible. 
 
+        joint : bool
+            Whether to output a joint predictive distribution in regression with
+            `pred_type='glm'`. If set to `True`, the predictive distribution
+            has the same form as GP posterior, i.e. N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
+            If `False`, then only outputs the marginal predictive distribution. 
+            Only available for regression and GLM predictive.
+
         n_samples : int
             number of samples for `link_approx='mc'`.
 
@@ -522,7 +538,7 @@ class ParametricLaplace(BaseLaplace):
             Only works for `pred_type='glm'` and `link_approx='mc'`.
 
         generator : torch.Generator, optional
-            random number generator to control the samples (if sampling used)
+            random number generator to control the samples (if sampling used).
 
         Returns
         -------
@@ -531,6 +547,8 @@ class ParametricLaplace(BaseLaplace):
             a distribution over classes (similar to a Softmax).
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
             with the mean and the predictive variance.
+            For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor 
+            is returned with the mean and the predictive covariance. 
         """
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
@@ -546,7 +564,9 @@ class ParametricLaplace(BaseLaplace):
                 raise ValueError('Invalid random generator (check type and device).')
 
         if pred_type == 'glm':
-            f_mu, f_var = self._glm_predictive_distribution(x)
+            f_mu, f_var = self._glm_predictive_distribution(
+                x, joint=joint and self.likelihood == 'regression'
+            )
             # regression
             if self.likelihood == 'regression':
                 return f_mu, f_var
@@ -628,16 +648,23 @@ class ParametricLaplace(BaseLaplace):
             return self._nn_predictive_samples(x, n_samples)
 
     @torch.enable_grad()
-    def _glm_predictive_distribution(self, X):
-        Js, f_mu = self.backend.jacobians(X)
-        f_var = self.functional_variance(Js)
-        return f_mu.detach(), f_var.detach()
+    def _glm_predictive_distribution(self, X, joint=False):
+        Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
+
+        if joint:
+            f_mu = f_mu.flatten()  # (batch*out)
+            f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
+        else:
+            f_var = self.functional_variance(Js)
+
+        return (f_mu.detach(), f_var.detach()) if not self.enable_backprop else (f_mu, f_var)
 
     def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.parameters())
-            fs.append(self.model(X.to(self._device)).detach())
+            f = self.model(X.to(self._device))
+            fs.append(f.detach() if not self.enable_backprop else f)
         vector_to_parameters(self.mean, self.model.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
@@ -663,6 +690,27 @@ class ParametricLaplace(BaseLaplace):
         -------
         f_var : torch.Tensor
             output covariance `(batch, outputs, outputs)`
+        """
+        raise NotImplementedError
+
+    def functional_covariance(self, Jacs):
+        """Compute functional covariance for the `'glm'` predictive:
+        `f_cov = Jacs @ P.inv() @ Jacs.T`, which is a batch*output x batch*output
+        predictive covariance matrix.
+
+        This emulates the GP posterior covariance N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]). 
+        Useful for joint predictions, such as in batched Bayesian optimization.
+
+        Parameters
+        ----------
+        Jacs : torch.Tensor
+            Jacobians of model output wrt parameters
+            `(batch*outputs, parameters)`
+
+        Returns
+        -------
+        f_cov : torch.Tensor
+            output covariance `(batch*outputs, batch*outputs)`
         """
         raise NotImplementedError
 
@@ -711,9 +759,9 @@ class FullLaplace(ParametricLaplace):
     _key = ('all', 'full')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs)
+                         prior_mean, temperature, enable_backprop, backend, backend_kwargs)
         self._posterior_scale = None
 
     def _init_H(self):
@@ -778,6 +826,11 @@ class FullLaplace(ParametricLaplace):
     def functional_variance(self, Js):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
 
+    def functional_covariance(self, Js):
+        n_batch, n_outs, n_params = Js.shape
+        Js = Js.reshape(n_batch*n_outs, n_params)
+        return torch.einsum('np,pq,mq->nm', Js, self.posterior_covariance, Js)
+
     def sample(self, n_samples=100):
         dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
         return dist.sample((n_samples,))
@@ -799,12 +852,12 @@ class KronLaplace(ParametricLaplace):
     _key = ('all', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, damping=False,
-                 **backend_kwargs):
+                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, 
+                 damping=False, **backend_kwargs):
         self.damping = damping
         self.H_facs = None
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, **backend_kwargs)
+                         prior_mean, temperature, enable_backprop, backend, **backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model, self._device)
@@ -867,6 +920,14 @@ class KronLaplace(ParametricLaplace):
     def functional_variance(self, Js):
         return self.posterior_precision.inv_square_form(Js)
 
+    def functional_covariance(self, Js):
+        self._check_jacobians(Js)
+        n_batch, n_outs, n_params = Js.shape
+        Js = Js.reshape(n_batch*n_outs, n_params).unsqueeze(0)
+        cov = self.posterior_precision.inv_square_form(Js).squeeze(0)
+        assert cov.shape == (n_batch*n_outs, n_batch*n_outs)
+        return cov
+
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
@@ -895,10 +956,11 @@ class LowRankLaplace(ParametricLaplace):
     """
     _key = ('all', 'lowrank')
     def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, 
-                 temperature=1, backend=AsdlHessian, backend_kwargs=None):
+                 temperature=1, enable_backprop=False, backend=AsdlHessian, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise=sigma_noise, 
                          prior_precision=prior_precision, prior_mean=prior_mean, 
-                         temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
+                         temperature=temperature, enable_backprop=enable_backprop, 
+                         backend=backend, backend_kwargs=backend_kwargs)
     
     def _init_H(self):
         self.H = None
@@ -920,7 +982,10 @@ class LowRankLaplace(ParametricLaplace):
             raise ValueError('LowRank LA does not support updating.')
 
         self.model.eval()
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.mean = parameters_to_vector(self.model.parameters())
+
+        if not self.enable_backprop:
+            self.mean = self.mean.detach()
 
         X, _ = next(iter(train_loader))
         with torch.no_grad():
@@ -957,6 +1022,16 @@ class LowRankLaplace(ParametricLaplace):
         Jacs_V = torch.einsum('ncp,pl->ncl', Jacs, self.V)
         info_gain = torch.einsum('ncl,nkl->nck', Jacs_V @ self.Kinv, Jacs_V)
         return prior_var - info_gain
+
+    def functional_covariance(self, Jacs):
+        n_batch, n_outs, n_params = Jacs.shape
+        Jacs = Jacs.reshape(n_batch*n_outs, n_params)
+        prior_cov = torch.einsum('np,mp->nm', Jacs / self.prior_precision_diag, Jacs)
+        Jacs_V = torch.einsum('np,pl->nl', Jacs, self.V)
+        info_gain = torch.einsum('nl,ml->nm', Jacs_V @ self.Kinv, Jacs_V)
+        cov = prior_cov - info_gain
+        assert cov.shape == (n_batch*n_outs, n_batch*n_outs)
+        return cov
 
     def sample(self, n_samples):
         samples = torch.randn(self.n_params, n_samples)
@@ -1040,6 +1115,13 @@ class DiagLaplace(ParametricLaplace):
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
         return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
+
+    def functional_covariance(self, Js):
+        self._check_jacobians(Js)
+        n_batch, n_outs, n_params = Js.shape
+        Js = Js.reshape(n_batch*n_outs, n_params)
+        cov = torch.einsum('np,p,mp->nm', Js, self.posterior_variance, Js)
+        return cov
 
     def sample(self, n_samples=100):
         samples = torch.randn(n_samples, self.n_params, device=self._device)
