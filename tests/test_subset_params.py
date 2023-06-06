@@ -13,6 +13,7 @@ from torchvision.models import wide_resnet50_2
 
 from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from laplace.utils import KronDecomposed
+from laplace.curvature import AsdlGGN, AsdlHessian, AsdlEF, BackPackEF, BackPackGGN
 from tests.utils import jacobians_naive
 
 
@@ -62,6 +63,29 @@ def test_compatible(laplace, model):
 def test_noncompatible(laplace, model):
     with pytest.raises(TypeError):
         lap = laplace(model, 'classification', subset_params=[model[0].weight])
+
+
+@pytest.mark.parametrize('laplace', compatible_flavors)
+def test_incompatible_backend(laplace, model):
+    lap = laplace(model, 'classification', subset_params=[model[0].weight],
+                  backend=AsdlEF)
+
+    lap = laplace(model, 'classification', subset_params=[model[0].weight],
+                  backend=AsdlGGN)
+
+    lap = laplace(model, 'classification', subset_params=[model[0].weight],
+                  backend=AsdlHessian)
+
+
+@pytest.mark.parametrize('laplace', compatible_flavors)
+def test_incompatible_backend(laplace, model):
+    with pytest.raises(ValueError):
+        lap = laplace(model, 'classification', subset_params=[model[0].weight],
+                      backend=BackPackGGN)
+
+    with pytest.raises(ValueError):
+        lap = laplace(model, 'classification', subset_params=[model[0].weight],
+                      backend=BackPackEF)
 
 
 @pytest.mark.parametrize('laplace', compatible_flavors)
