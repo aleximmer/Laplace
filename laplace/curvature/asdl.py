@@ -129,7 +129,7 @@ class AsdlInterface(CurvatureInterface):
             _, X = self.model.forward_with_features(X)
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_DIAG], data_size=1)
-        fisher_maker = get_fisher_maker(self.model, cfg, self.kfac_conv)
+        fisher_maker = get_fisher_maker(self.model, cfg)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
@@ -157,7 +157,7 @@ class AsdlInterface(CurvatureInterface):
             _, X = self.model.forward_with_features(X)
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_KRON], data_size=1)
-        fisher_maker = get_fisher_maker(self.model, cfg, self.kfac_conv)
+        fisher_maker = get_fisher_maker(self.model, cfg)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
