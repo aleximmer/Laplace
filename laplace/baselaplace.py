@@ -46,9 +46,22 @@ class BaseLaplace:
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
+        if subset_params is not None and type(subset_params) is not list:
+            raise ValueError('`subset_params` must be a list or None.')
+
         self.model = model
         self._device = next(model.parameters()).device
         self.is_subset_params = subset_params is not None
+
+        if self.is_subset_params:
+            # Switch off requires_grad for other parameters than the ones in subset_params
+            subset_params_ptr = [p.data_ptr() for p in subset_params]
+            for p in model.parameters():
+                if p.data_ptr() not in subset_params_ptr:
+                    p.requires_grad = False
+                else:
+                    p.requires_grad = True
+
         self.params = subset_params if self.is_subset_params \
                                     else list(self.model.parameters())
         self.n_params = len(parameters_to_vector(self.params).detach())
