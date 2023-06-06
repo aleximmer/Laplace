@@ -31,15 +31,20 @@ class Kron:
 
         Parameters
         ----------
-        model : torch.nn.Module
+        model : nn.Module or iterable of parameters, e.g. model.parameters()
         device : torch.device
 
         Returns
         -------
         kron : Kron
         """
+        if isinstance(model, torch.nn.Module):
+            params = model.parameters()
+        else:
+            params = model
+
         kfacs = list()
-        for p in model.parameters():
+        for p in params:
             if p.ndim == 1:  # bias
                 P = p.size(0)
                 kfacs.append([torch.zeros(P, P, device=device)])

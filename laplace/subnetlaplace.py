@@ -37,7 +37,7 @@ class SubnetLaplace(ParametricLaplace):
     References
     ----------
     [1] Daxberger, E., Nalisnick, E., Allingham, JU., Antorán, J., Hernández-Lobato, JM.
-    [*Bayesian Deep Learning via Subnetwork Inference*](https://arxiv.org/abs/2010.14689). 
+    [*Bayesian Deep Learning via Subnetwork Inference*](https://arxiv.org/abs/2010.14689).
     ICML 2021.
 
     Parameters
@@ -110,7 +110,7 @@ class SubnetLaplace(ParametricLaplace):
 
         else:
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
-    
+
     @property
     def mean_subnet(self):
         return self.mean[self.backend.subnetwork_indices]
