@@ -112,22 +112,22 @@ def test_laplace_init_noise(laplace, model):
 @pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init_precision(laplace, model):
     # float
-    # precision = 10.6
-    # lap = laplace(model, likelihood='regression', prior_precision=precision)
-    # # torch.tensor 0-dim
-    # precision = torch.tensor(10.6)
-    # lap = laplace(model, likelihood='regression', prior_precision=precision)
-    # # torch.tensor 1-dim
-    # precision = torch.tensor(10.7).reshape(-1)
-    # lap = laplace(model, likelihood='regression', prior_precision=precision)
-    # # torch.tensor 1-dim param-shape
-    # precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
-    # if laplace == KronLaplace:
-    #     # Kron should not accept per parameter prior precision
-    #     with pytest.raises(ValueError):
-    #         lap = laplace(model, likelihood='regression', prior_precision=precision)
-    # else:
-    #     lap = laplace(model, likelihood='regression', prior_precision=precision)
+    precision = 10.6
+    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    # torch.tensor 0-dim
+    precision = torch.tensor(10.6)
+    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    # torch.tensor 1-dim
+    precision = torch.tensor(10.7).reshape(-1)
+    lap = laplace(model, likelihood='regression', prior_precision=precision)
+    # torch.tensor 1-dim param-shape
+    precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
+    if laplace == KronLaplace:
+        # Kron should not accept per parameter prior precision
+        with pytest.raises(ValueError):
+            lap = laplace(model, likelihood='regression', prior_precision=precision)
+    else:
+        lap = laplace(model, likelihood='regression', prior_precision=precision)
     # torch.tensor 1-dim layer-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
     lap = laplace(model, likelihood='regression', prior_precision=precision)
