@@ -36,34 +36,24 @@ class BaseLaplace:
     backend_kwargs : dict, default=None
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
-    subset_params: list, default=None
-        list of subset of model's parameters, e.g. `[model[0].weight, model[0].bias]`,
-        useful to do subnetwork Laplace. This is more restrictive than SubnetLaplace.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None,
-                 subset_params=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
-        if subset_params is not None and type(subset_params) is not list:
-            raise ValueError('`subset_params` must be a list or None.')
-
         self.model = model
         self._device = next(model.parameters()).device
-        self.is_subset_params = subset_params is not None
 
-        if self.is_subset_params:
-            # Switch off requires_grad for other parameters than the ones in subset_params
-            subset_params_ptr = [p.data_ptr() for p in subset_params]
-            for p in model.parameters():
-                if p.data_ptr() not in subset_params_ptr:
-                    p.requires_grad = False
-                else:
-                    p.requires_grad = True
+        # Only do Laplace on params that require grad
+        self.params = []
+        self.is_subset_params = False
+        for p in model.parameters():
+            if p.requires_grad:
+                self.params.append(p)
+            else:
+                self.is_subset_params = True
 
-        self.params = subset_params if self.is_subset_params \
-                                    else list(self.model.parameters())
         self.n_params = len(parameters_to_vector(self.params).detach())
         self.n_layers = len(self.params)
         self.prior_precision = prior_precision
@@ -77,8 +67,8 @@ class BaseLaplace:
         if backend is None:
             backend = AsdlGGN
         else:
-            if subset_params is not None and 'backpack' in backend.__name__.lower():
-                raise ValueError('Subset of params only supported by ASDL backend.')
+            if self.is_subset_params and 'backpack' in backend.__name__.lower():
+                raise ValueError('If some grad are switched off, only ASDL backend is supported.')
 
         self._backend = None
         self._backend_cls = backend
@@ -353,10 +343,9 @@ class ParametricLaplace(BaseLaplace):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None,
-                 subset_params=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs, subset_params)
+                         prior_mean, temperature, backend, backend_kwargs)
         if not hasattr(self, 'H'):
             self._init_H()
             # posterior mean/mode
@@ -532,8 +521,9 @@ class ParametricLaplace(BaseLaplace):
         pred_type : {'glm', 'nn'}, default='glm'
             type of posterior predictive, linearized GLM predictive or neural
             network sampling predictive. The GLM predictive is consistent with
-            the curvature approximations used here. When `subset_params` is
-            not `None`, only `nn` predictive is supported.
+            the curvature approximations used here. When Laplace is done only
+            on subset of parameters (i.e. some grad are disabled),
+            only `nn` predictive is supported.
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
@@ -828,12 +818,11 @@ class KronLaplace(ParametricLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=None, damping=False,
-                 backend_kwargs=None, subset_params=None):
+                 backend_kwargs=None):
         self.damping = damping
         self.H_facs = None
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, subset_params=subset_params,
-                        backend_kwargs=backend_kwargs)
+                         prior_mean, temperature, backend, backend_kwargs=backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.params, self._device)

@@ -19,8 +19,7 @@ from tests.utils import jacobians_naive
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-compatible_flavors = [KronLaplace, DiagLaplace]
-noncompatible_flavors = [FullLaplace, LowRankLaplace]
+flavors = [KronLaplace, DiagLaplace, FullLaplace]
 
 
 @pytest.fixture
@@ -30,12 +29,12 @@ def model():
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups
     setattr(model, 'n_params', len(parameters_to_vector(model_params)))
-    return model
 
+    # Subset of params
+    for p in model.parameters():
+        p.requires_grad = False
+    model[0].weight.requires_grad = True
 
-@pytest.fixture
-def large_model():
-    model = wide_resnet50_2()
     return model
 
 
@@ -53,72 +52,55 @@ def reg_loader():
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
-@pytest.mark.parametrize('laplace', compatible_flavors)
-def test_compatible(laplace, model):
-    lap = laplace(model, 'classification', subset_params=[model[0].weight])
-    assert True
+@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+def test_incompatible_backend(laplace, lh, model):
+    lap = laplace(model, lh, backend=AsdlEF)
+    lap = laplace(model, lh, backend=AsdlGGN)
+    lap = laplace(model, lh, backend=AsdlHessian)
 
 
-@pytest.mark.parametrize('laplace', noncompatible_flavors)
-def test_noncompatible(laplace, model):
-    with pytest.raises(TypeError):
-        lap = laplace(model, 'classification', subset_params=[model[0].weight])
-
-
-@pytest.mark.parametrize('laplace', compatible_flavors)
-def test_incompatible_backend(laplace, model):
-    lap = laplace(model, 'classification', subset_params=[model[0].weight],
-                  backend=AsdlEF)
-
-    lap = laplace(model, 'classification', subset_params=[model[0].weight],
-                  backend=AsdlGGN)
-
-    lap = laplace(model, 'classification', subset_params=[model[0].weight],
-                  backend=AsdlHessian)
-
-
-@pytest.mark.parametrize('laplace', compatible_flavors)
-def test_incompatible_backend(laplace, model):
+@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+def test_incompatible_backend(laplace, lh, model):
     with pytest.raises(ValueError):
-        lap = laplace(model, 'classification', subset_params=[model[0].weight],
-                      backend=BackPackGGN)
+        lap = laplace(model, lh, backend=BackPackGGN)
 
     with pytest.raises(ValueError):
-        lap = laplace(model, 'classification', subset_params=[model[0].weight],
-                      backend=BackPackEF)
+        lap = laplace(model, lh, backend=BackPackEF)
 
 
-@pytest.mark.parametrize('laplace', compatible_flavors)
-def test_wrong_value(laplace, model):
-    with pytest.raises(ValueError):
-        lap = laplace(model, 'classification', subset_params=model[0].weight)
-
-
-@pytest.mark.parametrize('laplace', compatible_flavors)
-def test_mean(laplace, model, class_loader):
+@pytest.mark.parametrize('laplace', flavors)
+def test_mean_clf(laplace, model, class_loader):
     n_params = model[0].weight.numel()
-    lap = laplace(model, 'classification', subset_params=[model[0].weight])
+    lap = laplace(model, 'classification')
     lap.fit(class_loader)
+    assert lap.mean.shape == (n_params,)
+
+
+@pytest.mark.parametrize('laplace', flavors)
+def test_mean_reg(laplace, model, reg_loader):
+    n_params = model[0].weight.numel()
+    lap = laplace(model, 'regression')
+    lap.fit(reg_loader)
     assert lap.mean.shape == (n_params,)
 
 
 def test_post_precision_diag(model, class_loader):
     n_params = model[0].weight.numel()
-    lap = DiagLaplace(model, 'classification', subset_params=[model[0].weight])
+    lap = DiagLaplace(model, 'classification')
     lap.fit(class_loader)
     assert lap.posterior_precision.shape == (n_params,)
 
 
 def test_post_precision_kron(model, class_loader):
     n_params = model[0].weight.numel()
-    lap = KronLaplace(model, 'classification', subset_params=[model[0].weight])
+    lap = KronLaplace(model, 'classification')
     lap.fit(class_loader)
     assert lap.posterior_precision.to_matrix().shape == (n_params, n_params)
 
 
-@pytest.mark.parametrize('laplace', compatible_flavors)
+@pytest.mark.parametrize('laplace', flavors)
 def test_predictive(laplace, model, class_loader):
-    lap = laplace(model, 'classification', subset_params=[model[0].weight])
+    lap = laplace(model, 'classification')
     lap.fit(class_loader)
 
     with pytest.raises(ValueError):
@@ -127,16 +109,16 @@ def test_predictive(laplace, model, class_loader):
     lap(torch.randn(5, 3), pred_type='nn', link_approx='mc')
 
 
-@pytest.mark.parametrize('laplace', compatible_flavors)
+@pytest.mark.parametrize('laplace', flavors)
 def test_marglik(laplace, model, class_loader):
-    lap = laplace(model, 'classification', subset_params=[model[0].weight])
+    lap = laplace(model, 'classification')
     lap.fit(class_loader)
     lap.optimize_prior_precision(method='marglik')
 
 
-@pytest.mark.parametrize('laplace', compatible_flavors)
+@pytest.mark.parametrize('laplace', flavors)
 def test_marglik(laplace, model, class_loader):
-    lap = laplace(model, 'classification', subset_params=[model[0].weight])
+    lap = laplace(model, 'classification')
     lap.fit(class_loader)
 
     with pytest.raises(ValueError):
