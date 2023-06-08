@@ -358,7 +358,7 @@ class ParametricLaplace(BaseLaplace):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader, override=True):
+    def fit(self, train_loader, override=True, flatten_y=False):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -369,6 +369,9 @@ class ParametricLaplace(BaseLaplace):
         override : bool, default=True
             whether to initialize H, loss, and n_data again; setting to False is useful for
             online learning settings to accumulate a sequential posterior approximation.
+        flatten_y : bool, default False
+            whether to flatten the targets; useful for sequence data, e.g. the target shape
+            is (batch_size, sequence_length).
         """
         if override:
             self._init_H()
@@ -391,6 +394,10 @@ class ParametricLaplace(BaseLaplace):
         for X, y in train_loader:
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
+
+            if flatten_y:
+                y = y.flatten()
+
             loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
             self.H += H_batch
@@ -510,7 +517,7 @@ class ParametricLaplace(BaseLaplace):
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100,
-                 diagonal_output=False, generator=None):
+                 diagonal_output=False, generator=None, softmax_temp=0, **model_kwargs):
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -538,6 +545,9 @@ class ParametricLaplace(BaseLaplace):
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
+
+        softmax_temp : float > 0
+            temperature for the softmax (i.e. logit rescaling)
 
         Returns
         -------
@@ -594,7 +604,7 @@ class ParametricLaplace(BaseLaplace):
                 alpha = (1 - 2/K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
                 return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
         else:
-            samples = self._nn_predictive_samples(x, n_samples)
+            samples = self._nn_predictive_samples(x, n_samples, softmax_temp, **model_kwargs)
             if self.likelihood == 'regression':
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
@@ -651,11 +661,12 @@ class ParametricLaplace(BaseLaplace):
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
-    def _nn_predictive_samples(self, X, n_samples=100):
+    def _nn_predictive_samples(self, X, n_samples=100, softmax_temp=1, **model_kwargs):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
-            fs.append(self.model(X.to(self._device)).detach())
+            logits = self.model(X.to(self._device), **model_kwargs).detach()
+            fs.append(logits / softmax_temp)
         vector_to_parameters(self.mean, self.params)
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
