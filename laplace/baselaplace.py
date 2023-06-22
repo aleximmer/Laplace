@@ -358,7 +358,7 @@ class ParametricLaplace(BaseLaplace):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader, override=True, flatten_y=False):
+    def fit(self, train_loader, override=True):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -369,9 +369,6 @@ class ParametricLaplace(BaseLaplace):
         override : bool, default=True
             whether to initialize H, loss, and n_data again; setting to False is useful for
             online learning settings to accumulate a sequential posterior approximation.
-        flatten_y : bool, default False
-            whether to flatten the targets; useful for sequence data, e.g. the target shape
-            is (batch_size, sequence_length).
         """
         if override:
             self._init_H()
@@ -394,10 +391,6 @@ class ParametricLaplace(BaseLaplace):
         for X, y in train_loader:
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
-
-            if flatten_y:
-                y = y.flatten()
-
             loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
             self.H += H_batch
