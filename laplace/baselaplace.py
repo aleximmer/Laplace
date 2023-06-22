@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal
+import tqdm
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples)
@@ -199,7 +200,7 @@ class BaseLaplace:
                                       init_prior_prec=1., val_loader=None, loss=get_nll,
                                       log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
                                       link_approx='probit', n_samples=100, verbose=False,
-                                      cv_loss_with_var=False):
+                                      cv_loss_with_var=False, progress_bar=False):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
 
@@ -238,13 +239,17 @@ class BaseLaplace:
         verbose : bool, default=False
             if true, the optimized prior precision will be printed
             (can be a large tensor if the prior has a diagonal covariance).
+        progress_bar : bool, default=False
+            whether to show a progress bar; updated at every batch-Hessian computation.
+            Useful for very large model and large amount of data, esp. when `subset_of_weights='all'`.
         """
         if method == 'marglik':
             self.prior_precision = init_prior_prec
             log_prior_prec = self.prior_precision.log()
             log_prior_prec.requires_grad = True
             optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
-            for _ in range(n_steps):
+            pbar = tqdm.trange(n_steps) if progress_bar else range(n_steps)
+            for _ in pbar:
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
                 neg_log_marglik = -self.log_marginal_likelihood(prior_precision=prior_prec)
@@ -267,10 +272,12 @@ class BaseLaplace:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
     def _gridsearch(self, loss, interval, val_loader, pred_type,
-                    link_approx='probit', n_samples=100, loss_with_var=False):
+                    link_approx='probit', n_samples=100, loss_with_var=False,
+                    progress_bar=False):
         results = list()
         prior_precs = list()
-        for prior_prec in interval:
+        pbar = tqdm.tqdm(interval) if progress_bar else interval
+        for prior_prec in pbar:
             self.prior_precision = prior_prec
             try:
                 out_dist, targets = validate(
@@ -358,7 +365,7 @@ class ParametricLaplace(BaseLaplace):
         if self.H is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
-    def fit(self, train_loader, override=True):
+    def fit(self, train_loader, override=True, progress_bar=False):
         """Fit the local Laplace approximation at the parameters of the model.
 
         Parameters
@@ -369,6 +376,9 @@ class ParametricLaplace(BaseLaplace):
         override : bool, default=True
             whether to initialize H, loss, and n_data again; setting to False is useful for
             online learning settings to accumulate a sequential posterior approximation.
+        progress_bar : bool, default=False
+            whether to show a progress bar; updated at every batch-Hessian computation.
+            Useful for very large model and large amount of data, esp. when `subset_of_weights='all'`.
         """
         if override:
             self._init_H()
@@ -388,7 +398,8 @@ class ParametricLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
 
         N = len(train_loader.dataset)
-        for X, y in train_loader:
+        pbar = tqdm.tqdm(train_loader) if progress_bar else train_loader
+        for X, y in pbar:
             self.model.zero_grad()
             X, y = X.to(self._device), y.to(self._device)
             loss_batch, H_batch = self._curv_closure(X, y, N)
@@ -510,7 +521,7 @@ class ParametricLaplace(BaseLaplace):
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100,
-                 diagonal_output=False, generator=None, softmax_temp=0, **model_kwargs):
+                 diagonal_output=False, generator=None, softmax_temp=1, **model_kwargs):
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -539,8 +550,9 @@ class ParametricLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
 
-        softmax_temp : float > 0
-            temperature for the softmax (i.e. logit rescaling)
+        softmax_temp : float > 0, default=1 (i.e. standard softmax)
+            temperature for the softmax (i.e. logit rescaling);
+            only applicable for classification
 
         Returns
         -------
@@ -574,7 +586,8 @@ class ParametricLaplace(BaseLaplace):
             # classification
             if link_approx == 'mc':
                 return self.predictive_samples(x, pred_type='glm', n_samples=n_samples,
-                                               diagonal_output=diagonal_output).mean(dim=0)
+                                               diagonal_output=diagonal_output,
+                                               softmax_temp=softmax_temp).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
                 return torch.softmax(kappa * f_mu, dim=-1)
@@ -603,7 +616,7 @@ class ParametricLaplace(BaseLaplace):
             return samples.mean(dim=0)
 
     def predictive_samples(self, x, pred_type='glm', n_samples=100,
-                           diagonal_output=False, generator=None):
+                           diagonal_output=False, generator=None, softmax_temp=1):
         """Sample from the posterior predictive on input data `x`.
         Can be used, for example, for Thompson sampling.
 
@@ -627,6 +640,10 @@ class ParametricLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
 
+        softmax_temp : float > 0, default=1 (i.e. standard softmax)
+            temperature for the softmax (i.e. logit rescaling);
+            only applicable for classification.
+
         Returns
         -------
         samples : torch.Tensor
@@ -643,10 +660,12 @@ class ParametricLaplace(BaseLaplace):
             f_samples = normal_samples(f_mu, f_var, n_samples, generator)
             if self.likelihood == 'regression':
                 return f_samples
-            return torch.softmax(f_samples, dim=-1)
+            else:
+                f_samples /= softmax_temp
+                return torch.softmax(f_samples, dim=-1)
 
         else:  # 'nn'
-            return self._nn_predictive_samples(x, n_samples)
+            return self._nn_predictive_samples(x, n_samples, softmax_temp)
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X):
@@ -659,11 +678,11 @@ class ParametricLaplace(BaseLaplace):
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
             logits = self.model(X.to(self._device), **model_kwargs).detach()
-            fs.append(logits / softmax_temp)
+            fs.append(logits)
         vector_to_parameters(self.mean, self.params)
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
-            fs = torch.softmax(fs, dim=-1)
+            fs = torch.softmax(fs/softmax_temp, dim=-1)
         return fs
 
     def functional_variance(self, Jacs):
@@ -703,13 +722,13 @@ class ParametricLaplace(BaseLaplace):
                                  init_prior_prec=1., val_loader=None, loss=get_nll,
                                  log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
                                  link_approx='probit', n_samples=100, verbose=False,
-                                 cv_loss_with_var=False):
+                                 cv_loss_with_var=False, progress_bar=False):
         assert pred_type in ['glm', 'nn']
         self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
                                            init_prior_prec, val_loader, loss,
                                            log_prior_prec_min, log_prior_prec_max,
                                            grid_size, link_approx, n_samples,
-                                           verbose, cv_loss_with_var)
+                                           verbose, cv_loss_with_var, progress_bar)
 
     @property
     def posterior_precision(self):
@@ -744,9 +763,9 @@ class FullLaplace(ParametricLaplace):
     def _curv_closure(self, X, y, N):
         return self.backend.full(X, y, N=N)
 
-    def fit(self, train_loader, override=True):
+    def fit(self, train_loader, override=True, progress_bar=False):
         self._posterior_scale = None
-        return super().fit(train_loader, override=override)
+        return super().fit(train_loader, override=override, progress_bar=progress_bar)
 
     def _compute_scale(self):
         self._posterior_scale = invsqrt_precision(self.posterior_precision)
@@ -841,7 +860,7 @@ class KronLaplace(ParametricLaplace):
                 F[1] *= factor
         return kron
 
-    def fit(self, train_loader, override=True):
+    def fit(self, train_loader, override=True, progress_bar=False):
         if override:
             self.H_facs = None
 
@@ -852,7 +871,7 @@ class KronLaplace(ParametricLaplace):
             # discount previous Kronecker factors to sum up properly together with new ones
             self.H_facs = self._rescale_factors(self.H_facs, n_data_old / (n_data_old + n_data_new))
 
-        super().fit(train_loader, override=override)
+        super().fit(train_loader, override=override, progress_bar=progress_bar)
 
         if self.H_facs is None:
             self.H_facs = self.H

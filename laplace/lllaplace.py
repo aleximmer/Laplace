@@ -118,7 +118,7 @@ class LLLaplace(ParametricLaplace):
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
-    def _nn_predictive_samples(self, X, n_samples=100):
+    def _nn_predictive_samples(self, X, n_samples=100, softmax_temp=1):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.last_layer.parameters())
@@ -126,7 +126,7 @@ class LLLaplace(ParametricLaplace):
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
-            fs = torch.softmax(fs, dim=-1)
+            fs = torch.softmax(fs/softmax_temp, dim=-1)
         return fs
 
     @property

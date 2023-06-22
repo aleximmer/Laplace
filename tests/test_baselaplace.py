@@ -394,6 +394,7 @@ def test_classification_predictive(laplace, model, class_loader):
 
     # NN predictive
     f_pred = lap(X, pred_type='nn', link_approx='mc', n_samples=100)
+    print(f_pred)
     assert f_pred.shape == f.shape
     assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
 
