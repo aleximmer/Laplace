@@ -4,6 +4,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal
 import tqdm
+from collections import UserDict
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples)
@@ -390,7 +391,7 @@ class ParametricLaplace(BaseLaplace):
 
         data = next(iter(train_loader))
         # To support Huggingface dataset
-        X = data['input_ids'] if type(data) == dict else data[0]
+        X = data['input_ids'] if isinstance(data, UserDict) else data[0]
         with torch.no_grad():
             try:
                 out = self.model(X[:1].to(self._device))
@@ -402,7 +403,7 @@ class ParametricLaplace(BaseLaplace):
         N = len(train_loader.dataset)
         pbar = tqdm.tqdm(train_loader) if progress_bar else train_loader
         for data in pbar:
-            X, y = (data['input_ids'], data['labels']) if type(data) == dict else data
+            X, y = (data['input_ids'], data['labels']) if isinstance(data, UserDict) else data
             X, y = X.to(self._device), y.to(self._device)
             self.model.zero_grad()
             loss_batch, H_batch = self._curv_closure(X, y, N)
