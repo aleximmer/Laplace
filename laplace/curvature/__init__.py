@@ -10,7 +10,7 @@ except ModuleNotFoundError:
 try:
     from laplace.curvature.asdl import AsdlHessian, AsdlGGN, AsdlEF, AsdlInterface
 except ModuleNotFoundError:
-    logging.info('asdfghjkl backend not available.')
+    logging.info('asdl backend not available.')
 
 __all__ = ['CurvatureInterface', 'GGNInterface', 'EFInterface',
            'BackPackInterface', 'BackPackGGN', 'BackPackEF',

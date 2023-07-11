@@ -38,7 +38,7 @@
 <span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Interface for asdfghjkl backend.</p></div>
+<div class="desc"><p>Interface for asdl backend.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="laplace.curvature.curvature.CurvatureInterface" href="curvature.html#laplace.curvature.curvature.CurvatureInterface">CurvatureInterface</a></li>
@@ -56,7 +56,7 @@
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
-using asdfghjkl's gradient per output dimension.</p>
+using asdl's gradient per output dimension.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
@@ -75,7 +75,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute gradients <span><span class="MathJax_Preview">\nabla_\theta \ell(f(x;\theta, y)</span><script type="math/tex">\nabla_\theta \ell(f(x;\theta, y)</script></span> at current parameter
-<span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span> using asdfghjkl's backend.</p>
+<span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span> using asdl's backend.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
 <dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
@@ -109,7 +109,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <span>(</span><span>model, likelihood, last_layer=False, low_rank=10)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Interface for asdfghjkl backend.</p></div>
+<div class="desc"><p>Interface for asdl backend.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="laplace.curvature.asdl.AsdlInterface" href="#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></li>
@@ -143,7 +143,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Implementation of the <code>GGNInterface</code> using asdfghjkl.</p></div>
+<div class="desc"><p>Implementation of the <code>GGNInterface</code> using asdl.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="laplace.curvature.asdl.AsdlInterface" href="#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></li>
@@ -169,7 +169,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <span>(</span><span>model, likelihood, last_layer=False)</span>
 </code></dt>
 <dd>
-<div class="desc"><p>Implementation of the <code>EFInterface</code> using asdfghjkl.</p></div>
+<div class="desc"><p>Implementation of the <code>EFInterface</code> using asdl.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li><a title="laplace.curvature.asdl.AsdlInterface" href="#laplace.curvature.asdl.AsdlInterface">AsdlInterface</a></li>

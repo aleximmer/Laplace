@@ -29,7 +29,7 @@ class AsdlInterface(CurvatureInterface):
 
     def jacobians(self, x):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
-        using asdfghjkl's gradient per output dimension.
+        using asdl's gradient per output dimension.
 
         Parameters
         ----------
@@ -61,7 +61,7 @@ class AsdlInterface(CurvatureInterface):
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
-        \\(\\theta\\) using asdfghjkl's backend.
+        \\(\\theta\\) using asdl's backend.
 
         Parameters
         ----------
@@ -218,7 +218,7 @@ class AsdlHessian(AsdlInterface):
 
 
 class AsdlGGN(AsdlInterface, GGNInterface):
-    """Implementation of the `GGNInterface` using asdfghjkl.
+    """Implementation of the `GGNInterface` using asdl.
     """
     def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
@@ -230,7 +230,7 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 
 
 class AsdlEF(AsdlInterface, EFInterface):
-    """Implementation of the `EFInterface` using asdfghjkl.
+    """Implementation of the `EFInterface` using asdl.
     """
     def __init__(self, model, likelihood, last_layer=False):
         super().__init__(model, likelihood, last_layer)
