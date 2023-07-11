@@ -96,7 +96,11 @@ class LLLaplace(ParametricLaplace):
         self.model.eval()
 
         if self.model.last_layer is None:
-            X, _ = next(iter(train_loader))
+            data = next(iter(train_loader))
+            if isinstance(data, dict):
+                X = data['x']
+            else:
+                X, _ = data
             with torch.no_grad():
                 try:
                     self.model.find_last_layer(X[:1].to(self._device))

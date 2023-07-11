@@ -6,7 +6,7 @@ from torch.distributions import MultivariateNormal
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision, 
                            get_nll, validate, Kron, normal_samples)
-from laplace.curvature import AsdlGGN, AsdlHessian
+from laplace.curvature.asdl import AsdlGGN, AsdlHessian
 
 
 __all__ = ['BaseLaplace', 'ParametricLaplace',
@@ -365,7 +365,11 @@ class ParametricLaplace(BaseLaplace):
         self.model.eval()
         self.mean = parameters_to_vector(self.model.parameters()).detach()
 
-        X, _ = next(iter(train_loader))
+        data = next(iter(train_loader))
+        if isinstance(data, dict):
+            X = data['x']
+        else:
+            X, _ = data
         with torch.no_grad():
             try:
                 out = self.model(X[:1].to(self._device))
@@ -375,8 +379,12 @@ class ParametricLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
 
         N = len(train_loader.dataset)
-        for X, y in train_loader:
+        for data in train_loader:
             self.model.zero_grad()
+            if isinstance(data, dict):
+                X, y = data['x'], data['y']
+            else:
+                X, y = data
             X, y = X.to(self._device), y.to(self._device)
             loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch

@@ -134,7 +134,8 @@ class AsdlInterface(CurvatureInterface):
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
-        loss = self.lossfunc(f.detach(), y)
+        f = f.detach().transpose(1, 3).contiguous()
+        loss = self.lossfunc(f, y)
         vec = list()
         for module in self.model.modules():
             stats = getattr(module, 'fisher', None)
@@ -162,7 +163,8 @@ class AsdlInterface(CurvatureInterface):
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
-        loss = self.lossfunc(f.detach(), y)
+        f = f.detach().transpose(1, 3).contiguous()
+        loss = self.lossfunc(f, y)
         M = len(y)
         kron = self._get_kron_factors(M)
         kron = self._rescale_kron_factors(kron, N)
