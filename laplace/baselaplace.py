@@ -525,7 +525,7 @@ class ParametricLaplace(BaseLaplace):
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     def __call__(self, x, pred_type='glm', link_approx='probit', n_samples=100,
-                 diagonal_output=False, generator=None, softmax_temp=1, **model_kwargs):
+                 diagonal_output=False, generator=None, **model_kwargs):
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -553,10 +553,6 @@ class ParametricLaplace(BaseLaplace):
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
-
-        softmax_temp : float > 0, default=1 (i.e. standard softmax)
-            temperature for the softmax (i.e. logit rescaling);
-            only applicable for classification
 
         Returns
         -------
@@ -590,8 +586,7 @@ class ParametricLaplace(BaseLaplace):
             # classification
             if link_approx == 'mc':
                 return self.predictive_samples(x, pred_type='glm', n_samples=n_samples,
-                                               diagonal_output=diagonal_output,
-                                               softmax_temp=softmax_temp).mean(dim=0)
+                                               diagonal_output=diagonal_output).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
                 return torch.softmax(kappa * f_mu, dim=-1)
@@ -614,13 +609,13 @@ class ParametricLaplace(BaseLaplace):
                 alpha = (1 - 2/K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
                 return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
         else:
-            samples = self._nn_predictive_samples(x, n_samples, softmax_temp, **model_kwargs)
+            samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
             if self.likelihood == 'regression':
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
 
     def predictive_samples(self, x, pred_type='glm', n_samples=100,
-                           diagonal_output=False, generator=None, softmax_temp=1):
+                           diagonal_output=False, generator=None):
         """Sample from the posterior predictive on input data `x`.
         Can be used, for example, for Thompson sampling.
 
@@ -644,10 +639,6 @@ class ParametricLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
 
-        softmax_temp : float > 0, default=1 (i.e. standard softmax)
-            temperature for the softmax (i.e. logit rescaling);
-            only applicable for classification.
-
         Returns
         -------
         samples : torch.Tensor
@@ -665,11 +656,10 @@ class ParametricLaplace(BaseLaplace):
             if self.likelihood == 'regression':
                 return f_samples
             else:
-                f_samples /= softmax_temp
                 return torch.softmax(f_samples, dim=-1)
 
         else:  # 'nn'
-            return self._nn_predictive_samples(x, n_samples, softmax_temp)
+            return self._nn_predictive_samples(x, n_samples)
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X):
@@ -677,7 +667,7 @@ class ParametricLaplace(BaseLaplace):
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
-    def _nn_predictive_samples(self, X, n_samples=100, softmax_temp=1, **model_kwargs):
+    def _nn_predictive_samples(self, X, n_samples=100, **model_kwargs):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
@@ -686,7 +676,7 @@ class ParametricLaplace(BaseLaplace):
         vector_to_parameters(self.mean, self.params)
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
-            fs = torch.softmax(fs/softmax_temp, dim=-1)
+            fs = torch.softmax(fs, dim=-1)
         return fs
 
     def functional_variance(self, Jacs):
