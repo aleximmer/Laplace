@@ -148,7 +148,7 @@ class BaseLaplace:
             return self.prior_precision
 
         elif len(self.prior_precision) == self.n_layers:  # per layer
-            n_params_per_layer = parameters_per_layer(self.model)
+            n_params_per_layer = [np.prod(p.shape) for p in self.params]
             return torch.cat([prior * torch.ones(n_params, device=self._device) for prior, n_params
                               in zip(self.prior_precision, n_params_per_layer)])
 
