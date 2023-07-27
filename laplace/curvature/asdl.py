@@ -1,4 +1,5 @@
 import warnings
+
 import numpy as np
 import torch
 
@@ -7,7 +8,6 @@ from asdl.matrices import (
 )
 from asdl.grad_maker import LOSS_MSE, LOSS_CROSS_ENTROPY
 from asdl.fisher import FisherConfig, get_fisher_maker
-# from asdl.fisher import calculate_fisher
 from asdl.hessian import HessianMaker, HessianConfig
 from asdl.gradient import batch_gradient
 
@@ -20,10 +20,8 @@ EPS = 1e-6
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None,
-                 kfac_conv='kfac-expand'):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
-        self.kfac_conv = kfac_conv
 
     @property
     def loss_type(self):
@@ -235,9 +233,8 @@ class AsdlHessian(AsdlInterface):
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False,
-                 kfac_conv='kfac-expand'):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices, kfac_conv=kfac_conv)
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
         self.stochastic = stochastic
 
     @property
@@ -248,8 +245,8 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, kfac_conv='kfac-expand'):
-        super().__init__(model, likelihood, last_layer, kfac_conv=kfac_conv)
+    def __init__(self, model, likelihood, last_layer=False):
+        super().__init__(model, likelihood, last_layer)
 
     @property
     def _ggn_type(self):

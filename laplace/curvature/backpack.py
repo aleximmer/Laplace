@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import torch
 
 from backpack import backpack, extend, memory_cleanup
@@ -131,7 +133,7 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 
         return self.factor * loss.detach(), self.factor * dggn
 
-    def kron(self, X, y, N, **kwargs) -> [torch.Tensor, Kron]:
+    def kron(self, X, y, N, **kwargs) -> Tuple[torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         # Assumes that the last dimension of f is of size outputs.
