@@ -130,12 +130,16 @@ class AsdlInterface(CurvatureInterface):
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_DIAG], data_size=1)
         fisher_maker = get_fisher_maker(self.model, cfg)
+        y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
+            dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
         vec = list()
         for module in self.model.modules():
@@ -158,12 +162,16 @@ class AsdlInterface(CurvatureInterface):
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_KRON], data_size=1)
         fisher_maker = get_fisher_maker(self.model, cfg)
+        y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
+            dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
@@ -191,10 +199,15 @@ class AsdlHessian(AsdlInterface):
         cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
         hess_maker = HessianMaker(self.model, cfg)
         dummy = hess_maker.setup_model_call(self._model, x)
+        dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+        y = y if self.loss_type == LOSS_MSE else y.view(-1)
         hess_maker.setup_loss_call(self.lossfunc, dummy, y)
         hess_maker.forward_and_backward()
         H = self._model.hessian.data
-        loss = self.lossfunc(self.model(x), y).detach()
+        f = self.model(x).detach()
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        loss = self.lossfunc(f, y)
         return self.factor * loss, self.factor * H
 
     def eig_lowrank(self, data_loader):

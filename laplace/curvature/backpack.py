@@ -119,6 +119,9 @@ class BackPackGGN(BackPackInterface, GGNInterface):
     def diag(self, X, y, **kwargs):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(X)
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
+        y = y if self.likelihood == 'regression' else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -131,6 +134,9 @@ class BackPackGGN(BackPackInterface, GGNInterface):
     def kron(self, X, y, N, **kwargs) -> [torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
+        y = y if self.likelihood == 'regression' else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -146,6 +152,9 @@ class BackPackEF(BackPackInterface, EFInterface):
 
     def diag(self, X, y, **kwargs):
         f = self.model(X)
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
+        y = y if self.likelihood == 'regression' else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward()
