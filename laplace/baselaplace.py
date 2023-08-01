@@ -609,10 +609,11 @@ class ParametricLaplace(BaseLaplace):
                 alpha = (1 - 2/K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
                 return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
         else:
-            samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
             if self.likelihood == 'regression':
+                samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
                 return samples.mean(dim=0), samples.var(dim=0)
-            return samples.mean(dim=0)
+            else:  # classification; the average is computed online
+                return self._nn_bma_clf(x, n_samples, **model_kwargs)
 
     def predictive_samples(self, x, pred_type='glm', n_samples=100,
                            diagonal_output=False, generator=None):
@@ -678,6 +679,15 @@ class ParametricLaplace(BaseLaplace):
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
         return fs
+
+    def _nn_bma_clf(self, X, n_samples=100, **model_kwargs):
+        py = 0
+        for sample in self.sample(n_samples):
+            vector_to_parameters(sample, self.params)
+            logits = self.model(X.to(self._device), **model_kwargs).detach()
+            py = py + 1/n_samples * torch.softmax(logits, dim=-1)
+        vector_to_parameters(self.mean, self.params)
+        return py
 
     def functional_variance(self, Jacs):
         """Compute functional variance for the `'glm'` predictive:
