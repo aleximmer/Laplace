@@ -1,4 +1,5 @@
 import warnings
+
 import numpy as np
 import torch
 
@@ -7,7 +8,6 @@ from asdl.matrices import (
 )
 from asdl.grad_maker import LOSS_MSE, LOSS_CROSS_ENTROPY
 from asdl.fisher import FisherConfig, get_fisher_maker
-# from asdl.fisher import calculate_fisher
 from asdl.hessian import HessianMaker, HessianConfig
 from asdl.gradient import batch_gradient
 
@@ -20,10 +20,8 @@ EPS = 1e-6
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None,
-                 kfac_conv='kfac-expand'):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
-        self.kfac_conv = kfac_conv
 
     @property
     def loss_type(self):
@@ -130,12 +128,16 @@ class AsdlInterface(CurvatureInterface):
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_DIAG], data_size=1)
         fisher_maker = get_fisher_maker(self.model, cfg)
+        y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
+            dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
         vec = list()
         for module in self.model.modules():
@@ -158,12 +160,16 @@ class AsdlInterface(CurvatureInterface):
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
                            fisher_shapes=[SHAPE_KRON], data_size=1)
         fisher_maker = get_fisher_maker(self.model, cfg)
+        y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
+            dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, X)
         f, _ = fisher_maker.forward_and_backward()
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
@@ -191,10 +197,15 @@ class AsdlHessian(AsdlInterface):
         cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
         hess_maker = HessianMaker(self.model, cfg)
         dummy = hess_maker.setup_model_call(self._model, x)
+        dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+        y = y if self.loss_type == LOSS_MSE else y.view(-1)
         hess_maker.setup_loss_call(self.lossfunc, dummy, y)
         hess_maker.forward_and_backward()
         H = self._model.hessian.data
-        loss = self.lossfunc(self.model(x), y).detach()
+        f = self.model(x).detach()
+        # Assumes that the last dimension of f is of size outputs.
+        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        loss = self.lossfunc(f, y)
         return self.factor * loss, self.factor * H
 
     def eig_lowrank(self, data_loader):
@@ -222,9 +233,8 @@ class AsdlHessian(AsdlInterface):
 class AsdlGGN(AsdlInterface, GGNInterface):
     """Implementation of the `GGNInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False,
-                 kfac_conv='kfac-expand'):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices, kfac_conv=kfac_conv)
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
+        super().__init__(model, likelihood, last_layer, subnetwork_indices)
         self.stochastic = stochastic
 
     @property
@@ -235,8 +245,8 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl.
     """
-    def __init__(self, model, likelihood, last_layer=False, kfac_conv='kfac-expand'):
-        super().__init__(model, likelihood, last_layer, kfac_conv=kfac_conv)
+    def __init__(self, model, likelihood, last_layer=False):
+        super().__init__(model, likelihood, last_layer)
 
     @property
     def _ggn_type(self):
