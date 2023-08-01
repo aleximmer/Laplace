@@ -613,7 +613,7 @@ class ParametricLaplace(BaseLaplace):
                 samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
                 return samples.mean(dim=0), samples.var(dim=0)
             else:  # classification; the average is computed online
-                return self._nn_bma_clf(x, n_samples, **model_kwargs)
+                return self._nn_predictive_classification(x, n_samples, **model_kwargs)
 
     def predictive_samples(self, x, pred_type='glm', n_samples=100,
                            diagonal_output=False, generator=None):
@@ -680,12 +680,12 @@ class ParametricLaplace(BaseLaplace):
             fs = torch.softmax(fs, dim=-1)
         return fs
 
-    def _nn_bma_clf(self, X, n_samples=100, **model_kwargs):
+    def _nn_predictive_classification(self, X, n_samples=100, **model_kwargs):
         py = 0
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
             logits = self.model(X.to(self._device), **model_kwargs).detach()
-            py = py + 1/n_samples * torch.softmax(logits, dim=-1)
+            py += 1/n_samples * torch.softmax(logits, dim=-1)
         vector_to_parameters(self.mean, self.params)
         return py
 
