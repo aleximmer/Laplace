@@ -126,7 +126,7 @@ class AsdlInterface(CurvatureInterface):
         if self.last_layer:
             _, X = self.model.forward_with_features(X)
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
-                           fisher_shapes=[SHAPE_DIAG], data_size=1)
+                           fisher_shapes=[SHAPE_DIAG], data_size=1, **kwargs)
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
@@ -158,7 +158,7 @@ class AsdlInterface(CurvatureInterface):
         if self.last_layer:
             _, X = self.model.forward_with_features(X)
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
-                           fisher_shapes=[SHAPE_KRON], data_size=1)
+                           fisher_shapes=[SHAPE_KRON], data_size=1, **kwargs)
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
