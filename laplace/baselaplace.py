@@ -689,7 +689,7 @@ class ParametricLaplace(BaseLaplace):
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
             logits = self.model(X.to(self._device), **model_kwargs).detach()
-            py += 1/n_samples * torch.softmax(logits, dim=-1)
+            py += torch.softmax(logits, dim=-1) / n_samples
         vector_to_parameters(self.mean, self.params)
         return py
 

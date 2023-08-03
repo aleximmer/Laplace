@@ -120,16 +120,27 @@ class LLLaplace(ParametricLaplace):
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
-    def _nn_predictive_samples(self, X, n_samples=100, softmax_temp=1):
+    def _nn_predictive_samples(self, X, n_samples=100, **model_kwargs):
         fs = list()
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            fs.append(self.model(X.to(self._device)).detach())
+            # TODO: Implement with a single forward pass until last layer.
+            fs.append(self.model(X.to(self._device), **model_kwargs).detach())
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
-            fs = torch.softmax(fs/softmax_temp, dim=-1)
+            fs = torch.softmax(fs, dim=-1)
         return fs
+
+    def _nn_predictive_classification(self, X, n_samples=100, **model_kwargs):
+        py = 0
+        for sample in self.sample(n_samples):
+            vector_to_parameters(sample, self.model.last_layer.parameters())
+            # TODO: Implement with a single forward pass until last layer.
+            logits = self.model(X.to(self._device), **model_kwargs).detach()
+            py += torch.softmax(logits, dim=-1) / n_samples
+        vector_to_parameters(self.mean, self.model.last_layer.parameters())
+        return py
 
     @property
     def prior_precision_diag(self):
