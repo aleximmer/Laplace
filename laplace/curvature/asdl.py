@@ -122,7 +122,8 @@ class AsdlInterface(CurvatureInterface):
                 F[1] *= 1/N
         return kron
 
-    def diag(self, X, y, **kwargs):
+    def diag(self, X, y, N=None, **kwargs):
+        del N
         if self.last_layer:
             _, X = self.model.forward_with_features(X)
         cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,

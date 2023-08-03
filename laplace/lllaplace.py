@@ -56,7 +56,9 @@ class LLLaplace(ParametricLaplace):
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=None, last_layer_name=None,
-                 backend_kwargs=None):
+                 backend_kwargs=None, asdl_fisher_kwargs=None):
+        if asdl_fisher_kwargs is not None:
+            raise ValueError('Last-layer Laplace does not support asdl_fisher_kwargs.')
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
                          prior_mean=0., temperature=temperature, backend=backend,
