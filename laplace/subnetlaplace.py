@@ -66,7 +66,9 @@ class SubnetLaplace(ParametricLaplace):
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, subnetwork_indices, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None, asdl_fisher_kwargs=None):
+        if asdl_fisher_kwargs is not None:
+            raise ValueError('Subnetwork Laplace does not support asdl_fisher_kwargs.')
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise,
                          prior_precision=prior_precision, prior_mean=prior_mean,

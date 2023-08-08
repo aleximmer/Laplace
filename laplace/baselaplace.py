@@ -41,7 +41,8 @@ class BaseLaplace:
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None,
+                 asdl_fisher_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -76,6 +77,7 @@ class BaseLaplace:
         self._backend = None
         self._backend_cls = backend
         self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
+        self._asdl_fisher_kwargs = dict() if asdl_fisher_kwargs is None else asdl_fisher_kwargs
 
         # log likelihood = g(loss)
         self.loss = 0.
@@ -347,9 +349,11 @@ class ParametricLaplace(BaseLaplace):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None):
+                 prior_mean=0., temperature=1., backend=None, backend_kwargs=None,
+                 asdl_fisher_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, backend_kwargs)
+                         prior_mean, temperature, backend, backend_kwargs,
+                         asdl_fisher_kwargs)
         if not hasattr(self, 'H'):
             self._init_H()
             # posterior mean/mode
@@ -681,7 +685,7 @@ class ParametricLaplace(BaseLaplace):
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
             logits = self.model(X.to(self._device), **model_kwargs).detach()
-            py += 1/n_samples * torch.softmax(logits, dim=-1)
+            py += torch.softmax(logits, dim=-1) / n_samples
         vector_to_parameters(self.mean, self.params)
         return py
 
@@ -841,17 +845,18 @@ class KronLaplace(ParametricLaplace):
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=None, damping=False,
-                 **backend_kwargs):
+                 backend_kwargs=None, asdl_fisher_kwargs=None):
         self.damping = damping
         self.H_facs = None
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, **backend_kwargs)
+                         prior_mean, temperature, backend, backend_kwargs,
+                         asdl_fisher_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.params, self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.kron(X, y, N=N)
+        return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
     @staticmethod
     def _rescale_factors(kron, factor):
@@ -1034,7 +1039,7 @@ class DiagLaplace(ParametricLaplace):
         self.H = torch.zeros(self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.diag(X, y, N=N)
+        return self.backend.diag(X, y, N=N, **self._asdl_fisher_kwargs)
 
     @property
     def posterior_precision(self):
