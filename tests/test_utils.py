@@ -1,5 +1,8 @@
 import torch
-from laplace.utils import invsqrt_precision, diagonal_add_scalar, symeig, normal_samples
+from torch.utils.data import TensorDataset, DataLoader
+from laplace import Laplace
+from laplace.utils import invsqrt_precision, diagonal_add_scalar, symeig, normal_samples, validate, get_nll, RunningNLLMetric
+import math
 
 
 def test_sqrt_precision():
@@ -23,7 +26,7 @@ def test_symeig_custom():
     l2, W2 = symeig(M)
     assert torch.allclose(l1, l2)
     assert torch.allclose(W1, W2)
-    
+
 
 def test_symeig_custom_low_rank():
     X = torch.randn(1000, 10)
@@ -35,7 +38,7 @@ def test_symeig_custom_low_rank():
     # test clamping to zeros
     assert torch.all(l2 >= 0.0)
 
-    
+
 def test_diagonal_normal_samples():
     mean = torch.randn(10, 2)
     var = torch.exp(torch.randn(10, 2))
@@ -48,7 +51,7 @@ def test_diagonal_normal_samples():
     same_samples = normal_samples(mean, var, n_samples=100, generator=generator)
     assert torch.allclose(samples, same_samples)
 
-    
+
 def test_multivariate_normal_samples():
     mean = torch.randn(10, 2)
     rndns = torch.randn(10, 2, 10) / 100
@@ -61,3 +64,28 @@ def test_multivariate_normal_samples():
     generator.set_state(gen_state)
     same_samples = normal_samples(mean, var, n_samples=100, generator=generator)
     assert torch.allclose(samples, same_samples)
+
+
+def test_validate():
+    X = torch.randn(50, 10)
+    y = torch.randint(3, size=(50,))
+    dataloader = DataLoader(TensorDataset(X, y), batch_size=10)
+
+    model = torch.nn.Sequential(torch.nn.Linear(10, 20), torch.nn.ReLU(), torch.nn.Linear(20, 3))
+    la = Laplace(model, 'classification', 'all')
+    la.fit(dataloader)
+
+    res = validate(
+        la, dataloader, get_nll, pred_type='nn', link_approx='mc', n_samples=10
+    )
+    assert res != math.nan
+    assert isinstance(res, float)
+    assert res > 0
+
+    res = validate(
+        la, dataloader, RunningNLLMetric(), pred_type='nn', link_approx='mc', n_samples=10
+    )
+    assert res != math.nan
+    assert isinstance(res, float)
+    assert res > 0
+
