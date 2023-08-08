@@ -7,6 +7,7 @@ from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torchmetrics import Metric
+from collections import UserDict
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
@@ -27,7 +28,8 @@ def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n
         output_means, output_vars = list(), list()
         targets = list()
 
-    for X, y in val_loader:
+    for data in val_loader:
+        X, y = (data['input_ids'], data['labels']) if isinstance(data, UserDict) else data
         X, y = X.to(laplace._device), y.to(laplace._device)
         out = laplace(
             X, pred_type=pred_type,
