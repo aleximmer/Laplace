@@ -269,7 +269,8 @@ class BaseLaplace:
             )
             self.prior_precision = self._gridsearch(
                 loss, interval, val_loader, pred_type=pred_type,
-                link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var
+                link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var,
+                progress_bar=progress_bar
             )
         else:
             raise ValueError('For now only marglik and CV is implemented.')
