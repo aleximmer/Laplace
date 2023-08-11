@@ -109,7 +109,14 @@ class Kron:
         for F in self.kfacs:
             Qs, ls = list(), list()
             for Hi in F:
-                l, Q = symeig(Hi)
+                if Hi.ndim > 1:
+                    # Dense Kronecker factor.
+                    l, Q = symeig(Hi)
+                else:
+                    # Diagonal Kronecker factor.
+                    l, indices = Hi.sort()
+                    # This might be too memory intensive since len(Hi) can be large.
+                    Q = torch.eye(len(Hi), dtype=Hi.dtype, device=Hi.device)[indices].T
                 Qs.append(Q)
                 ls.append(l)
             eigvecs.append(Qs)
@@ -140,14 +147,16 @@ class Kron:
                 Q = Fs[0]
                 p = len(Q)
                 W_p = W[:, cur_p:cur_p+p].T
-                SW.append((Q @ W_p).T)
+                SW.append((Q @ W_p).T if Q.ndim > 1 else (Q.view(-1, 1) * W_p).T)
                 cur_p += p
             elif len(Fs) == 2:
                 Q, H = Fs
                 p_in, p_out = len(Q), len(H)
                 p = p_in * p_out
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
-                SW.append((Q @ W_p @ H.T).reshape(B * K, p_in * p_out))
+                QW_p= Q @ W_p if Q.ndim > 1 else Q.view(-1, 1) * W_p
+                QW_pHt = QW_p @ H.T if H.ndim > 1 else QW_p * H.view(1, -1)
+                SW.append(QW_pHt.reshape(B * K, p_in * p_out))
                 cur_p += p
             else:
                 raise AttributeError('Shape mismatch')
@@ -195,11 +204,12 @@ class Kron:
         logdet = 0
         for F in self.kfacs:
             if len(F) == 1:
-                logdet += F[0].logdet()
+                logdet += F[0].logdet() if F[0].ndim > 1 else F[0].prod().log()
             else:  # len(F) == 2
                 Hi, Hj = F
                 p_in, p_out = len(Hi), len(Hj)
-                logdet += p_out * Hi.logdet() + p_in * Hj.logdet()
+                logdet += p_out * Hi.logdet() if Hi.ndim > 1 else p_out * Hi.prod().log()
+                logdet += p_in * Hj.logdet() if Hj.ndim > 1 else p_in * Hj.prod().log()
         return logdet
 
     def diag(self) -> torch.Tensor:
@@ -211,10 +221,12 @@ class Kron:
         """
         diags = list()
         for F in self.kfacs:
+            F0 = F[0].diag() if F[0].ndim > 1 else F[0]
             if len(F) == 1:
-                diags.append(F[0].diagonal())
+                diags.append(F0)
             else:
-                diags.append(torch.ger(F[0].diagonal(), F[1].diagonal()).flatten())
+                F1 = F[1].diag() if F[1].ndim > 1 else F[1]
+                diags.append(torch.outer(F0, F1).flatten())
         return torch.cat(diags)
 
     def to_matrix(self) -> torch.Tensor:
@@ -228,10 +240,12 @@ class Kron:
         """
         blocks = list()
         for F in self.kfacs:
+            F0 = F[0] if F[0].ndim > 1 else F[0].diag()
             if len(F) == 1:
-                blocks.append(F[0])
+                blocks.append(F0)
             else:
-                blocks.append(kron(F[0], F[1]))
+                F1 = F[1] if F[1].ndim > 1 else F[1].diag()
+                blocks.append(kron(F0, F1))
         return block_diag(blocks)
 
     # for commutative operations
@@ -341,9 +355,9 @@ class KronDecomposed:
                 l1, l2 = ls
                 if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
-                    logdet += torch.log(torch.ger(l1d, l2d)).sum()
+                    logdet += torch.log(torch.outer(l1d, l2d)).sum()
                 else:
-                    logdet += torch.log(torch.ger(l1, l2) + delta).sum()
+                    logdet += torch.log(torch.outer(l1, l2) + delta).sum()
             else:
                 raise ValueError('Too many Kronecker factors. Something went wrong.')
         return logdet
@@ -382,9 +396,9 @@ class KronDecomposed:
                 p = len(l1) * len(l2)
                 if self.damping:
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
-                    ldelta_exp = torch.pow(torch.ger(l1d, l2d), exponent).unsqueeze(0)
+                    ldelta_exp = torch.pow(torch.outer(l1d, l2d), exponent).unsqueeze(0)
                 else:
-                    ldelta_exp = torch.pow(torch.ger(l1, l2) + delta, exponent).unsqueeze(0)
+                    ldelta_exp = torch.pow(torch.outer(l1, l2) + delta, exponent).unsqueeze(0)
                 p_in, p_out = len(l1), len(l2)
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
                 W_p = (Q1.T @ W_p @ Q2) * ldelta_exp
@@ -448,9 +462,9 @@ class KronDecomposed:
                 Q = kron(Q1, Q2)
                 if self.damping:
                     delta_sqrt = torch.sqrt(delta)
-                    l = torch.pow(torch.ger(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
+                    l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
                 else:
-                    l = torch.pow(torch.ger(l1, l2) + delta, exponent)
+                    l = torch.pow(torch.outer(l1, l2) + delta, exponent)
                 L = torch.diag(l.flatten())
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)
