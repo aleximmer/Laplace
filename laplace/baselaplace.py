@@ -290,10 +290,15 @@ class BaseLaplace:
             try:
                 result = validate(
                     self, val_loader, loss, pred_type=pred_type,
-                    link_approx=link_approx, n_samples=n_samples
+                    link_approx=link_approx, n_samples=n_samples,
+                    loss_with_var=loss_with_var
                 )
             except RuntimeError:
                 result = np.inf
+
+            if progress_bar:
+                pbar.set_description(f'[prior_prec: {prior_prec:.3e}, loss: {result:.3f}]')
+
             results.append(result)
             prior_precs.append(prior_prec)
         return prior_precs[np.argmin(results)]

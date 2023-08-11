@@ -8,6 +8,7 @@ from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torchmetrics import Metric
 from collections import UserDict
+import math
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
@@ -19,10 +20,10 @@ def get_nll(out_dist, targets):
 
 
 @torch.no_grad()
-def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100) -> float:
+def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False) -> float:
     laplace.model.eval()
     assert callable(loss) or isinstance(loss, Metric)
-    is_offline = loss
+    is_offline = not isinstance(loss, Metric)
 
     if is_offline:
         output_means, output_vars = list(), list()
