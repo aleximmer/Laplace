@@ -114,9 +114,9 @@ class Kron:
                     l, Q = symeig(Hi)
                 else:
                     # Diagonal Kronecker factor.
-                    l, indices = Hi.sort()
+                    l = Hi
                     # This might be too memory intensive since len(Hi) can be large.
-                    Q = torch.eye(len(Hi), dtype=Hi.dtype, device=Hi.device)[indices].T
+                    Q = torch.eye(len(Hi), dtype=Hi.dtype, device=Hi.device)
                 Qs.append(Q)
                 ls.append(l)
             eigvecs.append(Qs)
