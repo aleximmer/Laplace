@@ -47,7 +47,7 @@ class Kron:
         for p in params:
             if p.ndim == 1:  # bias
                 kfacs.append([0.])
-            elif 4 >= p.ndim >= 2:  # fully connected or or embedding or conv
+            elif 4 >= p.ndim >= 2:  # fully connected or embedding or conv
                 kfacs.append([0., 0.])
             else:
                 raise ValueError('Invalid parameter shape in network.')
@@ -204,12 +204,12 @@ class Kron:
         logdet = 0
         for F in self.kfacs:
             if len(F) == 1:
-                logdet += F[0].logdet() if F[0].ndim > 1 else F[0].prod().log()
+                logdet += F[0].logdet() if F[0].ndim > 1 else F[0].log().sum()
             else:  # len(F) == 2
                 Hi, Hj = F
                 p_in, p_out = len(Hi), len(Hj)
-                logdet += p_out * Hi.logdet() if Hi.ndim > 1 else p_out * Hi.prod().log()
-                logdet += p_in * Hj.logdet() if Hj.ndim > 1 else p_in * Hj.prod().log()
+                logdet += p_out * Hi.logdet() if Hi.ndim > 1 else p_out * Hi.log().sum()
+                logdet += p_in * Hj.logdet() if Hj.ndim > 1 else p_in * Hj.log().sum()
         return logdet
 
     def diag(self) -> torch.Tensor:
