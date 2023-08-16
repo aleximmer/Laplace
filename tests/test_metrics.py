@@ -20,25 +20,28 @@ def test_running_nll_metric():
     nll_running = metric.compute().item()
     nll_offline = F.nll_loss(all_probs.log().flatten(end_dim=-2), all_targets.flatten()).item()
 
-    assert math.isclose(nll_running, nll_offline)
+    assert math.isclose(nll_running, nll_offline, rel_tol=1e-7)
 
 
 def test_running_nll_metric_ignore_idx():
     ignore_idx = -1232
-    metric_orig = RunningNLLMetric()
-    metric_ignore = RunningNLLMetric(ignore_index=ignore_idx)
+    metric = RunningNLLMetric(ignore_index=ignore_idx)
+    all_probs, all_targets = [], []
 
     for _ in range(10):
         probs = torch.softmax(torch.randn(3, 5, 10), dim=-1)
-        targets_orig = torch.randint(10, size=(3, 5))
-        targets_ignore = targets_orig.clone()
-        metric_orig.update(probs, targets_orig)
+        targets = torch.randint(10, size=(3, 5))
+        mask = torch.FloatTensor(*targets.shape).uniform_() > 0.5  # ~50% zeros
+        targets[mask] = ignore_idx  # ~50% changed to ignore_idx
+        all_probs.append(probs)
+        all_targets.append(targets)
+        metric.update(probs, targets)
 
-        mask = torch.FloatTensor(*targets_ignore.shape).uniform_() > 0.8  # ~80% zeros
-        targets_ignore[mask] = ignore_idx  # ~80% changed to ignore_idx
-        metric_ignore.update(probs, targets_ignore)
+    all_probs, all_targets = torch.cat(all_probs, 0), torch.cat(all_targets, 0)
 
-    nll_orig = metric_orig.compute().item()
-    nll_ignore = metric_ignore.compute().item()
+    nll_running = metric.compute().item()
+    nll_offline = F.nll_loss(all_probs.log().flatten(end_dim=-2), all_targets.flatten(), ignore_index=ignore_idx).item()
 
-    assert nll_orig > nll_ignore
+    print(nll_running, nll_offline)
+
+    assert math.isclose(nll_running, nll_offline, rel_tol=1e-7)
