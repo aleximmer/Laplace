@@ -5,6 +5,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal
 import tqdm
 from collections import UserDict
+import torchmetrics as tm
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples)
@@ -223,8 +224,9 @@ class BaseLaplace:
             initial prior precision before the first optimization step.
         val_loader : torch.data.utils.DataLoader, default=None
             DataLoader for the validation set; each iterate is a training batch (X, y).
-        loss : callable, default=get_nll
-            loss function to use for CV.
+        loss : callable or torchmetrics.Metric, default=get_nll
+            loss function to use for CV. If callable, the loss is computed offline (memory intensive).
+            If torchmetrics.Metric, running loss is computed (efficient).
         cv_loss_with_var: bool, default=False
             if true, `loss` takes three arguments `loss(output_mean, output_var, target)`,
             otherwise, `loss` takes two arguments `loss(output_mean, target)`
@@ -267,7 +269,8 @@ class BaseLaplace:
             )
             self.prior_precision = self._gridsearch(
                 loss, interval, val_loader, pred_type=pred_type,
-                link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var
+                link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var,
+                progress_bar=progress_bar
             )
         else:
             raise ValueError('For now only marglik and CV is implemented.')
@@ -277,26 +280,25 @@ class BaseLaplace:
     def _gridsearch(self, loss, interval, val_loader, pred_type,
                     link_approx='probit', n_samples=100, loss_with_var=False,
                     progress_bar=False):
+        assert callable(loss) or isinstance(loss, tm.Metric)
+
         results = list()
         prior_precs = list()
         pbar = tqdm.tqdm(interval) if progress_bar else interval
         for prior_prec in pbar:
             self.prior_precision = prior_prec
             try:
-                out_dist, targets = validate(
-                    self, val_loader, pred_type=pred_type,
-                    link_approx=link_approx, n_samples=n_samples
+                result = validate(
+                    self, val_loader, loss, pred_type=pred_type,
+                    link_approx=link_approx, n_samples=n_samples,
+                    loss_with_var=loss_with_var
                 )
-                if self.likelihood == 'regression':
-                    out_mean, out_var = out_dist
-                    if loss_with_var:
-                        result = loss(out_mean, out_var, targets).item()
-                    else:
-                        result = loss(out_mean, targets).item()
-                else:
-                    result = loss(out_dist, targets).item()
             except RuntimeError:
                 result = np.inf
+
+            if progress_bar:
+                pbar.set_description(f'[prior_prec: {prior_prec:.3e}, loss: {result:.3f}]')
+
             results.append(result)
             prior_precs.append(prior_prec)
         return prior_precs[np.argmin(results)]

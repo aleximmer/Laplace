@@ -6,6 +6,9 @@ import torch.nn.functional as F
 from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torchmetrics import Metric
+from collections import UserDict
+import math
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
@@ -17,11 +20,17 @@ def get_nll(out_dist, targets):
 
 
 @torch.no_grad()
-def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
+def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False) -> float:
     laplace.model.eval()
-    output_means, output_vars = list(), list()
-    targets = list()
-    for X, y in val_loader:
+    assert callable(loss) or isinstance(loss, Metric)
+    is_offline = not isinstance(loss, Metric)
+
+    if is_offline:
+        output_means, output_vars = list(), list()
+        targets = list()
+
+    for data in val_loader:
+        X, y = (data['input_ids'], data['labels']) if isinstance(data, UserDict) else data
         X, y = X.to(laplace._device), y.to(laplace._device)
         out = laplace(
             X, pred_type=pred_type,
@@ -29,17 +38,29 @@ def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_sampl
             n_samples=n_samples)
 
         if type(out) == tuple:
-            output_means.append(out[0])
-            output_vars.append(out[1])
+            if is_offline:
+                output_means.append(out[0])
+                output_vars.append(out[1])
+                targets.append(y)
+            else:
+                loss.update(*out, y)
         else:
-            output_means.append(out)
+            if is_offline:
+                output_means.append(out)
+                targets.append(y)
+            else:
+                loss.update(out, y)
 
-        targets.append(y)
+    if is_offline:
+        if len(output_vars) == 0:
+            preds, targets = torch.cat(output_means, dim=0), torch.cat(targets, dim=0)
+            return loss(preds, targets).item()
 
-    if len(output_vars) == 0:
-        return torch.cat(output_means, dim=0), torch.cat(targets, dim=0)
-    return ((torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)),
-            torch.cat(targets, dim=0))
+        means, variances = torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)
+        targets = torch.cat(targets, dim=0)
+        return loss(means, variances, targets).item()
+    else:
+        return loss.compute().item()
 
 
 def parameters_per_layer(model):
@@ -236,9 +257,9 @@ def normal_samples(mean, var, n_samples, generator=None):
     """
     assert mean.ndim == 2, 'Invalid input shape of mean, should be 2-dimensional.'
     _, output_dim = mean.shape
-    randn_samples = torch.randn((output_dim, n_samples), device=mean.device, 
+    randn_samples = torch.randn((output_dim, n_samples), device=mean.device,
                                 dtype=mean.dtype, generator=generator)
-    
+
     if mean.shape == var.shape:
         # diagonal covariance
         scaled_samples = var.sqrt().unsqueeze(-1) * randn_samples.unsqueeze(0)
