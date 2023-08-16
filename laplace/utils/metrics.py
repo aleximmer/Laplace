@@ -33,8 +33,8 @@ class RunningNLLMetric(Metric):
 
         self.nll_sum += F.nll_loss(
             probs.log(), targets, ignore_index=self.ignore_index, reduction='sum'
-        ).item()
-        self.n_valid_labels += (targets != self.ignore_index).sum().item()
+        )
+        self.n_valid_labels += (targets != self.ignore_index).sum()
 
     def compute(self):
         return self.nll_sum / self.n_valid_labels
