@@ -5,7 +5,8 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision, 
-                           get_nll, validate, Kron, normal_samples)
+                           get_nll, validate, Kron, normal_samples,
+                           fix_prior_prec_structure)
 from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
 
 
@@ -187,11 +188,24 @@ class BaseLaplace:
         else:
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
-    def optimize_prior_precision_base(self, pred_type, method='marglik', n_steps=100, lr=1e-1,
-                                      init_prior_prec=1., val_loader=None, loss=get_nll,
-                                      log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                      link_approx='probit', n_samples=100, verbose=False,
-                                      cv_loss_with_var=False):
+    def optimize_prior_precision_base(
+        self,
+        pred_type,
+        method='marglik',
+        n_steps=100,
+        lr=1e-1,
+        init_prior_prec=1.,
+        prior_structure='scalar',
+        val_loader=None,
+        loss=get_nll,
+        log_prior_prec_min=-4,
+        log_prior_prec_max=4,
+        grid_size=100,
+        link_approx='probit',
+        n_samples=100,
+        verbose=False,
+        cv_loss_with_var=False,
+    ):
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
 
@@ -201,27 +215,30 @@ class BaseLaplace:
             type of posterior predictive, linearized GLM predictive or neural
             network sampling predictive or Gaussian Process (GP) inference.
             The GLM predictive is consistent with the curvature approximations used here.
-        method : {'marglik', 'CV'}, default='marglik'
+        method : {'marglik', 'gridsearch'}, default='marglik'
             specifies how the prior precision should be optimized.
         n_steps : int, default=100
             the number of gradient descent steps to take.
         lr : float, default=1e-1
             the learning rate to use for gradient descent.
-        init_prior_prec : float, default=1.0
+        init_prior_prec : float or tensor, default=1.0
             initial prior precision before the first optimization step.
+        prior_structure : {'scalar', 'layerwise', 'diag'}, default='scalar'
+            if init_prior_prec is scalar, the prior precision is optimized with this structure.
+            otherwise, the structure of init_prior_prec is maintained.
         val_loader : torch.data.utils.DataLoader, default=None
             DataLoader for the validation set; each iterate is a training batch (X, y).
         loss : callable, default=get_nll
-            loss function to use for CV.
+            loss function to use for gridsearch.
         cv_loss_with_var: bool, default=False
             if true, `loss` takes three arguments `loss(output_mean, output_var, target)`,
             otherwise, `loss` takes two arguments `loss(output_mean, target)`
         log_prior_prec_min : float, default=-4
-            lower bound of gridsearch interval for CV.
+            lower bound of gridsearch interval.
         log_prior_prec_max : float, default=4
-            upper bound of gridsearch interval for CV.
+            upper bound of gridsearch interval.
         grid_size : int, default=100
-            number of values to consider inside the gridsearch interval for CV.
+            number of values to consider inside the gridsearch interval.
         link_approx : {'mc', 'probit', 'bridge'}, default='probit'
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only `'mc'` is possible.
@@ -233,6 +250,11 @@ class BaseLaplace:
         """
         if method == 'marglik':
             self.prior_precision = init_prior_prec
+            if len(self.prior_precision) == 1 and prior_structure != 'scalar':
+                self.prior_precision = fix_prior_prec_structure(
+                    self.prior_precision.item(), prior_structure,
+                    self.n_layers, self.n_params, self._device
+                )
             log_prior_prec = self.prior_precision.log()
             log_prior_prec.requires_grad = True
             optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
@@ -243,9 +265,9 @@ class BaseLaplace:
                 neg_log_marglik.backward()
                 optimizer.step()
             self.prior_precision = log_prior_prec.detach().exp()
-        elif method == 'CV':
+        elif method == 'gridsearch':
             if val_loader is None:
-                raise ValueError('CV requires a validation set DataLoader')
+                raise ValueError('gridsearch requires a validation set DataLoader')
             interval = torch.logspace(
                 log_prior_prec_min, log_prior_prec_max, grid_size
             )
@@ -254,7 +276,7 @@ class BaseLaplace:
                 link_approx=link_approx, n_samples=n_samples, loss_with_var=cv_loss_with_var
             )
         else:
-            raise ValueError('For now only marglik and CV is implemented.')
+            raise ValueError('For now only marglik and gridsearch is implemented.')
         if verbose:
             print(f'Optimized prior precision is {self.prior_precision}.')
 
@@ -726,16 +748,17 @@ class ParametricLaplace(BaseLaplace):
         raise NotImplementedError
 
     def optimize_prior_precision(self, method='marglik', pred_type='glm', n_steps=100, lr=1e-1,
-                                 init_prior_prec=1., val_loader=None, loss=get_nll,
-                                 log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100,
-                                 link_approx='probit', n_samples=100, verbose=False,
+                                 init_prior_prec=1., prior_structure='scalar', val_loader=None,
+                                 loss=get_nll, log_prior_prec_min=-4, log_prior_prec_max=4,
+                                 grid_size=100, link_approx='probit', n_samples=100, verbose=False,
                                  cv_loss_with_var=False):
         assert pred_type in ['glm', 'nn']
         self.optimize_prior_precision_base(pred_type, method, n_steps, lr,
-                                           init_prior_prec, val_loader, loss,
-                                           log_prior_prec_min, log_prior_prec_max,
-                                           grid_size, link_approx, n_samples,
-                                           verbose, cv_loss_with_var)
+                                           init_prior_prec, prior_structure,
+                                           val_loader, loss, log_prior_prec_min,
+                                           log_prior_prec_max, grid_size,
+                                           link_approx, n_samples, verbose,
+                                           cv_loss_with_var)
 
     @property
     def posterior_precision(self):
