@@ -62,7 +62,7 @@ class CurvatureInterface:
         raise NotImplementedError
 
     def last_layer_jacobians(self, x):
-        """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\) 
+        """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
         Parameters
@@ -128,7 +128,7 @@ class CurvatureInterface:
     def kron(self, x, y, **kwargs):
         """Compute a Kronecker factored curvature approximation (such as KFAC).
         The approximation to \\(H\\) takes the form of two Kronecker factors \\(Q, H\\),
-        i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting 
+        i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting
         such curvature.
         \\(Q\\) is quadratic in the input-dimension of a module \\(p_{in} \\times p_{in}\\)
         and \\(H\\) in the output-dimension \\(p_{out} \\times p_{out}\\).
@@ -149,7 +149,7 @@ class CurvatureInterface:
         raise NotImplementedError
 
     def diag(self, x, y, **kwargs):
-        """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a 
+        """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a
         vector of the dimensionality of parameters \\(\\theta\\).
 
         Parameters

@@ -396,12 +396,11 @@ class ParametricLaplace(BaseLaplace):
         self.mean = parameters_to_vector(self.params).detach()
 
         data = next(iter(train_loader))
-        # To support Huggingface dataset
-        X = data['input_ids'] if isinstance(data, UserDict) else data[0]
         with torch.no_grad():
-            try:
-                out = self.model(X[:1].to(self._device))
-            except (TypeError, AttributeError):
+            if isinstance(data, UserDict): # To support Huggingface dataset
+                out = self.model(data)
+            else:
+                X = data[0]
                 out = self.model(X.to(self._device))
         self.n_outputs = out.shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
@@ -409,8 +408,11 @@ class ParametricLaplace(BaseLaplace):
         N = len(train_loader.dataset)
         pbar = tqdm.tqdm(train_loader) if progress_bar else train_loader
         for data in pbar:
-            X, y = (data['input_ids'], data['labels']) if isinstance(data, UserDict) else data
-            X, y = X.to(self._device), y.to(self._device)
+            if isinstance(data, UserDict):
+                X, y = data, data['labels'].to(self._device)
+            else:
+                X, y = data
+                X, y = X.to(self._device), y.to(self._device)
             self.model.zero_grad()
             loss_batch, H_batch = self._curv_closure(X, y, N)
             self.loss += loss_batch
