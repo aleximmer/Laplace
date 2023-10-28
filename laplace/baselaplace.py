@@ -583,8 +583,8 @@ class ParametricLaplace(BaseLaplace):
             if not isinstance(generator, torch.Generator) or generator.device != x.device:
                 raise ValueError('Invalid random generator (check type and device).')
 
-        if self.is_subset_params and pred_type == 'glm':
-            raise ValueError('Subset of params is only compatible with MC predictive.')
+        # if self.is_subset_params and pred_type == 'glm':
+            # raise ValueError('Subset of params is only compatible with MC predictive.')
 
         if pred_type == 'glm':
             f_mu, f_var = self._glm_predictive_distribution(x)
