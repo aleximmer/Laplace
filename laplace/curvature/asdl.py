@@ -14,6 +14,8 @@ from asdl.gradient import batch_gradient
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.utils import Kron, _is_batchnorm
 
+from collections import UserDict
+
 EPS = 1e-6
 
 
@@ -43,6 +45,8 @@ class AsdlInterface(CurvatureInterface):
         f : torch.Tensor
             output function `(batch, outputs)`
         """
+        # If x is UserDict, then it has weight-sharing dimension (from Huggingface datasets)
+        batch_size = x['input_ids'].shape[0] if isinstance(x, UserDict) else None
         Js = list()
         for i in range(self.model.output_size):
             def closure():
@@ -52,7 +56,7 @@ class AsdlInterface(CurvatureInterface):
                 loss.backward()
                 return f
 
-            Ji, f = batch_gradient(self.model, closure, return_outputs=True)
+            Ji, f = batch_gradient(self.model, closure, return_outputs=True, batch_size=batch_size)
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]
             Js.append(Ji)
@@ -81,7 +85,8 @@ class AsdlInterface(CurvatureInterface):
             loss.backward()
             return loss
 
-        Gs, loss = batch_gradient(self.model, closure, return_outputs=True)
+        batch_size = x['input_ids'].shape[0]
+        Gs, loss = batch_gradient(self.model, closure, return_outputs=True, batch_size=batch_size)
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
