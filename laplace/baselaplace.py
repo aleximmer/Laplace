@@ -253,8 +253,13 @@ class BaseLaplace:
             log_prior_prec = self.prior_precision.log()
             log_prior_prec.requires_grad = True
             optimizer = torch.optim.Adam([log_prior_prec], lr=lr)
-            pbar = tqdm.trange(n_steps) if progress_bar else range(n_steps)
-            pbar.set_description('[Optimizing marginal likelihood]')
+
+            if progress_bar:
+                pbar = tqdm.trange(n_steps)
+                pbar.set_description('[Optimizing marginal likelihood]')
+            else:
+                pbar = range(n_steps)
+
             for _ in pbar:
                 optimizer.zero_grad()
                 prior_prec = log_prior_prec.exp()
@@ -407,8 +412,12 @@ class ParametricLaplace(BaseLaplace):
         setattr(self.model, 'output_size', self.n_outputs)
 
         N = len(train_loader.dataset)
-        pbar = tqdm.tqdm(train_loader) if progress_bar else train_loader
-        pbar.set_description('[Computing Hessian]')
+        if progress_bar:
+            pbar = tqdm.tqdm(train_loader)
+            pbar.set_description('[Computing Hessian]')
+        else:
+            pbar = train_loader
+
         for data in pbar:
             if isinstance(data, UserDict):
                 X, y = data, data['labels'].to(self._device)
