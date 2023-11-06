@@ -5,6 +5,8 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.utils import FeatureExtractor, Kron
 
+from collections import UserDict
+
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -98,12 +100,16 @@ class LLLaplace(ParametricLaplace):
         self.model.eval()
 
         if self.model.last_layer is None:
-            X, _ = next(iter(train_loader))
+            data = next(iter(train_loader))
             with torch.no_grad():
-                try:
-                    self.model.find_last_layer(X[:1].to(self._device))
-                except (TypeError, AttributeError):
-                    self.model.find_last_layer(X.to(self._device))
+                if isinstance(data, UserDict): # To support Huggingface dataset
+                    self.model.find_last_layer(data)
+                else:
+                    X = data[0]
+                    try:
+                        self.model.find_last_layer(X[:1].to(self._device))
+                    except (TypeError, AttributeError):
+                        self.model.find_last_layer(X.to(self._device))
             params = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(params)
             self.n_layers = len(list(self.model.last_layer.parameters()))
