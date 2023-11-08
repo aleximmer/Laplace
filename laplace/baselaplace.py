@@ -679,7 +679,7 @@ class ParametricLaplace(BaseLaplace):
                 return torch.softmax(f_samples, dim=-1)
 
         else:  # 'nn'
-            return self._nn_predictive_samples(x, n_samples)
+            return self._nn_predictive_samples(x, n_samples, generator)
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X):
@@ -687,9 +687,9 @@ class ParametricLaplace(BaseLaplace):
         f_var = self.functional_variance(Js)
         return f_mu.detach(), f_var.detach()
 
-    def _nn_predictive_samples(self, X, n_samples=100, **model_kwargs):
+    def _nn_predictive_samples(self, X, n_samples=100, generator=None, **model_kwargs):
         fs = list()
-        for sample in self.sample(n_samples):
+        for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.params)
             logits = self.model(X.to(self._device), **model_kwargs).detach()
             fs.append(logits)
@@ -730,7 +730,7 @@ class ParametricLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
-    def sample(self, n_samples=100):
+    def sample(self, n_samples=100, generator=None):
         """Sample from the Laplace posterior approximation, i.e.,
         \\( \\theta \\sim \\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
 
@@ -738,6 +738,9 @@ class ParametricLaplace(BaseLaplace):
         ----------
         n_samples : int, default=100
             number of samples
+
+        generator : torch.Generator, optional
+            random number generator to control the samples
         """
         raise NotImplementedError
 
@@ -842,9 +845,11 @@ class FullLaplace(ParametricLaplace):
     def functional_variance(self, Js):
         return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
 
-    def sample(self, n_samples=100):
-        dist = MultivariateNormal(loc=self.mean, scale_tril=self.posterior_scale)
-        return dist.sample((n_samples,))
+    def sample(self, n_samples=100, generator=None):
+        samples = torch.randn(n_samples, self.n_params, device=self._device, generator=generator)
+        # (n_samples, n_params) x (n_params, n_params) -> (n_samples, n_params)
+        samples = samples @ self.posterior_scale
+        return self.mean.reshape(1, self.n_params) + samples
 
 
 class KronLaplace(ParametricLaplace):
@@ -932,8 +937,8 @@ class KronLaplace(ParametricLaplace):
     def functional_variance(self, Js):
         return self.posterior_precision.inv_square_form(Js)
 
-    def sample(self, n_samples=100):
-        samples = torch.randn(n_samples, self.n_params, device=self._device)
+    def sample(self, n_samples=100, generator=None):
+        samples = torch.randn(n_samples, self.n_params, device=self._device, generator=generator)
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
         return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
 
@@ -1023,8 +1028,8 @@ class LowRankLaplace(ParametricLaplace):
         info_gain = torch.einsum('ncl,nkl->nck', Jacs_V @ self.Kinv, Jacs_V)
         return prior_var - info_gain
 
-    def sample(self, n_samples):
-        samples = torch.randn(self.n_params, n_samples)
+    def sample(self, n_samples, generator=None):
+        samples = torch.randn(self.n_params, n_samples, generator=generator)
         d = self.prior_precision_diag
         Vs = self.V * d.sqrt().reshape(-1, 1)
         VtV = Vs.T @ Vs
@@ -1106,8 +1111,8 @@ class DiagLaplace(ParametricLaplace):
         self._check_jacobians(Js)
         return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
 
-    def sample(self, n_samples=100):
-        samples = torch.randn(n_samples, self.n_params, device=self._device)
+    def sample(self, n_samples=100, generator=None):
+        samples = torch.randn(n_samples, self.n_params, device=self._device, generator=generator)
         samples = samples * self.posterior_scale.reshape(1, self.n_params)
         return self.mean.reshape(1, self.n_params) + samples
 

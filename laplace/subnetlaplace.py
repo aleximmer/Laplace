@@ -141,7 +141,7 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
     def _init_H(self):
         self.H = torch.zeros(self.n_params_subnet, self.n_params_subnet, device=self._device)
 
-    def sample(self, n_samples=100):
+    def sample(self, n_samples=100, generator=None):
         # sample only subnetwork parameters and set all other parameters to their MAP estimates
         dist = MultivariateNormal(loc=self.mean_subnet, scale_tril=self.posterior_scale)
         subnet_samples = dist.sample((n_samples,))
@@ -169,9 +169,9 @@ class DiagSubnetLaplace(SubnetLaplace, DiagLaplace):
         if p != self.n_params_subnet:
             raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
 
-    def sample(self, n_samples=100):
+    def sample(self, n_samples=100, generator=None):
         # sample only subnetwork parameters and set all other parameters to their MAP estimates
-        samples = torch.randn(n_samples, self.n_params_subnet, device=self._device)
+        samples = torch.randn(n_samples, self.n_params_subnet, device=self._device, generator=generator)
         samples = samples * self.posterior_scale.reshape(1, self.n_params_subnet)
         subnet_samples = self.mean_subnet.reshape(1, self.n_params_subnet) + samples
         return self.assemble_full_samples(subnet_samples)

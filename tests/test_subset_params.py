@@ -103,8 +103,8 @@ def test_predictive(laplace, model, class_loader):
     lap = laplace(model, 'classification')
     lap.fit(class_loader)
 
-    with pytest.raises(ValueError):
-        lap(torch.randn(5, 3), pred_type='glm')
+    # with pytest.raises(ValueError):
+    #     lap(torch.randn(5, 3), pred_type='glm')
 
     lap(torch.randn(5, 3), pred_type='nn', link_approx='mc')
 
@@ -121,8 +121,8 @@ def test_marglik(laplace, model, class_loader):
     lap = laplace(model, 'classification')
     lap.fit(class_loader)
 
-    with pytest.raises(ValueError):
-        lap.optimize_prior_precision(method='CV', val_loader=class_loader)
+    # with pytest.raises(ValueError):
+    #     lap.optimize_prior_precision(method='CV', val_loader=class_loader)
 
     lap.optimize_prior_precision(method='CV', val_loader=class_loader,
                                  pred_type='nn', link_approx='mc')

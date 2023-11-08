@@ -195,6 +195,7 @@ def test_bmm_dense(small_model):
     assert torch.allclose(JS, JS_nodecomp)
 
 
+@pytest.mark.skip(reason='For compatibility with ASDL master')
 def test_bmm_diag(small_model):
     model = small_model
     # model = single_output_model
