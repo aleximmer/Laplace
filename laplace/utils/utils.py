@@ -229,7 +229,8 @@ def expand_prior_precision(prior_prec, model):
     expanded_prior_prec : torch.Tensor
         expanded prior precision has the same shape as model parameters
     """
-    theta = parameters_to_vector(model.parameters())
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    theta = parameters_to_vector(trainable_params)
     device, P = theta.device, len(theta)
     assert prior_prec.ndim == 1
     if len(prior_prec) == 1:  # scalar
@@ -238,7 +239,7 @@ def expand_prior_precision(prior_prec, model):
         return prior_prec.to(device)
     else:
         return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
-                          in zip(prior_prec, model.parameters())])
+                          in zip(prior_prec, trainable_params)])
 
 
 def normal_samples(mean, var, n_samples, generator=None):
