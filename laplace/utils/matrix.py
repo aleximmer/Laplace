@@ -271,15 +271,21 @@ class KronDecomposed:
         self.eigenvalues = eigenvalues
         device = eigenvectors[0][0].device
         if deltas is None:
-            self.deltas = torch.zeros(len(self), device=device)
+            self.deltas = torch.tensor(0, device=device)
         else:
             self._check_deltas(deltas)
             self.deltas = deltas
+        if damping:
+            assert len(self.deltas) != self.n_params, 'Damping only with scalar or layerwise deltas.'
         self.damping = damping
 
     def detach(self):
         self.deltas = self.deltas.detach()
         return self
+
+    @property
+    def n_params(self):
+        return sum([np.prod([len(e) for e in eigs]) for eigs in self.eigenvalues])
 
     def _check_deltas(self, deltas: torch.Tensor):
         if not isinstance(deltas, torch.Tensor):
@@ -287,18 +293,19 @@ class KronDecomposed:
 
         if (deltas.ndim == 0  # scalar
             or (deltas.ndim == 1  # vector of length 1 or len(self)
-                and (len(deltas) == 1 or len(deltas) == len(self)))):
+                and (len(deltas) in [1, len(self), self.n_params]))):
             return
         else:
             raise ValueError('Invalid shape of delta added to KronDecomposed.')
 
     def __add__(self, deltas: torch.Tensor):
-        """Add scalar per layer or only scalar to Kronecker factors.
+        """Add scalar or layerwise value to Kronecker products, or approximately add
+        diagonal.
 
         Parameters
         ----------
         deltas : torch.Tensor
-            either same length as `eigenvalues` or scalar.
+            either same length as `eigenvalues` or scalar or parameters.
 
         Returns
         -------
@@ -339,12 +346,14 @@ class KronDecomposed:
         logdet : torch.Tensor
         """
         logdet = 0
-        for ls, delta in zip(self.eigenvalues, self.deltas):
+        # TODO: handle three valid types of deltas
+        for ls, delta in zip(self.eigenvalues, self.layerwise_deltas):
             if len(ls) == 1:  # not KFAC just full
                 logdet += torch.log(ls[0] + delta).sum()
             elif len(ls) == 2:
                 l1, l2 = ls
                 if self.damping:
+                    assert delta.ndim == 0 or len(delta) == 1, 'Only scalar or layerwise deltas.'
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
                     logdet += torch.log(torch.outer(l1d, l2d)).sum()
                 else:
@@ -374,7 +383,7 @@ class KronDecomposed:
         W = W.reshape(B * K, P)
         cur_p = 0
         SW = list()
-        for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
+        for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.layerwise_deltas):
             if len(ls) == 1:
                 Q, l, p = Qs[0], ls[0], len(ls[0])
                 ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
@@ -386,6 +395,7 @@ class KronDecomposed:
                 l1, l2 = ls
                 p = len(l1) * len(l2)
                 if self.damping:
+                    assert delta.ndim == 0 or len(delta) == 1, 'Only scalar or layerwise deltas.'
                     l1d, l2d = l1 + torch.sqrt(delta), l2 + torch.sqrt(delta)
                     ldelta_exp = torch.pow(torch.outer(l1d, l2d), exponent).unsqueeze(0)
                 else:
@@ -446,7 +456,8 @@ class KronDecomposed:
         diag : torch.Tensor
         """
         diags = list()
-        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.deltas):
+        # TODO: handle three valid types of deltas
+        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.layerwise_deltas):
             if len(ls) == 1:
                 Ql = Qs[0] * torch.pow(ls[0] + delta, exponent).reshape(1, -1)
                 d = torch.einsum('mp,mp->m', Ql, Qs[0])  # only compute inner products for diag
@@ -455,6 +466,7 @@ class KronDecomposed:
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 if self.damping:
+                    assert delta.ndim == 0 or len(delta) == 1, 'Only scalar or layerwise deltas.'
                     delta_sqrt = torch.sqrt(delta)
                     l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
                 else:
@@ -478,7 +490,8 @@ class KronDecomposed:
         block_diag : torch.Tensor
         """
         blocks = list()
-        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.deltas):
+        # TODO: handle three valid types of deltas
+        for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.layerwise_deltas):
             if len(ls) == 1:
                 Q, l = Qs[0], ls[0]
                 blocks.append(Q @ torch.diag(torch.pow(l + delta, exponent)) @ Q.T)
@@ -487,6 +500,7 @@ class KronDecomposed:
                 l1, l2 = ls
                 Q = kron(Q1, Q2)
                 if self.damping:
+                    assert delta.ndim == 0 or len(delta) == 1, 'Only scalar or layerwise deltas.'
                     delta_sqrt = torch.sqrt(delta)
                     l = torch.pow(torch.outer(l1 + delta_sqrt, l2 + delta_sqrt), exponent)
                 else:
@@ -494,6 +508,23 @@ class KronDecomposed:
                 L = torch.diag(l.flatten())
                 blocks.append(Q @ L @ Q.T)
         return block_diag(blocks)
+
+    @property
+    def layerwise_deltas(self):
+        p_cur = 0
+        for layer, eig in enumerate(self.eigenvectors):
+            n_params_layer = np.prod([len(e) for e in eig])
+            eig_shape = tuple([len(e) for e in eig])
+            if self.deltas.ndim == 0:  # scalar
+                yield self.deltas
+            elif len(self.deltas) == len(self.eigenvalues):  # layerwise
+                yield self.deltas[layer]
+            elif len(self.deltas) == self.n_params:  # diagonal
+                # TODO: use approximation here!
+                yield self.deltas[p_cur:p_cur+n_params_layer].reshape(eig_shape)
+                p_cur += n_params_layer
+            else:
+                raise ValueError('Invalid prior shape.')
 
     # for commutative operations
     __radd__ = __add__

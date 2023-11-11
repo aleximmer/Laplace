@@ -182,3 +182,42 @@ def test_diag():
     assert torch.allclose(kron.diag(), torch.diag(kron.to_matrix()))
     assert torch.allclose(kron_decomp.diag(), torch.diag(kron_decomp.to_matrix()))
     assert torch.allclose(kron_decomp.diag(exponent=-1), torch.diag(kron_decomp.to_matrix(exponent=-1)))
+
+
+def test_scalar_prior():
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    kfacs = [[get_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
+    kron = Kron(kfacs)
+    kron_decomp = kron.decompose()
+    diag_plain = kron_decomp.diag()
+    kron_decomp = kron_decomp + torch.tensor(5.3)
+    diag_with_prior = kron_decomp.diag()
+    assert torch.allclose(diag_plain, diag_with_prior - 5.3)
+
+    
+def test_layerwise_prior():
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    kfacs = [[get_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
+    kron = Kron(kfacs)
+    kron_decomp = kron.decompose()
+    diag_plain = kron_decomp.diag()
+    layerwise_prior = torch.tensor([5.3, 2.1, 1.1, 0.1])
+    kron_decomp = kron_decomp + layerwise_prior
+    # extend layerwise prior to expected sizes
+    extended_prior = torch.tensor([5.3] * 20 * 3 + [2.1] * 20 + [1.1] * 2 * 20 + [0.1] * 2)
+    diag_with_prior = kron_decomp.diag()
+    assert torch.allclose(diag_plain, diag_with_prior - extended_prior)
+
+
+def test_diag_prior():
+    # fully diagonal priors require an approximation, hence test it in the exact layerwise case
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    kfacs = [[get_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
+    kron = Kron(kfacs)
+    kron_decomp = kron.decompose()
+    diag_plain = kron_decomp.diag()
+    diag_prior = torch.tensor([5.3] * 20 * 3 + [2.1] * 20 + [1.1] * 2 * 20 + [0.1] * 2)
+    kron_decomp = kron_decomp + diag_prior
+    # extend layerwise prior to expected sizes
+    diag_with_prior = kron_decomp.diag()
+    assert torch.allclose(diag_plain, diag_with_prior - diag_prior)

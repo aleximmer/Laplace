@@ -956,13 +956,6 @@ class KronLaplace(ParametricLaplace):
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
         return self.mean.reshape(1, self.n_params) + samples.reshape(n_samples, self.n_params)
 
-    @BaseLaplace.prior_precision.setter
-    def prior_precision(self, prior_precision):
-        # Extend setter from Laplace to restrict prior precision structure.
-        super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
-        if len(self.prior_precision) not in [1, self.n_layers]:
-            raise ValueError('Prior precision for Kron either scalar or per-layer.')
-
 
 class LowRankLaplace(ParametricLaplace):
     """Laplace approximation with low-rank log likelihood Hessian (approximation). 
