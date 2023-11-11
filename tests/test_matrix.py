@@ -39,6 +39,16 @@ def test_init_from_model(model):
             assert np.prod(fi.shape) == exp_fi
 
 
+def test_init_from_model_order(model):
+    kron = Kron.init_from_model(model, 'cpu')
+    for param, facs in zip(model.parameters(), kron.kfacs):
+        if len(facs) == 1:
+            assert param.shape[0] == facs[0].shape[0]
+        else:
+            assert param.shape[0] == facs[0].shape[0]
+            assert param.shape[1] == facs[1].shape[0]
+
+
 def test_addition(model):
     kron = Kron.init_from_model(model, 'cpu')
     expected_sizes = [[20, 3], [20], [2, 20], [2]]
@@ -221,3 +231,19 @@ def test_diag_prior():
     # extend layerwise prior to expected sizes
     diag_with_prior = kron_decomp.diag()
     assert torch.allclose(diag_plain, diag_with_prior - diag_prior)
+
+
+def test_diag_prior_approx():
+    # when the KFAC approx is diagonal itself, adding a diagonal should be exact
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    kfacs = [[torch.diag(torch.rand(i) + 1) for i in sizes] for sizes in expected_sizes]
+    kron = Kron(kfacs)
+    kron_decomp = kron.decompose()
+    diag_plain = kron_decomp.diag()
+    diag_prior = torch.rand(20 * 3 + 20 + 2 * 20 + 2)
+    kron_decomp = kron_decomp + diag_prior
+    # extend layerwise prior to expected sizes
+    diag_with_prior = kron_decomp.diag()
+    diag_without_prior = diag_with_prior - diag_prior
+    assert torch.allclose(diag_plain, diag_without_prior)
+    

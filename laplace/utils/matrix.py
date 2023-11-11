@@ -512,16 +512,24 @@ class KronDecomposed:
     @property
     def layerwise_deltas(self):
         p_cur = 0
-        for layer, eig in enumerate(self.eigenvectors):
-            n_params_layer = np.prod([len(e) for e in eig])
-            eig_shape = tuple([len(e) for e in eig])
+        for layer, (Qs, ls) in enumerate(zip(self.eigenvectors, self.eigenvalues)):
+            n_params_layer = np.prod([len(e) for e in ls])
+            eig_shape = tuple([len(e) for e in ls])
             if self.deltas.ndim == 0:  # scalar
                 yield self.deltas
             elif len(self.deltas) == len(self.eigenvalues):  # layerwise
                 yield self.deltas[layer]
             elif len(self.deltas) == self.n_params:  # diagonal
-                # TODO: use approximation here!
-                yield self.deltas[p_cur:p_cur+n_params_layer].reshape(eig_shape)
+                delta = self.deltas[p_cur:p_cur+n_params_layer].reshape(eig_shape)
+                if len(Qs) == 1:
+                    delta = Qs[0].square().T @ delta 
+                elif len(Qs) == 2:
+                    Q1_sq, Q2_sq = Qs[0].square(), Qs[1].square()
+                    delta = (Q2_sq.T @ delta.T @ Q1_sq).T
+                else:
+                    raise ValueError('Invalid prior shape.')
+                yield delta
+                # yield self.deltas[p_cur:p_cur+n_params_layer].reshape(eig_shape)
                 p_cur += n_params_layer
             else:
                 raise ValueError('Invalid prior shape.')
