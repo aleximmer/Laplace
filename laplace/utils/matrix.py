@@ -270,8 +270,9 @@ class KronDecomposed:
         self.eigenvectors = eigenvectors
         self.eigenvalues = eigenvalues
         device = eigenvectors[0][0].device
+        dtype = eigenvectors[0][0].dtype
         if deltas is None:
-            self.deltas = torch.tensor(0, device=device)
+            self.deltas = torch.tensor(0, device=device, dtype=dtype)
         else:
             self._check_deltas(deltas)
             self.deltas = deltas
@@ -515,7 +516,7 @@ class KronDecomposed:
         for layer, (Qs, ls) in enumerate(zip(self.eigenvectors, self.eigenvalues)):
             n_params_layer = np.prod([len(e) for e in ls])
             eig_shape = tuple([len(e) for e in ls])
-            if self.deltas.ndim == 0:  # scalar
+            if self.deltas.ndim == 0 or len(self.deltas) == 1:  # scalar
                 yield self.deltas
             elif len(self.deltas) == len(self.eigenvalues):  # layerwise
                 yield self.deltas[layer]

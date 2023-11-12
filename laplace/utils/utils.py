@@ -220,13 +220,13 @@ def expand_prior_precision(prior_prec, model):
                           in zip(prior_prec, model.parameters())])
 
 
-def fix_prior_prec_structure(prior_prec_init, prior_structure, n_layers, n_params, device):
+def fix_prior_prec_structure(prior_prec_init, prior_structure, n_layers, n_params, device, dtype=None):
     if prior_structure == 'scalar':
-        prior_prec_init = torch.full((1,), prior_prec_init, device=device)   
+        prior_prec_init = torch.full((1,), prior_prec_init, device=device, dtype=dtype)   
     elif prior_structure == 'layerwise':
-        prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device)
+        prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device, dtype=dtype)
     elif prior_structure == 'diag':
-        prior_prec_init = torch.full((n_params,), prior_prec_init, device=device)
+        prior_prec_init = torch.full((n_params,), prior_prec_init, device=device, dtype=dtype)
     else:
         raise ValueError(f'Invalid prior structure {prior_structure}.')
     return prior_prec_init

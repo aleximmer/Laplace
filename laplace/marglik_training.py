@@ -124,6 +124,7 @@ def marglik_training(
 
     # get device, data set size N, number of layers H, number of parameters P
     device = parameters_to_vector(model.parameters()).device
+    dtype = parameters_to_vector(model.parameters()).dtype
     N = len(train_loader.dataset)
     H = len(list(model.parameters()))
     P = len(parameters_to_vector(model.parameters()))
@@ -133,7 +134,7 @@ def marglik_training(
     # prior precision
     log_prior_prec_init = np.log(temperature * prior_prec_init)
     log_prior_prec = fix_prior_prec_structure(
-        log_prior_prec_init, prior_structure, H, P, device)
+        log_prior_prec_init, prior_structure, H, P, device, dtype=dtype)
     log_prior_prec.requires_grad = True
     hyperparameters.append(log_prior_prec)
 
