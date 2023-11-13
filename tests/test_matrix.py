@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.utils import Kron, block_diag
+from laplace.utils import Kron, block_diag, UnitPrior
 from laplace.utils import kron as kron_prod
 from laplace.curvature import BackPackGGN
 from tests.utils import get_psd_matrix, jacobians_naive
@@ -27,6 +27,12 @@ def model():
 def small_model():
     model = torch.nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
     setattr(model, 'output_size', 2)
+    return model
+
+
+@pytest.fixture
+def conv_model():
+    model = torch.nn.Sequential(nn.Conv2d(2, 4, 3), nn.Conv2d(4, 8, 7))
     return model
 
 
@@ -247,3 +253,26 @@ def test_diag_prior_approx():
     diag_without_prior = diag_with_prior - diag_prior
     assert torch.allclose(diag_plain, diag_without_prior)
     
+
+def test_init_unit_prior_from_model(model):
+    prior = UnitPrior.init_from_model(model)
+    expected_sizes = [[20, 3], [20], [2, 20], [2]]
+    for facs, exp_facs in zip(prior.deltas, expected_sizes):
+        for fi, exp_fi in zip(facs, exp_facs):
+            assert torch.all(fi == 1)
+            assert np.prod(fi.shape) == exp_fi
+    prior = prior * 5.3
+    n_params = sum([np.prod(p.shape) for p in model.parameters()])
+    assert torch.allclose(prior.diag(), 5.3 * torch.ones(n_params))
+
+
+def test_init_unit_prior_from_conv_model(conv_model):
+    prior = UnitPrior.init_from_model(conv_model)
+    expected_sizes = [[4, 2], [4], [8, 4], [8]]
+    for facs, exp_facs in zip(prior.deltas, expected_sizes):
+        for fi, exp_fi in zip(facs, exp_facs):
+            assert torch.all(fi == 1)
+            assert np.prod(fi.shape) == exp_fi
+    prior = prior * 5.3
+    n_params = sum([np.prod(p.shape) for p in conv_model.parameters()])
+    assert torch.allclose(prior.diag(), 5.3 * torch.ones(n_params))

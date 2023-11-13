@@ -9,7 +9,7 @@ import logging
 
 from laplace import Laplace
 from laplace.curvature import AsdlGGN
-from laplace.utils import expand_prior_precision, fix_prior_prec_structure
+from laplace.utils import expand_prior_precision, fix_prior_prec_structure, UnitPrior
 
 
 def marglik_training(
@@ -89,7 +89,7 @@ def marglik_training(
     lr_hyp : float, default=0.1
         Adam learning rate for hyperparameters
     prior_structure : str, default='layerwise'
-        structure of the prior. one of `['scalar', 'layerwise', 'diag']`
+        structure of the prior. one of `['scalar', 'layerwise', 'unitwise', 'diag']`
     n_epochs_burnin : int default=0
         how many epochs to train without estimating and differentiating marglik
     n_hypersteps : int, default=10
@@ -118,6 +118,8 @@ def marglik_training(
     losses : list
         list of losses (log joints) obtained during training (to monitor convergence)
     """
+    if optimizer_kwargs is None:
+        optimizer_kwargs = dict()
     if 'weight_decay' in optimizer_kwargs:
         warnings.warn('Weight decay is handled and optimized. Will be set to 0.')
         optimizer_kwargs['weight_decay'] = 0.0
@@ -134,9 +136,13 @@ def marglik_training(
     # prior precision
     log_prior_prec_init = np.log(temperature * prior_prec_init)
     log_prior_prec = fix_prior_prec_structure(
-        log_prior_prec_init, prior_structure, H, P, device, dtype=dtype)
+        log_prior_prec_init, prior_structure, H, P, device, dtype=dtype, model=model)
     log_prior_prec.requires_grad = True
-    hyperparameters.append(log_prior_prec)
+    if isinstance(log_prior_prec, UnitPrior):
+        log_prior_prec.log = True
+        hyperparameters.extend(log_prior_prec.parameters())
+    else:
+        hyperparameters.append(log_prior_prec)
 
     # set up loss (and observation noise hyperparam)
     if likelihood == 'classification':
@@ -150,8 +156,6 @@ def marglik_training(
         hyperparameters.append(log_sigma_noise)
 
     # set up model optimizer
-    if optimizer_kwargs is None:
-        optimizer_kwargs = dict()
     optimizer = optimizer_cls(model.parameters(), **optimizer_kwargs)
 
     # set up learning rate scheduler
@@ -182,9 +186,12 @@ def marglik_training(
                 crit_factor = temperature / (2 * sigma_noise.square())
             else:
                 crit_factor = temperature
-            prior_prec = torch.exp(log_prior_prec).detach()
+            if isinstance(log_prior_prec, UnitPrior):
+                delta = torch.exp(log_prior_prec.diag()).detach()
+            else:
+                prior_prec = torch.exp(log_prior_prec).detach()
+                delta = expand_prior_precision(prior_prec, model)
             theta = parameters_to_vector(model.parameters())
-            delta = expand_prior_precision(prior_prec, model)
             f = model(X)
             loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()
@@ -210,7 +217,10 @@ def marglik_training(
         # optimizer hyperparameters by differentiating marglik
         # 1. fit laplace approximation
         sigma_noise = 1 if likelihood == 'classification' else torch.exp(log_sigma_noise)
-        prior_prec = torch.exp(log_prior_prec)
+        if isinstance(log_prior_prec, UnitPrior):
+            prior_prec = torch.exp(log_prior_prec.diag())
+        else:
+            prior_prec = torch.exp(log_prior_prec)
         lap = Laplace(
             model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise, 
             prior_precision=prior_prec, temperature=temperature, backend=backend,
@@ -225,7 +235,10 @@ def marglik_training(
                 sigma_noise = None
             elif likelihood == 'regression':
                 sigma_noise = torch.exp(log_sigma_noise)
-            prior_prec = torch.exp(log_prior_prec)
+            if isinstance(log_prior_prec, UnitPrior):
+                prior_prec = torch.exp(log_prior_prec.diag())
+            else:
+                prior_prec = torch.exp(log_prior_prec)
             marglik = -lap.log_marginal_likelihood(prior_prec, sigma_noise)
             marglik.backward()
             hyper_optimizer.step()
@@ -234,7 +247,10 @@ def marglik_training(
         # early stopping on marginal likelihood
         if margliks[-1] < best_marglik:
             best_model_dict = deepcopy(model.state_dict())
-            best_precision = deepcopy(prior_prec.detach())
+            if isinstance(log_prior_prec, UnitPrior):
+                best_precision = deepcopy(torch.exp(log_prior_prec.diag().detach()))
+            else:
+                best_precision = deepcopy(prior_prec.detach())
             best_sigma = 1 if likelihood == 'classification' else deepcopy(sigma_noise.detach())
             best_marglik = margliks[-1]
             logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '

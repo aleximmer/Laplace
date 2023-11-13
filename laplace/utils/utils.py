@@ -9,7 +9,8 @@ from torch.distributions.multivariate_normal import _precision_to_scale_tril
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
-           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision']
+           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision',
+           'UnitPrior']
 
 
 def get_nll(out_dist, targets):
@@ -193,6 +194,119 @@ def block_diag(blocks):
     return M
 
 
+class UnitPrior:
+    """Prior per unit of convolutional or fully connected layers, where a unit denotes
+    in and output neurons but ignores spatial dimensions in convolutions.
+
+    Each element in `deltas` tuple (for biases) or single matrix (for weights).
+
+    Parameters
+    ----------
+    deltas : list[Tuple]
+        each element in the list is a Tuple of two vectors or a single diagonal vector.
+    expansion_factors : list[int]
+        factors per layer to expand the prior to match the shape of the parameters, which
+        defaults to 1 per layer.
+    log : bool
+        whether to model log precision or precision directly
+    """
+    def __init__(self, deltas, expansion_factors=None, log=False):
+        self.deltas = deltas
+        if expansion_factors is not None:
+            self.expansion_factors = expansion_factors
+        else:
+            self.expansion_factors = [1] * len(deltas)
+        self.log = log
+
+    @classmethod
+    def init_from_model(cls, model):
+        """Initialize unitwise prior based on a model's architecture.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+        device : torch.device
+
+        Returns
+        -------
+        prior : UnitPrior
+        """
+        deltas = list()
+        expansion_factors = list()
+        for p in model.parameters():
+            expansion_factors.append(1)
+            if p.ndim == 1:  # bias
+                P = p.size(0)
+                deltas.append([torch.ones(P, device=p.device, dtype=p.dtype)])
+            elif 4 >= p.ndim >= 2:  # fully connected or conv
+                if p.ndim == 2:  # fully connected per in and out neuron
+                    P_in, P_out = p.size()
+                elif p.ndim > 2:  # conv: prior per in and out channel
+                    P_in, P_out = p.shape[0], p.shape[1]
+                    spatial_dims = np.prod(p.shape[2:])
+                    expansion_factors[-1] = spatial_dims
+                else:
+                    raise ValueError('Invalid parameter shape in network.')
+                deltas.append([
+                    torch.ones(P_in, device=p.device, dtype=p.dtype),
+                    torch.ones(P_out, device=p.device, dtype=p.dtype)
+                ])
+            else:
+                raise ValueError('Invalid parameter shape in network.')
+        return cls(deltas, expansion_factors=expansion_factors)
+
+    def diag(self):
+        diag = list()
+        for delta, factor in zip(self.deltas, self.expansion_factors):
+            if len(delta) == 1:
+                diag.append(delta[0].repeat_interleave(factor))
+            elif len(delta) == 2:
+                layer_delta = (
+                    delta[0].reshape(-1, 1) + delta[1] if self.log 
+                    else torch.outer(delta[0], delta[1])
+                )
+                diag.append(layer_delta.flatten().repeat_interleave(factor))
+            else:
+                raise ValueError('Invalid prior shape.')
+        return torch.cat(diag)
+
+    def parameters(self):
+        return [delta for delta_pair in self.deltas for delta in delta_pair]
+
+    @property
+    def requires_grad(self):
+        return any([delta.requires_grad for delta in self.parameters()])
+
+    @requires_grad.setter
+    def requires_grad(self, value):
+        for delta_pair in self.deltas:
+            for delta in delta_pair:
+                delta.requires_grad_(value)
+        return self
+
+    def __mul__(self, scalar):
+        """Multiply all (log) prior precisions by a scalar.
+
+        Parameters
+        ----------
+        scalar : torch.Tensor or float
+
+        Returns
+        -------
+        prior : UnitPrior
+        """
+        if not _is_valid_scalar(scalar):
+            raise ValueError('Invalid argument, can only multiply prior with scalar.')
+
+        return UnitPrior(
+            [[delta * (scalar ** (1 / len(delta_pair))) for delta in delta_pair] 
+             for delta_pair in self.deltas],
+            self.expansion_factors
+        )
+ 
+    __rmul__ = __mul__
+
+
 def expand_prior_precision(prior_prec, model):
     """Expand prior precision to match the shape of the model parameters.
 
@@ -210,6 +324,8 @@ def expand_prior_precision(prior_prec, model):
     """
     theta = parameters_to_vector(model.parameters())
     device, P = theta.device, len(theta)
+    if isinstance(prior_prec, UnitPrior):
+        return prior_prec.diag()
     assert prior_prec.ndim == 1
     if len(prior_prec) == 1:  # scalar
         return torch.ones(P, device=device) * prior_prec
@@ -220,13 +336,16 @@ def expand_prior_precision(prior_prec, model):
                           in zip(prior_prec, model.parameters())])
 
 
-def fix_prior_prec_structure(prior_prec_init, prior_structure, n_layers, n_params, device, dtype=None):
+def fix_prior_prec_structure(prior_prec_init, prior_structure, n_layers, n_params, device, dtype=None, model=None):
     if prior_structure == 'scalar':
         prior_prec_init = torch.full((1,), prior_prec_init, device=device, dtype=dtype)   
     elif prior_structure == 'layerwise':
         prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device, dtype=dtype)
     elif prior_structure == 'diag':
         prior_prec_init = torch.full((n_params,), prior_prec_init, device=device, dtype=dtype)
+    elif prior_structure == 'unitwise':
+        assert model is not None, 'unitwise prior requires specifying the model'
+        prior_prec_init = UnitPrior.init_from_model(model) * prior_prec_init
     else:
         raise ValueError(f'Invalid prior structure {prior_structure}.')
     return prior_prec_init

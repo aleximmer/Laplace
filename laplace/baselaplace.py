@@ -5,7 +5,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision, 
-                           get_nll, validate, Kron, normal_samples,
+                           get_nll, validate, Kron, UnitPrior, normal_samples,
                            fix_prior_prec_structure)
 from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
 
@@ -24,7 +24,7 @@ class BaseLaplace:
         determines the log likelihood Hessian approximation
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification
-    prior_precision : torch.Tensor or float, default=1
+    prior_precision : torch.Tensor or float or UnitPrior, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case
     prior_mean : torch.Tensor or float, default=0
@@ -132,17 +132,16 @@ class BaseLaplace:
         -------
         prior_precision_diag : torch.Tensor
         """
-        if len(self.prior_precision) == 1:  # scalar
+        if isinstance(self.prior_precision, UnitPrior):
+            return self.prior_precision.diag()
+        elif len(self.prior_precision) == 1:  # scalar
             return self.prior_precision * torch.ones(self.n_params, device=self._device)
-
         elif len(self.prior_precision) == self.n_params:  # diagonal
             return self.prior_precision
-
         elif len(self.prior_precision) == self.n_layers:  # per layer
             n_params_per_layer = parameters_per_layer(self.model)
             return torch.cat([prior * torch.ones(n_params, device=self._device) for prior, n_params
                               in zip(self.prior_precision, n_params_per_layer)])
-
         else:
             raise ValueError('Mismatch of prior and model. Diagonal, scalar, or per-layer prior.')
 
@@ -158,7 +157,7 @@ class BaseLaplace:
             if prior_mean.ndim == 0:
                 self._prior_mean = prior_mean.reshape(-1).to(self._device)
             elif prior_mean.ndim == 1:
-                if not len(prior_mean) in [1, self.n_params]:
+                if len(prior_mean) not in [1, self.n_params]:
                     raise ValueError('Invalid length of prior mean.')
                 self._prior_mean = prior_mean
             else:
@@ -185,6 +184,8 @@ class BaseLaplace:
                 self._prior_precision = prior_precision.to(self._device)
             else:
                 raise ValueError('Prior precision needs to be at most one-dimensional tensor.')
+        elif isinstance(prior_precision, UnitPrior):
+            self._prior_precision = prior_precision
         else:
             raise ValueError('Prior precision either scalar or torch.Tensor up to 1-dim.')
 
@@ -251,6 +252,7 @@ class BaseLaplace:
         if method == 'marglik':
             self.prior_precision = init_prior_prec
             if len(self.prior_precision) == 1 and prior_structure != 'scalar':
+                assert prior_structure != 'unitwise', 'Unsupported for post hoc.'
                 self.prior_precision = fix_prior_prec_structure(
                     self.prior_precision.item(), prior_structure,
                     self.n_layers, self.n_params, self._device
@@ -926,6 +928,8 @@ class KronLaplace(ParametricLaplace):
         precision : `laplace.utils.matrix.KronDecomposed`
         """
         self._check_H_init()
+        if isinstance(self.prior_precision, UnitPrior):
+            return self.H * self._H_factor + self.prior_precision.diag()
         return self.H * self._H_factor + self.prior_precision
 
     @property
