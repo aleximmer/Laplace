@@ -347,7 +347,6 @@ class KronDecomposed:
         logdet : torch.Tensor
         """
         logdet = 0
-        # TODO: handle three valid types of deltas
         for ls, delta in zip(self.eigenvalues, self.layerwise_deltas):
             if len(ls) == 1:  # not KFAC just full
                 logdet += torch.log(ls[0] + delta).sum()
@@ -457,7 +456,6 @@ class KronDecomposed:
         diag : torch.Tensor
         """
         diags = list()
-        # TODO: handle three valid types of deltas
         for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.layerwise_deltas):
             if len(ls) == 1:
                 Ql = Qs[0] * torch.pow(ls[0] + delta, exponent).reshape(1, -1)
@@ -491,7 +489,6 @@ class KronDecomposed:
         block_diag : torch.Tensor
         """
         blocks = list()
-        # TODO: handle three valid types of deltas
         for Qs, ls, delta in zip(self.eigenvectors, self.eigenvalues, self.layerwise_deltas):
             if len(ls) == 1:
                 Q, l = Qs[0], ls[0]
