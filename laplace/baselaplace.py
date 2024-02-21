@@ -22,8 +22,13 @@ class BaseLaplace:
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : {'classification', 'regression'}
-        determines the log likelihood Hessian approximation
+    likelihood : {'classification', 'regression', 'reward_modeling'}
+        determines the log likelihood Hessian approximation.
+        In the case of 'reward_modeling', it fit the Laplace in classification manner,
+        then do prediction as in regression. The model needs to be defined accordingly:
+        The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
+        `y.shape = (batch_size,)`. Meanwhile, during evaluation `x.shape == (batch_size, dim)`.
+        Note that 'reward_modeling' only supports `KronLaplace` and `DiagLaplace`.
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification
     prior_precision : torch.Tensor or float, default=1
@@ -43,7 +48,7 @@ class BaseLaplace:
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., backend=None, backend_kwargs=None,
                  asdl_fisher_kwargs=None):
-        if likelihood not in ['classification', 'regression']:
+        if likelihood not in ['classification', 'regression', 'reward_modeling']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
         self.model = model
@@ -64,7 +69,14 @@ class BaseLaplace:
         self.prior_mean = prior_mean
         if sigma_noise != 1 and likelihood != 'regression':
             raise ValueError('Sigma noise != 1 only available for regression.')
-        self.likelihood = likelihood
+
+        self.reward_modeling = (likelihood == 'reward_modeling')
+        if self.reward_modeling:
+            # For fitting only. After it's done, self.likelihood = 'regression', see self.fit()
+            self.likelihood = 'classification'
+        else:
+            self.likelihood = likelihood
+
         self.sigma_noise = sigma_noise
         self.temperature = temperature
 
@@ -419,7 +431,7 @@ class ParametricLaplace(BaseLaplace):
             pbar = train_loader
 
         for data in pbar:
-            if isinstance(data, UserDict):
+            if isinstance(data, UserDict): # To support Huggingface dataset
                 X, y = data, data['labels'].to(self._device)
             else:
                 X, y = data
@@ -596,6 +608,12 @@ class ParametricLaplace(BaseLaplace):
 
         # if self.is_subset_params and pred_type == 'glm':
             # raise ValueError('Subset of params is only compatible with MC predictive.')
+
+        # For reward modeling, replace the likelihood to regression and override model state
+        if self.reward_modeling and self.likelihood == 'classification':
+            self.likelihood = 'regression'
+            self.model.output_size = 1
+            self.sigma_noise = 0.0001  # Non-zero for regularity, just in case
 
         if pred_type == 'glm':
             f_mu, f_var = self._glm_predictive_distribution(x)

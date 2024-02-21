@@ -39,6 +39,40 @@ def large_model():
 
 
 @pytest.fixture
+def reward_model():
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.net = nn.Sequential(
+                nn.Linear(3, 100),
+                nn.ReLU(),
+                nn.Linear(100, 1)
+            )
+
+        def forward(self, x):
+            """
+            x: torch.Tensor
+                If training == True then shape (batch_size, 2, dim)
+                Else shape (batch_size, dim)
+            """
+            if len(x.shape) == 3:
+                batch_size, _, dim = x.shape
+
+                # Flatten to (batch_size*2, dim)
+                flat_x = x.reshape(-1, dim)
+
+                # Forward
+                flat_logits = self.net(flat_x)  # (batch_size*2, 1)
+
+                # Reshape back to (batch_size, 2)
+                return flat_logits.reshape(batch_size, 2)
+            else:
+                logits = self.net(x)  # (batch_size, 1)
+                return logits
+    return Model()
+
+
+@pytest.fixture
 def class_loader():
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
@@ -50,6 +84,19 @@ def reg_loader():
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
     return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reward_loader():
+    X = torch.randn(10, 2, 3)
+    y = torch.randint(2, (10,))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reward_test_X():
+    X = torch.randn(10, 3)
+    return X
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -439,3 +486,26 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     fsamples = lap.predictive_samples(X, pred_type='nn', n_samples=100)
     assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
+
+
+@pytest.mark.parametrize('laplace', [KronLaplace, DiagLaplace])
+def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
+    lap = laplace(reward_model, 'reward_modeling')
+    lap.fit(reward_loader)
+    f = reward_model(reward_test_X)
+
+    # error
+    with pytest.raises(ValueError):
+        lap(reward_test_X, pred_type='linear')
+
+    # GLM predictive, functional variance tested already above.
+    f_mu, f_var = lap(reward_test_X, pred_type='glm')
+    assert torch.allclose(f_mu, f)
+    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+    assert len(f_mu) == len(reward_test_X)
+
+    # NN predictive (only diagonal variance estimation)
+    f_mu, f_var = lap(reward_test_X, pred_type='nn', link_approx='mc')
+    assert f_mu.shape == f_var.shape
+    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
+    assert len(f_mu) == len(reward_test_X)

@@ -30,6 +30,7 @@ def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n
         targets = list()
 
     for data in val_loader:
+        # If x is UserDict, then it is a from Huggingface dataset
         X, y = (data['input_ids'], data['labels']) if isinstance(data, UserDict) else data
         X, y = X.to(laplace._device), y.to(laplace._device)
         out = laplace(

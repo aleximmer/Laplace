@@ -85,7 +85,8 @@ class AsdlInterface(CurvatureInterface):
             loss.backward()
             return loss
 
-        batch_size = x['input_ids'].shape[0]
+        # If x is UserDict, then it has weight-sharing dimension (from Huggingface datasets)
+        batch_size = x['input_ids'].shape[0] if isinstance(x, UserDict) else None
         Gs, loss = batch_gradient(self.model, closure, return_outputs=True, batch_size=batch_size)
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
