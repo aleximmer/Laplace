@@ -613,7 +613,6 @@ class ParametricLaplace(BaseLaplace):
         if self.reward_modeling and self.likelihood == 'classification':
             self.likelihood = 'regression'
             self.model.output_size = 1
-            self.sigma_noise = 0.0001  # Non-zero for regularity, just in case
 
         if pred_type == 'glm':
             f_mu, f_var = self._glm_predictive_distribution(x)
