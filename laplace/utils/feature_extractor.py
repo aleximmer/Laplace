@@ -24,10 +24,14 @@ class FeatureExtractor(nn.Module):
         if the name of the last layer is already known, otherwise it will
         be determined automatically.
     """
-    def __init__(self, model: nn.Module, last_layer_name: Optional[str] = None) -> None:
+    def __init__(
+        self, model: nn.Module, last_layer_name: Optional[str] = None, 
+        enable_backprop: bool = False) -> None:
         super().__init__()
         self.model = model
         self._features = dict()
+        self.enable_backprop = enable_backprop
+
         if last_layer_name is None:
             self.last_layer = None
         else:
@@ -85,7 +89,10 @@ class FeatureExtractor(nn.Module):
     def _get_hook(self, name: str) -> Callable:
         def hook(_, input, __):
             # only accepts one input (expects linear layer)
-            self._features[name] = input[0].detach()
+            self._features[name] = input[0]
+            
+            if not self.enable_backprop:
+                self._features[name] = self._features[name].detach()
         return hook
 
     def find_last_layer(self, x: torch.Tensor) -> torch.Tensor:

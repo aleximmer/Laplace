@@ -29,7 +29,7 @@ class AsdlInterface(CurvatureInterface):
     def loss_type(self):
         return LOSS_MSE if self.likelihood == 'regression' else LOSS_CROSS_ENTROPY
 
-    def jacobians(self, x):
+    def jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.
 
@@ -37,6 +37,8 @@ class AsdlInterface(CurvatureInterface):
         ----------
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
+        enable_backprop : bool, default = False
+            whether to enable backprop through the Js and f w.r.t. x
 
         Returns
         -------
@@ -53,7 +55,7 @@ class AsdlInterface(CurvatureInterface):
                 self.model.zero_grad()
                 f = self.model(x)
                 loss = f[:, i].sum()
-                loss.backward()
+                loss.backward(create_graph=enable_backprop, retain_graph=enable_backprop)
                 return f
 
             Ji, f = batch_gradient(self.model, closure, return_outputs=True, batch_size=batch_size)

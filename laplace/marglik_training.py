@@ -11,7 +11,7 @@ import tqdm
 
 from laplace import Laplace
 from laplace.curvature import AsdlGGN
-from laplace.utils import expand_prior_precision
+from laplace.utils import expand_prior_precision, fix_prior_prec_structure
 
 
 def marglik_training(
@@ -34,7 +34,8 @@ def marglik_training(
     sigma_noise_init=1.,
     temperature=1.,
     sigma_noise_fixed=None,
-    progress_bar=False
+    progress_bar=False,
+    enable_backprop=False
 ):
     """Marginal-likelihood based training (Algorithm 1 in [1]).
     Optimize model parameters and hyperparameters jointly.
@@ -92,7 +93,7 @@ def marglik_training(
     lr_hyp : float, default=0.1
         Adam learning rate for hyperparameters
     prior_structure : str, default='layerwise'
-        structure of the prior. one of `['scalar', 'layerwise', 'diagonal']`
+        structure of the prior. one of `['scalar', 'layerwise', 'diag']`
     n_epochs_burnin : int default=0
         how many epochs to train without estimating and differentiating marglik
     n_hypersteps : int, default=10
@@ -111,6 +112,8 @@ def marglik_training(
         if None and regression, optimize via marglik. If float and regression, use it as it is.
     progress_bar: bool, default=False
         whether to show a progress bar (updated per epoch) or not
+    enable_backprop : bool, default=False
+        make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
 
     Returns
     -------
@@ -138,14 +141,8 @@ def marglik_training(
     hyperparameters = list()
     # prior precision
     log_prior_prec_init = np.log(temperature * prior_prec_init)
-    if prior_structure == 'scalar':
-        log_prior_prec = log_prior_prec_init * torch.ones(1, device=device)
-    elif prior_structure == 'layerwise':
-        log_prior_prec = log_prior_prec_init * torch.ones(H, device=device)
-    elif prior_structure == 'diagonal':
-        log_prior_prec = log_prior_prec_init * torch.ones(P, device=device)
-    else:
-        raise ValueError(f'Invalid prior structure {prior_structure}')
+    log_prior_prec = fix_prior_prec_structure(
+        log_prior_prec_init, prior_structure, H, P, device)
     log_prior_prec.requires_grad = True
     hyperparameters.append(log_prior_prec)
 
@@ -277,7 +274,7 @@ def marglik_training(
     lap = Laplace(
         model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise,
         prior_precision=prior_prec, temperature=temperature, backend=backend,
-        subset_of_weights='all'
+        subset_of_weights='all', enable_backprop=enable_backprop
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses

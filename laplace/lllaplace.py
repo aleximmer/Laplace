@@ -48,6 +48,9 @@ class LLLaplace(ParametricLaplace):
     temperature : float, default=1
         temperature of the likelihood; lower temperature leads to more
         concentrated posterior and vice versa.
+    enable_backprop: bool, default=False
+        whether to enable backprop to the input `x` through the Laplace predictive.
+        Useful for e.g. Bayesian optimization.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     last_layer_name: str, default=None
@@ -57,15 +60,19 @@ class LLLaplace(ParametricLaplace):
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, last_layer_name=None,
+                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, last_layer_name=None,
                  backend_kwargs=None, asdl_fisher_kwargs=None):
         if asdl_fisher_kwargs is not None:
             raise ValueError('Last-layer Laplace does not support asdl_fisher_kwargs.')
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature, backend=backend,
+                         prior_mean=0., temperature=temperature,
+                         enable_backprop=enable_backprop, backend=backend,
                          backend_kwargs=backend_kwargs)
-        self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
+        self.model = FeatureExtractor(
+            deepcopy(model), last_layer_name=last_layer_name,
+            enable_backprop=enable_backprop
+        )
         if self.model.last_layer is None:
             self.mean = None
             self.n_params = None
@@ -119,19 +126,28 @@ class LLLaplace(ParametricLaplace):
             self._init_H()
 
         super().fit(train_loader, override=override)
-        self.mean = parameters_to_vector(self.model.last_layer.parameters()).detach()
+        self.mean = parameters_to_vector(self.model.last_layer.parameters())
 
-    def _glm_predictive_distribution(self, X):
+        if not self.enable_backprop:
+            self.mean = self.mean.detach()
+
+    def _glm_predictive_distribution(self, X, joint=False):
         Js, f_mu = self.backend.last_layer_jacobians(X)
-        f_var = self.functional_variance(Js)
-        return f_mu.detach(), f_var.detach()
+
+        if joint:
+            f_mu = f_mu.flatten()  # (batch*out)
+            f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
+        else:
+            f_var = self.functional_variance(Js)
+
+        return (f_mu.detach(), f_var.detach()) if not self.enable_backprop else (f_mu, f_var)
 
     def _nn_predictive_samples(self, X, n_samples=100, generator=None, **model_kwargs):
         fs = list()
         for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            # TODO: Implement with a single forward pass until last layer.
-            fs.append(self.model(X.to(self._device), **model_kwargs).detach())
+            f = self.model(X.to(self._device), **model_kwargs)
+            fs.append(f.detach() if not self.enable_backprop else f)
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
@@ -194,11 +210,11 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     _key = ('last_layer', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=None, last_layer_name=None,
+                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, last_layer_name=None,
                  damping=False, **backend_kwargs):
         self.damping = damping
         super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, backend, last_layer_name, backend_kwargs)
+                         prior_mean, temperature, enable_backprop, backend, last_layer_name, backend_kwargs)
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)

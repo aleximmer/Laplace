@@ -44,13 +44,15 @@ class CurvatureInterface:
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
-    def jacobians(self, x):
+    def jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
         ----------
         x : torch.Tensor
             input data `(batch, input_shape)` on compatible device with model.
+        enable_backprop : bool, default = False
+            whether to enable backprop through the Js and f w.r.t. x
 
         Returns
         -------
@@ -61,13 +63,14 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
-    def last_layer_jacobians(self, x):
+    def last_layer_jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
         Parameters
         ----------
         x : torch.Tensor
+        enable_backprop : bool, default=False
 
         Returns
         -------
@@ -87,7 +90,7 @@ class CurvatureInterface:
         if self.model.last_layer.bias is not None:
             Js = torch.cat([Js, identity], dim=2)
 
-        return Js, f.detach()
+        return Js, f
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter \\(\\theta\\).
