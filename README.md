@@ -12,7 +12,7 @@ There is also a corresponding paper, [*Laplace Redux — Effortless Bayesian Dee
 ```bibtex
 @inproceedings{laplace2021,
   title={Laplace Redux--Effortless {B}ayesian Deep Learning},
-  author={Erik Daxberger and Agustinus Kristiadi and Alexander Immer 
+  author={Erik Daxberger and Agustinus Kristiadi and Alexander Immer
           and Runa Eschenhagen and Matthias Bauer and Philipp Hennig},
   booktitle={{N}eur{IPS}},
   year={2021}
@@ -22,8 +22,15 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Setup
 
+For full compatibility, install this package in a fresh Conda/Mamba env.
 We assume `python3.8` since the package was developed with that version.
-To install laplace with `pip`, run the following:
+Then, install the `PyTorch 2.0+` and `ASDL` dependecies (for Hessian computation).
+The latter should be done via:
+```
+pip install git+https://github.com/wiseodd/asdl.git@dev
+```
+
+Then, to install laplace with `pip`, run the following:
 ```bash
 pip install laplace-torch
 ```
@@ -80,7 +87,7 @@ the `'probit'` predictive for classification.
 from laplace import Laplace
 
 # Pre-trained model
-model = load_map_model()  
+model = load_map_model()
 
 # User-specified LA flavor
 la = Laplace(model, 'classification',
@@ -104,7 +111,7 @@ the log marginal likelihood.
 from laplace import Laplace
 
 # Un- or pre-trained model
-model = load_model()  
+model = load_model()
 
 # Default to recommended last-layer KFAC LA:
 la = Laplace(model, likelihood='regression')

@@ -744,7 +744,7 @@ class ParametricLaplace(BaseLaplace):
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X, joint=False):
         if 'backpack' in self._backend_cls.__name__.lower():
-            # BackPACK supports backprop through Jacobians
+            # BackPACK supports backprop through Jacobians, but it interferes with functorch
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
         else:
             # For ASDL, we use functorch
