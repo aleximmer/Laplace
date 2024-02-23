@@ -63,6 +63,49 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
+    def functorch_jacobians(self, x, enable_backprop=False):
+        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch, input_shape)` on compatible device with model.
+        enable_backprop : bool, default = False
+            whether to enable backprop through the Js and f w.r.t. x
+
+        Returns
+        -------
+        Js : torch.Tensor
+            Jacobians `(batch, parameters, outputs)`
+        f : torch.Tensor
+            output function `(batch, outputs)`
+        """
+        # Compute Js
+        # ------------------------
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        name_dict = {p.data_ptr(): name for name, p in self.model.named_parameters()}
+        params_dict = {name_dict[p.data_ptr()]: p for p in params}
+
+        def model_fn_params_only(params_dict):
+            return torch.func.functional_call(self.model, params_dict, x)
+
+        # concatenate over flattened parameters
+        Js = torch.func.jacrev(model_fn_params_only)(params_dict)
+        Js = [
+            j.flatten(start_dim=-p.dim())
+            for j, p in zip(Js.values(), params_dict.values())
+        ]
+        Js = torch.cat(Js, dim=-1)
+
+        if self.subnetwork_indices is not None:
+            Js = Js[:, :, self.subnetwork_indices]
+
+        # Compute f
+        # ------------------------
+        f = self.model(x)
+
+        return Js, f
+
     def last_layer_jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).

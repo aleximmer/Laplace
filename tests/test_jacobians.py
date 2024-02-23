@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch import nn
 
-from laplace.curvature import AsdlInterface, BackPackInterface
+from laplace.curvature import AsdlInterface, BackPackInterface, CurvatureInterface
 from laplace.utils import FeatureExtractor
 from tests.utils import jacobians_naive
 
@@ -69,6 +69,38 @@ def test_jacobians_multioutput(multioutput_model, X, backend_cls):
     assert torch.allclose(model(X), f_naive)
     assert torch.allclose(f, f_naive)
 
+
+def test_functorch_linear_jacobians(linear_model, X):
+    # jacobian of linear model is input X.
+    backend = CurvatureInterface(linear_model, 'classification')
+    Js, f = backend.functorch_jacobians(X)
+    # into Jacs shape (batch_size, output_size, params)
+    true_Js = X.reshape(len(X), 1, -1)
+    assert true_Js.shape == Js.shape
+    assert torch.allclose(true_Js, Js, atol=1e-5)
+    assert torch.allclose(f, linear_model(X), atol=1e-5)
+
+
+def test_functorch_jacobians_singleoutput(singleoutput_model, X):
+    model = singleoutput_model
+    backend = CurvatureInterface(model, 'classification')
+    Js, f = backend.functorch_jacobians(X)
+    Js_naive, f_naive = jacobians_naive(model, X)
+    assert Js.shape == Js_naive.shape
+    assert torch.abs(Js-Js_naive).max() < 1e-6
+    assert torch.allclose(model(X), f_naive)
+    assert torch.allclose(f, f_naive)
+
+
+def test_functorch_jacobians_multioutput(multioutput_model, X):
+    model = multioutput_model
+    backend = CurvatureInterface(model, 'classification')
+    Js, f = backend.functorch_jacobians(X)
+    Js_naive, f_naive = jacobians_naive(model, X)
+    assert Js.shape == Js_naive.shape
+    assert torch.abs(Js-Js_naive).max() < 1e-6
+    assert torch.allclose(model(X), f_naive)
+    assert torch.allclose(f, f_naive)
 
 @pytest.mark.parametrize('backend_cls', [AsdlInterface, BackPackInterface])
 def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):

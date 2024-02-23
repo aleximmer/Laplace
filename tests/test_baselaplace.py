@@ -13,7 +13,7 @@ from torchvision.models import wide_resnet50_2
 
 from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from laplace.utils import KronDecomposed
-from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
+from laplace.curvature import AsdlGGN, BackPackGGN, AsdlEF
 from tests.utils import jacobians_naive
 
 
@@ -526,11 +526,12 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
 
 # TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_glm(laplace, model, reg_loader):
+@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True, backend=BackPackGGN)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type='glm')
 
@@ -538,21 +539,22 @@ def test_backprop_glm(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        # grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
-        # assert grad_X_var.shape == X.shape
+        assert grad_X_var.shape == X.shape
     except ValueError:
         assert False
 
 
 # TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_glm_joint(laplace, model, reg_loader):
+@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+def test_backprop_glm_joint(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True, backend=BackPackGGN)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_cov = lap(X, pred_type='glm', joint=True)
 
@@ -568,11 +570,12 @@ def test_backprop_glm_joint(laplace, model, reg_loader):
 
 # TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_glm_mc(laplace, model, reg_loader):
+@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+def test_backprop_glm_mc(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True, backend=BackPackGGN)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type='glm', link_approx='mc')
 
@@ -588,11 +591,12 @@ def test_backprop_glm_mc(laplace, model, reg_loader):
 
 # TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_nn(laplace, model, reg_loader):
+@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+def test_backprop_nn(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True, backend=BackPackGGN)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type='nn', link_approx='mc', n_samples=10)
 

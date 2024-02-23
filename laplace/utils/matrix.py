@@ -384,11 +384,14 @@ class KronDecomposed:
         W = W.reshape(B * K, P)
         cur_p = 0
         SW = list()
-        for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
+        for i, (ls, Qs, delta) in enumerate(zip(self.eigenvalues, self.eigenvectors, self.deltas)):
             if len(ls) == 1:
                 Q, l, p = Qs[0], ls[0], len(ls[0])
                 ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
                 W_p = W[:, cur_p:cur_p+p].T
+                # print('c'); W_p.sum().backward(); input()
+                # if i == 3:
+                #     print('d'); (Q @ (ldelta_exp * (Q.T @ W_p))).T.sum().backward(); input()
                 SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
                 cur_p += p
             elif len(ls) == 2:
@@ -402,18 +405,24 @@ class KronDecomposed:
                     ldelta_exp = torch.pow(torch.outer(l1, l2) + delta, exponent).unsqueeze(0)
                 p_in, p_out = len(l1), len(l2)
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
+                # print('c2'); W_p.sum().backward(); input()
                 W_p = (Q1.T @ W_p @ Q2) * ldelta_exp
                 W_p = Q1 @ W_p @ Q2.T
+                # if i == 2:
+                #     print('d2'); W_p.sum().backward(); input()
                 SW.append(W_p.reshape(B * K, p_in * p_out))
                 cur_p += p
             else:
                 raise AttributeError('Shape mismatch')
         SW = torch.cat(SW, dim=1).reshape(B, K, P)
+        # print('e'); SW.sum().backward(); input()
         return SW
 
     def inv_square_form(self, W: torch.Tensor) -> torch.Tensor:
         # W either Batch x K x params or Batch x params
+        # print('a'); W.sum().backward(); input()
         SW = self._bmm(W, exponent=-1)
+        # print('b'); SW.sum().backward(); input()
         return torch.bmm(W, SW.transpose(1, 2))
 
     def bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
