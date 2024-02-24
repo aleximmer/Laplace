@@ -208,6 +208,40 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
+    def _functional_variance_fast(self, X):
+        f_mu, phi = self.model.forward_with_features(X)
+        num_classes = f_mu.shape[-1]
+
+        # Contribution from the weights
+        # -----------------------------
+        eig_U, eig_V = self.posterior_precision.eigenvalues[0]
+        vec_U, vec_V = self.posterior_precision.eigenvectors[0]
+        delta = self.posterior_precision.deltas[0].sqrt()
+        inv_U_eig, inv_V_eig = torch.pow(eig_U + delta, -1), torch.pow(eig_V + delta, -1)
+
+        # Matrix form of the kron factors
+        U = torch.einsum('ik,k,jk->ij', vec_U, inv_U_eig, vec_U)
+        V = torch.einsum('ik,k,jk->ij', vec_V, inv_V_eig, vec_V)
+
+        # Using the identity of the Matrix Gaussian distribution
+        # phi is (batch_size, embd_dim), V is (embd_dim, embd_dim), U is (num_classes, num_classes)
+        # phiVphi is (batch_size,)
+        phiVphi = torch.einsum('bi,ij,bj->b', phi, V, phi)
+        f_var = torch.einsum('b,ij->bij', phiVphi, U)  # (batch_size, num_classes, num_classes)
+
+        if self.model.last_layer.bias is not None:
+            # Contribution from the biases
+            # ----------------------------
+            eig = self.posterior_precision.eigenvalues[1][0]
+            vec = self.posterior_precision.eigenvectors[1][0]
+            delta = self.posterior_precision.deltas[1].sqrt()
+            inv_eig = torch.pow(eig + delta, -1)
+
+            Sigma_bias = torch.einsum('ik,k,jk->ij', vec, inv_eig, vec)  # (num_classes, num_classes)
+            f_var += Sigma_bias.reshape(1, num_classes, num_classes)
+
+        return f_mu, f_var
+
 
 class DiagLLLaplace(LLLaplace, DiagLaplace):
     """Last-layer Laplace approximation with diagonal log likelihood Hessian approximation
