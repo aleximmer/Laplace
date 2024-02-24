@@ -62,7 +62,7 @@ class LLLaplace(ParametricLaplace):
                  backend_kwargs=None):
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature, 
+                         prior_mean=0., temperature=temperature,
                          enable_backprop=enable_backprop, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(
@@ -124,15 +124,22 @@ class LLLaplace(ParametricLaplace):
             self.mean = self.mean.detach()
 
     def _glm_predictive_distribution(self, X, joint=False):
-        Js, f_mu = self.backend.last_layer_jacobians(X)
-        
         if joint:
+            Js, f_mu = self.backend.last_layer_jacobians(X)
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
         else:
-            f_var = self.functional_variance(Js)
+            f_mu, f_var = self._functional_variance_fast(X)
 
         return (f_mu.detach(), f_var.detach()) if not self.enable_backprop else (f_mu, f_var)
+
+    def _functional_variance_fast(self, X):
+        """
+        Should be overriden if there exists a trick to make this fast!
+        """
+        Js, f_mu = self.backend.last_layer_jacobians(X)
+        f_var = self.functional_variance(Js)  # No trick possible for Full Laplace
+        return f_mu, f_var
 
     def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()
@@ -210,3 +217,23 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'diag')
+
+    def _functional_variance_fast(self, X):
+        f_mu, phi = self.model.forward_with_features(X)
+        k = f_mu.shape[-1]  # num_classes
+        b, d = phi.shape  # batch_size, embd_dim
+
+        # Here, we exploit the fact that J Sigma J.T is (batch) diagonal
+        # We notice that the param variance is [vars_weight, vars_biases] and
+        # each functional variance phi^2*var_weight + var_bias
+        f_var_diag_only = torch.einsum('bd,kd,bd->bk', phi, self.posterior_variance[:d*k].reshape(k, d), phi)
+
+        if self.model.last_layer.bias is not None:
+            # Add the last num_classes variances, corresponding to the biases' variances
+            # (b,k) + (1,k) = (b,k)
+            f_var_diag_only += self.posterior_variance[-k:].reshape(1, k)
+
+        # (b,k) -> (b,k,k)
+        f_var = torch.diag_embed(f_var_diag_only)
+
+        return f_mu, f_var

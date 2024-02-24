@@ -413,6 +413,23 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
 
+# TODO: Add KronLLLaplace
+@pytest.mark.parametrize('laplace', [DiagLLLaplace])
+def test_functional_variance_fast(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, 'regression', enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap._functional_variance_fast(X)
+
+    Js, f_naive = lap.backend.last_layer_jacobians(X)
+    f_var_naive = torch.einsum('ncp,p,nkp->nck', Js, lap.posterior_variance, Js)
+
+    assert torch.allclose(f_mu, f_naive)
+    assert torch.allclose(f_var, f_var_naive)
+
+
 @pytest.mark.parametrize('laplace', flavors)
 def test_backprop_glm(laplace, model, reg_loader):
     X, y = reg_loader.dataset.tensors
@@ -424,7 +441,7 @@ def test_backprop_glm(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -443,7 +460,7 @@ def test_backprop_glm_joint(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_cov.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_cov.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -462,7 +479,7 @@ def test_backprop_glm_mc(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -481,7 +498,7 @@ def test_backprop_nn(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
