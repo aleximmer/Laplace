@@ -37,7 +37,7 @@ class AsdlInterface(CurvatureInterface):
         ----------
         x : torch.Tensor or UserDict
             input data `(batch, input_shape)` on compatible device with model if torch.Tensor.
-            If UserDict, then at least contains key ['input_ids'] or ['input_ids_1', 'input_ids_2'].
+            If UserDict, then at least contains key ['input_ids'] or ['input_ids_0', 'input_ids_1'].
             The latter is specific for reward modeling.
         enable_backprop : bool, default = False
             whether to enable backprop through the Js and f w.r.t. x
@@ -199,8 +199,8 @@ class AsdlInterface(CurvatureInterface):
             try:
                 return x['input_ids'].shape[0]
             except KeyError:
-                # The case of reward modeling; the UserDict contains ['input_ids_1', 'input_ids_2']
-                return x['input_ids_1'].shape[0]
+                # The case of reward modeling; the UserDict contains ['input_ids_0', 'input_ids_1']
+                return x['input_ids_0'].shape[0]
         else:
             return None  # Use ASDL default behavior
 
