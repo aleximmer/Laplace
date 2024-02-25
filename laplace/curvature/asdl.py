@@ -35,8 +35,10 @@ class AsdlInterface(CurvatureInterface):
 
         Parameters
         ----------
-        x : torch.Tensor
-            input data `(batch, input_shape)` on compatible device with model.
+        x : torch.Tensor or UserDict
+            input data `(batch, input_shape)` on compatible device with model if torch.Tensor.
+            If UserDict, then at least contains key ['input_ids'] or ['input_ids_1', 'input_ids_2'].
+            The latter is specific for reward modeling.
         enable_backprop : bool, default = False
             whether to enable backprop through the Js and f w.r.t. x
 
@@ -47,8 +49,6 @@ class AsdlInterface(CurvatureInterface):
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        # If x is UserDict, then it has weight-sharing dimension (from Huggingface datasets)
-        batch_size = x['input_ids'].shape[0] if isinstance(x, UserDict) else None
         Js = list()
         for i in range(self.model.output_size):
             def closure():
@@ -58,7 +58,7 @@ class AsdlInterface(CurvatureInterface):
                 loss.backward(create_graph=enable_backprop, retain_graph=enable_backprop)
                 return f
 
-            Ji, f = batch_gradient(self.model, closure, return_outputs=True, batch_size=batch_size)
+            Ji, f = batch_gradient(self.model, closure, return_outputs=True, batch_size=self._get_batch_size(x))
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]
             Js.append(Ji)
@@ -87,9 +87,7 @@ class AsdlInterface(CurvatureInterface):
             loss.backward()
             return loss
 
-        # If x is UserDict, then it has weight-sharing dimension (from Huggingface datasets)
-        batch_size = x['input_ids'].shape[0] if isinstance(x, UserDict) else None
-        Gs, loss = batch_gradient(self.model, closure, return_outputs=True, batch_size=batch_size)
+        Gs, loss = batch_gradient(self.model, closure, return_outputs=True, batch_size=self._get_batch_size(x))
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
@@ -188,6 +186,23 @@ class AsdlInterface(CurvatureInterface):
         else:
             curv_factor = 1.0   # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
+
+    @staticmethod
+    def _get_batch_size(x):
+        """
+        ASDL assumes that all leading dimensions are the batch size by default (batch_size = None).
+        Here, we want to specify that only the first dimension is the actual batch size.
+        This is the case for LLMs.
+        """
+        # If x is UserDict, then it has weight-sharing dimension (from Huggingface datasets)
+        if isinstance(x, UserDict):
+            try:
+                return x['input_ids'].shape[0]
+            except KeyError:
+                # The case of reward modeling; the UserDict contains ['input_ids_1', 'input_ids_2']
+                return x['input_ids_1'].shape[0]
+        else:
+            return None  # Use ASDL default behavior
 
 
 class AsdlHessian(AsdlInterface):

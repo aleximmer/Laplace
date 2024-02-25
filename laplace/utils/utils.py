@@ -31,8 +31,12 @@ def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n
 
     for data in val_loader:
         # If x is UserDict, then it is a from Huggingface dataset
-        X, y = (data['input_ids'], data['labels']) if isinstance(data, UserDict) else data
-        X, y = X.to(laplace._device), y.to(laplace._device)
+        if isinstance(data, UserDict):
+            X, y = data, data['labels']
+        else:
+            X, y = data
+            X = X.to(laplace._device)
+        y = y.to(laplace._device)
         out = laplace(
             X, pred_type=pred_type,
             link_approx=link_approx,
@@ -245,7 +249,7 @@ def expand_prior_precision(prior_prec, model):
 
 def fix_prior_prec_structure(prior_prec_init, prior_structure, n_layers, n_params, device):
     if prior_structure == 'scalar':
-        prior_prec_init = torch.full((1,), prior_prec_init, device=device)   
+        prior_prec_init = torch.full((1,), prior_prec_init, device=device)
     elif prior_structure == 'layerwise':
         prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device)
     elif prior_structure == 'diag':
