@@ -447,7 +447,7 @@ class ParametricLaplace(BaseLaplace):
 
         data = next(iter(train_loader))
         with torch.no_grad():
-            if isinstance(data, UserDict): # To support Huggingface dataset
+            if isinstance(data, UserDict) or isinstance(data, dict): # To support Huggingface dataset
                 out = self.model(data)
             else:
                 X = data[0]
@@ -463,7 +463,7 @@ class ParametricLaplace(BaseLaplace):
             pbar = train_loader
 
         for data in pbar:
-            if isinstance(data, UserDict): # To support Huggingface dataset
+            if isinstance(data, UserDict)  or isinstance(data, dict): # To support Huggingface dataset
                 X, y = data, data['labels'].to(self._device)
             else:
                 X, y = data

@@ -195,7 +195,7 @@ class AsdlInterface(CurvatureInterface):
         This is the case for LLMs.
         """
         # If x is UserDict, then it has weight-sharing dimension (from Huggingface datasets)
-        if isinstance(x, UserDict):
+        if isinstance(x, UserDict) or isinstance(x, dict):
             try:
                 return x['input_ids'].shape[0]
             except KeyError:

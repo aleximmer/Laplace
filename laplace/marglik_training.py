@@ -187,7 +187,7 @@ def marglik_training(
 
         # standard NN training per batch
         for data in train_loader:
-            if isinstance(data, UserDict):
+            if isinstance(data, UserDict) or isinstance(data, dict):
                 X, y = data, data['labels']
                 y = y.to(device, non_blocking=True)
             else:

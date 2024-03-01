@@ -109,7 +109,7 @@ class LLLaplace(ParametricLaplace):
         if self.model.last_layer is None:
             data = next(iter(train_loader))
             with torch.no_grad():
-                if isinstance(data, UserDict): # To support Huggingface dataset
+                if isinstance(data, UserDict) or isinstance(data, dict): # To support Huggingface dataset
                     self.model.find_last_layer(data)
                 else:
                     X = data[0]

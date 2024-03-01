@@ -31,7 +31,7 @@ def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n
 
     for data in val_loader:
         # If x is UserDict, then it is a from Huggingface dataset
-        if isinstance(data, UserDict):
+        if isinstance(data, UserDict) or isinstance(data, dict):
             X, y = data, data['labels']
         else:
             X, y = data
