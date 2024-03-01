@@ -39,13 +39,18 @@ class CurvatureInterface:
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.
+        self.params = [p for p in self.model.parameters() if p.requires_grad]
+        name_dict = {p.data_ptr(): name for name, p in self.model.named_parameters()}
+        self.params_dict = {name_dict[p.data_ptr()]: p for p in self.params}
 
     @property
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
     def jacobians(self, x, enable_backprop=False):
-        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
+        """
+        Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\),
+        via torch.func.
 
         Parameters
         ----------
@@ -61,10 +66,26 @@ class CurvatureInterface:
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        raise NotImplementedError
+        def model_fn_params_only(params_dict):
+            out = torch.func.functional_call(self.model, params_dict, x)
+            return out, out
+
+        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(self.params_dict)
+
+        # Concatenate over flattened parameters
+        Js = [
+            j.flatten(start_dim=-p.dim())
+            for j, p in zip(Js.values(), self.params_dict.values())
+        ]
+        Js = torch.cat(Js, dim=-1)
+
+        if self.subnetwork_indices is not None:
+            Js = Js[:, :, self.subnetwork_indices]
+
+        return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
     def last_layer_jacobians(self, x, enable_backprop=False):
-        """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\) 
+        """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
         Parameters
@@ -93,7 +114,8 @@ class CurvatureInterface:
         return Js, f
 
     def gradients(self, x, y):
-        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter \\(\\theta\\).
+        """Compute batch gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at
+        current parameter \\(\\theta\\).
 
         Parameters
         ----------
@@ -107,7 +129,31 @@ class CurvatureInterface:
         Gs : torch.Tensor
             gradients `(batch, parameters)`
         """
-        raise NotImplementedError
+        def loss_n(x_n, y_n, params_dict):
+            """Compute the gradient for a single sample."""
+            output = torch.func.functional_call(self.model, params_dict, x_n)
+            loss = torch.func.functional_call(self.lossfunc, {}, (output, y_n))
+            return loss, loss
+
+        batch_grad_fn, batch_loss = torch.func.vmap(torch.func.grad(loss_n, argnums=2, has_aux=True))
+
+        batch_size = x.shape[0]
+        params_replicated_dict = {
+            name: p.unsqueeze(0).expand(batch_size, *(p.dim() * [-1]))
+            for name, p in self.params_dict.items()
+        }
+
+        batch_grad = batch_grad_fn(x, y, params_replicated_dict)
+        Gs = torch.cat([bg.flatten(start_dim=1) for bg in batch_grad.values()], dim=1)
+
+        if self.subnetwork_indices is not None:
+            Gs = Gs[:, self.subnetwork_indices]
+
+        print(batch_loss.shape); input()
+
+        loss = batch_loss.sum(0)
+
+        return loss, Gs
 
     def full(self, x, y, **kwargs):
         """Compute a dense curvature (approximation) in the form of a \\(P \\times P\\) matrix
@@ -131,7 +177,7 @@ class CurvatureInterface:
     def kron(self, x, y, **kwargs):
         """Compute a Kronecker factored curvature approximation (such as KFAC).
         The approximation to \\(H\\) takes the form of two Kronecker factors \\(Q, H\\),
-        i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting 
+        i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting
         such curvature.
         \\(Q\\) is quadratic in the input-dimension of a module \\(p_{in} \\times p_{in}\\)
         and \\(H\\) in the output-dimension \\(p_{out} \\times p_{out}\\).
@@ -152,7 +198,7 @@ class CurvatureInterface:
         raise NotImplementedError
 
     def diag(self, x, y, **kwargs):
-        """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a 
+        """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a
         vector of the dimensionality of parameters \\(\\theta\\).
 
         Parameters

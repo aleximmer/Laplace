@@ -18,60 +18,6 @@ class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend.
     """
 
-    def jacobians(self, x, enable_backprop=False):
-        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
-        using asdfghjkl's gradient per output dimension.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            input data `(batch, input_shape)` on compatible device with model.
-        enable_backprop : bool, default = False
-            whether to enable backprop through the Js and f w.r.t. x
-
-        Returns
-        -------
-        Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
-        f : torch.Tensor
-            output function `(batch, outputs)`
-        """
-        Js = list()
-        for i in range(self.model.output_size):
-            def loss_fn(outputs, targets):
-                return outputs[:, i].sum()
-
-            f = batch_gradient(self.model, loss_fn, x, None).detach()
-            Jk = _get_batch_grad(self.model)
-            if self.subnetwork_indices is not None:
-                Jk = Jk[:, self.subnetwork_indices]
-            Js.append(Jk)
-        Js = torch.stack(Js, dim=1)
-        return Js, f
-
-    def gradients(self, x, y):
-        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
-        \\(\\theta\\) using asdfghjkl's backend.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            input data `(batch, input_shape)` on compatible device with model.
-        y : torch.Tensor
-
-        Returns
-        -------
-        loss : torch.Tensor
-        Gs : torch.Tensor
-            gradients `(batch, parameters)`
-        """
-        f = batch_gradient(self.model, self.lossfunc, x, y).detach()
-        Gs = _get_batch_grad(self._model)
-        if self.subnetwork_indices is not None:
-            Gs = Gs[:, self.subnetwork_indices]
-        loss = self.lossfunc(f, y)
-        return Gs, loss
-
     @property
     def _ggn_type(self):
         raise NotImplementedError
