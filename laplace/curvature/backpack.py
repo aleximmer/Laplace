@@ -18,7 +18,8 @@ class BackPackInterface(CurvatureInterface):
 
     def jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
-        using backpack's BatchGrad per output dimension.
+        using backpack's BatchGrad per output dimension. Note that BackPACK doesn't play well
+        with torch.func, so this method has to be overridden.
 
         Parameters
         ----------
@@ -42,12 +43,12 @@ class BackPackInterface(CurvatureInterface):
             with backpack(BatchGrad()):
                 if model.output_size > 1:
                     out[:, i].sum().backward(
-                        create_graph=enable_backprop, 
+                        create_graph=enable_backprop,
                         retain_graph=enable_backprop
                     )
                 else:
                     out.sum().backward(
-                        create_graph=enable_backprop, 
+                        create_graph=enable_backprop,
                         retain_graph=enable_backprop
                     )
                 to_cat = []
@@ -71,7 +72,8 @@ class BackPackInterface(CurvatureInterface):
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
-        \\(\\theta\\) using Backpack's BatchGrad.
+        \\(\\theta\\) using Backpack's BatchGrad. Note that BackPACK doesn't play well
+        with torch.func, so this method has to be overridden.
 
         Parameters
         ----------

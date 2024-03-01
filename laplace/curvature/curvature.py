@@ -149,8 +149,6 @@ class CurvatureInterface:
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
 
-        print(batch_loss.shape); input()
-
         loss = batch_loss.sum(0)
 
         return loss, Gs

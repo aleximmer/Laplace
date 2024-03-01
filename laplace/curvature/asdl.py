@@ -67,7 +67,7 @@ class AsdlInterface(CurvatureInterface):
             diag_ggn = diag_ggn[self.subnetwork_indices]
         return self.factor * loss, self.factor * diag_ggn
 
-    def kron(self, X, y, N, **wkwargs):
+    def kron(self, X, y, N, **kwargs):
         with torch.no_grad():
             if self.last_layer:
                 f, X = self.model.forward_with_features(X)
