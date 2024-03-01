@@ -125,9 +125,9 @@ class CurvatureInterface:
 
         Returns
         -------
-        loss : torch.Tensor
         Gs : torch.Tensor
             gradients `(batch, parameters)`
+        loss : torch.Tensor
         """
         def loss_n(x_n, y_n, params_dict):
             """Compute the gradient for a single sample."""
@@ -135,7 +135,7 @@ class CurvatureInterface:
             loss = torch.func.functional_call(self.lossfunc, {}, (output, y_n))
             return loss, loss
 
-        batch_grad_fn, batch_loss = torch.func.vmap(torch.func.grad(loss_n, argnums=2, has_aux=True))
+        batch_grad_fn = torch.func.vmap(torch.func.grad(loss_n, argnums=2, has_aux=True))
 
         batch_size = x.shape[0]
         params_replicated_dict = {
@@ -143,7 +143,7 @@ class CurvatureInterface:
             for name, p in self.params_dict.items()
         }
 
-        batch_grad = batch_grad_fn(x, y, params_replicated_dict)
+        batch_grad, batch_loss = batch_grad_fn(x, y, params_replicated_dict)
         Gs = torch.cat([bg.flatten(start_dim=1) for bg in batch_grad.values()], dim=1)
 
         if self.subnetwork_indices is not None:
@@ -151,7 +151,7 @@ class CurvatureInterface:
 
         loss = batch_loss.sum(0)
 
-        return loss, Gs
+        return Gs, loss
 
     def full(self, x, y, **kwargs):
         """Compute a dense curvature (approximation) in the form of a \\(P \\times P\\) matrix

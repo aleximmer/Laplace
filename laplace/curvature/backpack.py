@@ -83,9 +83,9 @@ class BackPackInterface(CurvatureInterface):
 
         Returns
         -------
-        loss : torch.Tensor
         Gs : torch.Tensor
             gradients `(batch, parameters)`
+        loss : torch.Tensor
         """
         f = self.model(x)
         loss = self.lossfunc(f, y)

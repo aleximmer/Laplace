@@ -36,8 +36,8 @@ class CurvlinopsInterface(CurvatureInterface):
 
     def _get_kron_factors(self, linop, M):
         kfacs = list()
-        # print([(k, c.shape) for k, c in linop._input_covariances.items()])
-        # print([(k, c.shape) for k, c in linop._gradient_covariances.items()])
+        print([(k, c.shape) for k, c in linop._input_covariances.items()])
+        print([(k, c.shape) for k, c in linop._gradient_covariances.items()])
         for mod_name, param_pos in linop._mapping.items():
             # print(param_pos)
             aaT = linop._input_covariances[mod_name]
@@ -50,7 +50,7 @@ class CurvlinopsInterface(CurvatureInterface):
             self.model, self.lossfunc, self.params, [(X, y)],
             fisher_type=self._kron_fisher_type,
             loss_average=None,  # Since self.lossfunc is sum
-            separate_weight_and_bias=True
+            separate_weight_and_bias=False
         )
         linop._compute_kfac()
 
@@ -106,6 +106,16 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
     @property
     def _linop_context(self):
         return cvls.EFLinearOperator
+
+    def diag(self, X, y, **kwargs):
+        # Gs is (batchsize, n_params)
+        Gs, loss = self.gradients(X, y)
+        diag_ef = torch.einsum('bp,bp->p', Gs, Gs)
+
+        if self.subnetwork_indices is not None:
+            diag_ef = diag_ef[self.subnetwork_indices]
+
+        return self.factor * loss.detach(), self.factor * diag_ef
 
 
 class CurvlinopsHessian(CurvlinopsInterface):
