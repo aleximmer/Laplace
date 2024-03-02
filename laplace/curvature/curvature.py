@@ -240,33 +240,31 @@ class GGNInterface(CurvatureInterface):
         self.num_samples = num_samples
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
-    def _get_full_ggn(self, Js, f, y):
-        """Compute full GGN from Jacobians.
+    def _sample_H_lik(self, f):
+        H_lik = 0
 
-        Parameters
-        ----------
-        Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
-        f : torch.Tensor
-            functions `(batch, outputs)`
-        y : torch.Tensor
-            labels compatible with loss
+        for _ in range(self.num_samples):
+            if self.likelihood == 'regression':
+                y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
+                grad_sample = f - y_sample  # functional MSE grad
+            else:  # classification with softmax
+                y_sample = torch.distributions.Multinomial(logits=f).sample()
+                # First functional derivative of the loglik is p - y
+                p = torch.softmax(f, dim=-1)
+                grad_sample = p - y_sample
 
-        Returns
-        -------
-        loss : torch.Tensor
-        H_ggn : torch.Tensor
-            full GGN approximation `(parameters, parameters)`
-        """
-        loss = self.factor * self.lossfunc(f, y)
+            H_lik += 1/self.num_samples * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
+
+        return H_lik
+
+    def _get_exact_H_lik(self, f):
         if self.likelihood == 'regression':
-            H_ggn = torch.einsum('mkp,mkq->pq', Js, Js)
+            return None
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)
             H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
-            H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
-        return loss.detach(), H_ggn
+            return H_lik
 
     def full(self, x, y, **kwargs):
         """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
@@ -283,54 +281,35 @@ class GGNInterface(CurvatureInterface):
         Returns
         -------
         loss : torch.Tensor
-        H_ggn : torch.Tensor
+        H : torch.Tensor
             GGN `(parameters, parameters)`
         """
-        if self.stochastic:
-            raise ValueError('Stochastic approximation not implemented for full GGN.')
+        Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
+        H_lik = self._sample_H_lik(f) if self.stochastic else self._get_exact_H_lik(f)
 
-        if self.last_layer:
-            Js, f = self.last_layer_jacobians(x)
-        else:
-            Js, f = self.jacobians(x)
-        loss, H_ggn = self._get_full_ggn(Js, f, y)
+        if H_lik is not None:
+            H = torch.einsum('bcp,bck,bkq->pq', Js, H_lik, Js)
+        else:  # The case of exact GGN for regression
+            H = torch.einsum('bcp,bcq->pq', Js, Js)
+        loss = self.factor * self.lossfunc(f, y)
 
-        return loss, H_ggn
+        return loss.detach(), H.detach()
 
     def diag(self, X, y, **kwargs):
         Js, f = self.last_layer_jacobians(X) if self.last_layer else self.jacobians(X)
         loss = self.factor * self.lossfunc(f, y)
 
-        if self.stochastic:
-            if self.likelihood == 'regression':
-                diag_H_lik = 0
-                for _ in range(self.num_samples):
-                    y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
-                    grad_sample = f - y_sample  # functional MSE grad
-                    diag_H_lik += 1/self.num_samples * (grad_sample * grad_sample)
-                H = torch.einsum('bcp,bc,bcp->p', Js, diag_H_lik, Js)
-            else:
-                H_lik = 0
-                for _ in range(self.num_samples):
-                    y_sample = torch.distributions.Multinomial(logits=f).sample()
-                    # First functional derivative of the loglik is p - y
-                    p = torch.softmax(f, dim=-1)
-                    grad_sample = p - y_sample
-                    H_lik += 1/self.num_samples * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
-                H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)
-        else:
-            if self.likelihood == 'regression':
-                H = torch.einsum('bcp,bcp->p', Js, Js)
-            else:
-                # second derivative of log lik is diag(p) - pp^T
-                p = torch.softmax(f, dim=-1)
-                H_lik = torch.diag_embed(p) - torch.einsum('mk,mc->mck', p, p)
-                H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)
+        H_lik = self._sample_H_lik(f) if self.stochastic else self._get_exact_H_lik(f)
+
+        if H_lik is not None:
+            H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)
+        else:  # The case of exact GGN for regression
+            H = torch.einsum('bcp,bcp->p', Js, Js)
 
         if self.subnetwork_indices is not None:
             H = H[self.subnetwork_indices]
 
-        return loss.detach(), H
+        return loss.detach(), H.detach()
 
 
 class EFInterface(CurvatureInterface):
@@ -375,7 +354,7 @@ class EFInterface(CurvatureInterface):
             EF `(parameters, parameters)`
         """
         Gs, loss = self.gradients(x, y)
-        H_ef = Gs.T @ Gs
+        H_ef = torch.einsum('bp,bq->pq', Gs, Gs)
         return self.factor * loss.detach(), self.factor * H_ef
 
     def diag(self, X, y, **kwargs):

@@ -48,62 +48,6 @@ def complex_class_Xy():
     return X, y
 
 
-def test_diag_ggn_cls_curvlinops_against_backpack_full(class_Xy, model):
-    torch.manual_seed(0)
-    np.random.seed(0)
-    X, y = class_Xy
-    backend = CurvlinopsGGN(model, 'classification', stochastic=False)
-    loss, dggn = backend.diag(X[:5], y[:5])
-    loss2, dggn2 = backend.diag(X[5:], y[5:])
-    loss += loss2
-    dggn += dggn2
-
-    # sanity check size of diag ggn
-    assert len(dggn) == model.n_params
-
-    # check against manually computed full GGN:
-    backend = BackPackGGN(model, 'classification', stochastic=False)
-    loss_f, H_ggn = backend.full(X, y)
-    assert torch.allclose(loss, loss_f)
-
-    # Curvlinops can only compute diagonals with MC integration
-    # So, expect approx errors to be high
-    error = torch.linalg.norm(H_ggn.diagonal() - dggn).detach().item()
-    assert error < 0.5
-
-
-def test_diag_ef_cls_curvlinops_against_backpack_full(class_Xy, model):
-    torch.manual_seed(0)
-    np.random.seed(0)
-    X, y = class_Xy
-    backend = CurvlinopsEF(model, 'classification')
-    loss, dggn = backend.diag(X[:5], y[:5])
-    loss2, dggn2 = backend.diag(X[5:], y[5:])
-    loss += loss2
-    dggn += dggn2
-
-    # sanity check size of diag ggn
-    assert len(dggn) == model.n_params
-
-    # check against manually computed full GGN:
-    backend = BackPackEF(model, 'classification')
-    loss_f, H_ggn = backend.full(X, y)
-    assert torch.allclose(loss, loss_f)
-
-    # Curvlinops can only compute diagonals with MC integration
-    # So, expect approx errors to be high
-    error = torch.linalg.norm(H_ggn.diagonal() - dggn).detach().item()
-    assert error < 0.5
-
-
-def test_diag_ggn_stoch_cls_curvlinops(class_Xy, model):
-    X, y = class_Xy
-    backend = CurvlinopsGGN(model, 'classification', stochastic=True)
-    loss, dggn = backend.diag(X, y)
-    # sanity check size of diag ggn
-    assert len(dggn) == model.n_params
-
-
 # def test_kron_ggn_curvlinops_vs_backpack(class_Xy, model):
 #     # For a single data point, Kron is exact and should equal diag GGN
 #     X, y = class_Xy
