@@ -235,7 +235,7 @@ class GGNInterface(CurvatureInterface):
     num_samples: int, default=100
         Number of samples used to approximate the stochastic Fisher
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False, num_samples=100):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False, num_samples=1):
         self.stochastic = stochastic
         self.num_samples = num_samples
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
@@ -302,26 +302,33 @@ class GGNInterface(CurvatureInterface):
         loss = self.factor * self.lossfunc(f, y)
 
         if self.stochastic:
-            diag_H_lik = 0
-            for _ in range(self.num_samples):
-                if self.likelihood == 'regression':
+            if self.likelihood == 'regression':
+                diag_H_lik = 0
+                for _ in range(self.num_samples):
                     y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
                     grad_sample = f - y_sample  # functional MSE grad
-                else:
+                    diag_H_lik += 1/self.num_samples * (grad_sample * grad_sample)
+                H = torch.einsum('bcp,bc,bcp->p', Js, diag_H_lik, Js)
+            else:
+                H_lik = 0
+                for _ in range(self.num_samples):
                     y_sample = torch.distributions.Multinomial(logits=f).sample()
                     # First functional derivative of the loglik is p - y
                     p = torch.softmax(f, dim=-1)
                     grad_sample = p - y_sample
-                diag_H_lik += 1/self.num_samples * (grad_sample * grad_sample)
-            H = torch.einsum('bcp,bc,bcp->p', Js, diag_H_lik, Js)
+                    H_lik += 1/self.num_samples * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
+                H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)
         else:
             if self.likelihood == 'regression':
                 H = torch.einsum('bcp,bcp->p', Js, Js)
             else:
                 # second derivative of log lik is diag(p) - pp^T
                 p = torch.softmax(f, dim=-1)
-                H_lik_diag = p - p*p
-                H = torch.einsum('bcp,bc,bcp->p', Js, H_lik_diag, Js)
+                H_lik = torch.diag_embed(p) - torch.einsum('mk,mc->mck', p, p)
+                H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)
+
+        if self.subnetwork_indices is not None:
+            H = H[self.subnetwork_indices]
 
         return loss.detach(), H
 
