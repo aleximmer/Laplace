@@ -294,6 +294,31 @@ class GGNInterface(CurvatureInterface):
 
         return loss, H_ggn
 
+    def diag(self, X, y, **kwargs):
+        Js, f = self.last_layer_jacobians(X) if self.last_layer else self.jacobians(X)
+        loss = self.factor * self.lossfunc(f, y)
+
+        if self.stochastic:
+            if self.likelihood == 'regression':
+                y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
+                grad = f - y_sample  # MSE grad
+            else:
+                y_sample = torch.distributions.Multinomial(logits=f).sample()
+                # First derivative of the loglik is p - y
+                p = torch.softmax(f, dim=-1)
+                grad = p - y_sample
+            H = torch.einsum('bcp,bc,bc,bcp->p', Js, grad, grad, Js)
+        else:
+            if self.likelihood == 'regression':
+                H = torch.einsum('bcp,bcp->p', Js, Js)
+            else:
+                # second derivative of log lik is diag(p) - pp^T
+                p = torch.softmax(f, dim=-1)
+                H_lik_diag = p - p*p
+                H = torch.einsum('bcp,bc,bcp->p', Js, H_lik_diag, Js)
+
+        return loss.detach(), H
+
 
 class EFInterface(CurvatureInterface):
     """Interface for Empirical Fisher as Hessian approximation.
@@ -339,3 +364,13 @@ class EFInterface(CurvatureInterface):
         Gs, loss = self.gradients(x, y)
         H_ef = Gs.T @ Gs
         return self.factor * loss.detach(), self.factor * H_ef
+
+    def diag(self, X, y, **kwargs):
+        # Gs is (batchsize, n_params)
+        Gs, loss = self.gradients(X, y)
+        diag_ef = torch.einsum('bp,bp->p', Gs, Gs)
+
+        if self.subnetwork_indices is not None:
+            diag_ef = diag_ef[self.subnetwork_indices]
+
+        return self.factor * loss.detach(), self.factor * diag_ef

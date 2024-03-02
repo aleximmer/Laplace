@@ -62,22 +62,6 @@ class CurvlinopsInterface(CurvatureInterface):
 
         return self.factor * loss.detach(), self.factor * kron
 
-    def diag(self, X, y, **kwargs):
-        linop = self._linop_context(self.model, self.lossfunc, self.params, [(X, y)])
-
-        diag_estimator = cvls.HutchinsonDiagonalEstimator(linop)
-        dggn = 0.
-        for _ in range(1000):
-            dggn += 1/1000 * torch.tensor(diag_estimator.sample(), dtype=self.params[0].dtype)
-
-        if self.subnetwork_indices is not None:
-            dggn = dggn[self.subnetwork_indices]
-
-        f = self.model(X)
-        loss = self.lossfunc(f, y)
-
-        return self.factor * loss.detach(), self.factor * dggn
-
 
 class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
     """Implementation of the `GGNInterface` using Curvlinops.
@@ -106,16 +90,6 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
     @property
     def _linop_context(self):
         return cvls.EFLinearOperator
-
-    def diag(self, X, y, **kwargs):
-        # Gs is (batchsize, n_params)
-        Gs, loss = self.gradients(X, y)
-        diag_ef = torch.einsum('bp,bp->p', Gs, Gs)
-
-        if self.subnetwork_indices is not None:
-            diag_ef = diag_ef[self.subnetwork_indices]
-
-        return self.factor * loss.detach(), self.factor * diag_ef
 
 
 class CurvlinopsHessian(CurvlinopsInterface):
