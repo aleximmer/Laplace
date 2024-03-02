@@ -232,9 +232,12 @@ class GGNInterface(CurvatureInterface):
         to apply the Laplace approximation over
     stochastic : bool, default=False
         Fisher if stochastic else GGN
+    num_samples: int, default=100
+        Number of samples used to approximate the stochastic Fisher
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False, num_samples=100):
         self.stochastic = stochastic
+        self.num_samples = num_samples
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
     def _get_full_ggn(self, Js, f, y):
@@ -299,15 +302,18 @@ class GGNInterface(CurvatureInterface):
         loss = self.factor * self.lossfunc(f, y)
 
         if self.stochastic:
-            if self.likelihood == 'regression':
-                y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
-                grad = f - y_sample  # MSE grad
-            else:
-                y_sample = torch.distributions.Multinomial(logits=f).sample()
-                # First derivative of the loglik is p - y
-                p = torch.softmax(f, dim=-1)
-                grad = p - y_sample
-            H = torch.einsum('bcp,bc,bc,bcp->p', Js, grad, grad, Js)
+            diag_H_lik = 0
+            for _ in range(self.num_samples):
+                if self.likelihood == 'regression':
+                    y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
+                    grad_sample = f - y_sample  # functional MSE grad
+                else:
+                    y_sample = torch.distributions.Multinomial(logits=f).sample()
+                    # First functional derivative of the loglik is p - y
+                    p = torch.softmax(f, dim=-1)
+                    grad_sample = p - y_sample
+                diag_H_lik += 1/self.num_samples * (grad_sample * grad_sample)
+            H = torch.einsum('bcp,bc,bcp->p', Js, diag_H_lik, Js)
         else:
             if self.likelihood == 'regression':
                 H = torch.einsum('bcp,bcp->p', Js, Js)
