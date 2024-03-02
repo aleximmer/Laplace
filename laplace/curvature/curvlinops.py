@@ -36,13 +36,25 @@ class CurvlinopsInterface(CurvatureInterface):
 
     def _get_kron_factors(self, linop, M):
         kfacs = list()
-        print([(k, c.shape) for k, c in linop._input_covariances.items()])
-        print([(k, c.shape) for k, c in linop._gradient_covariances.items()])
-        for mod_name, param_pos in linop._mapping.items():
-            # print(param_pos)
-            aaT = linop._input_covariances[mod_name]
-            ggT = linop._gradient_covariances[mod_name]
-            kfacs.append([ggT, aaT])  # Because the weights in PyTorch is (out_dim, in_dim)
+        for name, module in self._model.named_modules():
+            if name not in linop._mapping.keys():
+                continue
+
+            A = linop._input_covariances[name]
+            B = linop._gradient_covariances[name]
+
+            if hasattr(module, 'bias') and module.bias is not None:
+                # split up bias and weights
+                kfacs.append([B, A[:-1, :-1]])
+                kfacs.append([B * A[-1, -1] / M])
+            elif hasattr(module, 'weight'):
+                p, q = np.prod(B.shape), np.prod(A.shape)
+                if p == q == 1:
+                    kfacs.append([B * A])
+                else:
+                    kfacs.append([B, A])
+            else:
+                raise ValueError(f'Whats happening with {module}?')
         return Kron(kfacs)
 
     def kron(self, X, y, N, **kwargs):
@@ -54,8 +66,7 @@ class CurvlinopsInterface(CurvatureInterface):
         )
         linop._compute_kfac()
 
-        M = len(y)
-        kron = self._get_kron_factors(linop, M)
+        kron = self._get_kron_factors(linop, len(y))
         kron = self._rescale_kron_factors(kron, len(y), N)
 
         loss = self.lossfunc(self.model(X), y)
