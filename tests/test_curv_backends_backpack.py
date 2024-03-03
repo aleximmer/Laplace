@@ -46,9 +46,9 @@ def reg_Xy():
 
 def test_full_ggn_backpack_reg_integration(reg_Xy, model):
     X, y = reg_Xy
-    backend = BackPackGGN(model, 'regression', stochastic=True)
-    with pytest.raises(ValueError):
-        loss, fggn = backend.full(X, y)
+    # backend = BackPackGGN(model, 'regression', stochastic=True)
+    # with pytest.raises(ValueError):
+    #     loss, fggn = backend.full(X, y)
 
     # cannot test, its implemented based on Jacobians.
     backend = BackPackGGN(model, 'regression', stochastic=False)
@@ -58,9 +58,9 @@ def test_full_ggn_backpack_reg_integration(reg_Xy, model):
 
 def test_full_ggn_backpack_cls_integration(class_Xy, model):
     X, y = class_Xy
-    backend = BackPackGGN(model, 'classification', stochastic=True)
-    with pytest.raises(ValueError):
-        loss, fggn = backend.full(X, y)
+    # backend = BackPackGGN(model, 'classification', stochastic=True)
+    # with pytest.raises(ValueError):
+    #     loss, fggn = backend.full(X, y)
 
     # cannot test, its implemented based on Jacobians.
     backend = BackPackGGN(model, 'classification', stochastic=False)

@@ -125,4 +125,4 @@ class CurvlinopsHessian(CurvlinopsInterface):
         f = self.model(X)
         loss = self.lossfunc(f, y)
 
-        return self.factor * loss.detach(), self.factor * H
+        return self.factor * loss.detach(), self.factor * torch.tensor(H, dtype=f.dtype, device=f.device)

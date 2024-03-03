@@ -39,9 +39,9 @@ class CurvatureInterface:
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.
-        self.params = [p for p in self.model.parameters() if p.requires_grad]
-        name_dict = {p.data_ptr(): name for name, p in self.model.named_parameters()}
-        self.params_dict = {name_dict[p.data_ptr()]: p for p in self.params}
+        self.params = [p for p in model.parameters() if p.requires_grad]
+        self.params_dict = {k: v for k, v in model.named_parameters() if v.requires_grad}
+        self.buffers_dict = {k: v for k, v in model.named_buffers()}
 
     @property
     def _model(self):
@@ -66,11 +66,11 @@ class CurvatureInterface:
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        def model_fn_params_only(params_dict):
-            out = torch.func.functional_call(self.model, params_dict, x)
+        def model_fn_params_only(params_dict, buffers_dict):
+            out = torch.func.functional_call(self.model, (params_dict, buffers_dict), x)
             return out, out
 
-        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(self.params_dict)
+        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(self.params_dict, self.buffers_dict)
 
         # Concatenate over flattened parameters
         Js = [
@@ -129,21 +129,17 @@ class CurvatureInterface:
             gradients `(batch, parameters)`
         loss : torch.Tensor
         """
-        def loss_n(x_n, y_n, params_dict):
+        def loss_single(x, y, params_dict, buffers_dict):
             """Compute the gradient for a single sample."""
-            output = torch.func.functional_call(self.model, params_dict, x_n)
-            loss = torch.func.functional_call(self.lossfunc, {}, (output, y_n))
+            x, y = x.unsqueeze(0), y.unsqueeze(0)  # vmap removes the batch dimension
+            output = torch.func.functional_call(self.model, (params_dict, buffers_dict), x)
+            loss = torch.func.functional_call(self.lossfunc, {}, (output, y))
             return loss, loss
 
-        batch_grad_fn = torch.func.vmap(torch.func.grad(loss_n, argnums=2, has_aux=True))
+        grad_fn = torch.func.grad(loss_single, argnums=2, has_aux=True)
+        batch_grad_fn = torch.func.vmap(grad_fn, in_dims=(0, 0, None, None))
 
-        batch_size = x.shape[0]
-        params_replicated_dict = {
-            name: p.unsqueeze(0).expand(batch_size, *(p.dim() * [-1]))
-            for name, p in self.params_dict.items()
-        }
-
-        batch_grad, batch_loss = batch_grad_fn(x, y, params_replicated_dict)
+        batch_grad, batch_loss = batch_grad_fn(x, y, self.params_dict, self.buffers_dict)
         Gs = torch.cat([bg.flatten(start_dim=1) for bg in batch_grad.values()], dim=1)
 
         if self.subnetwork_indices is not None:
