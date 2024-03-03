@@ -34,7 +34,7 @@ class CurvlinopsInterface(CurvatureInterface):
                 F[1] *= M/N
         return kron
 
-    def _get_kron_factors(self, linop, M):
+    def _get_kron_factors(self, linop):
         kfacs = list()
         for name, module in self._model.named_modules():
             if name not in linop._mapping.keys():
@@ -44,9 +44,8 @@ class CurvlinopsInterface(CurvatureInterface):
             B = linop._gradient_covariances[name]
 
             if hasattr(module, 'bias') and module.bias is not None:
-                # split up bias and weights
-                kfacs.append([B, A[:-1, :-1]])
-                kfacs.append([B * A[-1, -1] / M])
+                kfacs.append([B, A])
+                kfacs.append([B])
             elif hasattr(module, 'weight'):
                 p, q = np.prod(B.shape), np.prod(A.shape)
                 if p == q == 1:
@@ -62,16 +61,22 @@ class CurvlinopsInterface(CurvatureInterface):
             self.model, self.lossfunc, self.params, [(X, y)],
             fisher_type=self._kron_fisher_type,
             loss_average=None,  # Since self.lossfunc is sum
-            separate_weight_and_bias=False
+            separate_weight_and_bias=True,
         )
         linop._compute_kfac()
 
-        kron = self._get_kron_factors(linop, len(y))
+        kron = self._get_kron_factors(linop)
         kron = self._rescale_kron_factors(kron, len(y), N)
+        kron *= self.factor
+
+        # Correction to match BackPACK & ASDL results
+        for factors in kron.kfacs:
+            for i in range(len(factors)):
+                factors[i] /= 2
 
         loss = self.lossfunc(self.model(X), y)
 
-        return self.factor * loss.detach(), self.factor * kron
+        return self.factor * loss.detach(), kron
 
 
 class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
