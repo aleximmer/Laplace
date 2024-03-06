@@ -4,10 +4,10 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal, Dirichlet, Normal
 
-from laplace.utils import (parameters_per_layer, invsqrt_precision, 
+from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples,
                            fix_prior_prec_structure)
-from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
+from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian, CurvlinopsGGN
 
 
 __all__ = ['BaseLaplace', 'ParametricLaplace',
@@ -62,7 +62,7 @@ class BaseLaplace:
         self.enable_backprop = enable_backprop
 
         if backend is None:
-            backend = AsdlGGN if likelihood == 'classification' else BackPackGGN
+            backend = CurvlinopsGGN
         self._backend = None
         self._backend_cls = backend
         self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
@@ -357,7 +357,7 @@ class ParametricLaplace(BaseLaplace):
     """
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., enable_backprop=False, 
+                 prior_mean=0., temperature=1., enable_backprop=False,
                  backend=None, backend_kwargs=None):
         super().__init__(model, likelihood, sigma_noise, prior_precision,
                          prior_mean, temperature, enable_backprop, backend, backend_kwargs)
@@ -527,7 +527,7 @@ class ParametricLaplace(BaseLaplace):
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
-    def __call__(self, x, pred_type='glm', joint=False, link_approx='probit', 
+    def __call__(self, x, pred_type='glm', joint=False, link_approx='probit',
                  n_samples=100, diagonal_output=False, generator=None):
         """Compute the posterior predictive on input data `x`.
 
@@ -543,13 +543,13 @@ class ParametricLaplace(BaseLaplace):
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible. 
+            For `pred_type='nn'`, only 'mc' is possible.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
             `pred_type='glm'`. If set to `True`, the predictive distribution
             has the same form as GP posterior, i.e. N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
-            If `False`, then only outputs the marginal predictive distribution. 
+            If `False`, then only outputs the marginal predictive distribution.
             Only available for regression and GLM predictive.
 
         n_samples : int
@@ -569,8 +569,8 @@ class ParametricLaplace(BaseLaplace):
             a distribution over classes (similar to a Softmax).
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
             with the mean and the predictive variance.
-            For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor 
-            is returned with the mean and the predictive covariance. 
+            For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
+            is returned with the mean and the predictive covariance.
         """
         if pred_type not in ['glm', 'nn']:
             raise ValueError('Only glm and nn supported as prediction types.')
@@ -580,7 +580,7 @@ class ParametricLaplace(BaseLaplace):
 
         if pred_type == 'nn' and link_approx != 'mc':
             raise ValueError('Only mc link approximation is supported for nn prediction type.')
-        
+
         if generator is not None:
             if not isinstance(generator, torch.Generator) or generator.device != x.device:
                 raise ValueError('Invalid random generator (check type and device).')
@@ -594,7 +594,7 @@ class ParametricLaplace(BaseLaplace):
                 return f_mu, f_var
             # classification
             if link_approx == 'mc':
-                return self.predictive_samples(x, pred_type='glm', n_samples=n_samples, 
+                return self.predictive_samples(x, pred_type='glm', n_samples=n_samples,
                                                diagonal_output=diagonal_output).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1. + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
@@ -623,7 +623,7 @@ class ParametricLaplace(BaseLaplace):
                 return samples.mean(dim=0), samples.var(dim=0)
             return samples.mean(dim=0)
 
-    def predictive_samples(self, x, pred_type='glm', n_samples=100, 
+    def predictive_samples(self, x, pred_type='glm', n_samples=100,
                            diagonal_output=False, generator=None):
         """Sample from the posterior predictive on input data `x`.
         Can be used, for example, for Thompson sampling.
@@ -720,7 +720,7 @@ class ParametricLaplace(BaseLaplace):
         `f_cov = Jacs @ P.inv() @ Jacs.T`, which is a batch*output x batch*output
         predictive covariance matrix.
 
-        This emulates the GP posterior covariance N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]). 
+        This emulates the GP posterior covariance N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
         Useful for joint predictions, such as in batched Bayesian optimization.
 
         Parameters
@@ -875,7 +875,7 @@ class KronLaplace(ParametricLaplace):
     _key = ('all', 'kron')
 
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, 
+                 prior_mean=0., temperature=1., enable_backprop=False, backend=None,
                  damping=False, **backend_kwargs):
         self.damping = damping
         self.H_facs = None
@@ -965,26 +965,26 @@ class KronLaplace(ParametricLaplace):
 
 
 class LowRankLaplace(ParametricLaplace):
-    """Laplace approximation with low-rank log likelihood Hessian (approximation). 
+    """Laplace approximation with low-rank log likelihood Hessian (approximation).
     The low-rank matrix is represented by an eigendecomposition (vecs, values).
     Based on the chosen `backend`, either a true Hessian or, for example, GGN
     approximation could be used.
     The posterior precision is computed as
     \\( P = V diag(l) V^T + P_0.\\)
-    To sample, compute the functional variance, and log determinant, algebraic tricks 
+    To sample, compute the functional variance, and log determinant, algebraic tricks
     are usedto reduce the costs of inversion to the that of a \\(K \times K\\) matrix
     if we have a rank of K.
-    
+
     See `BaseLaplace` for the full interface.
     """
     _key = ('all', 'lowrank')
-    def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, 
+    def __init__(self, model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0,
                  temperature=1, enable_backprop=False, backend=AsdlHessian, backend_kwargs=None):
-        super().__init__(model, likelihood, sigma_noise=sigma_noise, 
-                         prior_precision=prior_precision, prior_mean=prior_mean, 
-                         temperature=temperature, enable_backprop=enable_backprop, 
+        super().__init__(model, likelihood, sigma_noise=sigma_noise,
+                         prior_precision=prior_precision, prior_mean=prior_mean,
+                         temperature=temperature, enable_backprop=enable_backprop,
                          backend=backend, backend_kwargs=backend_kwargs)
-    
+
     def _init_H(self):
         self.H = None
 
