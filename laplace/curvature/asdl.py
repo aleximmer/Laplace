@@ -91,7 +91,7 @@ class AsdlInterface(CurvatureInterface):
                 kfacs.append([stats.kron.B, stats.kron.A[:-1, :-1]])
                 kfacs.append([stats.kron.B * stats.kron.A[-1, -1] / M])
             elif hasattr(module, 'weight'):
-                p, q = np.prod(stats.kron.B.shape), np.prod(stats.kron.A.shape)
+                p, q = stats.kron.B.numel(), stats.kron.A.numel()
                 if p == q == 1:
                     kfacs.append([stats.kron.B * stats.kron.A])
                 else:

@@ -2,12 +2,12 @@ from math import sqrt, pi, log
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.distributions import MultivariateNormal, Dirichlet, Normal
+from torch.distributions import MultivariateNormal
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples,
                            fix_prior_prec_structure)
-from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian, CurvlinopsGGN
+from laplace.curvature import AsdlHessian, CurvlinopsGGN
 
 
 __all__ = ['BaseLaplace', 'ParametricLaplace',
@@ -43,7 +43,7 @@ class BaseLaplace:
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., enable_backprop=False,
-                 backend=None, backend_kwargs=None):
+                 backend=CurvlinopsGGN, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -61,8 +61,6 @@ class BaseLaplace:
         self.temperature = temperature
         self.enable_backprop = enable_backprop
 
-        if backend is None:
-            backend = CurvlinopsGGN
         self._backend = None
         self._backend_cls = backend
         self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
