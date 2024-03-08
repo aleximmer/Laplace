@@ -77,10 +77,23 @@ class CurvlinopsInterface(CurvatureInterface):
 
         return self.factor * loss.detach(), kron
 
+    def full(self, X, y, **kwargs):
+        linop = self._linop_context(self.model, self.lossfunc, self.params, [(X, y)],
+                                    check_deterministic=False, **kwargs)
+        H = torch.as_tensor(
+            linop @ np.eye(linop.shape[0]),
+            dtype=X.dtype,
+            device=X.device
+        )
+
+        f = self.model(X)
+        loss = self.lossfunc(f, y)
+
+        return self.factor * loss.detach(), self.factor * H
+
 
 class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
-    """Implementation of the `GGNInterface` using Curvlinops.
-    """
+    """Implementation of the `GGNInterface` using Curvlinops."""
     def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
         self.stochastic = stochastic
@@ -95,8 +108,7 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
 
 
 class CurvlinopsEF(CurvlinopsInterface, EFInterface):
-    """Implementation of `EFInterface` using Curvlinops.
-    """
+    """Implementation of `EFInterface` using Curvlinops."""
 
     @property
     def _kron_fisher_type(self):
@@ -108,24 +120,8 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
 
 
 class CurvlinopsHessian(CurvlinopsInterface):
-
-    def __init__(self, model, likelihood, last_layer=False, low_rank=10):
-        super().__init__(model, likelihood, last_layer)
-        self.low_rank = low_rank
+    """Implementation of the full Hessian using Curvlinops."""
 
     @property
     def _linop_context(self):
         return HessianLinearOperator
-
-    def full(self, X, y, **kwargs):
-        linop = self._linop_context(self.model, self.lossfunc, self.params, [(X, y)])
-        H = torch.as_tensor(
-            linop @ np.eye(linop.shape[0]),
-            dtype=X.dtype,
-            device=X.device
-        )
-
-        f = self.model(X)
-        loss = self.lossfunc(f, y)
-
-        return self.factor * loss.detach(), self.factor * H
