@@ -1,14 +1,13 @@
 import torch
 import numpy as np
 
-import curvlinops as cvls
+from curvlinops import (
+    HessianLinearOperator, GGNLinearOperator, FisherMCLinearOperator, EFLinearOperator,
+    KFACLinearOperator
+)
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.utils import Kron
-
-from collections import UserDict
-
-from typing import *
 
 
 class CurvlinopsInterface(CurvatureInterface):
@@ -47,7 +46,7 @@ class CurvlinopsInterface(CurvatureInterface):
                 kfacs.append([B, A])
                 kfacs.append([B])
             elif hasattr(module, 'weight'):
-                p, q = np.prod(B.shape), np.prod(A.shape)
+                p, q = B.numel(), A.numel()
                 if p == q == 1:
                     kfacs.append([B * A])
                 else:
@@ -57,22 +56,22 @@ class CurvlinopsInterface(CurvatureInterface):
         return Kron(kfacs)
 
     def kron(self, X, y, N, **kwargs):
-        linop = cvls.KFACLinearOperator(
+        linop = KFACLinearOperator(
             self.model, self.lossfunc, self.params, [(X, y)],
             fisher_type=self._kron_fisher_type,
             loss_average=None,  # Since self.lossfunc is sum
             separate_weight_and_bias=True,
+            check_deterministic=False,  # To avoid overhead
+            # `kwargs` for `mc_samples` when `stochastic=True` and `kfac_approx` to
+            # choose between `'expand'` and `'reduce'`.
+            # Defaults to `mc_samples=1` and `kfac_approx='expand'.
+            **kwargs,
         )
         linop._compute_kfac()
 
         kron = self._get_kron_factors(linop)
         kron = self._rescale_kron_factors(kron, len(y), N)
         kron *= self.factor
-
-        # Correction to match BackPACK & ASDL results
-        for factors in kron.kfacs:
-            for i in range(len(factors)):
-                factors[i] /= 2
 
         loss = self.lossfunc(self.model(X), y)
 
@@ -92,7 +91,7 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
 
     @property
     def _linop_context(self):
-        return cvls.FisherMCLinearOperator if self.stochastic else cvls.GGNLinearOperator
+        return FisherMCLinearOperator if self.stochastic else GGNLinearOperator
 
 
 class CurvlinopsEF(CurvlinopsInterface, EFInterface):
@@ -105,7 +104,7 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
 
     @property
     def _linop_context(self):
-        return cvls.EFLinearOperator
+        return EFLinearOperator
 
 
 class CurvlinopsHessian(CurvlinopsInterface):
@@ -116,13 +115,17 @@ class CurvlinopsHessian(CurvlinopsInterface):
 
     @property
     def _linop_context(self):
-        return cvls.HessianLinearOperator
+        return HessianLinearOperator
 
     def full(self, X, y, **kwargs):
         linop = self._linop_context(self.model, self.lossfunc, self.params, [(X, y)])
-        H = linop @ np.eye(linop.shape[0])
+        H = torch.as_tensor(
+            linop @ np.eye(linop.shape[0]),
+            dtype=X.dtype,
+            device=X.device
+        )
 
         f = self.model(X)
         loss = self.lossfunc(f, y)
 
-        return self.factor * loss.detach(), self.factor * torch.tensor(H, dtype=f.dtype, device=f.device)
+        return self.factor * loss.detach(), self.factor * H
