@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian, BackPackGGN, AsdlHessian, AsdlEF
+from laplace.curvature import CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian, BackPackGGN, AsdlHessian, AsdlEF, AsdlGGN
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
@@ -66,28 +66,63 @@ def complex_reg_Xy():
     return X, y
 
 
-def test_full_hess_cls_curvlinops_vs_asdl(class_Xy, model):
-    X, y = class_Xy
-    backend = CurvlinopsHessian(model, 'classification')
+@pytest.mark.parametrize('loss_type', ['classification', 'regression'])
+def test_full_hess_curvlinops_vs_asdl(class_Xy, reg_Xy, model, loss_type):
+    X, y = class_Xy if loss_type == 'classification' else reg_Xy
+
+    backend = CurvlinopsHessian(model, loss_type)
     loss, H = backend.full(X, y)
 
-    backend = AsdlHessian(model, 'classification')
+    backend = AsdlHessian(model, loss_type)
+    loss_ref, H_ref = backend.full(X, y)
+
+    assert torch.allclose(loss, loss_ref)
+    assert torch.allclose(H, H_ref, rtol=5e-5)
+
+
+def test_full_ggn_curvlinops_vs_asdl(class_Xy, model):
+    X, y = class_Xy
+
+    backend = CurvlinopsGGN(model, 'classification', stochastic=False)
+    loss, H = backend.full(X, y)
+
+    backend = AsdlGGN(model, 'classification', stochastic=False)
     loss_ref, H_ref = backend.full(X, y)
 
     assert torch.allclose(loss, loss_ref)
     assert torch.allclose(H, H_ref)
 
 
-def test_full_hess_reg_curvlinops_vs_asdl(reg_Xy, model):
-    X, y = reg_Xy
-    backend = CurvlinopsHessian(model, 'regression')
+def test_full_ggn_stochastic(class_Xy, model):
+    X, y = class_Xy
+
+    backend = CurvlinopsGGN(model, 'classification', stochastic=True)
+    loss_mc1, H_mc1 = backend.full(X, y, mc_samples=1)
+
+    backend = CurvlinopsGGN(model, 'classification', stochastic=True)
+    loss_mc100, H_mc100 = backend.full(X, y, mc_samples=100)
+
+    backend = CurvlinopsGGN(model, 'classification', stochastic=False)
+    loss_exact, H_exact = backend.full(X, y)
+
+    assert torch.allclose(loss_mc1, loss_exact)
+    assert torch.allclose(loss_mc100, loss_exact)
+    diff_mc1 = torch.norm(H_mc1 - H_exact)
+    diff_mc100 = torch.norm(H_mc100 - H_exact)
+    assert torch.norm(diff_mc1) > torch.norm(diff_mc100)
+
+
+def test_full_ef_curvlinops_vs_asdl(class_Xy, model):
+    X, y = class_Xy
+
+    backend = CurvlinopsEF(model, 'classification')
     loss, H = backend.full(X, y)
 
-    backend = AsdlHessian(model, 'regression')
+    backend = AsdlEF(model, 'classification')
     loss_ref, H_ref = backend.full(X, y)
 
     assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(H, H_ref, atol=1e-6)
+    assert torch.allclose(H, H_ref)
 
 
 @pytest.mark.parametrize('loss_type', ['classification', 'regression'])
