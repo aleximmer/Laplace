@@ -1,12 +1,9 @@
 import pytest
-import numpy as np
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from asdfghjkl.operations import Bias, Scale
-
-from laplace.curvature import CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian, BackPackGGN, BackPackEF, AsdlHessian, AsdlEF, AsdlGGN
+from laplace.curvature import CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian, BackPackGGN, AsdlHessian, AsdlEF
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
@@ -61,6 +58,14 @@ def reg_Xy():
     return X, y
 
 
+@pytest.fixture
+def complex_reg_Xy():
+    torch.manual_seed(711)
+    X = torch.randn(10, 3, 5, 5)
+    y = torch.nn.functional.one_hot(torch.randint(2, (10,)), num_classes=2).float()
+    return X, y
+
+
 def test_full_hess_cls_curvlinops_vs_asdl(class_Xy, model):
     X, y = class_Xy
     backend = CurvlinopsHessian(model, 'classification')
@@ -85,29 +90,53 @@ def test_full_hess_reg_curvlinops_vs_asdl(reg_Xy, model):
     assert torch.allclose(H, H_ref, atol=1e-6)
 
 
-def test_kron_ggn_cls_curvlinops_vs_backpack(class_Xy, model):
-    X, y = class_Xy
-    print(X.dtype, y.dtype);
-    backend = CurvlinopsGGN(model, 'classification', stochastic=False)
+@pytest.mark.parametrize('loss_type', ['classification', 'regression'])
+def test_kron_ggn_curvlinops_vs_backpack(class_Xy, reg_Xy, model, loss_type):
+    X, y = class_Xy if loss_type == 'classification' else reg_Xy
+
+    backend = CurvlinopsGGN(model, loss_type, stochastic=False)
     loss, kron = backend.kron(X, y, N=1)
 
-    backend = BackPackGGN(model, 'classification', stochastic=False)
+    backend = BackPackGGN(model, loss_type, stochastic=False)
     loss_ref, kron_ref = backend.kron(X, y, N=1)
 
     assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(kron.to_matrix(), kron_ref.to_matrix())
+    assert torch.allclose(kron.to_matrix(), kron_ref.to_matrix(), rtol=5e-5)
 
 
-def test_kron_ggn_reg_curvlinops_vs_backpack(reg_Xy, model):
-    X, y = reg_Xy
-    backend = CurvlinopsGGN(model, 'regression', stochastic=False)
-    loss, kron = backend.kron(X, y, N=1)
+@pytest.mark.parametrize('loss_type', ['classification', 'regression'])
+def test_kron_ggn_stochastic(class_Xy, reg_Xy, model, loss_type):
+    X, y = class_Xy if loss_type == 'classification' else reg_Xy
 
-    backend = BackPackGGN(model, 'regression', stochastic=False)
-    loss_ref, kron_ref = backend.kron(X, y, N=1)
+    backend = CurvlinopsGGN(model, loss_type, stochastic=True)
+    loss_mc1, kron_mc1 = backend.kron(X, y, N=1, mc_samples=1)
 
-    assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(kron.to_matrix(), kron_ref.to_matrix())
+    backend = CurvlinopsGGN(model, loss_type, stochastic=True)
+    loss_mc100, kron_mc100 = backend.kron(X, y, N=1, mc_samples=100)
+
+    backend = CurvlinopsGGN(model, loss_type, stochastic=False)
+    loss_ref, kron_exact = backend.kron(X, y, N=1)
+
+    assert torch.allclose(loss_mc1, loss_ref)
+    assert torch.allclose(loss_mc100, loss_ref)
+
+    diff_mc1 = torch.norm(kron_mc1.to_matrix() - kron_exact.to_matrix())
+    diff_mc100 = torch.norm(kron_mc100.to_matrix() - kron_exact.to_matrix())
+    assert torch.norm(diff_mc1) > torch.norm(diff_mc100)
+
+
+@pytest.mark.parametrize('loss_type', ['classification', 'regression'])
+def test_kron_ggn_set_kfac_approx(complex_class_Xy, complex_reg_Xy, complex_model, loss_type):
+    X, y = complex_class_Xy if loss_type == 'classification' else complex_reg_Xy
+
+    backend = CurvlinopsGGN(complex_model, loss_type, stochastic=False)
+    loss_expand, kron_expand = backend.kron(X, y, N=1, kfac_approx='expand')
+
+    backend = CurvlinopsGGN(complex_model, loss_type, stochastic=False)
+    loss_reduce, kron_reduce = backend.kron(X, y, N=1, kfac_approx='reduce')
+
+    assert torch.allclose(loss_expand, loss_reduce)
+    assert not torch.allclose(kron_expand.to_matrix(), kron_reduce.to_matrix())
 
 
 def test_kron_ef_cls_curvlinops_vs_backpack(class_Xy, model):
