@@ -36,14 +36,14 @@ class BaseLaplace:
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
-        backend for access to curvature/Hessian approximations
+        backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.
     backend_kwargs : dict, default=None
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
     """
     def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
                  prior_mean=0., temperature=1., enable_backprop=False,
-                 backend=CurvlinopsGGN, backend_kwargs=None):
+                 backend=None, backend_kwargs=None):
         if likelihood not in ['classification', 'regression']:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
@@ -62,7 +62,7 @@ class BaseLaplace:
         self.enable_backprop = enable_backprop
 
         self._backend = None
-        self._backend_cls = backend
+        self._backend_cls = backend if backend is not None else CurvlinopsGGN
         self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
 
         # log likelihood = g(loss)
@@ -789,7 +789,7 @@ class FullLaplace(ParametricLaplace):
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.full(X, y, N=N)
+        return self.backend.full(X, y)
 
     def fit(self, train_loader, override=True):
         self._posterior_scale = None

@@ -1,5 +1,6 @@
 import torch
 from torch.nn import MSELoss, CrossEntropyLoss
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 
 class CurvatureInterface:
@@ -39,9 +40,9 @@ class CurvatureInterface:
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.
-        self.params = [p for p in model.parameters() if p.requires_grad]
-        self.params_dict = {k: v for k, v in model.named_parameters() if v.requires_grad}
-        self.buffers_dict = {k: v for k, v in model.named_buffers()}
+        self.params = [p for p in self._model.parameters() if p.requires_grad]
+        self.params_dict = {k: v for k, v in self._model.named_parameters() if v.requires_grad}
+        self.buffers_dict = {k: v for k, v in self.model.named_buffers()}
 
     @property
     def _model(self):
@@ -302,9 +303,6 @@ class GGNInterface(CurvatureInterface):
         else:  # The case of exact GGN for regression
             H = torch.einsum('bcp,bcp->p', Js, Js)
 
-        if self.subnetwork_indices is not None:
-            H = H[self.subnetwork_indices]
-
         return loss.detach(), H.detach()
 
 
@@ -357,8 +355,4 @@ class EFInterface(CurvatureInterface):
         # Gs is (batchsize, n_params)
         Gs, loss = self.gradients(X, y)
         diag_ef = torch.einsum('bp,bp->p', Gs, Gs)
-
-        if self.subnetwork_indices is not None:
-            diag_ef = diag_ef[self.subnetwork_indices]
-
         return self.factor * loss.detach(), self.factor * diag_ef

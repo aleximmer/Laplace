@@ -35,7 +35,7 @@ class CurvlinopsInterface(CurvatureInterface):
 
     def _get_kron_factors(self, linop):
         kfacs = list()
-        for name, module in self._model.named_modules():
+        for name, module in self.model.named_modules():
             if name not in linop._mapping.keys():
                 continue
 
@@ -78,6 +78,10 @@ class CurvlinopsInterface(CurvatureInterface):
         return self.factor * loss.detach(), kron
 
     def full(self, X, y, **kwargs):
+        # Fallback to torch.func backend for SubnetLaplace
+        if self.subnetwork_indices is not None:
+            return super().full(X, y, **kwargs)
+
         linop = self._linop_context(self.model, self.lossfunc, self.params, [(X, y)],
                                     check_deterministic=False, **kwargs)
         H = torch.as_tensor(

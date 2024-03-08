@@ -94,6 +94,7 @@ def test_full_ggn_curvlinops_vs_asdl(class_Xy, model):
 
 
 def test_full_ggn_stochastic(class_Xy, model):
+    torch.manual_seed(123)
     X, y = class_Xy
 
     backend = CurvlinopsGGN(model, 'classification', stochastic=True)
