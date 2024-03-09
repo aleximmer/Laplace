@@ -62,7 +62,7 @@ class LLLaplace(ParametricLaplace):
                  backend_kwargs=None):
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature, 
+                         prior_mean=0., temperature=temperature,
                          enable_backprop=enable_backprop, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(
@@ -103,12 +103,13 @@ class LLLaplace(ParametricLaplace):
         self.model.eval()
 
         if self.model.last_layer is None:
-            X, _ = next(iter(train_loader))
+            # Save an example batch for when loading the serialized Laplace
+            self.X, _ = next(iter(train_loader))
             with torch.no_grad():
                 try:
-                    self.model.find_last_layer(X[:1].to(self._device))
+                    self.model.find_last_layer(self.X[:1].to(self._device))
                 except (TypeError, AttributeError):
-                    self.model.find_last_layer(X.to(self._device))
+                    self.model.find_last_layer(self.X.to(self._device))
             params = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(params)
             self.n_layers = len(list(self.model.last_layer.parameters()))
@@ -125,7 +126,7 @@ class LLLaplace(ParametricLaplace):
 
     def _glm_predictive_distribution(self, X, joint=False):
         Js, f_mu = self.backend.last_layer_jacobians(X)
-        
+
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
@@ -163,6 +164,25 @@ class LLLaplace(ParametricLaplace):
 
         else:
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
+
+    def state_dict(self) -> dict:
+        state_dict = super().state_dict()
+        state_dict['X'] = self.X
+        return state_dict
+
+    def load_state_dict(self, state_dict: dict):
+        super().load_state_dict(state_dict)
+
+        self.X = state_dict['X']
+        with torch.no_grad():
+            try:
+                self.model.find_last_layer(self.X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                self.model.find_last_layer(self.X.to(self._device))
+
+        params = parameters_to_vector(self.model.last_layer.parameters()).detach()
+        self.n_params = len(params)
+        self.n_layers = len(list(self.model.last_layer.parameters()))
 
 
 class FullLLLaplace(LLLaplace, FullLaplace):
