@@ -10,7 +10,7 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 import os
 
-from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
+from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace, DiagSubnetLaplace, FullSubnetLaplace
 from laplace.utils import KronDecomposed
 from tests.utils import jacobians_naive
 
@@ -18,6 +18,7 @@ from tests.utils import jacobians_naive
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace]
+subnet_flavors = [DiagSubnetLaplace, FullSubnetLaplace]
 
 
 @pytest.fixture
@@ -37,7 +38,10 @@ def reg_loader():
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
-def _cleanup():
+@pytest.fixture(autouse=True)
+def cleanup():
+    yield
+    # Run after test
     if os.path.exists('state_dict.bin'):
         os.remove('state_dict.bin')
 
@@ -61,8 +65,6 @@ def test_serialize(laplace, model, reg_loader):
     assert torch.allclose(f_mean, f_mean2)
     assert torch.allclose(f_var, f_var2)
 
-    _cleanup()
-
 
 @pytest.mark.parametrize('laplace', flavors)
 def test_serialize_no_pickle(laplace, model, reg_loader):
@@ -77,7 +79,24 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
     for val in state_dict.values():
         assert isinstance(val, (list, tuple, int, float, torch.Tensor))
 
-    _cleanup()
 
+@pytest.mark.parametrize('laplace', subnet_flavors)
+def test_serialize_subnetlaplace(laplace, model, reg_loader):
+    subnetwork_indices = torch.LongTensor([1, 10, 104, 44])
+    la = laplace(model, 'regression', subnetwork_indices=subnetwork_indices)
+    la.fit(reg_loader)
+    la.optimize_prior_precision()
+    la.sigma_noise = 1231
+    torch.save(la.state_dict(), 'state_dict.bin')
 
+    la2 = laplace(model, 'regression', subnetwork_indices=subnetwork_indices)
+    la2.load_state_dict(torch.load('state_dict.bin'))
+
+    assert la.sigma_noise == la2.sigma_noise
+
+    X, _ = next(iter(reg_loader))
+    f_mean, f_var = la(X)
+    f_mean2, f_var2 = la2(X)
+    assert torch.allclose(f_mean, f_mean2)
+    assert torch.allclose(f_var, f_var2)
 
