@@ -62,7 +62,7 @@ class LLLaplace(ParametricLaplace):
                  backend_kwargs=None):
         self.H = None
         super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature, 
+                         prior_mean=0., temperature=temperature,
                          enable_backprop=enable_backprop, backend=backend,
                          backend_kwargs=backend_kwargs)
         self.model = FeatureExtractor(
@@ -125,7 +125,7 @@ class LLLaplace(ParametricLaplace):
 
     def _glm_predictive_distribution(self, X, joint=False):
         Js, f_mu = self.backend.last_layer_jacobians(X)
-        
+
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)

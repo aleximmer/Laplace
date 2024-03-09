@@ -12,9 +12,11 @@ from laplace.lllaplace import FullLLLaplace, KronLLLaplace, DiagLLLaplace
 from laplace.utils import FeatureExtractor
 from tests.utils import jacobians_naive
 
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    torch.set_default_dtype(torch.float64)
+    yield
 
-torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 
 
@@ -424,7 +426,7 @@ def test_backprop_glm(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -443,7 +445,7 @@ def test_backprop_glm_joint(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_cov.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_cov.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -462,7 +464,7 @@ def test_backprop_glm_mc(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -481,7 +483,7 @@ def test_backprop_nn(laplace, model, reg_loader):
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape

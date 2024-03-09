@@ -12,6 +12,12 @@ try:
 except ModuleNotFoundError:
     logging.info('asdfghjkl backend not available.')
 
+try:
+    from laplace.curvature.curvlinops import CurvlinopsHessian, CurvlinopsGGN, CurvlinopsEF, CurvlinopsInterface
+except ModuleNotFoundError:
+    logging.info('curvlinops backend not available.')
+
 __all__ = ['CurvatureInterface', 'GGNInterface', 'EFInterface',
            'BackPackInterface', 'BackPackGGN', 'BackPackEF',
-           'AsdlInterface', 'AsdlGGN', 'AsdlEF', 'AsdlHessian']
+           'AsdlInterface', 'AsdlGGN', 'AsdlEF', 'AsdlHessian',
+           'CurvlinopsInterface', 'CurvlinopsGGN', 'CurvlinopsEF', 'CurvlinopsHessian']

@@ -1,5 +1,6 @@
 import torch
 from torch.nn import MSELoss, CrossEntropyLoss
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 
 class CurvatureInterface:
@@ -39,13 +40,17 @@ class CurvatureInterface:
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.
+        self.params = [p for p in self._model.parameters() if p.requires_grad]
+        self.params_dict = {k: v for k, v in self._model.named_parameters() if v.requires_grad}
+        self.buffers_dict = {k: v for k, v in self.model.named_buffers()}
 
     @property
     def _model(self):
         return self.model.last_layer if self.last_layer else self.model
 
     def jacobians(self, x, enable_backprop=False):
-        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
+        """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\),
+        via torch.func.
 
         Parameters
         ----------
@@ -61,10 +66,26 @@ class CurvatureInterface:
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-        raise NotImplementedError
+        def model_fn_params_only(params_dict, buffers_dict):
+            out = torch.func.functional_call(self.model, (params_dict, buffers_dict), x)
+            return out, out
+
+        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(self.params_dict, self.buffers_dict)
+
+        # Concatenate over flattened parameters
+        Js = [
+            j.flatten(start_dim=-p.dim())
+            for j, p in zip(Js.values(), self.params_dict.values())
+        ]
+        Js = torch.cat(Js, dim=-1)
+
+        if self.subnetwork_indices is not None:
+            Js = Js[:, :, self.subnetwork_indices]
+
+        return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
     def last_layer_jacobians(self, x, enable_backprop=False):
-        """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\) 
+        """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
         Parameters
@@ -93,7 +114,8 @@ class CurvatureInterface:
         return Js, f
 
     def gradients(self, x, y):
-        """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter \\(\\theta\\).
+        """Compute batch gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at
+        current parameter \\(\\theta\\).
 
         Parameters
         ----------
@@ -103,11 +125,29 @@ class CurvatureInterface:
 
         Returns
         -------
-        loss : torch.Tensor
         Gs : torch.Tensor
             gradients `(batch, parameters)`
+        loss : torch.Tensor
         """
-        raise NotImplementedError
+        def loss_single(x, y, params_dict, buffers_dict):
+            """Compute the gradient for a single sample."""
+            x, y = x.unsqueeze(0), y.unsqueeze(0)  # vmap removes the batch dimension
+            output = torch.func.functional_call(self.model, (params_dict, buffers_dict), x)
+            loss = torch.func.functional_call(self.lossfunc, {}, (output, y))
+            return loss, loss
+
+        grad_fn = torch.func.grad(loss_single, argnums=2, has_aux=True)
+        batch_grad_fn = torch.func.vmap(grad_fn, in_dims=(0, 0, None, None))
+
+        batch_grad, batch_loss = batch_grad_fn(x, y, self.params_dict, self.buffers_dict)
+        Gs = torch.cat([bg.flatten(start_dim=1) for bg in batch_grad.values()], dim=1)
+
+        if self.subnetwork_indices is not None:
+            Gs = Gs[:, self.subnetwork_indices]
+
+        loss = batch_loss.sum(0)
+
+        return Gs, loss
 
     def full(self, x, y, **kwargs):
         """Compute a dense curvature (approximation) in the form of a \\(P \\times P\\) matrix
@@ -131,7 +171,7 @@ class CurvatureInterface:
     def kron(self, x, y, **kwargs):
         """Compute a Kronecker factored curvature approximation (such as KFAC).
         The approximation to \\(H\\) takes the form of two Kronecker factors \\(Q, H\\),
-        i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting 
+        i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting
         such curvature.
         \\(Q\\) is quadratic in the input-dimension of a module \\(p_{in} \\times p_{in}\\)
         and \\(H\\) in the output-dimension \\(p_{out} \\times p_{out}\\).
@@ -152,7 +192,7 @@ class CurvatureInterface:
         raise NotImplementedError
 
     def diag(self, x, y, **kwargs):
-        """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a 
+        """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a
         vector of the dimensionality of parameters \\(\\theta\\).
 
         Parameters
@@ -188,38 +228,42 @@ class GGNInterface(CurvatureInterface):
         to apply the Laplace approximation over
     stochastic : bool, default=False
         Fisher if stochastic else GGN
+    num_samples: int, default=100
+        Number of samples used to approximate the stochastic Fisher
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
+    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False, num_samples=1):
         self.stochastic = stochastic
+        self.num_samples = num_samples
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
-    def _get_full_ggn(self, Js, f, y):
-        """Compute full GGN from Jacobians.
-
-        Parameters
-        ----------
-        Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
-        f : torch.Tensor
-            functions `(batch, outputs)`
-        y : torch.Tensor
-            labels compatible with loss
-
-        Returns
-        -------
-        loss : torch.Tensor
-        H_ggn : torch.Tensor
-            full GGN approximation `(parameters, parameters)`
+    def _get_mc_functional_fisher(self, f):
+        """ Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
+        using MC integral with `self.num_samples` many samples.
         """
-        loss = self.factor * self.lossfunc(f, y)
+        F = 0
+
+        for _ in range(self.num_samples):
+            if self.likelihood == 'regression':
+                y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
+                grad_sample = f - y_sample  # functional MSE grad
+            else:  # classification with softmax
+                y_sample = torch.distributions.Multinomial(logits=f).sample()
+                # First functional derivative of the loglik is p - y
+                p = torch.softmax(f, dim=-1)
+                grad_sample = p - y_sample
+
+            F += 1/self.num_samples * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
+
+        return F
+
+    def _get_functional_hessian(self, f):
         if self.likelihood == 'regression':
-            H_ggn = torch.einsum('mkp,mkq->pq', Js, Js)
+            return None
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)
-            H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
-            H_ggn = torch.einsum('mcp,mck,mkq->pq', Js, H_lik, Js)
-        return loss.detach(), H_ggn
+            G = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
+            return G
 
     def full(self, x, y, **kwargs):
         """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
@@ -236,19 +280,32 @@ class GGNInterface(CurvatureInterface):
         Returns
         -------
         loss : torch.Tensor
-        H_ggn : torch.Tensor
+        H : torch.Tensor
             GGN `(parameters, parameters)`
         """
-        if self.stochastic:
-            raise ValueError('Stochastic approximation not implemented for full GGN.')
+        Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
+        H_lik = self._get_mc_functional_fisher(f) if self.stochastic else self._get_functional_hessian(f)
 
-        if self.last_layer:
-            Js, f = self.last_layer_jacobians(x)
-        else:
-            Js, f = self.jacobians(x)
-        loss, H_ggn = self._get_full_ggn(Js, f, y)
+        if H_lik is not None:
+            H = torch.einsum('bcp,bck,bkq->pq', Js, H_lik, Js)
+        else:  # The case of exact GGN for regression
+            H = torch.einsum('bcp,bcq->pq', Js, Js)
+        loss = self.factor * self.lossfunc(f, y)
 
-        return loss, H_ggn
+        return loss.detach(), H.detach()
+
+    def diag(self, X, y, **kwargs):
+        Js, f = self.last_layer_jacobians(X) if self.last_layer else self.jacobians(X)
+        loss = self.factor * self.lossfunc(f, y)
+
+        H_lik = self._get_mc_functional_fisher(f) if self.stochastic else self._get_functional_hessian(f)
+
+        if H_lik is not None:
+            H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)
+        else:  # The case of exact GGN for regression
+            H = torch.einsum('bcp,bcp->p', Js, Js)
+
+        return loss.detach(), H.detach()
 
 
 class EFInterface(CurvatureInterface):
@@ -293,5 +350,11 @@ class EFInterface(CurvatureInterface):
             EF `(parameters, parameters)`
         """
         Gs, loss = self.gradients(x, y)
-        H_ef = Gs.T @ Gs
+        H_ef = torch.einsum('bp,bq->pq', Gs, Gs)
         return self.factor * loss.detach(), self.factor * H_ef
+
+    def diag(self, X, y, **kwargs):
+        # Gs is (batchsize, n_params)
+        Gs, loss = self.gradients(X, y)
+        diag_ef = torch.einsum('bp,bp->p', Gs, Gs)
+        return self.factor * loss.detach(), self.factor * diag_ef
