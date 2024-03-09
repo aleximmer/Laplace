@@ -82,8 +82,9 @@ class CurvlinopsInterface(CurvatureInterface):
         if self.subnetwork_indices is not None:
             return super().full(X, y, **kwargs)
 
+        curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != 'N'}
         linop = self._linop_context(self.model, self.lossfunc, self.params, [(X, y)],
-                                    check_deterministic=False, **kwargs)
+                                    check_deterministic=False, **curvlinops_kwargs)
         H = torch.as_tensor(
             linop @ np.eye(linop.shape[0]),
             dtype=X.dtype,

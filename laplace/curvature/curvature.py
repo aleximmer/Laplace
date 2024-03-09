@@ -49,8 +49,7 @@ class CurvatureInterface:
         return self.model.last_layer if self.last_layer else self.model
 
     def jacobians(self, x, enable_backprop=False):
-        """
-        Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\),
+        """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\),
         via torch.func.
 
         Parameters
@@ -237,8 +236,11 @@ class GGNInterface(CurvatureInterface):
         self.num_samples = num_samples
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
-    def _sample_H_lik(self, f):
-        H_lik = 0
+    def _get_mc_functional_fisher(self, f):
+        """ Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
+        using MC integral with `self.num_samples` many samples.
+        """
+        F = 0
 
         for _ in range(self.num_samples):
             if self.likelihood == 'regression':
@@ -250,18 +252,18 @@ class GGNInterface(CurvatureInterface):
                 p = torch.softmax(f, dim=-1)
                 grad_sample = p - y_sample
 
-            H_lik += 1/self.num_samples * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
+            F += 1/self.num_samples * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
 
-        return H_lik
+        return F
 
-    def _get_exact_H_lik(self, f):
+    def _get_functional_hessian(self, f):
         if self.likelihood == 'regression':
             return None
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)
-            H_lik = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
-            return H_lik
+            G = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
+            return G
 
     def full(self, x, y, **kwargs):
         """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
@@ -282,7 +284,7 @@ class GGNInterface(CurvatureInterface):
             GGN `(parameters, parameters)`
         """
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
-        H_lik = self._sample_H_lik(f) if self.stochastic else self._get_exact_H_lik(f)
+        H_lik = self._get_mc_functional_fisher(f) if self.stochastic else self._get_functional_hessian(f)
 
         if H_lik is not None:
             H = torch.einsum('bcp,bck,bkq->pq', Js, H_lik, Js)
@@ -296,7 +298,7 @@ class GGNInterface(CurvatureInterface):
         Js, f = self.last_layer_jacobians(X) if self.last_layer else self.jacobians(X)
         loss = self.factor * self.lossfunc(f, y)
 
-        H_lik = self._sample_H_lik(f) if self.stochastic else self._get_exact_H_lik(f)
+        H_lik = self._get_mc_functional_fisher(f) if self.stochastic else self._get_functional_hessian(f)
 
         if H_lik is not None:
             H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)

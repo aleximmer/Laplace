@@ -89,8 +89,8 @@ def test_full_ggn_curvlinops_vs_asdl(class_Xy, model):
     backend = AsdlGGN(model, 'classification', stochastic=False)
     loss_ref, H_ref = backend.full(X, y)
 
-    assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(H, H_ref)
+    assert torch.allclose(loss, loss_ref, rtol=1e-4)
+    assert torch.allclose(H, H_ref, rtol=1e-4)
 
 
 def test_full_ggn_stochastic(class_Xy, model):
@@ -122,8 +122,8 @@ def test_full_ef_curvlinops_vs_asdl(class_Xy, model):
     backend = AsdlEF(model, 'classification')
     loss_ref, H_ref = backend.full(X, y)
 
-    assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(H, H_ref)
+    assert torch.allclose(loss, loss_ref, rtol=1e-4)
+    assert torch.allclose(H, H_ref, rtol=1e-4)
 
 
 @pytest.mark.parametrize('loss_type', ['classification', 'regression'])

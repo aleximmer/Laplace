@@ -789,7 +789,7 @@ class FullLaplace(ParametricLaplace):
         self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
 
     def _curv_closure(self, X, y, N):
-        return self.backend.full(X, y)
+        return self.backend.full(X, y, N=N)
 
     def fit(self, train_loader, override=True):
         self._posterior_scale = None
