@@ -989,6 +989,19 @@ class KronLaplace(ParametricLaplace):
         if len(self.prior_precision) not in [1, self.n_layers]:
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
+    def state_dict(self) -> dict:
+        self._check_H_init()
+        state_dict = super().state_dict()
+        state_dict['H'] = self.H_facs.kfacs
+        return state_dict
+
+    def load_state_dict(self, state_dict: dict):
+        super().load_state_dict(state_dict)
+        self._init_H()
+        self.H_facs = self.H
+        self.H_facs.kfacs = state_dict['H']
+        self.H = self.H_facs.decompose(damping=self.damping)
+
 
 class LowRankLaplace(ParametricLaplace):
     """Laplace approximation with low-rank log likelihood Hessian (approximation).

@@ -171,14 +171,14 @@ class LLLaplace(ParametricLaplace):
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
-        super().load_state_dict(state_dict)
-
         self.X = state_dict['X']
         with torch.no_grad():
             try:
                 self.model.find_last_layer(self.X[:1].to(self._device))
             except (TypeError, AttributeError):
                 self.model.find_last_layer(self.X.to(self._device))
+
+        super().load_state_dict(state_dict)
 
         params = parameters_to_vector(self.model.last_layer.parameters()).detach()
         self.n_params = len(params)
