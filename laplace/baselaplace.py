@@ -10,7 +10,7 @@ import torchmetrics as tm
 from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples,
                            fix_prior_prec_structure)
-from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
+from laplace.curvature import AsdlHessian, CurvlinopsGGN
 
 
 __all__ = ['BaseLaplace', 'ParametricLaplace',
@@ -44,7 +44,7 @@ class BaseLaplace:
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
-        backend for access to curvature/Hessian approximations
+        backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.
     backend_kwargs : dict, default=None
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
@@ -88,10 +88,10 @@ class BaseLaplace:
         self.enable_backprop = enable_backprop
 
         if backend is None:
-            backend = AsdlGGN
+            backend = CurvlinopsGGN
         else:
             if self.is_subset_params and 'backpack' in backend.__name__.lower():
-                raise ValueError('If some grad are switched off, only ASDL backend is supported.')
+                raise ValueError('If some grad are switched off, the BackPACK backend is not supported.')
 
         self._backend = None
         self._backend_cls = backend

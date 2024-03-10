@@ -1,5 +1,4 @@
 from typing import Tuple
-
 import torch
 
 from backpack import backpack, extend, memory_cleanup
@@ -20,7 +19,8 @@ class BackPackInterface(CurvatureInterface):
 
     def jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
-        using backpack's BatchGrad per output dimension.
+        using backpack's BatchGrad per output dimension. Note that BackPACK doesn't play well
+        with torch.func, so this method has to be overridden.
 
         Parameters
         ----------
@@ -73,7 +73,8 @@ class BackPackInterface(CurvatureInterface):
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
-        \\(\\theta\\) using Backpack's BatchGrad.
+        \\(\\theta\\) using Backpack's BatchGrad. Note that BackPACK doesn't play well
+        with torch.func, so this method has to be overridden.
 
         Parameters
         ----------
@@ -83,9 +84,9 @@ class BackPackInterface(CurvatureInterface):
 
         Returns
         -------
-        loss : torch.Tensor
         Gs : torch.Tensor
             gradients `(batch, parameters)`
+        loss : torch.Tensor
         """
         f = self.model(x)
         loss = self.lossfunc(f, y)

@@ -34,7 +34,7 @@ def X():
     return torch.randn(200, 3)
 
 
-@pytest.mark.parametrize('backend_cls', [AsdlInterface, BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface])
 def test_linear_jacobians(linear_model, X, backend_cls):
     # jacobian of linear model is input X.
     backend = backend_cls(linear_model, 'classification')
@@ -46,7 +46,7 @@ def test_linear_jacobians(linear_model, X, backend_cls):
     assert torch.allclose(f, linear_model(X), atol=1e-5)
 
 
-@pytest.mark.parametrize('backend_cls', [AsdlInterface, BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface])
 def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = singleoutput_model
     backend = backend_cls(model, 'classification')
@@ -58,7 +58,7 @@ def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     assert torch.allclose(f, f_naive)
 
 
-@pytest.mark.parametrize('backend_cls', [AsdlInterface, BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface])
 def test_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = multioutput_model
     backend = backend_cls(model, 'classification')
@@ -70,39 +70,7 @@ def test_jacobians_multioutput(multioutput_model, X, backend_cls):
     assert torch.allclose(f, f_naive)
 
 
-def test_functorch_linear_jacobians(linear_model, X):
-    # jacobian of linear model is input X.
-    backend = CurvatureInterface(linear_model, 'classification')
-    Js, f = backend.functorch_jacobians(X)
-    # into Jacs shape (batch_size, output_size, params)
-    true_Js = X.reshape(len(X), 1, -1)
-    assert true_Js.shape == Js.shape
-    assert torch.allclose(true_Js, Js, atol=1e-5)
-    assert torch.allclose(f, linear_model(X), atol=1e-5)
-
-
-def test_functorch_jacobians_singleoutput(singleoutput_model, X):
-    model = singleoutput_model
-    backend = CurvatureInterface(model, 'classification')
-    Js, f = backend.functorch_jacobians(X)
-    Js_naive, f_naive = jacobians_naive(model, X)
-    assert Js.shape == Js_naive.shape
-    assert torch.abs(Js-Js_naive).max() < 1e-6
-    assert torch.allclose(model(X), f_naive)
-    assert torch.allclose(f, f_naive)
-
-
-def test_functorch_jacobians_multioutput(multioutput_model, X):
-    model = multioutput_model
-    backend = CurvatureInterface(model, 'classification')
-    Js, f = backend.functorch_jacobians(X)
-    Js_naive, f_naive = jacobians_naive(model, X)
-    assert Js.shape == Js_naive.shape
-    assert torch.abs(Js-Js_naive).max() < 1e-6
-    assert torch.allclose(model(X), f_naive)
-    assert torch.allclose(f, f_naive)
-
-@pytest.mark.parametrize('backend_cls', [AsdlInterface, BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface])
 def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = FeatureExtractor(singleoutput_model)
     backend = backend_cls(model, 'classification')
@@ -115,7 +83,7 @@ def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     assert torch.allclose(f, f_naive)
 
 
-@pytest.mark.parametrize('backend_cls', [AsdlInterface, BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface])
 def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = FeatureExtractor(multioutput_model)
     backend = backend_cls(model, 'classification')
@@ -128,7 +96,7 @@ def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     assert torch.allclose(f, f_naive)
 
 
-@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
 def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(singleoutput_model, 'regression')
@@ -146,7 +114,7 @@ def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
         assert False
 
 
-@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
 def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(multioutput_model, 'regression')
@@ -165,7 +133,7 @@ def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
         assert False
 
 
-@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
 def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(
@@ -185,7 +153,7 @@ def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backe
         assert False
 
 
-@pytest.mark.parametrize('backend_cls', [BackPackInterface])
+@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
 def test_backprop_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(

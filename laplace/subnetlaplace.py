@@ -2,6 +2,7 @@ import torch
 from torch.distributions import MultivariateNormal
 
 from laplace.baselaplace import ParametricLaplace, FullLaplace, DiagLaplace
+from laplace.curvature import GGNInterface, EFInterface
 
 
 __all__ = ['SubnetLaplace', 'FullSubnetLaplace', 'DiagSubnetLaplace']
@@ -73,6 +74,9 @@ class SubnetLaplace(ParametricLaplace):
         super().__init__(model, likelihood, sigma_noise=sigma_noise,
                          prior_precision=prior_precision, prior_mean=prior_mean,
                          temperature=temperature, backend=backend, backend_kwargs=backend_kwargs)
+        if backend is not None:
+            if not isinstance(backend, GGNInterface) and not isinstance(backend, EFInterface):
+                raise ValueError('SubnetLaplace can only be used with GGN and EF.')
         # check validity of subnetwork indices and pass them to backend
         self._check_subnetwork_indices(subnetwork_indices)
         self.backend.subnetwork_indices = subnetwork_indices
