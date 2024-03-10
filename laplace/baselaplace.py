@@ -2,12 +2,12 @@ from math import sqrt, pi, log
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.distributions import MultivariateNormal, Dirichlet, Normal
+from torch.distributions import MultivariateNormal
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples,
                            fix_prior_prec_structure)
-from laplace.curvature import AsdlGGN, BackPackGGN, AsdlHessian
+from laplace.curvature import AsdlHessian, CurvlinopsGGN
 
 
 __all__ = ['BaseLaplace', 'ParametricLaplace',
@@ -36,7 +36,7 @@ class BaseLaplace:
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
-        backend for access to curvature/Hessian approximations
+        backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.
     backend_kwargs : dict, default=None
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
@@ -61,10 +61,8 @@ class BaseLaplace:
         self.temperature = temperature
         self.enable_backprop = enable_backprop
 
-        if backend is None:
-            backend = AsdlGGN if likelihood == 'classification' else BackPackGGN
         self._backend = None
-        self._backend_cls = backend
+        self._backend_cls = backend if backend is not None else CurvlinopsGGN
         self._backend_kwargs = dict() if backend_kwargs is None else backend_kwargs
 
         # log likelihood = g(loss)

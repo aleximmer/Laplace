@@ -12,7 +12,7 @@ There is also a corresponding paper, [*Laplace Redux — Effortless Bayesian Dee
 ```bibtex
 @inproceedings{laplace2021,
   title={Laplace Redux--Effortless {B}ayesian Deep Learning},
-  author={Erik Daxberger and Agustinus Kristiadi and Alexander Immer 
+  author={Erik Daxberger and Agustinus Kristiadi and Alexander Immer
           and Runa Eschenhagen and Matthias Bauer and Philipp Hennig},
   booktitle={{N}eur{IPS}},
   year={2021}
@@ -23,6 +23,7 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 ## Setup
 
 We assume `python3.8` since the package was developed with that version.
+PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with `pip`, run the following:
 ```bash
 pip install laplace-torch
@@ -60,10 +61,12 @@ One can also implement custom subnetwork selection strategies as new subclasses 
 
 Alternatively, extending or integrating backends (subclasses of [`curvature.curvature`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/curvature.py)) allows to provide different Hessian
 approximations to the Laplace approximations.
-For example, currently the [`curvature.BackPackInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/backpack.py) based on [BackPACK](https://github.com/f-dangel/backpack/) and [`curvature.AsdlInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/asdl.py) based on [ASDL](https://github.com/kazukiosawa/asdfghjkl) are available.
-The `curvature.AsdlInterface` provides a Kronecker factored empirical Fisher while the `curvature.BackPackInterface`
-does not, and only the `curvature.BackPackInterface` provides access to Hessian approximations
-for a regression (MSELoss) loss function.
+For example, currently the [`curvature.CurvlinopsInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/curvlinops.py) based on [Curvlinops](https://github.com/f-dangel/curvlinops) and the native `torch.func` (previously known as `functorch`), [`curvature.BackPackInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/backpack.py) based on [BackPACK](https://github.com/f-dangel/backpack/) and [`curvature.AsdlInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/asdl.py) based on [ASDL](https://github.com/kazukiosawa/asdfghjkl) are available.
+
+The `curvature.CurvlinopsInterface` backend is the default and provides all Hessian approximation variants except the low-rank Hessian.
+For the latter, `curvature.AsdlInterface` can be used.
+Note that `curvature.AsdlInterface` and `curvature.BackPackInterface` are less complete and less compatible than `curvature.CurvlinopsInterface`.
+So, we recommend to stick with `curvature.CurvlinopsInterface` unless you have a specific need of ASDL or BackPACK.
 
 ## Example usage
 
@@ -80,7 +83,7 @@ the `'probit'` predictive for classification.
 from laplace import Laplace
 
 # Pre-trained model
-model = load_map_model()  
+model = load_map_model()
 
 # User-specified LA flavor
 la = Laplace(model, 'classification',
@@ -104,7 +107,7 @@ the log marginal likelihood.
 from laplace import Laplace
 
 # Un- or pre-trained model
-model = load_model()  
+model = load_model()
 
 # Default to recommended last-layer KFAC LA:
 la = Laplace(model, likelihood='regression')

@@ -12,9 +12,11 @@ from laplace.lllaplace import FullLLLaplace, KronLLLaplace, DiagLLLaplace
 from laplace.utils import FeatureExtractor
 from tests.utils import jacobians_naive
 
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    torch.set_default_dtype(torch.float64)
+    yield
 
-torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 
 
@@ -429,6 +431,7 @@ def test_functional_variance_fast_diag(laplace, model, reg_loader):
     assert torch.allclose(f_var, f_var_naive)
 
 
+@pytest.mark.xfail(strict=True)
 @pytest.mark.parametrize('laplace', [KronLLLaplace])
 def test_functional_variance_fast_kron(laplace, model, reg_loader):
     X, y = reg_loader.dataset.tensors

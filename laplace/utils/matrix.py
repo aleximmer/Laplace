@@ -2,7 +2,7 @@ from math import pow
 import torch
 import numpy as np
 from typing import Union
-import opt_einsum as oe 
+import opt_einsum as oe
 
 from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
 
@@ -451,7 +451,7 @@ class KronDecomposed:
                 Ql = Qs[0] * torch.pow(ls[0] + delta, exponent).reshape(1, -1)
                 d = torch.einsum('mp,mp->m', Ql, Qs[0])  # only compute inner products for diag
                 diags.append(d)
-            else:  
+            else:
                 Q1, Q2 = Qs
                 l1, l2 = ls
                 if self.damping:
