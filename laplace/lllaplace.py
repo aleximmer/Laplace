@@ -84,6 +84,7 @@ class LLLaplace(ParametricLaplace):
             self.mean = self.prior_mean
             self._init_H()
         self._backend_kwargs['last_layer'] = True
+        self._last_layer_name = last_layer_name
 
     def fit(self, train_loader, override=True):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -167,16 +168,21 @@ class LLLaplace(ParametricLaplace):
 
     def state_dict(self) -> dict:
         state_dict = super().state_dict()
-        state_dict['X'] = self.X
+        state_dict['X'] = getattr(self, 'X', None)
+        state_dict['_last_layer_name'] = self._last_layer_name
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
+        if self._last_layer_name != state_dict['_last_layer_name']:
+            raise ValueError('Different `last_layer_name` detected!')
+
         self.X = state_dict['X']
-        with torch.no_grad():
-            try:
-                self.model.find_last_layer(self.X[:1].to(self._device))
-            except (TypeError, AttributeError):
-                self.model.find_last_layer(self.X.to(self._device))
+        if self.X is not None:
+            with torch.no_grad():
+                try:
+                    self.model.find_last_layer(self.X[:1].to(self._device))
+                except (TypeError, AttributeError):
+                    self.model.find_last_layer(self.X.to(self._device))
 
         super().load_state_dict(state_dict)
 
