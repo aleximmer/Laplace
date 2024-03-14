@@ -95,6 +95,25 @@ def test_serialize(laplace, model, reg_loader):
     assert torch.allclose(f_var, f_var2)
 
 
+@pytest.mark.parametrize('laplace', set(flavors_no_llla) - {LowRankLaplace, KronLaplace, FullLaplace})
+def test_serialize_override(laplace, model, reg_loader):
+    la = laplace(model, 'regression')
+    la.fit(reg_loader)
+    la.optimize_prior_precision()
+    la.sigma_noise = 1231
+    H_orig = la.H_kfacs.to_matrix() if laplace == KronLaplace else la.H
+    torch.save(la.state_dict(), 'state_dict.bin')
+
+    la2 = laplace(model, 'regression')
+    la2.load_state_dict(torch.load('state_dict.bin'))
+
+    # Emulating continual learning
+    la2.fit(reg_loader, override=False)
+
+    H_new = la2.H_kfacs.to_matrix() if laplace == KronLaplace else la2.H
+    assert not torch.allclose(H_orig, H_new)
+
+
 @pytest.mark.parametrize('laplace', flavors)
 def test_serialize_no_pickle(laplace, model, reg_loader):
     la = laplace(model, 'regression')
