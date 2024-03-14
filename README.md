@@ -69,7 +69,9 @@ pred = la(x, link_approx='probit')
 torch.save(la.state_dict(), 'state_dict.bin')
 
 # Load serialized Laplace
-la2 = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
+la2 = Laplace(model, 'classification',
+              subset_of_weights='all',
+              hessian_structure='diag')
 la2.load_state_dict(torch.load('state_dict.bin'))
 ```
 
