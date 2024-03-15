@@ -111,7 +111,7 @@ def test_serialize_override(laplace, model, reg_loader):
     la2.fit(reg_loader, override=False)
 
     H_new = la2.H_facs.to_matrix() if laplace == KronLaplace else la2.H
-    assert not torch.allclose(H_orig, H_new)
+    assert torch.allclose(2 * H_orig, H_new)
 
 
 @pytest.mark.parametrize('laplace', flavors)
