@@ -32,28 +32,24 @@ class Kron:
 
         Parameters
         ----------
-        model : torch.nn.Module
+        model : nn.Module or iterable of parameters, e.g. model.parameters()
         device : torch.device
 
         Returns
         -------
         kron : Kron
         """
-        kfacs = list()
-        for p in model.parameters():
-            if p.ndim == 1:  # bias
-                P = p.size(0)
-                kfacs.append([torch.zeros(P, P, device=device)])
-            elif 4 >= p.ndim >= 2:  # fully connected or conv
-                if p.ndim == 2:  # fully connected
-                    P_in, P_out = p.size()
-                elif p.ndim > 2:
-                    P_in, P_out = p.shape[0], np.prod(p.shape[1:])
+        if isinstance(model, torch.nn.Module):
+            params = model.parameters()
+        else:
+            params = model
 
-                kfacs.append([
-                    torch.zeros(P_in, P_in, device=device),
-                    torch.zeros(P_out, P_out, device=device)
-                ])
+        kfacs = list()
+        for p in params:
+            if p.ndim == 1:  # bias
+                kfacs.append([0.])
+            elif 4 >= p.ndim >= 2:  # fully connected or embedding or conv
+                kfacs.append([0., 0.])
             else:
                 raise ValueError('Invalid parameter shape in network.')
         return cls(kfacs)
@@ -72,7 +68,7 @@ class Kron:
         if not isinstance(other, Kron):
             raise ValueError('Can only add Kron to Kron.')
 
-        kfacs = [[Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
+        kfacs = [[Hi + Hj for Hi, Hj in zip(Fi, Fj)]
                  for Fi, Fj in zip(self.kfacs, other.kfacs)]
         return Kron(kfacs)
 
@@ -114,7 +110,14 @@ class Kron:
         for F in self.kfacs:
             Qs, ls = list(), list()
             for Hi in F:
-                l, Q = symeig(Hi)
+                if Hi.ndim > 1:
+                    # Dense Kronecker factor.
+                    l, Q = symeig(Hi)
+                else:
+                    # Diagonal Kronecker factor.
+                    l = Hi
+                    # This might be too memory intensive since len(Hi) can be large.
+                    Q = torch.eye(len(Hi), dtype=Hi.dtype, device=Hi.device)
                 Qs.append(Q)
                 ls.append(l)
             eigvecs.append(Qs)
@@ -145,14 +148,16 @@ class Kron:
                 Q = Fs[0]
                 p = len(Q)
                 W_p = W[:, cur_p:cur_p+p].T
-                SW.append((Q @ W_p).T)
+                SW.append((Q @ W_p).T if Q.ndim > 1 else (Q.view(-1, 1) * W_p).T)
                 cur_p += p
             elif len(Fs) == 2:
                 Q, H = Fs
                 p_in, p_out = len(Q), len(H)
                 p = p_in * p_out
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
-                SW.append((Q @ W_p @ H.T).reshape(B * K, p_in * p_out))
+                QW_p= Q @ W_p if Q.ndim > 1 else Q.view(-1, 1) * W_p
+                QW_pHt = QW_p @ H.T if H.ndim > 1 else QW_p * H.view(1, -1)
+                SW.append(QW_pHt.reshape(B * K, p_in * p_out))
                 cur_p += p
             else:
                 raise AttributeError('Shape mismatch')
@@ -200,11 +205,12 @@ class Kron:
         logdet = 0
         for F in self.kfacs:
             if len(F) == 1:
-                logdet += F[0].logdet()
+                logdet += F[0].logdet() if F[0].ndim > 1 else F[0].log().sum()
             else:  # len(F) == 2
                 Hi, Hj = F
                 p_in, p_out = len(Hi), len(Hj)
-                logdet += p_out * Hi.logdet() + p_in * Hj.logdet()
+                logdet += p_out * Hi.logdet() if Hi.ndim > 1 else p_out * Hi.log().sum()
+                logdet += p_in * Hj.logdet() if Hj.ndim > 1 else p_in * Hj.log().sum()
         return logdet
 
     def diag(self) -> torch.Tensor:
@@ -216,10 +222,12 @@ class Kron:
         """
         diags = list()
         for F in self.kfacs:
+            F0 = F[0].diag() if F[0].ndim > 1 else F[0]
             if len(F) == 1:
-                diags.append(F[0].diagonal())
+                diags.append(F0)
             else:
-                diags.append(torch.outer(F[0].diagonal(), F[1].diagonal()).flatten())
+                F1 = F[1].diag() if F[1].ndim > 1 else F[1]
+                diags.append(torch.outer(F0, F1).flatten())
         return torch.cat(diags)
 
     def to_matrix(self) -> torch.Tensor:
@@ -233,10 +241,12 @@ class Kron:
         """
         blocks = list()
         for F in self.kfacs:
+            F0 = F[0] if F[0].ndim > 1 else F[0].diag()
             if len(F) == 1:
-                blocks.append(F[0])
+                blocks.append(F0)
             else:
-                blocks.append(kron(F[0], F[1]))
+                F1 = F[1] if F[1].ndim > 1 else F[1].diag()
+                blocks.append(kron(F0, F1))
         return block_diag(blocks)
 
     # for commutative operations
@@ -374,11 +384,14 @@ class KronDecomposed:
         W = W.reshape(B * K, P)
         cur_p = 0
         SW = list()
-        for ls, Qs, delta in zip(self.eigenvalues, self.eigenvectors, self.deltas):
+        for i, (ls, Qs, delta) in enumerate(zip(self.eigenvalues, self.eigenvectors, self.deltas)):
             if len(ls) == 1:
                 Q, l, p = Qs[0], ls[0], len(ls[0])
                 ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
                 W_p = W[:, cur_p:cur_p+p].T
+                # print('c'); W_p.sum().backward(); input()
+                # if i == 3:
+                #     print('d'); (Q @ (ldelta_exp * (Q.T @ W_p))).T.sum().backward(); input()
                 SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
                 cur_p += p
             elif len(ls) == 2:
@@ -392,18 +405,24 @@ class KronDecomposed:
                     ldelta_exp = torch.pow(torch.outer(l1, l2) + delta, exponent).unsqueeze(0)
                 p_in, p_out = len(l1), len(l2)
                 W_p = W[:, cur_p:cur_p+p].reshape(B * K, p_in, p_out)
+                # print('c2'); W_p.sum().backward(); input()
                 W_p = (Q1.T @ W_p @ Q2) * ldelta_exp
                 W_p = Q1 @ W_p @ Q2.T
+                # if i == 2:
+                #     print('d2'); W_p.sum().backward(); input()
                 SW.append(W_p.reshape(B * K, p_in * p_out))
                 cur_p += p
             else:
                 raise AttributeError('Shape mismatch')
         SW = torch.cat(SW, dim=1).reshape(B, K, P)
+        # print('e'); SW.sum().backward(); input()
         return SW
 
     def inv_square_form(self, W: torch.Tensor) -> torch.Tensor:
         # W either Batch x K x params or Batch x params
+        # print('a'); W.sum().backward(); input()
         SW = self._bmm(W, exponent=-1)
+        # print('b'); SW.sum().backward(); input()
         return torch.bmm(W, SW.transpose(1, 2))
 
     def bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:

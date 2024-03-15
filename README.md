@@ -22,11 +22,18 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Setup
 
+For full compatibility, install this package in a fresh Conda/Mamba env.
 We assume `python3.8` since the package was developed with that version.
 PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with `pip`, run the following:
 ```bash
 pip install laplace-torch
+```
+
+
+Note that, if you would like to use ASDL as a backend, please install it via the following, for full compatibility:
+```bash
+pip install git+https://github.com/wiseodd/asdl.git@dev
 ```
 
 For development purposes, clone the repository and then install:

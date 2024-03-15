@@ -6,6 +6,9 @@ import torch.nn.functional as F
 from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torchmetrics import Metric
+from collections import UserDict
+import math
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
@@ -17,29 +20,52 @@ def get_nll(out_dist, targets):
 
 
 @torch.no_grad()
-def validate(laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100):
+def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False) -> float:
     laplace.model.eval()
-    output_means, output_vars = list(), list()
-    targets = list()
-    for X, y in val_loader:
-        X, y = X.to(laplace._device), y.to(laplace._device)
+    assert callable(loss) or isinstance(loss, Metric)
+    is_offline = not isinstance(loss, Metric)
+
+    if is_offline:
+        output_means, output_vars = list(), list()
+        targets = list()
+
+    for data in val_loader:
+        # If x is UserDict, then it is a from Huggingface dataset
+        if isinstance(data, UserDict) or isinstance(data, dict):
+            X, y = data, data['labels']
+        else:
+            X, y = data
+            X = X.to(laplace._device)
+        y = y.to(laplace._device)
         out = laplace(
             X, pred_type=pred_type,
             link_approx=link_approx,
             n_samples=n_samples)
 
         if type(out) == tuple:
-            output_means.append(out[0])
-            output_vars.append(out[1])
+            if is_offline:
+                output_means.append(out[0])
+                output_vars.append(out[1])
+                targets.append(y)
+            else:
+                loss.update(*out, y)
         else:
-            output_means.append(out)
+            if is_offline:
+                output_means.append(out)
+                targets.append(y)
+            else:
+                loss.update(out, y)
 
-        targets.append(y)
+    if is_offline:
+        if len(output_vars) == 0:
+            preds, targets = torch.cat(output_means, dim=0), torch.cat(targets, dim=0)
+            return loss(preds, targets).item()
 
-    if len(output_vars) == 0:
-        return torch.cat(output_means, dim=0), torch.cat(targets, dim=0)
-    return ((torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)),
-            torch.cat(targets, dim=0))
+        means, variances = torch.cat(output_means, dim=0), torch.cat(output_vars, dim=0)
+        targets = torch.cat(targets, dim=0)
+        return loss(means, variances, targets).item()
+    else:
+        return loss.compute().item()
 
 
 def parameters_per_layer(model):
@@ -208,7 +234,8 @@ def expand_prior_precision(prior_prec, model):
     expanded_prior_prec : torch.Tensor
         expanded prior precision has the same shape as model parameters
     """
-    theta = parameters_to_vector(model.parameters())
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    theta = parameters_to_vector(trainable_params)
     device, P = theta.device, len(theta)
     assert prior_prec.ndim == 1
     if len(prior_prec) == 1:  # scalar
@@ -217,12 +244,12 @@ def expand_prior_precision(prior_prec, model):
         return prior_prec.to(device)
     else:
         return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
-                          in zip(prior_prec, model.parameters())])
+                          in zip(prior_prec, trainable_params)])
 
 
 def fix_prior_prec_structure(prior_prec_init, prior_structure, n_layers, n_params, device):
     if prior_structure == 'scalar':
-        prior_prec_init = torch.full((1,), prior_prec_init, device=device)   
+        prior_prec_init = torch.full((1,), prior_prec_init, device=device)
     elif prior_structure == 'layerwise':
         prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device)
     elif prior_structure == 'diag':
@@ -248,9 +275,9 @@ def normal_samples(mean, var, n_samples, generator=None):
     """
     assert mean.ndim == 2, 'Invalid input shape of mean, should be 2-dimensional.'
     _, output_dim = mean.shape
-    randn_samples = torch.randn((output_dim, n_samples), device=mean.device, 
+    randn_samples = torch.randn((output_dim, n_samples), device=mean.device,
                                 dtype=mean.dtype, generator=generator)
-    
+
     if mean.shape == var.shape:
         # diagonal covariance
         scaled_samples = var.sqrt().unsqueeze(-1) * randn_samples.unsqueeze(0)

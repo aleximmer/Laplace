@@ -84,6 +84,49 @@ class CurvatureInterface:
 
         return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
+    def functorch_jacobians(self, x, enable_backprop=False):
+        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch, input_shape)` on compatible device with model.
+        enable_backprop : bool, default = False
+            whether to enable backprop through the Js and f w.r.t. x
+
+        Returns
+        -------
+        Js : torch.Tensor
+            Jacobians `(batch, parameters, outputs)`
+        f : torch.Tensor
+            output function `(batch, outputs)`
+        """
+        # Compute Js
+        # ------------------------
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        name_dict = {p.data_ptr(): name for name, p in self.model.named_parameters()}
+        params_dict = {name_dict[p.data_ptr()]: p for p in params}
+
+        def model_fn_params_only(params_dict):
+            return torch.func.functional_call(self.model, params_dict, x)
+
+        # concatenate over flattened parameters
+        Js = torch.func.jacrev(model_fn_params_only)(params_dict)
+        Js = [
+            j.flatten(start_dim=-p.dim())
+            for j, p in zip(Js.values(), params_dict.values())
+        ]
+        Js = torch.cat(Js, dim=-1)
+
+        if self.subnetwork_indices is not None:
+            Js = Js[:, :, self.subnetwork_indices]
+
+        # Compute f
+        # ------------------------
+        f = self.model(x)
+
+        return Js, f
+
     def last_layer_jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
@@ -105,7 +148,7 @@ class CurvatureInterface:
         output_size = int(f.numel() / bsize)
 
         # calculate Jacobians using the feature vector 'phi'
-        identity = torch.eye(output_size, device=x.device).unsqueeze(0).tile(bsize, 1, 1)
+        identity = torch.eye(output_size, device=next(self.model.parameters()).device).unsqueeze(0).tile(bsize, 1, 1)
         # Jacobians are batch x output x params
         Js = torch.einsum('kp,kij->kijp', phi, identity).reshape(bsize, output_size, -1)
         if self.model.last_layer.bias is not None:

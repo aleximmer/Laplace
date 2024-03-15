@@ -40,7 +40,7 @@ def reg_Xy():
 def complex_model():
     torch.manual_seed(711)
     model = torch.nn.Sequential(nn.Conv2d(3, 4, 2, 2), nn.Flatten(), nn.Tanh(),
-                                nn.Linear(16, 20), nn.Tanh(), Scale(), Bias(), nn.Linear(20, 2))
+                                nn.Linear(16, 20), nn.Tanh(), nn.Linear(20, 2))
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups

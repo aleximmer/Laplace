@@ -5,8 +5,14 @@ def get_psd_matrix(dim):
     X = torch.randn(dim, dim*3)
     return X @ X.T / (dim * 3)
 
+
+def get_diag_psd_matrix(dim):
+    return torch.randn(dim) ** 2
+
+
 def grad(model):
     return torch.cat([p.grad.data.flatten() for p in model.parameters()]).detach()
+
 
 def jacobians_naive(model, data):
     model.zero_grad()
