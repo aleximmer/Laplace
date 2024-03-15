@@ -6,6 +6,7 @@ from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, Dia
 from laplace.utils import FeatureExtractor, Kron
 
 from collections import UserDict
+from typing import *
 
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
@@ -88,6 +89,7 @@ class LLLaplace(ParametricLaplace):
             self.mean = self.prior_mean
             self._init_H()
         self._backend_kwargs['last_layer'] = True
+        self._last_layer_name = last_layer_name
 
     def fit(self, train_loader, override=True):
         """Fit the local Laplace approximation at the parameters of the model.
@@ -107,16 +109,8 @@ class LLLaplace(ParametricLaplace):
         self.model.eval()
 
         if self.model.last_layer is None:
-            data = next(iter(train_loader))
-            with torch.no_grad():
-                if isinstance(data, UserDict) or isinstance(data, dict): # To support Huggingface dataset
-                    self.model.find_last_layer(data)
-                else:
-                    X = data[0]
-                    try:
-                        self.model.find_last_layer(X[:1].to(self._device))
-                    except (TypeError, AttributeError):
-                        self.model.find_last_layer(X.to(self._device))
+            self.data = next(iter(train_loader))
+            self._find_last_layer(self.data)
             params = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(params)
             self.n_layers = len(list(self.model.last_layer.parameters()))
@@ -181,6 +175,38 @@ class LLLaplace(ParametricLaplace):
 
         else:
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
+
+    def state_dict(self) -> dict:
+        state_dict = super().state_dict()
+        state_dict['data'] = getattr(self, 'data', None)  # None if not present
+        state_dict['_last_layer_name'] = self._last_layer_name
+        return state_dict
+
+    def load_state_dict(self, state_dict: dict):
+        if self._last_layer_name != state_dict['_last_layer_name']:
+            raise ValueError('Different `last_layer_name` detected!')
+
+        self.data = state_dict['data']
+        if self.data is not None:
+            self._find_last_layer(self.data)
+
+        super().load_state_dict(state_dict)
+
+        params = parameters_to_vector(self.model.last_layer.parameters()).detach()
+        self.n_params = len(params)
+        self.n_layers = len(list(self.model.last_layer.parameters()))
+
+    @torch.no_grad()
+    def _find_last_layer(self, data: Union[UserDict, dict, torch.Tensor]) -> None:
+        # To support Huggingface dataset
+        if isinstance(data, UserDict) or isinstance(data, dict):
+            self.model.find_last_layer(data)
+        else:
+            X = data[0]
+            try:
+                self.model.find_last_layer(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                self.model.find_last_layer(X.to(self._device))
 
 
 class FullLLLaplace(LLLaplace, FullLaplace):

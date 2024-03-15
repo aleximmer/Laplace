@@ -23,6 +23,12 @@ def Laplace(model, likelihood, subset_of_weights='last_layer', hessian_structure
     if subset_of_weights == 'subnetwork' and hessian_structure not in ['full', 'diag']:
         raise ValueError('Subnetwork Laplace requires a full or diagonal Hessian approximation!')
 
+    # TODO remove when low-rank Laplace works again with the new ASDL
+    if hessian_structure == 'lowrank':
+        raise ValueError(
+            'Low-rank Laplace support is currently broken! Please use `hessian_structure=\'kron\'` as an alternative'
+        )
+
     laplace_map = {subclass._key: subclass for subclass in _all_subclasses(ParametricLaplace)
                    if hasattr(subclass, '_key')}
     laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
