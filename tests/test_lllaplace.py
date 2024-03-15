@@ -415,6 +415,39 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
 
+@pytest.mark.parametrize('laplace', [DiagLLLaplace])
+def test_functional_variance_fast_diag(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, 'regression', enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap._functional_variance_fast(X)
+
+    Js, f_naive = lap.backend.last_layer_jacobians(X)
+    f_var_naive = torch.einsum('ncp,p,nkp->nck', Js, lap.posterior_variance, Js)
+
+    assert torch.allclose(f_mu, f_naive)
+    assert torch.allclose(f_var, f_var_naive)
+
+
+@pytest.mark.xfail(strict=True)
+@pytest.mark.parametrize('laplace', [KronLLLaplace])
+def test_functional_variance_fast_kron(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, 'regression', enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap._functional_variance_fast(X)
+
+    Js, f_naive = lap.backend.last_layer_jacobians(X)
+    f_var_naive = lap.posterior_precision.inv_square_form(Js)
+
+    assert torch.allclose(f_mu, f_naive)
+    assert torch.allclose(f_var, f_var_naive)
+
+
 @pytest.mark.parametrize('laplace', flavors)
 def test_backprop_glm(laplace, model, reg_loader):
     X, y = reg_loader.dataset.tensors

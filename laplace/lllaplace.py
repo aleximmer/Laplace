@@ -126,15 +126,22 @@ class LLLaplace(ParametricLaplace):
             self.mean = self.mean.detach()
 
     def _glm_predictive_distribution(self, X, joint=False):
-        Js, f_mu = self.backend.last_layer_jacobians(X)
-
         if joint:
+            Js, f_mu = self.backend.last_layer_jacobians(X)
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
         else:
-            f_var = self.functional_variance(Js)
+            f_mu, f_var = self._functional_variance_fast(X)
 
         return (f_mu.detach(), f_var.detach()) if not self.enable_backprop else (f_mu, f_var)
+
+    def _functional_variance_fast(self, X):
+        """
+        Should be overriden if there exists a trick to make this fast!
+        """
+        Js, f_mu = self.backend.last_layer_jacobians(X)
+        f_var = self.functional_variance(Js)  # No trick possible for Full Laplace
+        return f_mu, f_var
 
     def _nn_predictive_samples(self, X, n_samples=100):
         fs = list()
@@ -227,6 +234,40 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
+    def _functional_variance_fast(self, X):
+        f_mu, phi = self.model.forward_with_features(X)
+        num_classes = f_mu.shape[-1]
+
+        # Contribution from the weights
+        # -----------------------------
+        eig_U, eig_V = self.posterior_precision.eigenvalues[0]
+        vec_U, vec_V = self.posterior_precision.eigenvectors[0]
+        delta = self.posterior_precision.deltas[0].sqrt()
+        inv_U_eig, inv_V_eig = torch.pow(eig_U + delta, -1), torch.pow(eig_V + delta, -1)
+
+        # Matrix form of the kron factors
+        U = torch.einsum('ik,k,jk->ij', vec_U, inv_U_eig, vec_U)
+        V = torch.einsum('ik,k,jk->ij', vec_V, inv_V_eig, vec_V)
+
+        # Using the identity of the Matrix Gaussian distribution
+        # phi is (batch_size, embd_dim), V is (embd_dim, embd_dim), U is (num_classes, num_classes)
+        # phiVphi is (batch_size,)
+        phiVphi = torch.einsum('bi,ij,bj->b', phi, V, phi)
+        f_var = torch.einsum('b,ij->bij', phiVphi, U)  # (batch_size, num_classes, num_classes)
+
+        if self.model.last_layer.bias is not None:
+            # Contribution from the biases
+            # ----------------------------
+            eig = self.posterior_precision.eigenvalues[1][0]
+            vec = self.posterior_precision.eigenvectors[1][0]
+            delta = self.posterior_precision.deltas[1].sqrt()
+            inv_eig = torch.pow(eig + delta, -1)
+
+            Sigma_bias = torch.einsum('ik,k,jk->ij', vec, inv_eig, vec)  # (num_classes, num_classes)
+            f_var += Sigma_bias.reshape(1, num_classes, num_classes)
+
+        return f_mu, f_var
+
 
 class DiagLLLaplace(LLLaplace, DiagLaplace):
     """Last-layer Laplace approximation with diagonal log likelihood Hessian approximation
@@ -236,3 +277,23 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     """
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'diag')
+
+    def _functional_variance_fast(self, X):
+        f_mu, phi = self.model.forward_with_features(X)
+        k = f_mu.shape[-1]  # num_classes
+        b, d = phi.shape  # batch_size, embd_dim
+
+        # Here, we exploit the fact that J Sigma J.T is (batch) diagonal
+        # We notice that the param variance is [vars_weight, vars_biases] and
+        # each functional variance phi^2*var_weight + var_bias
+        f_var_diag_only = torch.einsum('bd,kd,bd->bk', phi, self.posterior_variance[:d*k].reshape(k, d), phi)
+
+        if self.model.last_layer.bias is not None:
+            # Add the last num_classes variances, corresponding to the biases' variances
+            # (b,k) + (1,k) = (b,k)
+            f_var_diag_only += self.posterior_variance[-k:].reshape(1, k)
+
+        # (b,k) -> (b,k,k)
+        f_var = torch.diag_embed(f_var_diag_only)
+
+        return f_mu, f_var
