@@ -43,6 +43,14 @@ for i in range(n_epochs):
     neg_marglik.backward()
     hyper_optimizer.step()
 
+# Serialization for fitted quantities
+state_dict = la.state_dict()
+torch.save(state_dict, 'state_dict.bin')
+
+la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
+# Load serialized, fitted quantities
+la.load_state_dict(torch.load('state_dict.bin'))
+
 print(f'sigma={la.sigma_noise.item():.2f}',
       f'prior precision={la.prior_precision.item():.2f}')
 
@@ -51,11 +59,11 @@ x = X_test.flatten().cpu().numpy()
 # Two options:
 # 1.) Marginal predictive distribution N(f_map(x_i), var(x_i))
 # The mean is (m,k), the var is (m,k,k)
-f_mu, f_var = la(X_test)  
+f_mu, f_var = la(X_test)
 
 # 2.) Joint pred. dist. N((f_map(x_1),...,f_map(x_m)), Cov(f(x_1),...,f(x_m)))
 # The mean is (m*k,) where k is the output dim. The cov is (m*k,m*k)
-f_mu_joint, f_cov = la(X_test, joint=True)  
+f_mu_joint, f_cov = la(X_test, joint=True)
 
 # Both should be true
 assert torch.allclose(f_mu.flatten(), f_mu_joint)
@@ -65,14 +73,14 @@ f_mu = f_mu.squeeze().detach().cpu().numpy()
 f_sigma = f_var.squeeze().detach().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 
-plot_regression(X_train, y_train, x, f_mu, pred_std, 
-                file_name='regression_example', plot=False)
+plot_regression(X_train, y_train, x, f_mu, pred_std,
+                file_name='regression_example', plot=True)
 
 # alternatively, optimize parameters and hyperparameters of the prior jointly
 model = get_model()
 la, model, margliks, losses = marglik_training(
     model=model, train_loader=train_loader, likelihood='regression',
-    hessian_structure='full', backend=BackPackGGN, n_epochs=n_epochs, 
+    hessian_structure='full', backend=BackPackGGN, n_epochs=n_epochs,
     optimizer_kwargs={'lr': 1e-2}, prior_structure='scalar'
 )
 
@@ -83,5 +91,5 @@ f_mu, f_var = la(X_test)
 f_mu = f_mu.squeeze().detach().cpu().numpy()
 f_sigma = f_var.squeeze().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
-plot_regression(X_train, y_train, x, f_mu, pred_std, 
+plot_regression(X_train, y_train, x, f_mu, pred_std,
                 file_name='regression_example_online', plot=False)

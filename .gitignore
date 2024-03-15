@@ -132,3 +132,5 @@ dmypy.json
 data/
 
 .DS_Store
+
+state_dict.bin
