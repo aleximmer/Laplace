@@ -3,6 +3,7 @@ import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions import MultivariateNormal
+import warnings
 
 from laplace.utils import (parameters_per_layer, invsqrt_precision,
                            get_nll, validate, Kron, normal_samples,
@@ -768,6 +769,64 @@ class ParametricLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
+    def state_dict(self) -> dict:
+        self._check_H_init()
+        state_dict = {
+            'mean': self.mean,
+            'H': self.H,
+            'loss': self.loss,
+            'prior_mean': self.prior_mean,
+            'prior_precision': self.prior_precision,
+            'sigma_noise': self.sigma_noise,
+            'n_data': self.n_data,
+            'n_outputs': self.n_outputs,
+            'likelihood': self.likelihood,
+            'temperature': self.temperature,
+            'enable_backprop': self.enable_backprop,
+            'cls_name': self.__class__.__name__
+        }
+        return state_dict
+
+    def load_state_dict(self, state_dict: dict):
+        # Dealbreaker errors
+        if self.__class__.__name__ != state_dict['cls_name']:
+            raise ValueError(
+                'Loading a wrong Laplace type. Make sure `subset_of_weights` and'
+                + ' `hessian_structure` are correct!'
+            )
+        if self.n_params is not None and len(state_dict['mean']) != self.n_params:
+            raise ValueError(
+                'Attempting to load Laplace with different number of parameters than the model.'
+                + ' Make sure that you use the same `subset_of_weights` value and the same `.requires_grad`'
+                + ' switch on `model.parameters()`.'
+            )
+        if self.likelihood != state_dict['likelihood']:
+            raise ValueError('Different likelihoods detected!')
+
+        # Ignorable warnings
+        if self.prior_mean is None and state_dict['prior_mean'] is not None:
+            warnings.warn('Loading non-`None` prior mean into a `None` prior mean. You might get wrong results.')
+        if self.temperature != state_dict['temperature']:
+            warnings.warn('Different `temperature` parameters detected. Some calculation might be off!')
+        if self.enable_backprop != state_dict['enable_backprop']:
+            warnings.warn(
+                'Different `enable_backprop` values. You might encounter error when differentiating'
+                + ' the predictive mean and variance.'
+            )
+
+        self.mean = state_dict['mean']
+        self.H = state_dict['H']
+        self.loss = state_dict['loss']
+        self.prior_mean = state_dict['prior_mean']
+        self.prior_precision = state_dict['prior_precision']
+        self.sigma_noise = state_dict['sigma_noise']
+        self.n_data = state_dict['n_data']
+        self.n_outputs = state_dict['n_outputs']
+        setattr(self.model, 'output_size', self.n_outputs)
+        self.likelihood = state_dict['likelihood']
+        self.temperature = state_dict['temperature']
+        self.enable_backprop = state_dict['enable_backprop']
+
 
 class FullLaplace(ParametricLaplace):
     """Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -960,6 +1019,18 @@ class KronLaplace(ParametricLaplace):
         super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
         if len(self.prior_precision) not in [1, self.n_layers]:
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
+
+    def state_dict(self) -> dict:
+        state_dict = super().state_dict()
+        state_dict['H'] = self.H_facs.kfacs
+        return state_dict
+
+    def load_state_dict(self, state_dict: dict):
+        super().load_state_dict(state_dict)
+        self._init_H()
+        self.H_facs = self.H
+        self.H_facs.kfacs = state_dict['H']
+        self.H = self.H_facs.decompose(damping=self.damping)
 
 
 class LowRankLaplace(ParametricLaplace):
