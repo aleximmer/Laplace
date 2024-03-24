@@ -26,10 +26,10 @@ from laplace.laplace import (
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace]
 flavors_llla = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_subnet = [DiagSubnetLaplace, FullSubnetLaplace]
+flavors = flavors_llla + flavors_no_llla
 
 
 @pytest.fixture
