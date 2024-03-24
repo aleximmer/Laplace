@@ -1,12 +1,7 @@
-from math import sqrt, prod
 import pytest
-from itertools import product
-import numpy as np
-from copy import deepcopy
 from importlib.util import find_spec
 import torch
 from torch import nn
-from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 import os
@@ -27,8 +22,6 @@ from laplace.laplace import (
     SubnetLaplace,
 )
 
-from laplace.utils import KronDecomposed
-from tests.utils import jacobians_naive
 
 
 torch.manual_seed(240)
