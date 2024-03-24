@@ -23,13 +23,16 @@ class SubnetMask:
         self.model = model
         self.parameter_vector = parameters_to_vector(self.model.parameters()).detach()
         self._n_params = len(self.parameter_vector)
-        self._device = next(self.model.parameters()).device
         self._indices = None
         self._n_params_subnet = None
 
     def _check_select(self):
         if self._indices is None:
             raise AttributeError('Subnetwork mask not selected. Run select() first.')
+
+    @property
+    def _device(self):
+        return next(self.model.parameters()).device
 
     @property
     def indices(self):

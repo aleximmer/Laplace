@@ -49,7 +49,6 @@ class BaseLaplace:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
         self.model = model
-        self._device = next(model.parameters()).device
 
         self.n_params = len(parameters_to_vector(self.model.parameters()).detach())
         self.n_layers = len(list(self.model.parameters()))
@@ -70,6 +69,10 @@ class BaseLaplace:
         self.loss = 0.
         self.n_outputs = None
         self.n_data = 0
+
+    @property
+    def _device(self):
+        return next(self.model.parameters()).device
 
     @property
     def backend(self):
