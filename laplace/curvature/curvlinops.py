@@ -9,6 +9,8 @@ from curvlinops import (
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
 from laplace.utils import Kron
 
+from collections import UserDict
+
 
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>
@@ -56,6 +58,8 @@ class CurvlinopsInterface(CurvatureInterface):
         return Kron(kfacs)
 
     def kron(self, X, y, N, **kwargs):
+        if isinstance(X, (dict, UserDict)):
+            kwargs['batch_size_fn'] = lambda x: x['input_ids'].shape[0]
         linop = KFACLinearOperator(
             self.model, self.lossfunc, self.params, [(X, y)],
             fisher_type=self._kron_fisher_type,
@@ -83,12 +87,14 @@ class CurvlinopsInterface(CurvatureInterface):
             return super().full(X, y, **kwargs)
 
         curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != 'N'}
+        if isinstance(X, (dict, UserDict)):
+            curvlinops_kwargs['batch_size_fn'] = lambda x: x['input_ids'].shape[0]
+
         linop = self._linop_context(self.model, self.lossfunc, self.params, [(X, y)],
                                     check_deterministic=False, **curvlinops_kwargs)
         H = torch.as_tensor(
-            linop @ np.eye(linop.shape[0]),
-            dtype=X.dtype,
-            device=X.device
+            linop @ torch.eye(linop.shape[0]),
+            device=next(self.model.parameters()).device
         )
 
         f = self.model(X)
