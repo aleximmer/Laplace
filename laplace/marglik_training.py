@@ -30,12 +30,12 @@ def marglik_training(
     n_epochs_burnin=0,
     n_hypersteps=10,
     marglik_frequency=1,
-    prior_prec_init=1.,
-    sigma_noise_init=1.,
-    temperature=1.,
-    sigma_noise_fixed=None,
+    prior_prec_init=1.0,
+    sigma_noise_init=1.0,
+    temperature=1.0,
+    fix_sigma_noise=False,
     progress_bar=False,
-    enable_backprop=False
+    enable_backprop=False,
 ):
     """Marginal-likelihood based training (Algorithm 1 in [1]).
     Optimize model parameters and hyperparameters jointly.
@@ -108,8 +108,9 @@ def marglik_training(
         initial observation noise (for regression only)
     temperature : float, default=1.0
         factor for the likelihood for 'overcounting' data. Might be required for data augmentation.
-    sigma_noise_fixed: float or None, default=None
-        if None and regression, optimize via marglik. If float and regression, use it as it is.
+    fix_sigma_noise: bool, default=False
+        if False, optimize observation noise via marglik otherwise use `sigma_noise_init` throughout.
+        Only works for regression.
     progress_bar: bool, default=False
         whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
@@ -142,14 +143,15 @@ def marglik_training(
     # prior precision
     log_prior_prec_init = np.log(temperature * prior_prec_init)
     log_prior_prec = fix_prior_prec_structure(
-        log_prior_prec_init, prior_structure, H, P, device)
+        log_prior_prec_init, prior_structure, H, P, device
+    )
     log_prior_prec.requires_grad = True
     hyperparameters.append(log_prior_prec)
 
     # set up loss (and observation noise hyperparam)
     if likelihood == 'classification':
         criterion = CrossEntropyLoss(reduction='mean')
-        sigma_noise = 1.
+        sigma_noise = 1.0
     elif likelihood == 'regression':
         criterion = MSELoss(reduction='mean')
         log_sigma_noise_init = np.log(sigma_noise_init)
@@ -178,8 +180,13 @@ def marglik_training(
     margliks = list()
 
     pbar = tqdm.trange(
-        1, n_epochs + 1, disable=not progress_bar,
-        position=1, leave=False, desc='[Training]', colour='blue'
+        1,
+        n_epochs + 1,
+        disable=not progress_bar,
+        position=1,
+        leave=False,
+        desc='[Training]',
+        colour='blue',
     )
     for epoch in pbar:
         epoch_loss = 0
@@ -195,12 +202,18 @@ def marglik_training(
                 X, y = X.to(device, non_blocking=True), y.to(device, non_blocking=True)
             optimizer.zero_grad()
             if likelihood == 'regression':
-                sigma_noise = torch.exp(log_sigma_noise).detach() if sigma_noise_fixed is None else sigma_noise_fixed
+                sigma_noise = (
+                    torch.exp(log_sigma_noise).detach()
+                    if not fix_sigma_noise
+                    else sigma_noise_init
+                )
                 crit_factor = temperature / (2 * sigma_noise**2)
             else:
                 crit_factor = temperature
             prior_prec = torch.exp(log_prior_prec).detach()
-            theta = parameters_to_vector([p for p in model.parameters() if p.requires_grad])
+            theta = parameters_to_vector(
+                [p for p in model.parameters() if p.requires_grad]
+            )
             delta = expand_prior_precision(prior_prec, model)
             f = model(X)
             loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
@@ -217,8 +230,10 @@ def marglik_training(
         losses.append(epoch_loss / N)
 
         # compute validation error to report during training
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.' +
-                     f'Perf={epoch_perf/N:.3f}')
+        logging.info(
+            f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.'
+            + f'Perf={epoch_perf/N:.3f}'
+        )
 
         # only update hyperparameters every marglik_frequency steps after burnin
         if (epoch % marglik_frequency) != 0 or epoch < n_epochs_burnin:
@@ -229,19 +244,26 @@ def marglik_training(
         if likelihood == 'classification':
             sigma_noise = 1
         else:
-            sigma_noise = torch.exp(log_sigma_noise) if sigma_noise_fixed is None else sigma_noise_fixed
+            sigma_noise = (
+                torch.exp(log_sigma_noise) if not fix_sigma_noise else sigma_noise_init
+            )
         prior_prec = torch.exp(log_prior_prec)
         lap = Laplace(
-            model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise,
-            prior_precision=prior_prec, temperature=temperature, backend=backend,
-            subset_of_weights='all'
+            model,
+            likelihood,
+            hessian_structure=hessian_structure,
+            sigma_noise=sigma_noise,
+            prior_precision=prior_prec,
+            temperature=temperature,
+            backend=backend,
+            subset_of_weights='all',
         )
         lap.fit(train_loader)
 
         # 2. differentiate wrt. hyperparameters for n_hypersteps
         for _ in range(n_hypersteps):
             hyper_optimizer.zero_grad()
-            if likelihood == 'classification' or sigma_noise_fixed is not None:
+            if likelihood == 'classification' or fix_sigma_noise:
                 sigma_noise = None
             else:
                 sigma_noise = torch.exp(log_sigma_noise)
@@ -258,13 +280,21 @@ def marglik_training(
             if likelihood == 'classification':
                 best_sigma = 1
             else:
-                best_sigma = deepcopy(sigma_noise.detach()) if sigma_noise_fixed is None else sigma_noise_fixed
+                best_sigma = (
+                    deepcopy(sigma_noise.detach())
+                    if not fix_sigma_noise
+                    else sigma_noise_init
+                )
             best_marglik = margliks[-1]
-            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '
-                         + 'Saving new best model.')
+            logging.info(
+                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '
+                + 'Saving new best model.'
+            )
         else:
-            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}.'
-                         + f'No improvement over {best_marglik:.2f}')
+            logging.info(
+                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}.'
+                + f'No improvement over {best_marglik:.2f}'
+            )
 
     logging.info('MARGLIK: finished training. Recover best model and fit Laplace.')
     if best_model_dict is not None:
@@ -272,9 +302,15 @@ def marglik_training(
         sigma_noise = best_sigma
         prior_prec = best_precision
     lap = Laplace(
-        model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise,
-        prior_precision=prior_prec, temperature=temperature, backend=backend,
-        subset_of_weights='all', enable_backprop=enable_backprop
+        model,
+        likelihood,
+        hessian_structure=hessian_structure,
+        sigma_noise=sigma_noise,
+        prior_precision=prior_prec,
+        temperature=temperature,
+        backend=backend,
+        subset_of_weights='all',
+        enable_backprop=enable_backprop,
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses

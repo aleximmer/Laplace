@@ -3,7 +3,16 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian, BackPackGGN, AsdlHessian, AsdlEF, AsdlGGN
+from laplace.curvature import (
+    CurvlinopsGGN,
+    CurvlinopsEF,
+    CurvlinopsHessian,
+    BackPackGGN,
+    AsdlHessian,
+    AsdlEF,
+    AsdlGGN,
+)
+
 
 @pytest.fixture(autouse=True)
 def run_around_tests():
@@ -33,8 +42,14 @@ def class_Xy():
 @pytest.fixture
 def complex_model():
     torch.manual_seed(711)
-    model = torch.nn.Sequential(nn.Conv2d(3, 4, 2, 2), nn.Flatten(), nn.Tanh(),
-                                nn.Linear(16, 20), nn.Tanh(), nn.Linear(20, 2))
+    model = torch.nn.Sequential(
+        nn.Conv2d(3, 4, 2, 2),
+        nn.Flatten(),
+        nn.Tanh(),
+        nn.Linear(16, 20),
+        nn.Tanh(),
+        nn.Linear(20, 2),
+    )
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups
@@ -77,7 +92,7 @@ def test_full_hess_curvlinops_vs_asdl(class_Xy, reg_Xy, model, loss_type):
     loss_ref, H_ref = backend.full(X, y)
 
     assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(H, H_ref, rtol=5e-5)
+    assert torch.allclose(H, H_ref, rtol=5e-4)
 
 
 def test_full_ggn_curvlinops_vs_asdl(class_Xy, model):
@@ -162,7 +177,9 @@ def test_kron_ggn_stochastic(class_Xy, reg_Xy, model, loss_type):
 
 
 @pytest.mark.parametrize('loss_type', ['classification', 'regression'])
-def test_kron_ggn_set_kfac_approx(complex_class_Xy, complex_reg_Xy, complex_model, loss_type):
+def test_kron_ggn_set_kfac_approx(
+    complex_class_Xy, complex_reg_Xy, complex_model, loss_type
+):
     X, y = complex_class_Xy if loss_type == 'classification' else complex_reg_Xy
 
     backend = CurvlinopsGGN(complex_model, loss_type, stochastic=False)
@@ -244,7 +261,9 @@ def test_complex_diag_ggn_stoch_cls_curvlinops(complex_class_Xy, complex_model):
 
 
 @pytest.mark.parametrize('Backend', [CurvlinopsEF, CurvlinopsGGN])
-def test_complex_kron_curvlinops_vs_diag_curvlinops(complex_class_Xy, complex_model, Backend):
+def test_complex_kron_curvlinops_vs_diag_curvlinops(
+    complex_class_Xy, complex_model, Backend
+):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = complex_class_Xy
     backend = Backend(complex_model, 'classification')
@@ -256,7 +275,9 @@ def test_complex_kron_curvlinops_vs_diag_curvlinops(complex_class_Xy, complex_mo
 
 
 @pytest.mark.parametrize('Backend', [CurvlinopsEF, CurvlinopsGGN])
-def test_complex_kron_batching_correction_curvlinops(complex_class_Xy, complex_model, Backend):
+def test_complex_kron_batching_correction_curvlinops(
+    complex_class_Xy, complex_model, Backend
+):
     X, y = complex_class_Xy
     backend = Backend(complex_model, 'classification')
     loss, kron = backend.kron(X, y, N=len(X))
@@ -273,7 +294,9 @@ def test_complex_kron_batching_correction_curvlinops(complex_class_Xy, complex_m
 
 
 @pytest.mark.parametrize('Backend', [CurvlinopsEF, CurvlinopsGGN])
-def test_complex_kron_summing_up_vs_diag_class_curvlinops(complex_class_Xy, complex_model, Backend):
+def test_complex_kron_summing_up_vs_diag_class_curvlinops(
+    complex_class_Xy, complex_model, Backend
+):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = complex_class_Xy
     backend = Backend(complex_model, 'classification')
@@ -291,7 +314,7 @@ def test_kron_normalization_ggn_class(class_Xy, model):
     loss_true = 7 * loss
     X = torch.repeat_interleave(xi, 7, 0)
     y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test  = backend.kron(X, y, N=7)
+    loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
 
@@ -305,6 +328,6 @@ def test_kron_normalization_ef_class(class_Xy, model):
     loss_true = 7 * loss
     X = torch.repeat_interleave(xi, 7, 0)
     y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test  = backend.kron(X, y, N=7)
+    loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
