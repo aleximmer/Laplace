@@ -22,8 +22,8 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Setup
 
-For full compatibility, install this package in a fresh Conda/Mamba env.
-We assume `python3.8` since the package was developed with that version.
+For full compatibility, install this package in a fresh virtual env.
+We assume Python >= 3.8 (last tested on Python 3.10.12).
 PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with `pip`, run the following:
 ```bash

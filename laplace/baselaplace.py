@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 import tqdm
-from collections import UserDict
+from collections.abc import MutableMapping
 import torchmetrics as tm
 import warnings
 
@@ -36,8 +36,8 @@ class BaseLaplace:
     model : torch.nn.Module
     likelihood : {'classification', 'regression', 'reward_modeling'}
         determines the log likelihood Hessian approximation.
-        In the case of 'reward_modeling', it fit the Laplace in classification manner,
-        then do prediction as in regression. The model needs to be defined accordingly:
+        In the case of 'reward_modeling', it fits Laplace in using the classification likelihood,
+        then do prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
         `y.shape = (batch_size,)`. Meanwhile, during evaluation `x.shape == (batch_size, dim)`.
         Note that 'reward_modeling' only supports `KronLaplace` and `DiagLaplace`.
@@ -91,7 +91,7 @@ class BaseLaplace:
             else:
                 self.is_subset_params = True
 
-        self.n_params = len(parameters_to_vector(self.params).detach())
+        self.n_params = sum(p.numel() for p in self.params)
         self.n_layers = len(self.params)
         self.prior_precision = prior_precision
         self.prior_mean = prior_mean
@@ -201,7 +201,7 @@ class BaseLaplace:
             return self.prior_precision
 
         elif len(self.prior_precision) == self.n_layers:  # per layer
-            n_params_per_layer = [np.prod(p.shape) for p in self.params]
+            n_params_per_layer = [p.numel() for p in self.params]
             return torch.cat(
                 [
                     prior * torch.ones(n_params, device=self._device)
@@ -533,13 +533,14 @@ class ParametricLaplace(BaseLaplace):
 
         data = next(iter(train_loader))
         with torch.no_grad():
-            if isinstance(data, UserDict) or isinstance(
-                data, dict
-            ):  # To support Huggingface dataset
+            if isinstance(data, MutableMapping):  # To support Huggingface dataset
                 out = self.model(data)
             else:
                 X = data[0]
-                out = self.model(X.to(self._device))
+                try:
+                    out = self.model(X[:1].to(self._device))
+                except (TypeError, AttributeError):
+                    out = self.model(X.to(self._device))
         self.n_outputs = out.shape[-1]
         setattr(self.model, 'output_size', self.n_outputs)
 
@@ -551,9 +552,7 @@ class ParametricLaplace(BaseLaplace):
             pbar = train_loader
 
         for data in pbar:
-            if isinstance(data, UserDict) or isinstance(
-                data, dict
-            ):  # To support Huggingface dataset
+            if isinstance(data, MutableMapping):  # To support Huggingface dataset
                 X, y = data, data['labels'].to(self._device)
             else:
                 X, y = data
@@ -753,9 +752,6 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError('Invalid random generator (check type and device).')
 
-        # if self.is_subset_params and pred_type == 'glm':
-        # raise ValueError('Subset of params is only compatible with MC predictive.')
-
         # For reward modeling, replace the likelihood to regression and override model state
         if self.reward_modeling and self.likelihood == 'classification':
             self.likelihood = 'regression'
@@ -866,7 +862,7 @@ class ParametricLaplace(BaseLaplace):
             # BackPACK supports backprop through Jacobians, but it interferes with functorch
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
         else:
-            # For ASDL, we use functorch
+            # For ASDL and Curvlinops, we use functorch
             Js, f_mu = self.backend.functorch_jacobians(
                 X, enable_backprop=self.enable_backprop
             )

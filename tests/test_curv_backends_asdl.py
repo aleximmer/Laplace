@@ -37,8 +37,14 @@ def reg_Xy():
 @pytest.fixture
 def complex_model():
     torch.manual_seed(711)
-    model = torch.nn.Sequential(nn.Conv2d(3, 4, 2, 2), nn.Flatten(), nn.Tanh(),
-                                nn.Linear(16, 20), nn.Tanh(), nn.Linear(20, 2))
+    model = torch.nn.Sequential(
+        nn.Conv2d(3, 4, 2, 2),
+        nn.Flatten(),
+        nn.Tanh(),
+        nn.Linear(16, 20),
+        nn.Tanh(),
+        nn.Linear(20, 2),
+    )
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups
@@ -126,11 +132,8 @@ def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
     # check against manually computed full GGN:
     backend = BackPackEF(model2, 'regression')
     loss_bp, dggn_bp = backend.diag(X, y)
-    print(loss, loss_bp)
     assert torch.allclose(loss, loss_bp)
-    print(dggn[:10])
-    print(dggn_bp[:10])
-    assert torch.allclose(dggn, dggn_bp)# H_ggn.diagonal())
+    assert torch.allclose(dggn, dggn_bp)  # H_ggn.diagonal())
 
 
 def test_diag_ggn_stoch_cls_asdl(class_Xy, model):
@@ -203,8 +206,6 @@ def test_kron_asdl_vs_diag_reg(reg_Xy, model, Backend):
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
     loss, kron = backend.kron(X[:1], y[:1], N=1)
-    print(dggn)
-    print(kron.diag())
     assert torch.allclose(kron.diag(), dggn)
 
 
@@ -261,7 +262,9 @@ def test_complex_kron_asdl_vs_diag_asdl(complex_class_Xy, complex_model, Backend
 
 
 @pytest.mark.parametrize('Backend', [AsdlEF, AsdlGGN])
-def test_complex_kron_batching_correction_asdl(complex_class_Xy, complex_model, Backend):
+def test_complex_kron_batching_correction_asdl(
+    complex_class_Xy, complex_model, Backend
+):
     X, y = complex_class_Xy
     backend = Backend(complex_model, 'classification')
     loss, kron = backend.kron(X, y, N=len(X))
@@ -278,7 +281,9 @@ def test_complex_kron_batching_correction_asdl(complex_class_Xy, complex_model, 
 
 
 @pytest.mark.parametrize('Backend', [AsdlGGN, AsdlEF])
-def test_complex_kron_summing_up_vs_diag_class_asdl(complex_class_Xy, complex_model, Backend):
+def test_complex_kron_summing_up_vs_diag_class_asdl(
+    complex_class_Xy, complex_model, Backend
+):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = complex_class_Xy
     backend = Backend(complex_model, 'classification')
@@ -286,7 +291,7 @@ def test_complex_kron_summing_up_vs_diag_class_asdl(complex_class_Xy, complex_mo
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
 
-    
+
 def test_kron_summation_ggn_class(class_Xy, model):
     X, y = class_Xy
     X = torch.repeat_interleave(X[:1], 7, 0)
@@ -295,8 +300,6 @@ def test_kron_summation_ggn_class(class_Xy, model):
     loss_dg, diag = backend.diag(X, y)
     loss, kron = backend.kron(X, y, N=7)
     assert torch.allclose(loss_dg, loss)
-    print(diag, diag.shape)
-    print(kron.diag(), kron.diag().shape)
     assert torch.allclose(kron.diag(), diag)
 
 
@@ -320,7 +323,7 @@ def test_kron_normalization_ggn_class(class_Xy, model):
     loss_true = 7 * loss
     X = torch.repeat_interleave(xi, 7, 0)
     y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test  = backend.kron(X, y, N=7)
+    loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
 
@@ -334,7 +337,7 @@ def test_kron_normalization_ef_class(class_Xy, model):
     loss_true = 7 * loss
     X = torch.repeat_interleave(xi, 7, 0)
     y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test  = backend.kron(X, y, N=7)
+    loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
 
@@ -348,6 +351,6 @@ def test_kron_normalization_ggn_reg(reg_Xy, model):
     loss_true = 7 * loss
     X = torch.repeat_interleave(xi, 7, 0)
     y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test  = backend.kron(X, y, N=7)
+    loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
