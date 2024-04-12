@@ -139,56 +139,56 @@ class MyGPT2(nn.Module):
         output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
         return output_dict.logits
 
-    # Last-layer Laplace on the foundation model itself
-    # -------------------------------------------------
-    model = MyGPT2(tokenizer)
-    model.eval()
+# Last-layer Laplace on the foundation model itself
+# -------------------------------------------------
+model = MyGPT2(tokenizer)
+model.eval()
 
-    # Enable grad only for the last layer
-    for p in model.hf_model.parameters():
-        p.requires_grad = False
-    for p in model.hf_model.score.parameters():
-        p.requires_grad = True
+# Enable grad only for the last layer
+for p in model.hf_model.parameters():
+    p.requires_grad = False
+for p in model.hf_model.score.parameters():
+    p.requires_grad = True
 
-    la = Laplace(
-        model,
-        likelihood='classification',
-        # Will only hit the last-layer since it's the only one that is grad-enabled
-        subset_of_weights='all',
-        hessian_structure='diag',
+la = Laplace(
+    model,
+    likelihood='classification',
+    # Will only hit the last-layer since it's the only one that is grad-enabled
+    subset_of_weights='all',
+    hessian_structure='diag',
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+pred = la(next(iter(dataloader))
+
+# Laplace on the LoRA-attached LLM
+# --------------------------------
+def get_lora_model():
+    model = MyGPT2(tokenizer)  # Note we don't disable grad
+    config = LoraConfig(
+        r=4,
+        lora_alpha=16,
+        target_modules=['c_attn'],  # LoRA on the attention weights
+        lora_dropout=0.1,
+        bias='none',
     )
-    la.fit(dataloader)
-    la.optimize_prior_precision()
+    lora_model = get_peft_model(model, config)
+    return lora_model
 
-    pred = la(next(iter(dataloader))
+lora_model = get_lora_model()
+# Train it as usual here...
+lora_model.eval()
 
-    # Laplace on the LoRA-attached LLM
-    # --------------------------------
-    def get_lora_model():
-        model = MyGPT2(tokenizer)  # Note we don't disable grad
-        config = LoraConfig(
-            r=4,
-            lora_alpha=16,
-            target_modules=['c_attn'],  # LoRA on the attention weights
-            lora_dropout=0.1,
-            bias='none',
-        )
-        lora_model = get_peft_model(model, config)
-        return lora_model
+lora_la = Laplace(
+    lora_model,
+    likelihood='classification',
+    subset_of_weights='all',
+    hessian_structure='diag',
+    backend=AsdlGGN,
+)
 
-    lora_model = get_lora_model()
-    # Train it as usual here...
-    lora_model.eval()
-
-    lora_la = Laplace(
-        lora_model,
-        likelihood='classification',
-        subset_of_weights='all',
-        hessian_structure='diag',
-        backend=AsdlGGN,
-    )
-
-    lora_pred = lora_la(next(iter(dataloader)))
+lora_pred = lora_la(next(iter(dataloader)))
 ```
 
 ### Applying the LA over only a subset of the model parameters
