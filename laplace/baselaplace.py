@@ -80,7 +80,6 @@ class BaseLaplace:
             raise ValueError(f'Invalid likelihood type {likelihood}')
 
         self.model = model
-        self._device = next(model.parameters()).device
 
         # Only do Laplace on params that require grad
         self.params = []
@@ -128,6 +127,10 @@ class BaseLaplace:
         self.loss = 0.0
         self.n_outputs = None
         self.n_data = 0
+
+    @property
+    def _device(self):
+        return next(self.model.parameters()).device
 
     @property
     def backend(self):
