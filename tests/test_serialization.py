@@ -227,23 +227,23 @@ def test_serialize_fail_llla_different_last_layer_name(laplace, model, model3, r
 
 
 @pytest.mark.parametrize(
-    "model_device_str",
-    ["cpu", "cuda"] if torch.cuda.is_available() else ["cpu"],
+    'model_device_str',
+    ['cpu', 'cuda'] if torch.cuda.is_available() else ['cpu'],
 )
 @pytest.mark.parametrize(
-    "map_location",
-    ["cuda", "cpu"] if torch.cuda.is_available() else ["cpu"],
+    'map_location',
+    ['cuda', 'cpu'] if torch.cuda.is_available() else ['cpu'],
 )
-@pytest.mark.parametrize("laplace", flavors + flavors_subnet)
+@pytest.mark.parametrize('laplace', flavors + flavors_subnet)
 def test_map_location(
     laplace, model, reg_loader, tmp_path, map_location, model_device_str
 ):
     # Only for LLLaplace, we need dill.
     #   AttributeError: Can't pickle local object 'FeatureExtractor._get_hook.<locals>.hook'
     if issubclass(laplace, LLLaplace):
-        if find_spec("dill") is None:
+        if find_spec('dill') is None:
             pytest.skip(
-                reason="dill package not found but needed for this test"
+                reason='dill package not found but needed for this test'
             )
         else:
             import dill
@@ -257,7 +257,7 @@ def test_map_location(
         torch_save = lambda obj, fn: torch.save(obj, fn)
 
     device = torch.device(model_device_str)
-    kwds = dict(model=model.to(device), likelihood="regression")
+    kwds = dict(model=model.to(device), likelihood='regression')
     if issubclass(laplace, SubnetLaplace):
         kwds.update(subnetwork_indices=torch.LongTensor([1, 10, 104, 44]))
     la = laplace(**kwds)
@@ -270,7 +270,7 @@ def test_map_location(
     la.optimize_prior_precision()
     la.sigma_noise = 1231
 
-    save_fn = tmp_path / "la.pt"
+    save_fn = tmp_path / 'la.pt'
     torch_save(la, save_fn)
     la2 = torch.load(save_fn, map_location=map_location)
 
@@ -280,17 +280,17 @@ def test_map_location(
     # This is redundant if *all* will be used in the forward call below, where
     # things would fail if self._device is wrong.
     for name in [
-        "prior_precision_diag",
-        "prior_mean",
-        "prior_precision",
-        "sigma_noise",
+        'prior_precision_diag',
+        'prior_mean',
+        'prior_precision',
+        'sigma_noise',
     ]:
         assert (
             getattr(la, name).device.type == device.type
-        ), f"la.{name} failed"
+        ), f'la.{name} failed'
         assert (
             getattr(la2, name).device.type == map_location
-        ), f"la2.{name} failed"
+        ), f'la2.{name} failed'
 
     # Test tensor attrs.
     for name, obj in vars(la).items():
@@ -300,17 +300,17 @@ def test_map_location(
         # as in BaseLaplace.fit()). self.X won't be affected by self._device.
         # Since the predict() below passes, we ignore the wrong device here
         # for now.
-        if issubclass(laplace, LLLaplace) and name == "X":
+        if issubclass(laplace, LLLaplace) and name == 'X':
             continue
         if isinstance(obj, torch.Tensor):
-            assert obj.device.type == device.type, f"la.{name} failed"
+            assert obj.device.type == device.type, f'la.{name} failed'
             assert (
                 getattr(la2, name).device.type == map_location
-            ), f"la2.{name} failed"
+            ), f'la2.{name} failed'
 
     assert la.sigma_noise == la2.sigma_noise
     X, _ = next(iter(reg_loader))
     f_mean, f_var = la(X.to(device))
     f_mean2, f_var2 = la2(X.to(map_location))
-    assert torch.allclose(f_mean.to("cpu"), f_mean2.to("cpu"))
-    assert torch.allclose(f_var.to("cpu"), f_var2.to("cpu"))
+    assert torch.allclose(f_mean.to('cpu'), f_mean2.to('cpu'))
+    assert torch.allclose(f_var.to('cpu'), f_var2.to('cpu'))
