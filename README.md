@@ -64,15 +64,6 @@ la.optimize_prior_precision(method='gridsearch', val_loader=val_loader)
 
 # User-specified predictive approx.
 pred = la(x, link_approx='probit')
-
-# Serialization
-torch.save(la.state_dict(), 'state_dict.bin')
-
-# Load serialized Laplace
-la2 = Laplace(model, 'classification',
-              subset_of_weights='all',
-              hessian_structure='diag')
-la2.load_state_dict(torch.load('state_dict.bin'))
 ```
 
 ### Differentiating the log marginal likelihood w.r.t. hyperparameters
@@ -136,6 +127,60 @@ la = Laplace(model, 'classification',
 la.fit(train_loader)
 ```
 
+### Serialization
+
+As with plain `torch`, we support to ways to serialize data.
+
+One is the familiar `state_dict` approach. Here you need to save and re-create
+both `model` and  `Laplace`. Use this for long-term storage of models and
+sharing of a fitted `Laplace` instance.
+
+```py
+# Save model and Laplace instance
+torch.save(model.state_dict(), 'model_state_dict.bin')
+torch.save(la.state_dict(), 'la_state_dict.bin')
+
+# Load serialized data
+model2 = MyModel(...)
+model2.load_state_dict(torch.load('model_state_dict.bin'))
+la2 = Laplace(model2, 'classification',
+              subset_of_weights='all',
+              hessian_structure='diag')
+la2.load_state_dict(torch.load('la_state_dict.bin'))
+```
+
+The second approach is to save the whole `Laplace` object, including
+`self.model`. This is less verbose and more convenient since you have the
+trained model and the fitted `Laplace` data stored in one place, but [also comes with
+some
+drawbacks](https://pytorch.org/tutorials/beginner/saving_loading_models.html#saving-loading-model-for-inference).
+Use this for quick save-load cycles during experiments, say.
+
+```py
+# Save Laplace, including la.model
+torch.save(la, 'la.pt')
+
+# Load both
+torch.load('la.pt')
+```
+
+Some Laplace variants such as `LLLaplace` might have trouble being serialized
+using the default `pickle` module, which `torch.save()` and `torch.load()` use
+(`AttributeError: Can't pickle local object ...`). In this case, the
+[`dill`](https://github.com/uqfoundation/dill) package will come in handy.
+
+```py
+import dill
+
+torch.save(la, 'la.pt', pickle_module=dill)
+```
+
+With both methods, you are free to switch devices, for instance when you
+trained on a GPU but want to run predictions on CPU. In this case, use
+
+```py
+torch.load(..., map_location='cpu')
+```
 
 ## Structure
 The laplace package consists of two main components:
