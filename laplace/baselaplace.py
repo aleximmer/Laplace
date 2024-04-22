@@ -696,8 +696,9 @@ class ParametricLaplace(BaseLaplace):
 
         Parameters
         ----------
-        x : torch.Tensor
-            `(batch_size, input_shape)`
+        x : torch.Tensor or MutableMapping
+            `(batch_size, input_shape)` if tensor. If MutableMapping, must contain
+            the said tensor.
 
         pred_type : {'glm', 'nn'}, default='glm'
             type of posterior predictive, linearized GLM predictive or neural
@@ -886,7 +887,9 @@ class ParametricLaplace(BaseLaplace):
         fs = list()
         for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.params)
-            logits = self.model(X.to(self._device), **model_kwargs)
+            logits = self.model(
+                X.to(self._device) if isinstance(X, torch.Tensor) else X, **model_kwargs
+            )
             fs.append(logits.detach() if not self.enable_backprop else logits)
         vector_to_parameters(self.mean, self.params)
         fs = torch.stack(fs)
@@ -898,7 +901,9 @@ class ParametricLaplace(BaseLaplace):
         py = 0
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
-            logits = self.model(X.to(self._device), **model_kwargs).detach()
+            logits = self.model(
+                X.to(self._device) if isinstance(X, torch.Tensor) else X, **model_kwargs
+            ).detach()
             py += torch.softmax(logits, dim=-1) / n_samples
         vector_to_parameters(self.mean, self.params)
         return py

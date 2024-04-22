@@ -1,3 +1,4 @@
+from collections.abc import MutableMapping
 from math import sqrt, prod
 import pytest
 from itertools import product
@@ -9,12 +10,13 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
+from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from torchvision.models import wide_resnet50_2
 
 from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from laplace.utils import KronDecomposed
 from laplace.curvature import AsdlGGN, BackPackGGN, AsdlEF
-from tests.utils import jacobians_naive
+from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
 
 torch.manual_seed(240)
@@ -45,8 +47,27 @@ def large_model():
 
 
 @pytest.fixture
+def custom_model():
+    class CustomModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.net = nn.Sequential(nn.Linear(5, 100), nn.ReLU(), nn.Linear(100, 2))
+
+        def forward(self, data: MutableMapping | torch.Tensor):
+            if isinstance(data, MutableMapping):
+                x = data['input_ids'].to(next(self.parameters()).device)
+            else:
+                x = data
+
+            logits = self.net(x)
+            return logits
+
+    return CustomModel()
+
+
+@pytest.fixture
 def reward_model():
-    class Model(nn.Module):
+    class RewardModel(nn.Module):
         def __init__(self):
             super().__init__()
             self.net = nn.Sequential(nn.Linear(3, 100), nn.ReLU(), nn.Linear(100, 1))
@@ -72,7 +93,7 @@ def reward_model():
                 logits = self.net(x)  # (batch_size, 1)
                 return logits
 
-    return Model()
+    return RewardModel()
 
 
 @pytest.fixture
@@ -87,6 +108,15 @@ def reg_loader():
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
     return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def custom_loader():
+    data = []
+    for _ in range(10):
+        datum = {'input_ids': torch.randn(5), 'labels': torch.randint(2, (1,))}
+        data.append(datum)
+    return DataLoader(ListDataset(data), batch_size=3, collate_fn=dict_data_collator)
 
 
 @pytest.fixture
@@ -545,6 +575,36 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     assert f_mu.shape == f_var.shape
     assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
     assert len(f_mu) == len(reward_test_X)
+
+
+@pytest.mark.parametrize('laplace', [KronLaplace, DiagLaplace])
+@pytest.mark.parametrize('backend', [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+def test_dict_data(laplace, backend, custom_model, custom_loader):
+    if laplace == DiagLaplace and backend == CurvlinopsEF:
+        pytest.skip(
+            'DiagEF is unsupported with Curvlinops when the input is non-tensor.'
+        )
+
+    for data in custom_loader:
+        print(data)
+
+    lap = laplace(custom_model, 'classification', backend=backend)
+    lap.fit(custom_loader)
+
+    test_data = next(iter(custom_loader))
+    f = custom_model(test_data)
+
+    # GLM predictive
+    f_pred = lap(test_data, pred_type='glm')
+    assert f_pred.shape == f.shape
+    assert torch.allclose(
+        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+    )  # sum up to 1
+
+    # NN predictive
+    f_pred = lap(test_data, pred_type='nn', link_approx='mc')
+    assert f_pred.shape == f.shape
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))
 
 
 # TODO: Add LowRankLaplace

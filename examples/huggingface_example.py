@@ -77,7 +77,7 @@ class MyGPT2(nn.Module):
         )
 
     def forward(self, data: MutableMapping) -> torch.Tensor:
-        '''
+        """
         Custom forward function. Handles things like moving the
         input tensor to the correct device inside.
 
@@ -88,7 +88,7 @@ class MyGPT2(nn.Module):
 
         Returns:
             logits: An `(batch_size, n_classes)`-sized tensor of logits.
-        '''
+        """
         device = next(self.parameters()).device
         input_ids = data['input_ids'].to(device)
         attn_mask = data['attention_mask'].to(device)

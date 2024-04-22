@@ -5,19 +5,36 @@ from laplace.curvature.curvature import CurvatureInterface, GGNInterface, EFInte
 try:
     from laplace.curvature.backpack import BackPackGGN, BackPackEF, BackPackInterface
 except ModuleNotFoundError:
-    logging.info('Backpack not available.')
+    logging.info('Backpack backend not available.')
 
 try:
     from laplace.curvature.asdl import AsdlHessian, AsdlGGN, AsdlEF, AsdlInterface
 except ModuleNotFoundError:
-    logging.info('asdfghjkl backend not available.')
+    logging.info('ASDL backend not available.')
 
 try:
-    from laplace.curvature.curvlinops import CurvlinopsHessian, CurvlinopsGGN, CurvlinopsEF, CurvlinopsInterface
+    from laplace.curvature.curvlinops import (
+        CurvlinopsHessian,
+        CurvlinopsGGN,
+        CurvlinopsEF,
+        CurvlinopsInterface,
+    )
 except ModuleNotFoundError:
-    logging.info('curvlinops backend not available.')
+    logging.info('Curvlinops backend not available.')
 
-__all__ = ['CurvatureInterface', 'GGNInterface', 'EFInterface',
-           'BackPackInterface', 'BackPackGGN', 'BackPackEF',
-           'AsdlInterface', 'AsdlGGN', 'AsdlEF', 'AsdlHessian',
-           'CurvlinopsInterface', 'CurvlinopsGGN', 'CurvlinopsEF', 'CurvlinopsHessian']
+__all__ = [
+    'CurvatureInterface',
+    'GGNInterface',
+    'EFInterface',
+    'BackPackInterface',
+    'BackPackGGN',
+    'BackPackEF',
+    'AsdlInterface',
+    'AsdlGGN',
+    'AsdlEF',
+    'AsdlHessian',
+    'CurvlinopsInterface',
+    'CurvlinopsGGN',
+    'CurvlinopsEF',
+    'CurvlinopsHessian',
+]

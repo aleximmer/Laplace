@@ -213,3 +213,23 @@ Here is the output, as expected:
 As a final note, the dict-like input requirement of Laplace is very flexible. It can essentially
 be applicable to any tasks and any models. You just need to wrap the said model and make sure
 that your data loaders emit dict-like objects, where the input tensors are the dicts' values.
+
+## Caveats
+
+Currently, diagonal EF with the Curvlinops backend is unsupported for dict-based inputs.
+This is because we use `torch.func`'s `vmap` to compute the diag-EF, and it only accepts
+tensor input in the model's `forward`.
+See [this issue](https://github.com/pytorch/functorch/issues/159).
+So, if you can write down your Huggingface model's `forward` to accept only a single tensor,
+this is much preferable.
+
+For instance, in the case of causal LLM like GPTs, only `input_ids`
+tensor is necessary.
+Then, any backend and any hessian factorization can be used in this case.
+
+Otherwise, if you must use dict-based inputs, choose the following backends:
+
+- `CurvlinopsGGN` for `hessian_factorization = {'kron', 'diag'}`
+- `CurvlinopsEF` for `hessian_factorization = {'kron'}`
+- `AsdlGGN` for `hessian_factorization = {'kron', 'diag'}`
+- `AsdlEF` for `hessian_factorization = {'kron', 'diag'}`
