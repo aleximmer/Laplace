@@ -4,6 +4,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 import tqdm
 from collections.abc import MutableMapping
+from laplace.curvature.curvlinops import CurvlinopsEF
 import torchmetrics as tm
 import warnings
 
@@ -537,6 +538,14 @@ class ParametricLaplace(BaseLaplace):
         data = next(iter(train_loader))
         with torch.no_grad():
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
+                if isinstance(self, DiagLaplace) and self._backend_cls == CurvlinopsEF:
+                    raise ValueError(
+                        'Currently DiagEF is not supported under CurvlinopsEF backend '
+                        + 'for custom models with non-tensor inputs '
+                        + '(https://github.com/pytorch/functorch/issues/159). Consider '
+                        + 'using AsdlEF backend instead.'
+                    )
+
                 out = self.model(data)
             else:
                 X = data[0]
