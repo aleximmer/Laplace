@@ -55,6 +55,14 @@ class BaseLaplace:
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.
     backend_kwargs : dict, default=None
@@ -73,6 +81,8 @@ class BaseLaplace:
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
         backend=None,
         backend_kwargs=None,
         asdl_fisher_kwargs=None,
@@ -109,6 +119,10 @@ class BaseLaplace:
         self.temperature = temperature
         self.enable_backprop = enable_backprop
 
+        # For models with dict-like inputs (e.g. Huggingface LLMs)
+        self.dict_key_x = dict_key_x
+        self.dict_key_y = dict_key_y
+
         if backend is None:
             backend = CurvlinopsGGN
         else:
@@ -137,7 +151,11 @@ class BaseLaplace:
     def backend(self):
         if self._backend is None:
             self._backend = self._backend_cls(
-                self.model, self.likelihood, **self._backend_kwargs
+                self.model,
+                self.likelihood,
+                dict_key_x=self.dict_key_x,
+                dict_key_y=self.dict_key_y,
+                **self._backend_kwargs,
             )
         return self._backend
 
@@ -481,6 +499,8 @@ class ParametricLaplace(BaseLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        dict_key_x='inputs_id',
+        dict_key_y='labels',
         backend=None,
         backend_kwargs=None,
         asdl_fisher_kwargs=None,
@@ -493,6 +513,8 @@ class ParametricLaplace(BaseLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            dict_key_x,
+            dict_key_y,
             backend,
             backend_kwargs,
             asdl_fisher_kwargs,
@@ -538,12 +560,15 @@ class ParametricLaplace(BaseLaplace):
         data = next(iter(train_loader))
         with torch.no_grad():
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
-                if isinstance(self, DiagLaplace) and self._backend_cls == CurvlinopsEF:
+                if 'backpack' in self._backend_cls.__name__.lower() or (
+                    isinstance(self, DiagLaplace) and self._backend_cls == CurvlinopsEF
+                ):
                     raise ValueError(
                         'Currently DiagEF is not supported under CurvlinopsEF backend '
                         + 'for custom models with non-tensor inputs '
                         + '(https://github.com/pytorch/functorch/issues/159). Consider '
-                        + 'using AsdlEF backend instead.'
+                        + 'using AsdlEF backend instead. The same limitation applies '
+                        + 'to all BackPACK backend'
                     )
 
                 out = self.model(data)
@@ -565,7 +590,7 @@ class ParametricLaplace(BaseLaplace):
 
         for data in pbar:
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
-                X, y = data, data['labels'].to(self._device)
+                X, y = data, data[self.dict_key_y].to(self._device)
             else:
                 X, y = data
                 X, y = X.to(self._device), y.to(self._device)
@@ -1106,6 +1131,8 @@ class FullLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
         backend=None,
         backend_kwargs=None,
     ):
@@ -1117,6 +1144,8 @@ class FullLaplace(ParametricLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            dict_key_x,
+            dict_key_y,
             backend,
             backend_kwargs,
         )
@@ -1223,6 +1252,8 @@ class KronLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        dict_key_x='inputs_id',
+        dict_key_y='labels',
         backend=None,
         damping=False,
         backend_kwargs=None,
@@ -1238,6 +1269,8 @@ class KronLaplace(ParametricLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            dict_key_x,
+            dict_key_y,
             backend,
             backend_kwargs,
             asdl_fisher_kwargs,
@@ -1370,6 +1403,8 @@ class LowRankLaplace(ParametricLaplace):
         prior_mean=0,
         temperature=1,
         enable_backprop=False,
+        dict_key_x='inputs_id',
+        dict_key_y='labels',
         backend=AsdlHessian,
         backend_kwargs=None,
     ):
@@ -1381,6 +1416,8 @@ class LowRankLaplace(ParametricLaplace):
             prior_mean=prior_mean,
             temperature=temperature,
             enable_backprop=enable_backprop,
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
             backend=backend,
             backend_kwargs=backend_kwargs,
         )
