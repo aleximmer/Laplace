@@ -5,16 +5,15 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 import tqdm
 from collections.abc import MutableMapping
 from laplace.curvature.curvlinops import CurvlinopsEF
-import torchmetrics as tm
 import warnings
 
 from laplace.utils import (
     invsqrt_precision,
-    get_nll,
     validate,
     Kron,
     normal_samples,
     fix_prior_prec_structure,
+    RunningNLLMetric,
 )
 from laplace.curvature import AsdlHessian, CurvlinopsGGN
 
@@ -275,7 +274,7 @@ class BaseLaplace:
         init_prior_prec=1.0,
         prior_structure='scalar',
         val_loader=None,
-        loss=get_nll,
+        loss=RunningNLLMetric(),
         log_prior_prec_min=-4,
         log_prior_prec_max=4,
         grid_size=100,
@@ -307,7 +306,7 @@ class BaseLaplace:
             otherwise, the structure of init_prior_prec is maintained.
         val_loader : torch.data.utils.DataLoader, default=None
             DataLoader for the validation set; each iterate is a training batch (X, y).
-        loss : callable or torchmetrics.Metric, default=get_nll
+        loss : callable or torchmetrics.Metric, default=RunningNLLMetric()
             loss function to use for CV. If callable, the loss is computed offline (memory intensive).
             If torchmetrics.Metric, running loss is computed (efficient).
         cv_loss_with_var: bool, default=False
@@ -983,7 +982,7 @@ class ParametricLaplace(BaseLaplace):
         init_prior_prec=1.0,
         prior_structure='scalar',
         val_loader=None,
-        loss=get_nll,
+        loss=RunningNLLMetric(),
         log_prior_prec_min=-4,
         log_prior_prec_max=4,
         grid_size=100,
