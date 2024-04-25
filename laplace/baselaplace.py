@@ -424,6 +424,7 @@ class BaseLaplace:
                     link_approx=link_approx,
                     n_samples=n_samples,
                     loss_with_var=loss_with_var,
+                    dict_key_y=self.dict_key_y,
                 )
             except RuntimeError:
                 result = np.inf

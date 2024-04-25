@@ -1,3 +1,4 @@
+from collections.abc import MutableMapping
 from copy import deepcopy
 import numpy as np
 import torch
@@ -6,7 +7,6 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 import warnings
 import logging
-from collections import UserDict
 import tqdm
 
 from laplace import Laplace
@@ -36,6 +36,8 @@ def marglik_training(
     fix_sigma_noise=False,
     progress_bar=False,
     enable_backprop=False,
+    dict_key_x='input_ids',
+    dict_key_y='labels',
 ):
     """Marginal-likelihood based training (Algorithm 1 in [1]).
     Optimize model parameters and hyperparameters jointly.
@@ -115,6 +117,14 @@ def marglik_training(
         whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
         make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
 
     Returns
     -------
@@ -194,8 +204,8 @@ def marglik_training(
 
         # standard NN training per batch
         for data in train_loader:
-            if isinstance(data, UserDict) or isinstance(data, dict):
-                X, y = data, data['labels']
+            if isinstance(data, MutableMapping):
+                X, y = data, data[dict_key_y]
                 y = y.to(device, non_blocking=True)
             else:
                 X, y = data
@@ -257,6 +267,8 @@ def marglik_training(
             temperature=temperature,
             backend=backend,
             subset_of_weights='all',
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
         )
         lap.fit(train_loader)
 
@@ -311,6 +323,8 @@ def marglik_training(
         backend=backend,
         subset_of_weights='all',
         enable_backprop=enable_backprop,
+        dict_key_x=dict_key_x,
+        dict_key_y=dict_key_y,
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses
