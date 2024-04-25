@@ -506,7 +506,7 @@ class ParametricLaplace(BaseLaplace):
         raise NotImplementedError
 
     def _check_H_init(self):
-        if self.H is None:
+        if getattr(self, 'H', None) is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def fit(self, train_loader, override=True, progress_bar=False):
@@ -1291,6 +1291,10 @@ class KronLaplace(ParametricLaplace):
         precision : `laplace.utils.matrix.KronDecomposed`
         """
         self._check_H_init()
+
+        if self.H_facs is None:
+            raise AttributeError('Laplace not fitted. Run fit() first.')
+
         return self.H * self._H_factor + self.prior_precision
 
     @property

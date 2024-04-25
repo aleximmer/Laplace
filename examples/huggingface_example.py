@@ -152,8 +152,9 @@ lora_la = Laplace(
     lora_model,
     likelihood='classification',
     subset_of_weights='all',
-    hessian_structure='diag',
+    hessian_structure='kron',
 )
+lora_la.fit(dataloader)
 
 X_test = next(iter(dataloader))
 print(f'[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.')
