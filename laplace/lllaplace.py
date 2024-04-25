@@ -8,6 +8,8 @@ from laplace.utils import FeatureExtractor, Kron
 from collections.abc import MutableMapping
 from typing import Union
 
+from laplace.utils.feature_extractor import FeatureReduction
+
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -52,6 +54,13 @@ class LLLaplace(ParametricLaplace):
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    feature_reduction: FeatureReduction, optional, default=None
+        when the last-layer `features` is a tensor of dim >= 3, this tells how to reduce
+        it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+        the penultultimate output is a tensor of shape `(batch_size, seq_len, embd_dim)`.
+        But the last layer maps `(batch_size, embd_dim)` to `(batch_size, n_classes)`.
+        Note: Make sure that this option faithfully reflects the reduction in the model
+        definition.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     last_layer_name: str, default=None
@@ -70,6 +79,7 @@ class LLLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        feature_reduction=None,
         backend=None,
         last_layer_name=None,
         backend_kwargs=None,
@@ -93,6 +103,7 @@ class LLLaplace(ParametricLaplace):
             deepcopy(model),
             last_layer_name=last_layer_name,
             enable_backprop=enable_backprop,
+            feature_reduction=feature_reduction,
         )
         if self.model.last_layer is None:
             self.mean = None
@@ -276,10 +287,11 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        feature_reduction=None,
         backend=None,
         last_layer_name=None,
         damping=False,
-        **backend_kwargs
+        **backend_kwargs,
     ):
         self.damping = damping
         super().__init__(
@@ -290,6 +302,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            feature_reduction,
             backend,
             last_layer_name,
             backend_kwargs,
