@@ -25,4 +25,4 @@ jobs:
       - name: Test with pytest
         run: |
           pip install pytest
-          pytest tests/test_baselaplace.py
+          pytest tests
