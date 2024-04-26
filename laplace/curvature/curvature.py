@@ -15,6 +15,8 @@ class CurvatureInterface:
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
@@ -29,10 +31,18 @@ class CurvatureInterface:
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
 
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
+    def __init__(
+        self,
+        model,
+        likelihood,
+        logit_class_dim=-1,
+        last_layer=False,
+        subnetwork_indices=None,
+    ):
         assert likelihood in ['regression', 'classification']
         self.likelihood = likelihood
         self.model = model
+        self.logit_class_dim = logit_class_dim
         self.last_layer = last_layer
         self.subnetwork_indices = subnetwork_indices
         if likelihood == 'regression':
@@ -276,6 +286,8 @@ class GGNInterface(CurvatureInterface):
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
@@ -291,6 +303,7 @@ class GGNInterface(CurvatureInterface):
         self,
         model,
         likelihood,
+        logit_class_dim=-1,
         last_layer=False,
         subnetwork_indices=None,
         stochastic=False,
@@ -298,7 +311,9 @@ class GGNInterface(CurvatureInterface):
     ):
         self.stochastic = stochastic
         self.num_samples = num_samples
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        super().__init__(
+            model, likelihood, logit_class_dim, last_layer, subnetwork_indices
+        )
 
     def _get_mc_functional_fisher(self, f):
         """Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
@@ -313,7 +328,7 @@ class GGNInterface(CurvatureInterface):
             else:  # classification with softmax
                 y_sample = torch.distributions.Multinomial(logits=f).sample()
                 # First functional derivative of the loglik is p - y
-                p = torch.softmax(f, dim=-1)
+                p = torch.softmax(f, dim=self.logit_class_dim)
                 grad_sample = p - y_sample
 
             F += (
@@ -329,7 +344,7 @@ class GGNInterface(CurvatureInterface):
             return None
         else:
             # second derivative of log lik is diag(p) - pp^T
-            ps = torch.softmax(f, dim=-1)
+            ps = torch.softmax(f, dim=self.logit_class_dim)
             G = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
             return G
 
@@ -393,6 +408,8 @@ class EFInterface(CurvatureInterface):
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None

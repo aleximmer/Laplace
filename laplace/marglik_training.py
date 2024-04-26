@@ -36,6 +36,7 @@ def marglik_training(
     fix_sigma_noise=False,
     progress_bar=False,
     enable_backprop=False,
+    logit_class_dim=-1,
 ):
     """Marginal-likelihood based training (Algorithm 1 in [1]).
     Optimize model parameters and hyperparameters jointly.
@@ -115,6 +116,8 @@ def marglik_training(
         whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
         make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
 
     Returns
     -------
@@ -223,7 +226,9 @@ def marglik_training(
             if likelihood == 'regression':
                 epoch_perf += (f.detach() - y).square().sum()
             else:
-                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
+                epoch_perf += torch.sum(
+                    torch.argmax(f.detach(), dim=logit_class_dim) == y
+                ).item()
             if scheduler_cls is not None:
                 scheduler.step()
 
@@ -257,6 +262,7 @@ def marglik_training(
             temperature=temperature,
             backend=backend,
             subset_of_weights='all',
+            logit_class_dim=logit_class_dim,
         )
         lap.fit(train_loader)
 
@@ -311,6 +317,7 @@ def marglik_training(
         backend=backend,
         subset_of_weights='all',
         enable_backprop=enable_backprop,
+        logit_class_dim=logit_class_dim,
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses

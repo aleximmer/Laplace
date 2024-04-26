@@ -1,20 +1,24 @@
+from contextlib import nullcontext
 import pytest
 import numpy as np
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from asdl.operations import Bias, Scale
-
 from laplace.curvature import (
     CurvlinopsGGN,
     CurvlinopsEF,
+    CurvlinopsHessian,
     BackPackGGN,
     BackPackEF,
     GGNInterface,
     EFInterface,
     AsdlGGN,
     AsdlEF,
+    AsdlHessian,
+    AsdfghjklGGN,
+    AsdfghjklEF,
+    AsdfghjklHessian,
     CurvatureInterface,
 )
 
@@ -43,6 +47,44 @@ def reg_Xy():
     torch.manual_seed(711)
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
+    return X, y
+
+
+@pytest.fixture
+def multidim_model():
+    torch.manual_seed(711)
+
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.fc1 = nn.Linear(3, 10)
+            self.fc2 = nn.Linear(10, 2)
+            self.output_size = 2
+
+        def forward(self, x):
+            assert x.ndim == 4
+            x = self.fc1(x)
+            x = nn.functional.relu(x)
+            x = self.fc2(x)
+            # Class index is at dim = 1
+            return x.permute(0, 3, 1, 2)
+
+    return Model()
+
+
+@pytest.fixture
+def multidim_reg_Xy():
+    torch.manual_seed(711)
+    X = torch.randn(5, 4, 6, 3)
+    y = torch.randn(5, 2, 4, 6)
+    return X, y
+
+
+@pytest.fixture
+def multidim_class_Xy():
+    torch.manual_seed(711)
+    X = torch.randn(5, 4, 6, 3)
+    y = torch.randint(2, size=(5, 4, 6))
     return X, y
 
 
@@ -365,3 +407,74 @@ def test_full_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.0001)
+
+
+@pytest.mark.parametrize(
+    'backend_cls',
+    [
+        CurvlinopsGGN,
+        CurvlinopsEF,
+        CurvlinopsHessian,
+        AsdlGGN,
+        AsdlEF,
+        AsdlHessian,
+        AsdfghjklGGN,
+        AsdfghjklEF,
+        AsdfghjklHessian,
+        BackPackGGN,
+        BackPackEF,
+    ],
+)
+@pytest.mark.parametrize('method', ['full', 'kron', 'diag'])
+@pytest.mark.parametrize('logit_class_dim', [-1, 1000])
+def test_logit_class_dim_class(backend_cls, method, logit_class_dim, model, class_Xy):
+    X, y = class_Xy
+    N = X.shape[0]
+
+    try:
+        # Classification should be sensitive to `logit_class_dim`
+        backend = backend_cls(model, 'classification', logit_class_dim=logit_class_dim)
+
+        ctx = pytest.raises(IndexError) if logit_class_dim == 1000 else nullcontext()
+        # Curvlinops full and kron should be good to go
+        ctx = (
+            nullcontext()
+            if method in ['full', 'kron'] and 'Curvlinops' in backend_cls.__name__
+            else ctx
+        )
+        # Asdfghjkl always assumes `logit_class_dim = -1`
+        ctx = nullcontext() if 'Asdfghjkl' in backend_cls.__name__ else ctx
+        with ctx:
+            getattr(backend, method)(X, y, N=N)
+    except (NotImplementedError, AttributeError):
+        pytest.skip('Not implemented, no test')
+
+
+@pytest.mark.parametrize(
+    'backend_cls',
+    [
+        CurvlinopsGGN,
+        CurvlinopsEF,
+        CurvlinopsHessian,
+        AsdlGGN,
+        AsdlEF,
+        AsdlHessian,
+        AsdfghjklGGN,
+        AsdfghjklEF,
+        AsdfghjklHessian,
+        BackPackGGN,
+        BackPackEF,
+    ],
+)
+@pytest.mark.parametrize('method', ['full', 'kron', 'diag'])
+@pytest.mark.parametrize('logit_class_dim', [-1, 1000])
+def test_logit_class_dim_reg(backend_cls, logit_class_dim, method, model, reg_Xy):
+    X, y = reg_Xy
+    N = X.shape[0]
+
+    try:
+        # Regression should not care about `logit_class_dim`
+        backend = backend_cls(model, 'regression', logit_class_dim=logit_class_dim)
+        getattr(backend, method)(X, y, N=N)
+    except (NotImplementedError, AttributeError):
+        pytest.skip('Not implemented, no test')

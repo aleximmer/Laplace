@@ -4,8 +4,6 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 import tqdm
 from collections.abc import MutableMapping
-from laplace.curvature.asdfghjkl import AsdfghjklHessian
-from laplace.curvature.curvlinops import CurvlinopsEF
 import warnings
 from torchmetrics import MeanSquaredError
 
@@ -17,7 +15,7 @@ from laplace.utils import (
     fix_prior_prec_structure,
     RunningNLLMetric,
 )
-from laplace.curvature import AsdlHessian, CurvlinopsGGN
+from laplace.curvature import CurvlinopsGGN, CurvlinopsEF, AsdfghjklHessian
 
 
 __all__ = [
@@ -56,6 +54,8 @@ class BaseLaplace:
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.
     backend_kwargs : dict, default=None
@@ -74,6 +74,7 @@ class BaseLaplace:
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        logit_class_dim=-1,
         backend=None,
         backend_kwargs=None,
         asdl_fisher_kwargs=None,
@@ -109,6 +110,7 @@ class BaseLaplace:
         self.sigma_noise = sigma_noise
         self.temperature = temperature
         self.enable_backprop = enable_backprop
+        self.logit_class_dim = logit_class_dim
 
         if backend is None:
             backend = CurvlinopsGGN
@@ -138,7 +140,10 @@ class BaseLaplace:
     def backend(self):
         if self._backend is None:
             self._backend = self._backend_cls(
-                self.model, self.likelihood, **self._backend_kwargs
+                self.model,
+                self.likelihood,
+                logit_class_dim=self.logit_class_dim,
+                **self._backend_kwargs,
             )
         return self._backend
 
@@ -493,6 +498,7 @@ class ParametricLaplace(BaseLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        logit_class_dim=-1,
         backend=None,
         backend_kwargs=None,
         asdl_fisher_kwargs=None,
@@ -505,6 +511,7 @@ class ParametricLaplace(BaseLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            logit_class_dim,
             backend,
             backend_kwargs,
             asdl_fisher_kwargs,
@@ -799,7 +806,7 @@ class ParametricLaplace(BaseLaplace):
                 ).mean(dim=0)
             elif link_approx == 'probit':
                 kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
-                return torch.softmax(kappa * f_mu, dim=-1)
+                return torch.softmax(kappa * f_mu, dim=self.logit_class_dim)
             elif 'bridge' in link_approx:
                 # zero mean correction
                 f_mu -= (
@@ -876,7 +883,7 @@ class ParametricLaplace(BaseLaplace):
             if self.likelihood == 'regression':
                 return f_samples
             else:
-                return torch.softmax(f_samples, dim=-1)
+                return torch.softmax(f_samples, dim=self.logit_class_dim)
 
         else:  # 'nn'
             return self._nn_predictive_samples(x, n_samples, generator)
@@ -915,7 +922,7 @@ class ParametricLaplace(BaseLaplace):
         vector_to_parameters(self.mean, self.params)
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
-            fs = torch.softmax(fs, dim=-1)
+            fs = torch.softmax(fs, dim=self.logit_class_dim)
         return fs
 
     def _nn_predictive_classification(self, X, n_samples=100, **model_kwargs):
@@ -925,7 +932,7 @@ class ParametricLaplace(BaseLaplace):
             logits = self.model(
                 X.to(self._device) if isinstance(X, torch.Tensor) else X, **model_kwargs
             ).detach()
-            py += torch.softmax(logits, dim=-1) / n_samples
+            py += torch.softmax(logits, dim=self.logit_class_dim) / n_samples
         vector_to_parameters(self.mean, self.params)
         return py
 
@@ -1118,6 +1125,7 @@ class FullLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        logit_class_dim=-1,
         backend=None,
         backend_kwargs=None,
     ):
@@ -1129,6 +1137,7 @@ class FullLaplace(ParametricLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            logit_class_dim,
             backend,
             backend_kwargs,
         )
@@ -1235,6 +1244,7 @@ class KronLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        logit_class_dim=-1,
         backend=None,
         damping=False,
         backend_kwargs=None,
@@ -1250,6 +1260,7 @@ class KronLaplace(ParametricLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            logit_class_dim,
             backend,
             backend_kwargs,
             asdl_fisher_kwargs,
@@ -1382,6 +1393,7 @@ class LowRankLaplace(ParametricLaplace):
         prior_mean=0,
         temperature=1,
         enable_backprop=False,
+        logit_class_dim=-1,
         backend=AsdfghjklHessian,
         backend_kwargs=None,
     ):
@@ -1393,6 +1405,7 @@ class LowRankLaplace(ParametricLaplace):
             prior_mean=prior_mean,
             temperature=temperature,
             enable_backprop=enable_backprop,
+            logit_class_dim=logit_class_dim,
             backend=backend,
             backend_kwargs=backend_kwargs,
         )

@@ -52,6 +52,8 @@ class LLLaplace(ParametricLaplace):
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     last_layer_name: str, default=None
@@ -70,6 +72,7 @@ class LLLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        logit_class_dim=-1,
         backend=None,
         last_layer_name=None,
         backend_kwargs=None,
@@ -86,6 +89,7 @@ class LLLaplace(ParametricLaplace):
             prior_mean=0.0,
             temperature=temperature,
             enable_backprop=enable_backprop,
+            logit_class_dim=logit_class_dim,
             backend=backend,
             backend_kwargs=backend_kwargs,
         )
@@ -173,7 +177,7 @@ class LLLaplace(ParametricLaplace):
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
-            fs = torch.softmax(fs, dim=-1)
+            fs = torch.softmax(fs, dim=self.logit_class_dim)
         return fs
 
     def _nn_predictive_classification(
@@ -184,7 +188,7 @@ class LLLaplace(ParametricLaplace):
             vector_to_parameters(sample, self.model.last_layer.parameters())
             # TODO: Implement with a single forward pass until last layer.
             logits = self.model(X.to(self._device), **model_kwargs).detach()
-            py += torch.softmax(logits, dim=-1) / n_samples
+            py += torch.softmax(logits, dim=self.logit_class_dim) / n_samples
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         return py
 
@@ -276,10 +280,11 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        logit_class_dim=-1,
         backend=None,
         last_layer_name=None,
         damping=False,
-        **backend_kwargs
+        **backend_kwargs,
     ):
         self.damping = damping
         super().__init__(
@@ -290,6 +295,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            logit_class_dim,
             backend,
             last_layer_name,
             backend_kwargs,

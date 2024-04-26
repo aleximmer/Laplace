@@ -2,7 +2,14 @@ from typing import Tuple
 import torch
 
 from backpack import backpack, extend, memory_cleanup
-from backpack.extensions import DiagGGNExact, DiagGGNMC, KFAC, KFLR, SumGradSquared, BatchGrad
+from backpack.extensions import (
+    DiagGGNExact,
+    DiagGGNMC,
+    KFAC,
+    KFLR,
+    SumGradSquared,
+    BatchGrad,
+)
 from backpack.context import CTX
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
@@ -10,10 +17,19 @@ from laplace.utils import Kron
 
 
 class BackPackInterface(CurvatureInterface):
-    """Interface for Backpack backend.
-    """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+    """Interface for Backpack backend."""
+
+    def __init__(
+        self,
+        model,
+        likelihood,
+        logit_class_dim=-1,
+        last_layer=False,
+        subnetwork_indices=None,
+    ):
+        super().__init__(
+            model, likelihood, logit_class_dim, last_layer, subnetwork_indices
+        )
         extend(self._model)
         extend(self.lossfunc)
 
@@ -44,13 +60,11 @@ class BackPackInterface(CurvatureInterface):
             with backpack(BatchGrad()):
                 if model.output_size > 1:
                     out[:, i].sum().backward(
-                        create_graph=enable_backprop,
-                        retain_graph=enable_backprop
+                        create_graph=enable_backprop, retain_graph=enable_backprop
                     )
                 else:
                     out.sum().backward(
-                        create_graph=enable_backprop,
-                        retain_graph=enable_backprop
+                        create_graph=enable_backprop, retain_graph=enable_backprop
                     )
                 to_cat = []
                 for param in model.parameters():
@@ -92,25 +106,41 @@ class BackPackInterface(CurvatureInterface):
         loss = self.lossfunc(f, y)
         with backpack(BatchGrad()):
             loss.backward()
-        Gs = torch.cat([p.grad_batch.data.flatten(start_dim=1)
-                        for p in self._model.parameters()], dim=1)
+        Gs = torch.cat(
+            [p.grad_batch.data.flatten(start_dim=1) for p in self._model.parameters()],
+            dim=1,
+        )
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
 
 
 class BackPackGGN(BackPackInterface, GGNInterface):
-    """Implementation of the `GGNInterface` using Backpack.
-    """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+    """Implementation of the `GGNInterface` using Backpack."""
+
+    def __init__(
+        self,
+        model,
+        likelihood,
+        logit_class_dim=-1,
+        last_layer=False,
+        subnetwork_indices=None,
+        stochastic=False,
+    ):
+        super().__init__(
+            model, likelihood, logit_class_dim, last_layer, subnetwork_indices
+        )
         self.stochastic = stochastic
 
     def _get_diag_ggn(self):
         if self.stochastic:
-            return torch.cat([p.diag_ggn_mc.data.flatten() for p in self._model.parameters()])
+            return torch.cat(
+                [p.diag_ggn_mc.data.flatten() for p in self._model.parameters()]
+            )
         else:
-            return torch.cat([p.diag_ggn_exact.data.flatten() for p in self._model.parameters()])
+            return torch.cat(
+                [p.diag_ggn_exact.data.flatten() for p in self._model.parameters()]
+            )
 
     def _get_kron_factors(self):
         if self.stochastic:
@@ -124,14 +154,18 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         # for M=N (full-batch) just M/N=1
         for F in kron.kfacs:
             if len(F) == 2:
-                F[1] *= M/N
+                F[1] *= M / N
         return kron
 
     def diag(self, X, y, **kwargs):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(X)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.likelihood == 'regression'
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         y = y if self.likelihood == 'regression' else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
@@ -146,7 +180,11 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.likelihood == 'regression'
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         y = y if self.likelihood == 'regression' else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
@@ -158,19 +196,23 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 
 
 class BackPackEF(BackPackInterface, EFInterface):
-    """Implementation of `EFInterface` using Backpack.
-    """
+    """Implementation of `EFInterface` using Backpack."""
 
     def diag(self, X, y, **kwargs):
         f = self.model(X)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.likelihood == 'regression'
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         y = y if self.likelihood == 'regression' else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward()
-        diag_EF = torch.cat([p.sum_grad_squared.data.flatten()
-                             for p in self._model.parameters()])
+        diag_EF = torch.cat(
+            [p.sum_grad_squared.data.flatten() for p in self._model.parameters()]
+        )
         if self.subnetwork_indices is not None:
             diag_EF = diag_EF[self.subnetwork_indices]
 
@@ -184,5 +226,5 @@ def _cleanup(module):
     for child in module.children():
         _cleanup(child)
 
-    setattr(module, "_backpack_extend", False)
+    setattr(module, '_backpack_extend', False)
     memory_cleanup(module)
