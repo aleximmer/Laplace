@@ -57,17 +57,36 @@ class LLLaplace(ParametricLaplace):
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
     """
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, last_layer_name=None,
-                 backend_kwargs=None):
+
+    def __init__(
+        self,
+        model,
+        likelihood,
+        sigma_noise=1.0,
+        prior_precision=1.0,
+        prior_mean=0.0,
+        temperature=1.0,
+        enable_backprop=False,
+        backend=None,
+        last_layer_name=None,
+        backend_kwargs=None,
+    ):
         self.H = None
-        super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature,
-                         enable_backprop=enable_backprop, backend=backend,
-                         backend_kwargs=backend_kwargs)
+        super().__init__(
+            model,
+            likelihood,
+            sigma_noise=sigma_noise,
+            prior_precision=1.0,
+            prior_mean=0.0,
+            temperature=temperature,
+            enable_backprop=enable_backprop,
+            backend=backend,
+            backend_kwargs=backend_kwargs,
+        )
         self.model = FeatureExtractor(
-            deepcopy(model), last_layer_name=last_layer_name,
-            enable_backprop=enable_backprop
+            deepcopy(model),
+            last_layer_name=last_layer_name,
+            enable_backprop=enable_backprop,
         )
         if self.model.last_layer is None:
             self.mean = None
@@ -77,7 +96,9 @@ class LLLaplace(ParametricLaplace):
             self._prior_precision = prior_precision
             self._prior_mean = prior_mean
         else:
-            self.n_params = len(parameters_to_vector(self.model.last_layer.parameters()))
+            self.n_params = len(
+                parameters_to_vector(self.model.last_layer.parameters())
+            )
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
@@ -99,7 +120,9 @@ class LLLaplace(ParametricLaplace):
             online learning settings to accumulate a sequential posterior approximation.
         """
         if not override:
-            raise ValueError('Last-layer Laplace approximations do not support `override=False`.')
+            raise ValueError(
+                'Last-layer Laplace approximations do not support `override=False`.'
+            )
 
         self.model.eval()
 
@@ -125,22 +148,39 @@ class LLLaplace(ParametricLaplace):
         if not self.enable_backprop:
             self.mean = self.mean.detach()
 
-    def _glm_predictive_distribution(self, X, joint=False):
+    def _glm_predictive_distribution(self, X, joint=False, diagonal_output=False):
         if joint:
             Js, f_mu = self.backend.last_layer_jacobians(X)
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
+        elif diagonal_output:
+            f_mu, f_var = self.functional_variance_fast(X)
         else:
-            f_mu, f_var = self._functional_variance_fast(X)
+            Js, f_mu = self.backend.last_layer_jacobians(X)
+            f_var = self.functional_variance(Js)
 
-        return (f_mu.detach(), f_var.detach()) if not self.enable_backprop else (f_mu, f_var)
+        return (
+            (f_mu.detach(), f_var.detach())
+            if not self.enable_backprop
+            else (f_mu, f_var)
+        )
 
-    def _functional_variance_fast(self, X):
+    def functional_variance_fast(self, X):
         """
         Should be overriden if there exists a trick to make this fast!
+
+        Parameters
+        ----------
+        X: torch.Tensor of shape (batch_size, input_dim)
+
+        Returns
+        -------
+        f_var_diag: torch.Tensor of shape (batch_size, num_outputs)
+            Corresponding to the diagonal of the covariance matrix of the outputs
         """
         Js, f_mu = self.backend.last_layer_jacobians(X)
-        f_var = self.functional_variance(Js)  # No trick possible for Full Laplace
+        f_cov = self.functional_variance(Js)  # No trick possible for Full Laplace
+        f_var = torch.diagonal(f_cov, dim1=-2, dim2=-1)
         return f_mu, f_var
 
     def _nn_predictive_samples(self, X, n_samples=100):
@@ -205,6 +245,7 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
     See `FullLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface.
     """
+
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'full')
 
@@ -221,20 +262,42 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     and computing posterior covariances, marginal likelihood, etc.
     Use of `damping` is possible by initializing or setting `damping=True`.
     """
+
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'kron')
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, last_layer_name=None,
-                 damping=False, **backend_kwargs):
+    def __init__(
+        self,
+        model,
+        likelihood,
+        sigma_noise=1.0,
+        prior_precision=1.0,
+        prior_mean=0.0,
+        temperature=1.0,
+        enable_backprop=False,
+        backend=None,
+        last_layer_name=None,
+        damping=False,
+        **backend_kwargs,
+    ):
         self.damping = damping
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, enable_backprop, backend, last_layer_name, backend_kwargs)
+        super().__init__(
+            model,
+            likelihood,
+            sigma_noise,
+            prior_precision,
+            prior_mean,
+            temperature,
+            enable_backprop,
+            backend,
+            last_layer_name,
+            backend_kwargs,
+        )
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
-    def _functional_variance_fast(self, X):
+    def functional_variance_fast(self, X):
         f_mu, phi = self.model.forward_with_features(X)
         num_classes = f_mu.shape[-1]
 
@@ -243,7 +306,10 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         eig_U, eig_V = self.posterior_precision.eigenvalues[0]
         vec_U, vec_V = self.posterior_precision.eigenvectors[0]
         delta = self.posterior_precision.deltas[0].sqrt()
-        inv_U_eig, inv_V_eig = torch.pow(eig_U + delta, -1), torch.pow(eig_V + delta, -1)
+        inv_U_eig, inv_V_eig = (
+            torch.pow(eig_U + delta, -1),
+            torch.pow(eig_V + delta, -1),
+        )
 
         # Matrix form of the kron factors
         U = torch.einsum('ik,k,jk->ij', vec_U, inv_U_eig, vec_U)
@@ -253,7 +319,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         # phi is (batch_size, embd_dim), V is (embd_dim, embd_dim), U is (num_classes, num_classes)
         # phiVphi is (batch_size,)
         phiVphi = torch.einsum('bi,ij,bj->b', phi, V, phi)
-        f_var = torch.einsum('b,ij->bij', phiVphi, U)  # (batch_size, num_classes, num_classes)
+        f_var = torch.einsum('b,ii->bi', phiVphi, U)  # (batch_size, num_classes)
 
         if self.model.last_layer.bias is not None:
             # Contribution from the biases
@@ -263,8 +329,8 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             delta = self.posterior_precision.deltas[1].sqrt()
             inv_eig = torch.pow(eig + delta, -1)
 
-            Sigma_bias = torch.einsum('ik,k,jk->ij', vec, inv_eig, vec)  # (num_classes, num_classes)
-            f_var += Sigma_bias.reshape(1, num_classes, num_classes)
+            Sigma_bias = torch.einsum('ik,k,ik->i', vec, inv_eig, vec)  # (num_classes)
+            f_var += Sigma_bias.reshape(1, num_classes)
 
         return f_mu, f_var
 
@@ -275,10 +341,11 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     Mathematically, we have \\(P \\approx \\textrm{diag}(P)\\).
     See `DiagLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface.
     """
+
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'diag')
 
-    def _functional_variance_fast(self, X):
+    def functional_variance_fast(self, X):
         f_mu, phi = self.model.forward_with_features(X)
         k = f_mu.shape[-1]  # num_classes
         b, d = phi.shape  # batch_size, embd_dim
@@ -286,14 +353,13 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
         # Here, we exploit the fact that J Sigma J.T is (batch) diagonal
         # We notice that the param variance is [vars_weight, vars_biases] and
         # each functional variance phi^2*var_weight + var_bias
-        f_var_diag_only = torch.einsum('bd,kd,bd->bk', phi, self.posterior_variance[:d*k].reshape(k, d), phi)
+        f_var = torch.einsum(
+            'bd,kd,bd->bk', phi, self.posterior_variance[: d * k].reshape(k, d), phi
+        )
 
         if self.model.last_layer.bias is not None:
             # Add the last num_classes variances, corresponding to the biases' variances
             # (b,k) + (1,k) = (b,k)
-            f_var_diag_only += self.posterior_variance[-k:].reshape(1, k)
-
-        # (b,k) -> (b,k,k)
-        f_var = torch.diag_embed(f_var_diag_only)
+            f_var += self.posterior_variance[-k:].reshape(1, k)
 
         return f_mu, f_var
