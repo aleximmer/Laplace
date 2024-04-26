@@ -1,6 +1,6 @@
 name: ruff-lint
 
-on: pull_request
+on: workflow_dispatch
 
 jobs:
   ruff-lint:

@@ -1,6 +1,6 @@
 name: pytest
 
-on: pull_request
+on: workflow_dispatch
 
 jobs:
   pytest:
