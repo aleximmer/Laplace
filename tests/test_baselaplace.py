@@ -143,11 +143,11 @@ def test_laplace_init(laplace, model):
     elif laplace == LowRankLaplace:
         assert lap.H is None
     else:
-        H = [[torch.tensor(k) for k in kfac] for kfac in lap.H.kfacs]
+        H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
         lap._init_H()
         for kfac1, kfac2 in zip(H, lap.H.kfacs):
             for k1, k2 in zip(kfac1, kfac2):
-                assert torch.allclose(k1, torch.tensor(k2))
+                assert torch.allclose(k1, k2)
 
 
 @pytest.mark.xfail(strict=True)
