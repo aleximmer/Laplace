@@ -4,6 +4,7 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 import tqdm
 from collections.abc import MutableMapping
+from laplace.curvature.asdfghjkl import AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsEF
 import warnings
 from torchmetrics import MeanSquaredError
@@ -1381,7 +1382,7 @@ class LowRankLaplace(ParametricLaplace):
         prior_mean=0,
         temperature=1,
         enable_backprop=False,
-        backend=AsdlHessian,
+        backend=AsdfghjklHessian,
         backend_kwargs=None,
     ):
         super().__init__(
