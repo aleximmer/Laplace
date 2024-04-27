@@ -7,7 +7,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader
 import torchmetrics
 import tqdm
 from collections.abc import MutableMapping
@@ -26,6 +26,7 @@ from laplace.utils import (
     RunningNLLMetric,
 )
 from laplace.curvature import CurvlinopsGGN
+from laplace.utils.matrix import KronDecomposed
 
 
 __all__ = [
@@ -198,7 +199,7 @@ class BaseLaplace:
 
     def _curv_closure(
         self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
-    ) -> Tuple[float, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
     def fit(self, train_loader: DataLoader) -> None:
@@ -1189,7 +1190,7 @@ class ParametricLaplace(BaseLaplace):
         }
         return state_dict
 
-    def load_state_dict(self, state_dict: dict):
+    def load_state_dict(self, state_dict: dict) -> None:
         # Dealbreaker errors
         if self.__class__.__name__ != state_dict['cls_name']:
             raise ValueError(
@@ -1247,15 +1248,15 @@ class FullLaplace(ParametricLaplace):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        sigma_noise=1.0,
-        prior_precision=1.0,
-        prior_mean=0.0,
-        temperature=1.0,
-        enable_backprop=False,
-        backend=None,
-        backend_kwargs=None,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        sigma_noise: float | torch.Tensor = 1.0,
+        prior_precision: float | torch.Tensor = 1.0,
+        prior_mean: float | torch.Tensor = 0.0,
+        temperature: float = 1.0,
+        enable_backprop: bool = False,
+        backend: Type[CurvatureInterface] | None = None,
+        backend_kwargs: dict | None = None,
     ):
         super().__init__(
             model,
@@ -1268,23 +1269,32 @@ class FullLaplace(ParametricLaplace):
             backend,
             backend_kwargs,
         )
-        self._posterior_scale = None
+        self._posterior_scale: torch.Tensor | None = None
 
-    def _init_H(self):
-        self.H = torch.zeros(self.n_params, self.n_params, device=self._device)
+    def _init_H(self) -> None:
+        self.H: torch.Tensor = torch.zeros(
+            self.n_params, self.n_params, device=self._device
+        )
 
-    def _curv_closure(self, X, y, N):
+    def _curv_closure(
+        self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.backend.full(X, y, N=N)
 
-    def fit(self, train_loader, override=True, progress_bar=False):
+    def fit(
+        self,
+        train_loader: DataLoader,
+        override: bool = True,
+        progress_bar: bool = False,
+    ) -> None:
         self._posterior_scale = None
-        return super().fit(train_loader, override=override, progress_bar=progress_bar)
+        super().fit(train_loader, override=override, progress_bar=progress_bar)
 
-    def _compute_scale(self):
+    def _compute_scale(self) -> None:
         self._posterior_scale = invsqrt_precision(self.posterior_precision)
 
     @property
-    def posterior_scale(self):
+    def posterior_scale(self) -> torch.Tensor:
         """Posterior scale (square root of the covariance), i.e.,
         \\(P^{-\\frac{1}{2}}\\).
 
@@ -1298,7 +1308,7 @@ class FullLaplace(ParametricLaplace):
         return self._posterior_scale
 
     @property
-    def posterior_covariance(self):
+    def posterior_covariance(self) -> torch.Tensor:
         """Posterior covariance, i.e., \\(P^{-1}\\).
 
         Returns
@@ -1310,7 +1320,7 @@ class FullLaplace(ParametricLaplace):
         return scale @ scale.T
 
     @property
-    def posterior_precision(self):
+    def posterior_precision(self) -> torch.Tensor:
         """Posterior precision \\(P\\).
 
         Returns
@@ -1322,22 +1332,24 @@ class FullLaplace(ParametricLaplace):
         return self._H_factor * self.H + torch.diag(self.prior_precision_diag)
 
     @property
-    def log_det_posterior_precision(self):
+    def log_det_posterior_precision(self) -> torch.Tensor:
         return self.posterior_precision.logdet()
 
-    def square_norm(self, value):
+    def square_norm(self, value: torch.Tensor) -> torch.Tensor:
         delta = value - self.mean
         return delta @ self.posterior_precision @ delta
 
-    def functional_variance(self, Js):
-        return torch.einsum('ncp,pq,nkq->nck', Js, self.posterior_covariance, Js)
+    def functional_variance(self, Jacs: torch.Tensor) -> torch.Tensor:
+        return torch.einsum('ncp,pq,nkq->nck', Jacs, self.posterior_covariance, Jacs)
 
-    def functional_covariance(self, Js):
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
-        return torch.einsum('np,pq,mq->nm', Js, self.posterior_covariance, Js)
+    def functional_covariance(self, Jacs: torch.Tensor) -> torch.Tensor:
+        n_batch, n_outs, n_params = Jacs.shape
+        Jacs = Jacs.reshape(n_batch * n_outs, n_params)
+        return torch.einsum('np,pq,mq->nm', Jacs, self.posterior_covariance, Jacs)
 
-    def sample(self, n_samples=100, generator=None):
+    def sample(
+        self, n_samples: int = 100, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
         samples = torch.randn(
             n_samples, self.n_params, device=self._device, generator=generator
         )
@@ -1364,20 +1376,20 @@ class KronLaplace(ParametricLaplace):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        sigma_noise=1.0,
-        prior_precision=1.0,
-        prior_mean=0.0,
-        temperature=1.0,
-        enable_backprop=False,
-        backend=None,
-        damping=False,
-        backend_kwargs=None,
-        asdl_fisher_kwargs=None,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        sigma_noise: float | torch.Tensor = 1.0,
+        prior_precision: float | torch.Tensor = 1.0,
+        prior_mean: float | torch.Tensor = 0.0,
+        temperature: float = 1.0,
+        enable_backprop: bool = False,
+        backend: Type[CurvatureInterface] | None = None,
+        damping: bool = False,
+        backend_kwargs: dict | None = None,
+        asdl_fisher_kwargs: dict | None = None,
     ):
-        self.damping = damping
-        self.H_facs = None
+        self.damping: bool = damping
+        self.H_facs: Kron | None = None
         super().__init__(
             model,
             likelihood,
@@ -1391,26 +1403,35 @@ class KronLaplace(ParametricLaplace):
             asdl_fisher_kwargs,
         )
 
-    def _init_H(self):
-        self.H = Kron.init_from_model(self.params, self._device)
+    def _init_H(self) -> None:
+        self.H: Kron | KronDecomposed | None = Kron.init_from_model(
+            self.params, self._device
+        )
 
-    def _curv_closure(self, X, y, N):
+    def _curv_closure(
+        self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
     @staticmethod
-    def _rescale_factors(kron, factor):
+    def _rescale_factors(kron: Kron, factor: float) -> Kron:
         for F in kron.kfacs:
             if len(F) == 2:
                 F[1] *= factor
         return kron
 
-    def fit(self, train_loader, override=True, progress_bar=False):
+    def fit(
+        self,
+        train_loader: DataLoader,
+        override: bool = True,
+        progress_bar: bool = False,
+    ) -> None:
         if override:
             self.H_facs = None
 
         if self.H_facs is not None:
-            n_data_old = self.n_data
-            n_data_new = len(train_loader.dataset)
+            n_data_old: int = self.n_data
+            n_data_new: int = len(train_loader.dataset)
             self._init_H()  # re-init H non-decomposed
             # discount previous Kronecker factors to sum up properly together with new ones
             self.H_facs = self._rescale_factors(
@@ -1427,11 +1448,12 @@ class KronLaplace(ParametricLaplace):
                 self.H, n_data_new / (n_data_new + n_data_old)
             )
             self.H_facs += self.H
+
         # Decompose to self.H for all required quantities but keep H_facs for further inference
         self.H = self.H_facs.decompose(damping=self.damping)
 
     @property
-    def posterior_precision(self):
+    def posterior_precision(self) -> KronDecomposed:
         """Kronecker factored Posterior precision \\(P\\).
 
         Returns
@@ -1442,29 +1464,31 @@ class KronLaplace(ParametricLaplace):
         return self.H * self._H_factor + self.prior_precision
 
     @property
-    def log_det_posterior_precision(self):
+    def log_det_posterior_precision(self) -> torch.Tensor:
         if type(self.H) is Kron:  # Fall back to diag prior
             return self.prior_precision_diag.log().sum()
         return self.posterior_precision.logdet()
 
-    def square_norm(self, value):
+    def square_norm(self, value: torch.Tensor) -> torch.Tensor:
         delta = value - self.mean
         if type(self.H) is Kron:  # fall back to prior
             return (delta * self.prior_precision_diag) @ delta
         return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
-    def functional_variance(self, Js):
-        return self.posterior_precision.inv_square_form(Js)
+    def functional_variance(self, Jacs: torch.Tensor) -> torch.Tensor:
+        return self.posterior_precision.inv_square_form(Jacs)
 
-    def functional_covariance(self, Js):
-        self._check_jacobians(Js)
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params).unsqueeze(0)
-        cov = self.posterior_precision.inv_square_form(Js).squeeze(0)
+    def functional_covariance(self, Jacs: torch.Tensor) -> torch.Tensor:
+        self._check_jacobians(Jacs)
+        n_batch, n_outs, n_params = Jacs.shape
+        Jacs = Jacs.reshape(n_batch * n_outs, n_params).unsqueeze(0)
+        cov = self.posterior_precision.inv_square_form(Jacs).squeeze(0)
         assert cov.shape == (n_batch * n_outs, n_batch * n_outs)
         return cov
 
-    def sample(self, n_samples=100, generator=None):
+    def sample(
+        self, n_samples: int = 100, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
         samples = torch.randn(
             n_samples, self.n_params, device=self._device, generator=generator
         )
@@ -1474,7 +1498,7 @@ class KronLaplace(ParametricLaplace):
         )
 
     @BaseLaplace.prior_precision.setter
-    def prior_precision(self, prior_precision):
+    def prior_precision(self, prior_precision: torch.Tensor) -> None:
         # Extend setter from Laplace to restrict prior precision structure.
         super(KronLaplace, type(self)).prior_precision.fset(self, prior_precision)
         if len(self.prior_precision) not in [1, self.n_layers]:
@@ -1482,12 +1506,14 @@ class KronLaplace(ParametricLaplace):
 
     def state_dict(self) -> dict:
         state_dict = super().state_dict()
+        assert isinstance(self.H_facs, Kron)
         state_dict['H'] = self.H_facs.kfacs
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
         super().load_state_dict(state_dict)
         self._init_H()
+        assert isinstance(self.H, Kron)
         self.H_facs = self.H
         self.H_facs.kfacs = state_dict['H']
         self.H = self.H_facs.decompose(damping=self.damping)
@@ -1511,15 +1537,14 @@ class LowRankLaplace(ParametricLaplace):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        sigma_noise=1,
-        prior_precision=1,
-        prior_mean=0,
-        temperature=1,
-        enable_backprop=False,
-        backend=AsdfghjklHessian,
-        backend_kwargs=None,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        sigma_noise: float | torch.Tensor = 1,
+        prior_precision: float | torch.Tensor = 1,
+        prior_mean: float | torch.Tensor = 0,
+        temperature: float = 1,
+        enable_backprop: bool = False,
+        backend_kwargs: dict | None = None,
     ):
         super().__init__(
             model,
@@ -1529,24 +1554,30 @@ class LowRankLaplace(ParametricLaplace):
             prior_mean=prior_mean,
             temperature=temperature,
             enable_backprop=enable_backprop,
-            backend=backend,
+            backend=AsdfghjklHessian,
             backend_kwargs=backend_kwargs,
         )
+        self.backend: AsdfghjklHessian
 
     def _init_H(self):
-        self.H = None
+        self.H: Tuple[torch.Tensor, torch.Tensor] | None = None
 
     @property
-    def V(self):
-        (U, l), prior_prec_diag = self.posterior_precision
+    def V(self) -> torch.Tensor:
+        (U, eigvals), prior_prec_diag = self.posterior_precision
         return U / prior_prec_diag.reshape(-1, 1)
 
     @property
-    def Kinv(self):
-        (U, l), _ = self.posterior_precision
-        return torch.inverse(torch.diag(1 / l) + U.T @ self.V)
+    def Kinv(self) -> torch.Tensor:
+        (U, eigvals), _ = self.posterior_precision
+        return torch.inverse(torch.diag(1 / eigvals) + U.T @ self.V)
 
-    def fit(self, train_loader, override=True):
+    def fit(
+        self,
+        train_loader: DataLoader,
+        override: bool = True,
+        progress_bar: bool = False,
+    ) -> None:
         # override fit since output of eighessian not additive across batch
         if not override:
             # LowRankLA cannot be updated since eigenvalue representation not additive
@@ -1574,7 +1605,9 @@ class LowRankLaplace(ParametricLaplace):
         self.n_data = len(train_loader.dataset)
 
     @property
-    def posterior_precision(self):
+    def posterior_precision(
+        self,
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """Return correctly scaled posterior precision that would be constructed
         as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.
 
@@ -1588,13 +1621,13 @@ class LowRankLaplace(ParametricLaplace):
         self._check_H_init()
         return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
 
-    def functional_variance(self, Jacs):
+    def functional_variance(self, Jacs: torch.Tensor) -> torch.Tensor:
         prior_var = torch.einsum('ncp,nkp->nck', Jacs / self.prior_precision_diag, Jacs)
         Jacs_V = torch.einsum('ncp,pl->ncl', Jacs, self.V)
         info_gain = torch.einsum('ncl,nkl->nck', Jacs_V @ self.Kinv, Jacs_V)
         return prior_var - info_gain
 
-    def functional_covariance(self, Jacs):
+    def functional_covariance(self, Jacs: torch.Tensor) -> torch.Tensor:
         n_batch, n_outs, n_params = Jacs.shape
         Jacs = Jacs.reshape(n_batch * n_outs, n_params)
         prior_cov = torch.einsum('np,mp->nm', Jacs / self.prior_precision_diag, Jacs)
@@ -1604,7 +1637,9 @@ class LowRankLaplace(ParametricLaplace):
         assert cov.shape == (n_batch * n_outs, n_batch * n_outs)
         return cov
 
-    def sample(self, n_samples, generator=None):
+    def sample(
+        self, n_samples: int = 100, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
         samples = torch.randn(self.n_params, n_samples, generator=generator)
         d = self.prior_precision_diag
         Vs = self.V * d.sqrt().reshape(-1, 1)
@@ -1621,9 +1656,11 @@ class LowRankLaplace(ParametricLaplace):
         return self.mean + (prior_sample - gain_sample).T
 
     @property
-    def log_det_posterior_precision(self):
-        (U, l), prior_prec_diag = self.posterior_precision
-        return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
+    def log_det_posterior_precision(self) -> torch.Tensor:
+        (U, eigvals), prior_prec_diag = self.posterior_precision
+        return (
+            eigvals.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
+        )
 
 
 class DiagLaplace(ParametricLaplace):
@@ -1636,14 +1673,16 @@ class DiagLaplace(ParametricLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('all', 'diag')
 
-    def _init_H(self):
-        self.H = torch.zeros(self.n_params, device=self._device)
+    def _init_H(self) -> None:
+        self.H: torch.Tensor = torch.zeros(self.n_params, device=self._device)
 
-    def _curv_closure(self, X, y, N):
+    def _curv_closure(
+        self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.backend.diag(X, y, N=N, **self._asdl_fisher_kwargs)
 
     @property
-    def posterior_precision(self):
+    def posterior_precision(self) -> torch.Tensor:
         """Diagonal posterior precision \\(p\\).
 
         Returns
@@ -1655,7 +1694,7 @@ class DiagLaplace(ParametricLaplace):
         return self._H_factor * self.H + self.prior_precision_diag
 
     @property
-    def posterior_scale(self):
+    def posterior_scale(self) -> torch.Tensor:
         """Diagonal posterior scale \\(\\sqrt{p^{-1}}\\).
 
         Returns
@@ -1666,7 +1705,7 @@ class DiagLaplace(ParametricLaplace):
         return 1 / self.posterior_precision.sqrt()
 
     @property
-    def posterior_variance(self):
+    def posterior_variance(self) -> torch.Tensor:
         """Diagonal posterior variance \\(p^{-1}\\).
 
         Returns
@@ -1677,25 +1716,27 @@ class DiagLaplace(ParametricLaplace):
         return 1 / self.posterior_precision
 
     @property
-    def log_det_posterior_precision(self):
+    def log_det_posterior_precision(self) -> torch.Tensor:
         return self.posterior_precision.log().sum()
 
-    def square_norm(self, value):
+    def square_norm(self, value: torch.Tensor) -> torch.Tensor:
         delta = value - self.mean
         return delta @ (delta * self.posterior_precision)
 
-    def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
-        self._check_jacobians(Js)
-        return torch.einsum('ncp,p,nkp->nck', Js, self.posterior_variance, Js)
+    def functional_variance(self, Jacs: torch.Tensor) -> torch.Tensor:
+        self._check_jacobians(Jacs)
+        return torch.einsum('ncp,p,nkp->nck', Jacs, self.posterior_variance, Jacs)
 
-    def functional_covariance(self, Js):
-        self._check_jacobians(Js)
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
-        cov = torch.einsum('np,p,mp->nm', Js, self.posterior_variance, Js)
+    def functional_covariance(self, Jacs: torch.Tensor) -> torch.Tensor:
+        self._check_jacobians(Jacs)
+        n_batch, n_outs, n_params = Jacs.shape
+        Jacs = Jacs.reshape(n_batch * n_outs, n_params)
+        cov = torch.einsum('np,p,mp->nm', Jacs, self.posterior_variance, Jacs)
         return cov
 
-    def sample(self, n_samples=100, generator=None):
+    def sample(
+        self, n_samples: int = 100, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
         samples = torch.randn(
             n_samples, self.n_params, device=self._device, generator=generator
         )
