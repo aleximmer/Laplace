@@ -256,11 +256,8 @@ class AsdlInterface(CurvatureInterface):
 
 
 class AsdlHessian(AsdlInterface):
-    def __init__(
-        self, model, likelihood, logit_class_dim=-1, last_layer=False, low_rank=10
-    ):
+    def __init__(self, model, likelihood, logit_class_dim=-1, last_layer=False):
         super().__init__(model, likelihood, logit_class_dim, last_layer)
-        self.low_rank = low_rank
 
     @property
     def _ggn_type(self):
@@ -290,39 +287,6 @@ class AsdlHessian(AsdlInterface):
         )
         loss = self.lossfunc(f, y)
         return self.factor * loss, self.factor * H
-
-    def eig_lowrank(self, data_loader):
-        # TODO: need to implement manually...
-        # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
-        if self.last_layer:
-            _, x = self.model.forward_with_features(x)
-        cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
-        hess_maker = HessianMaker(self.model, cfg)
-        dummy = hess_maker.setup_model_call(self._model, x)
-        hess_maker.setup_loss_call(self.lossfunc, dummy, y)
-        # iteratively go through data loader and average eigendecomposition
-        # previously:
-        eigvals, eigvecs = hessian_eig(
-            self.model,
-            self.lossfunc,
-            data_loader=data_loader,
-            top_n=self.low_rank,
-            max_iters=self.low_rank * 10,
-        )
-        eigvals = torch.from_numpy(np.array(eigvals))
-        mask = eigvals > EPS
-        eigvecs = torch.stack([vec.get_flatten_vector() for vec in eigvecs], dim=1)[
-            :, mask
-        ]
-        device = eigvecs.device
-        eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
-        loss = sum(
-            [
-                self.lossfunc(self.model(x.to(device)).detach(), y.to(device))
-                for x, y in data_loader
-            ]
-        )
-        return eigvecs, self.factor * eigvals, self.factor * loss
 
 
 class AsdlGGN(AsdlInterface, GGNInterface):
