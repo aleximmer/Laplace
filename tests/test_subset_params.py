@@ -52,14 +52,18 @@ def reg_loader():
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
-@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+@pytest.mark.parametrize(
+    'laplace,lh', product(flavors, ['classification', 'regression'])
+)
 def test_incompatible_backend(laplace, lh, model):
     lap = laplace(model, lh, backend=AsdlEF)
     lap = laplace(model, lh, backend=AsdlGGN)
     lap = laplace(model, lh, backend=AsdlHessian)
 
 
-@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+@pytest.mark.parametrize(
+    'laplace,lh', product(flavors, ['classification', 'regression'])
+)
 def test_incompatible_backend(laplace, lh, model):
     with pytest.raises(ValueError):
         lap = laplace(model, lh, backend=BackPackGGN)
@@ -116,5 +120,6 @@ def test_marglik(laplace, model, class_loader):
 def test_marglik(laplace, model, class_loader):
     lap = laplace(model, 'classification')
     lap.fit(class_loader)
-    lap.optimize_prior_precision(method='gridsearch', val_loader=class_loader,
-                                 pred_type='nn', link_approx='mc')
+    lap.optimize_prior_precision(
+        method='gridsearch', val_loader=class_loader, pred_type='nn', link_approx='mc'
+    )

@@ -226,7 +226,7 @@ def test_kron_normalization_reg(reg_Xy, model):
     loss_true = 7 * loss
     X = torch.repeat_interleave(xi, 7, 0)
     y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test  = backend.kron(X, y, N=7)
+    loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
 
@@ -240,6 +240,6 @@ def test_kron_normalization_class(class_Xy, model):
     loss_true = 7 * loss
     X = torch.repeat_interleave(xi, 7, 0)
     y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test  = backend.kron(X, y, N=7)
+    loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)

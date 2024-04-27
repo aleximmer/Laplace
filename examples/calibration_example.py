@@ -1,5 +1,6 @@
 import warnings
-warnings.simplefilter("ignore", UserWarning)
+
+warnings.simplefilter('ignore', UserWarning)
 
 import torch
 import torch.distributions as dists
@@ -50,9 +51,9 @@ nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 
 # Laplace
-la = Laplace(model, 'classification',
-             subset_of_weights='last_layer',
-             hessian_structure='kron')
+la = Laplace(
+    model, 'classification', subset_of_weights='last_layer', hessian_structure='kron'
+)
 la.fit(train_loader)
 la.optimize_prior_precision(method='marglik')
 
@@ -61,4 +62,6 @@ acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
 ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
 nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
-print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
+print(
+    f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}'
+)

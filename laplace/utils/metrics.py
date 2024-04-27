@@ -12,10 +12,13 @@ class RunningNLLMetric(Metric):
     ignore_index: int, default = -100
         which class label to ignore when computing the NLL loss
     """
+
     def __init__(self, ignore_index=-100):
         super().__init__()
-        self.add_state('nll_sum', default=torch.tensor(0.), dist_reduce_fx='sum')
-        self.add_state('n_valid_labels', default=torch.tensor(0.), dist_reduce_fx='sum')
+        self.add_state('nll_sum', default=torch.tensor(0.0), dist_reduce_fx='sum')
+        self.add_state(
+            'n_valid_labels', default=torch.tensor(0.0), dist_reduce_fx='sum'
+        )
         self.ignore_index = ignore_index
 
     def update(self, probs: torch.Tensor, targets: torch.Tensor) -> None:
