@@ -5,6 +5,9 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.utils import FeatureExtractor, Kron
 
+from collections.abc import MutableMapping
+from typing import Union
+
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -70,7 +73,10 @@ class LLLaplace(ParametricLaplace):
         backend=None,
         last_layer_name=None,
         backend_kwargs=None,
+        asdl_fisher_kwargs=None,
     ):
+        if asdl_fisher_kwargs is not None:
+            raise ValueError('Last-layer Laplace does not support asdl_fisher_kwargs.')
         self.H = None
         super().__init__(
             model,
@@ -127,13 +133,8 @@ class LLLaplace(ParametricLaplace):
         self.model.eval()
 
         if self.model.last_layer is None:
-            # Save an example batch for when loading the serialized Laplace
-            self.X, _ = next(iter(train_loader))
-            with torch.no_grad():
-                try:
-                    self.model.find_last_layer(self.X[:1].to(self._device))
-                except (TypeError, AttributeError):
-                    self.model.find_last_layer(self.X.to(self._device))
+            self.data = next(iter(train_loader))
+            self._find_last_layer(self.data)
             params = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(params)
             self.n_layers = len(list(self.model.last_layer.parameters()))
@@ -183,17 +184,29 @@ class LLLaplace(ParametricLaplace):
         f_var = torch.diagonal(f_cov, dim1=-2, dim2=-1)
         return f_mu, f_var
 
-    def _nn_predictive_samples(self, X, n_samples=100):
+    def _nn_predictive_samples(self, X, n_samples=100, generator=None, **model_kwargs):
         fs = list()
-        for sample in self.sample(n_samples):
+        for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            f = self.model(X.to(self._device))
+            f = self.model(X.to(self._device), **model_kwargs)
             fs.append(f.detach() if not self.enable_backprop else f)
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
         return fs
+
+    def _nn_predictive_classification(
+        self, X, n_samples=100, generator=None, **model_kwargs
+    ):
+        py = 0
+        for sample in self.sample(n_samples, generator):
+            vector_to_parameters(sample, self.model.last_layer.parameters())
+            # TODO: Implement with a single forward pass until last layer.
+            logits = self.model(X.to(self._device), **model_kwargs).detach()
+            py += torch.softmax(logits, dim=-1) / n_samples
+        vector_to_parameters(self.mean, self.model.last_layer.parameters())
+        return py
 
     @property
     def prior_precision_diag(self):
@@ -215,7 +228,7 @@ class LLLaplace(ParametricLaplace):
 
     def state_dict(self) -> dict:
         state_dict = super().state_dict()
-        state_dict['X'] = getattr(self, 'X', None)
+        state_dict['data'] = getattr(self, 'data', None)  # None if not present
         state_dict['_last_layer_name'] = self._last_layer_name
         return state_dict
 
@@ -223,19 +236,27 @@ class LLLaplace(ParametricLaplace):
         if self._last_layer_name != state_dict['_last_layer_name']:
             raise ValueError('Different `last_layer_name` detected!')
 
-        self.X = state_dict['X']
-        if self.X is not None:
-            with torch.no_grad():
-                try:
-                    self.model.find_last_layer(self.X[:1].to(self._device))
-                except (TypeError, AttributeError):
-                    self.model.find_last_layer(self.X.to(self._device))
+        self.data = state_dict['data']
+        if self.data is not None:
+            self._find_last_layer(self.data)
 
         super().load_state_dict(state_dict)
 
         params = parameters_to_vector(self.model.last_layer.parameters()).detach()
         self.n_params = len(params)
         self.n_layers = len(list(self.model.last_layer.parameters()))
+
+    @torch.no_grad()
+    def _find_last_layer(self, data: Union[torch.Tensor, MutableMapping]) -> None:
+        # To support Huggingface dataset
+        if isinstance(data, MutableMapping):
+            self.model.find_last_layer(data)
+        else:
+            X = data[0]
+            try:
+                self.model.find_last_layer(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                self.model.find_last_layer(X.to(self._device))
 
 
 class FullLLLaplace(LLLaplace, FullLaplace):

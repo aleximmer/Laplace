@@ -28,6 +28,7 @@ class CurvatureInterface:
         conversion factor between torch losses and base likelihoods
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
+
     def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
         assert likelihood in ['regression', 'classification']
         self.likelihood = likelihood
@@ -39,9 +40,11 @@ class CurvatureInterface:
             self.factor = 0.5
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
-            self.factor = 1.
+            self.factor = 1.0
         self.params = [p for p in self._model.parameters() if p.requires_grad]
-        self.params_dict = {k: v for k, v in self._model.named_parameters() if v.requires_grad}
+        self.params_dict = {
+            k: v for k, v in self._model.named_parameters() if v.requires_grad
+        }
         self.buffers_dict = {k: v for k, v in self.model.named_buffers()}
 
     @property
@@ -66,16 +69,59 @@ class CurvatureInterface:
         f : torch.Tensor
             output function `(batch, outputs)`
         """
+
         def model_fn_params_only(params_dict, buffers_dict):
             out = torch.func.functional_call(self.model, (params_dict, buffers_dict), x)
             return out, out
 
-        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(self.params_dict, self.buffers_dict)
+        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(
+            self.params_dict, self.buffers_dict
+        )
 
         # Concatenate over flattened parameters
         Js = [
             j.flatten(start_dim=-p.dim())
             for j, p in zip(Js.values(), self.params_dict.values())
+        ]
+        Js = torch.cat(Js, dim=-1)
+
+        if self.subnetwork_indices is not None:
+            Js = Js[:, :, self.subnetwork_indices]
+
+        return (Js, f) if enable_backprop else (Js.detach(), f.detach())
+
+    def functorch_jacobians(self, x, enable_backprop=False):
+        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            input data `(batch, input_shape)` on compatible device with model.
+        enable_backprop : bool, default = False
+            whether to enable backprop through the Js and f w.r.t. x
+
+        Returns
+        -------
+        Js : torch.Tensor
+            Jacobians `(batch, parameters, outputs)`
+        f : torch.Tensor
+            output function `(batch, outputs)`
+        """
+        # Compute Js
+        # ------------------------
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        name_dict = {p.data_ptr(): name for name, p in self.model.named_parameters()}
+        params_dict = {name_dict[p.data_ptr()]: p for p in params}
+
+        def model_fn_params_only(params_dict):
+            res = torch.func.functional_call(self.model, params_dict, x)
+            return res, res
+
+        # concatenate over flattened parameters
+        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(params_dict)
+        Js = [
+            j.flatten(start_dim=-p.dim())
+            for j, p in zip(Js.values(), params_dict.values())
         ]
         Js = torch.cat(Js, dim=-1)
 
@@ -105,7 +151,11 @@ class CurvatureInterface:
         output_size = int(f.numel() / bsize)
 
         # calculate Jacobians using the feature vector 'phi'
-        identity = torch.eye(output_size, device=x.device).unsqueeze(0).tile(bsize, 1, 1)
+        identity = (
+            torch.eye(output_size, device=next(self.model.parameters()).device)
+            .unsqueeze(0)
+            .tile(bsize, 1, 1)
+        )
         # Jacobians are batch x output x params
         Js = torch.einsum('kp,kij->kijp', phi, identity).reshape(bsize, output_size, -1)
         if self.model.last_layer.bias is not None:
@@ -129,17 +179,22 @@ class CurvatureInterface:
             gradients `(batch, parameters)`
         loss : torch.Tensor
         """
+
         def loss_single(x, y, params_dict, buffers_dict):
             """Compute the gradient for a single sample."""
             x, y = x.unsqueeze(0), y.unsqueeze(0)  # vmap removes the batch dimension
-            output = torch.func.functional_call(self.model, (params_dict, buffers_dict), x)
+            output = torch.func.functional_call(
+                self.model, (params_dict, buffers_dict), x
+            )
             loss = torch.func.functional_call(self.lossfunc, {}, (output, y))
             return loss, loss
 
         grad_fn = torch.func.grad(loss_single, argnums=2, has_aux=True)
         batch_grad_fn = torch.func.vmap(grad_fn, in_dims=(0, 0, None, None))
 
-        batch_grad, batch_loss = batch_grad_fn(x, y, self.params_dict, self.buffers_dict)
+        batch_grad, batch_loss = batch_grad_fn(
+            x, y, self.params_dict, self.buffers_dict
+        )
         Gs = torch.cat([bg.flatten(start_dim=1) for bg in batch_grad.values()], dim=1)
 
         if self.subnetwork_indices is not None:
@@ -231,13 +286,22 @@ class GGNInterface(CurvatureInterface):
     num_samples: int, default=100
         Number of samples used to approximate the stochastic Fisher
     """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False, num_samples=1):
+
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        subnetwork_indices=None,
+        stochastic=False,
+        num_samples=1,
+    ):
         self.stochastic = stochastic
         self.num_samples = num_samples
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
     def _get_mc_functional_fisher(self, f):
-        """ Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
+        """Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
         using MC integral with `self.num_samples` many samples.
         """
         F = 0
@@ -252,7 +316,11 @@ class GGNInterface(CurvatureInterface):
                 p = torch.softmax(f, dim=-1)
                 grad_sample = p - y_sample
 
-            F += 1/self.num_samples * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
+            F += (
+                1
+                / self.num_samples
+                * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
+            )
 
         return F
 
@@ -284,7 +352,11 @@ class GGNInterface(CurvatureInterface):
             GGN `(parameters, parameters)`
         """
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
-        H_lik = self._get_mc_functional_fisher(f) if self.stochastic else self._get_functional_hessian(f)
+        H_lik = (
+            self._get_mc_functional_fisher(f)
+            if self.stochastic
+            else self._get_functional_hessian(f)
+        )
 
         if H_lik is not None:
             H = torch.einsum('bcp,bck,bkq->pq', Js, H_lik, Js)
@@ -298,7 +370,11 @@ class GGNInterface(CurvatureInterface):
         Js, f = self.last_layer_jacobians(X) if self.last_layer else self.jacobians(X)
         loss = self.factor * self.lossfunc(f, y)
 
-        H_lik = self._get_mc_functional_fisher(f) if self.stochastic else self._get_functional_hessian(f)
+        H_lik = (
+            self._get_mc_functional_fisher(f)
+            if self.stochastic
+            else self._get_functional_hessian(f)
+        )
 
         if H_lik is not None:
             H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)

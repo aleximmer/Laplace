@@ -22,11 +22,18 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Setup
 
-We assume `python3.8` since the package was developed with that version.
+For full compatibility, install this package in a fresh virtual env.
+We assume Python >= 3.8 (last tested on Python 3.10.12).
 PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with `pip`, run the following:
 ```bash
 pip install laplace-torch
+```
+
+
+Note that, if you would like to use ASDL as a backend, please install it via the following, for full compatibility:
+```bash
+pip install git+https://github.com/wiseodd/asdl.git@dev
 ```
 
 For development purposes, clone the repository and then install:
@@ -64,15 +71,6 @@ la.optimize_prior_precision(method='gridsearch', val_loader=val_loader)
 
 # User-specified predictive approx.
 pred = la(x, link_approx='probit')
-
-# Serialization
-torch.save(la.state_dict(), 'state_dict.bin')
-
-# Load serialized Laplace
-la2 = Laplace(model, 'classification',
-              subset_of_weights='all',
-              hessian_structure='diag')
-la2.load_state_dict(torch.load('state_dict.bin'))
 ```
 
 ### Differentiating the log marginal likelihood w.r.t. hyperparameters
@@ -95,6 +93,93 @@ la.fit(train_loader)
 # ML w.r.t. prior precision and observation noise
 ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
+```
+
+### Laplace on foundation models like LLMs
+
+This library also supports Huggingface models and parameter-efficient fine-tuning.
+See `examples/huggingface_examples.py` for a runnable example.
+
+```python
+class MyGPT2(nn.Module):
+    def __init__(self, tokenizer: PreTrainedTokenizer) -> None:
+        super().__init__()
+        config = GPT2Config.from_pretrained('gpt2')
+        config.pad_token_id = tokenizer.pad_token_id
+        config.num_labels = 2
+        self.hf_model = GPT2ForSequenceClassification.from_pretrained(
+            'gpt2', config=config
+        )
+
+    def forward(self, data: MutableMapping) -> torch.Tensor:
+        '''
+        Custom forward function. Handles things like moving the
+        input tensor to the correct device inside.
+
+        Args:
+            data: A dict-like data structure with `input_ids` inside.
+                This is the default data structure assumed by Huggingface
+                dataloaders.
+
+        Returns:
+            logits: An `(batch_size, n_classes)`-sized tensor of logits.
+        '''
+        device = next(self.parameters()).device
+        input_ids = data['input_ids'].to(device)
+        attn_mask = data['attention_mask'].to(device)
+        output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
+        return output_dict.logits
+
+# Last-layer Laplace on the foundation model itself
+# -------------------------------------------------
+model = MyGPT2(tokenizer)
+model.eval()
+
+# Enable grad only for the last layer
+for p in model.hf_model.parameters():
+    p.requires_grad = False
+for p in model.hf_model.score.parameters():
+    p.requires_grad = True
+
+la = Laplace(
+    model,
+    likelihood='classification',
+    # Will only hit the last-layer since it's the only one that is grad-enabled
+    subset_of_weights='all',
+    hessian_structure='diag',
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+pred = la(next(iter(dataloader))
+
+# Laplace on the LoRA-attached LLM
+# --------------------------------
+def get_lora_model():
+    model = MyGPT2(tokenizer)  # Note we don't disable grad
+    config = LoraConfig(
+        r=4,
+        lora_alpha=16,
+        target_modules=['c_attn'],  # LoRA on the attention weights
+        lora_dropout=0.1,
+        bias='none',
+    )
+    lora_model = get_peft_model(model, config)
+    return lora_model
+
+lora_model = get_lora_model()
+# Train it as usual here...
+lora_model.eval()
+
+lora_la = Laplace(
+    lora_model,
+    likelihood='classification',
+    subset_of_weights='all',
+    hessian_structure='diag',
+    backend=AsdlGGN,
+)
+
+lora_pred = lora_la(next(iter(dataloader)))
 ```
 
 ### Applying the LA over only a subset of the model parameters
@@ -136,6 +221,60 @@ la = Laplace(model, 'classification',
 la.fit(train_loader)
 ```
 
+### Serialization
+
+As with plain `torch`, we support to ways to serialize data.
+
+One is the familiar `state_dict` approach. Here you need to save and re-create
+both `model` and  `Laplace`. Use this for long-term storage of models and
+sharing of a fitted `Laplace` instance.
+
+```py
+# Save model and Laplace instance
+torch.save(model.state_dict(), 'model_state_dict.bin')
+torch.save(la.state_dict(), 'la_state_dict.bin')
+
+# Load serialized data
+model2 = MyModel(...)
+model2.load_state_dict(torch.load('model_state_dict.bin'))
+la2 = Laplace(model2, 'classification',
+              subset_of_weights='all',
+              hessian_structure='diag')
+la2.load_state_dict(torch.load('la_state_dict.bin'))
+```
+
+The second approach is to save the whole `Laplace` object, including
+`self.model`. This is less verbose and more convenient since you have the
+trained model and the fitted `Laplace` data stored in one place, but [also comes with
+some
+drawbacks](https://pytorch.org/tutorials/beginner/saving_loading_models.html#saving-loading-model-for-inference).
+Use this for quick save-load cycles during experiments, say.
+
+```py
+# Save Laplace, including la.model
+torch.save(la, 'la.pt')
+
+# Load both
+torch.load('la.pt')
+```
+
+Some Laplace variants such as `LLLaplace` might have trouble being serialized
+using the default `pickle` module, which `torch.save()` and `torch.load()` use
+(`AttributeError: Can't pickle local object ...`). In this case, the
+[`dill`](https://github.com/uqfoundation/dill) package will come in handy.
+
+```py
+import dill
+
+torch.save(la, 'la.pt', pickle_module=dill)
+```
+
+With both methods, you are free to switch devices, for instance when you
+trained on a GPU but want to run predictions on CPU. In this case, use
+
+```py
+torch.load(..., map_location='cpu')
+```
 
 ## Structure
 The laplace package consists of two main components:
