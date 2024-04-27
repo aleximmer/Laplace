@@ -31,6 +31,7 @@ class BackPackInterface(CurvatureInterface):
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
+
         extend(self._model)
         extend(self.lossfunc)
 

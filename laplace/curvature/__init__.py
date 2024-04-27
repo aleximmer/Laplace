@@ -8,6 +8,16 @@ except ModuleNotFoundError:
     logging.info('Backpack backend not available.')
 
 try:
+    from laplace.curvature.asdfghjkl import (
+        AsdfghjklHessian,
+        AsdfghjklGGN,
+        AsdfghjklEF,
+        AsdfghjklInterface,
+    )
+except ModuleNotFoundError:
+    logging.info('Asdfghjkl backend not available.')
+
+try:
     from laplace.curvature.asdl import AsdlHessian, AsdlGGN, AsdlEF, AsdlInterface
 except ModuleNotFoundError:
     logging.info('ASDL backend not available.')
@@ -29,6 +39,10 @@ __all__ = [
     'BackPackInterface',
     'BackPackGGN',
     'BackPackEF',
+    'AsdfghjklInterface',
+    'AsdfghjklGGN',
+    'AsdfghjklEF',
+    'AsdfghjklHessian',
     'AsdlInterface',
     'AsdlGGN',
     'AsdlEF',

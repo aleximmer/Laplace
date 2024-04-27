@@ -22,12 +22,7 @@ from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-lrlaplace_param = pytest.param(
-    LowRankLaplace, marks=pytest.mark.xfail(reason='Unimplemented in the new ASDL')
-)
 flavors = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace]
-flavors_no_lrlaplace = flavors[:-1]
-flavors_lrlaplace_xfail = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param]
 online_flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 
@@ -159,11 +154,11 @@ def test_laplace_init(laplace, model):
     elif laplace == LowRankLaplace:
         assert lap.H is None
     else:
-        H = [[torch.tensor(k) for k in kfac] for kfac in lap.H.kfacs]
+        H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
         lap._init_H()
         for kfac1, kfac2 in zip(H, lap.H.kfacs):
             for k1, k2 in zip(kfac1, kfac2):
-                assert torch.allclose(k1, torch.tensor(k2))
+                assert torch.allclose(k1, k2)
 
 
 @pytest.mark.xfail(strict=True)
@@ -243,7 +238,7 @@ def test_laplace_init_precision(laplace, model):
         lap = laplace(model, likelihood='regression', prior_precision=precision)
 
 
-@pytest.mark.parametrize('laplace', flavors_lrlaplace_xfail)
+@pytest.mark.parametrize('laplace', flavors)
 def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     mean = parameters_to_vector(model.parameters())
     P = len(mean)
@@ -304,7 +299,7 @@ def test_laplace_init_temperature(laplace, model):
 
 
 @pytest.mark.parametrize(
-    'laplace,lh', product(flavors_no_lrlaplace, ['classification', 'regression'])
+    'laplace,lh', product(flavors, ['classification', 'regression'])
 )
 def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     if lh == 'classification':
@@ -449,7 +444,7 @@ def test_log_prob_kron(model, class_loader):
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta))
 
 
-@pytest.mark.parametrize('laplace', flavors_lrlaplace_xfail)
+@pytest.mark.parametrize('laplace', flavors)
 def test_regression_predictive(laplace, model, reg_loader):
     lap = laplace(model, 'regression', sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
@@ -487,7 +482,7 @@ def test_regression_predictive(laplace, model, reg_loader):
     assert torch.allclose(f_var_joint, f_var_glm)
 
 
-@pytest.mark.parametrize('laplace', flavors_lrlaplace_xfail)
+@pytest.mark.parametrize('laplace', flavors)
 def test_classification_predictive(laplace, model, class_loader):
     lap = laplace(model, 'classification', prior_precision=0.7)
     lap.fit(class_loader)
@@ -528,7 +523,7 @@ def test_classification_predictive(laplace, model, class_loader):
     )  # sum up to 1
 
 
-@pytest.mark.parametrize('laplace', flavors_lrlaplace_xfail)
+@pytest.mark.parametrize('laplace', flavors)
 def test_regression_predictive_samples(laplace, model, reg_loader):
     lap = laplace(model, 'regression', sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
@@ -548,7 +543,7 @@ def test_regression_predictive_samples(laplace, model, reg_loader):
     assert fsamples.shape == torch.Size([100, f.shape[0], f.shape[1]])
 
 
-@pytest.mark.parametrize('laplace', flavors_lrlaplace_xfail)
+@pytest.mark.parametrize('laplace', flavors)
 def test_classification_predictive_samples(laplace, model, class_loader):
     lap = laplace(model, 'classification', prior_precision=0.7)
     lap.fit(class_loader)
@@ -664,9 +659,10 @@ def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
         assert f_var.shape == (f_pred.shape[0], f_pred.shape[1])
 
 
-# TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
 def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -685,9 +681,10 @@ def test_backprop_glm(laplace, model, reg_loader, backend):
         assert False
 
 
-# TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
 def test_backprop_glm_joint(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -706,9 +703,10 @@ def test_backprop_glm_joint(laplace, model, reg_loader, backend):
         assert False
 
 
-# TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
 def test_backprop_glm_mc(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -727,9 +725,10 @@ def test_backprop_glm_mc(laplace, model, reg_loader, backend):
         assert False
 
 
-# TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize('backend', [BackPackGGN, AsdlGGN, AsdlEF])
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
 def test_backprop_nn(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
