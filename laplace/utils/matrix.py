@@ -48,9 +48,20 @@ class Kron:
         kfacs = list()
         for p in params:
             if p.ndim == 1:  # bias
-                kfacs.append([0.0])
-            elif 4 >= p.ndim >= 2:  # fully connected or embedding or conv
-                kfacs.append([0.0, 0.0])
+                P = p.size(0)
+                kfacs.append([torch.zeros(P, P, device=device)])
+            elif 4 >= p.ndim >= 2:  # fully connected or conv
+                if p.ndim == 2:  # fully connected
+                    P_in, P_out = p.size()
+                elif p.ndim > 2:
+                    P_in, P_out = p.shape[0], np.prod(p.shape[1:])
+
+                kfacs.append(
+                    [
+                        torch.zeros(P_in, P_in, device=device),
+                        torch.zeros(P_out, P_out, device=device),
+                    ]
+                )
             else:
                 raise ValueError('Invalid parameter shape in network.')
         return cls(kfacs)
@@ -70,9 +81,10 @@ class Kron:
             raise ValueError('Can only add Kron to Kron.')
 
         kfacs = [
-            [Hi + Hj for Hi, Hj in zip(Fi, Fj)]
+            [Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
             for Fi, Fj in zip(self.kfacs, other.kfacs)
         ]
+
         return Kron(kfacs)
 
     def __mul__(self, scalar: Union[float, torch.Tensor]):

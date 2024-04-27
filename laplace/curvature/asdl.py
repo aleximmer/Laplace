@@ -4,7 +4,12 @@ import numpy as np
 import torch
 
 from asdl.matrices import (
-    FISHER_EXACT, FISHER_MC, FISHER_EMP, SHAPE_KRON, SHAPE_DIAG, SHAPE_FULL
+    FISHER_EXACT,
+    FISHER_MC,
+    FISHER_EMP,
+    SHAPE_KRON,
+    SHAPE_DIAG,
+    SHAPE_FULL,
 )
 from asdl.grad_maker import LOSS_MSE, LOSS_CROSS_ENTROPY
 from asdl.fisher import FisherConfig, get_fisher_maker
@@ -20,8 +25,8 @@ EPS = 1e-6
 
 
 class AsdlInterface(CurvatureInterface):
-    """Interface for asdfghjkl backend.
-    """
+    """Interface for asdfghjkl backend."""
+
     def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
@@ -51,14 +56,22 @@ class AsdlInterface(CurvatureInterface):
         """
         Js = list()
         for i in range(self.model.output_size):
+
             def closure():
                 self.model.zero_grad()
                 f = self.model(x)
                 loss = f[:, i].sum()
-                loss.backward(create_graph=enable_backprop, retain_graph=enable_backprop)
+                loss.backward(
+                    create_graph=enable_backprop, retain_graph=enable_backprop
+                )
                 return f
 
-            Ji, f = batch_gradient(self.model, closure, return_outputs=True, batch_size=self._get_batch_size(x))
+            Ji, f = batch_gradient(
+                self.model,
+                closure,
+                return_outputs=True,
+                batch_size=self._get_batch_size(x),
+            )
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]
             Js.append(Ji)
@@ -81,13 +94,16 @@ class AsdlInterface(CurvatureInterface):
         Gs : torch.Tensor
             gradients `(batch, parameters)`
         """
+
         def closure():
             self.model.zero_grad()
             loss = self.lossfunc(self.model(x), y)
             loss.backward()
             return loss
 
-        Gs, loss = batch_gradient(self.model, closure, return_outputs=True, batch_size=self._get_batch_size(x))
+        Gs, loss = batch_gradient(
+            self.model, closure, return_outputs=True, batch_size=self._get_batch_size(x)
+        )
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
@@ -125,20 +141,27 @@ class AsdlInterface(CurvatureInterface):
     def _rescale_kron_factors(kron, N):
         for F in kron.kfacs:
             if len(F) == 2:
-                F[1] *= 1/N
+                F[1] *= 1 / N
         return kron
 
     def diag(self, X, y, N=None, **kwargs):
         del N
         if self.last_layer:
             _, X = self.model.forward_with_features(X)
-        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
-                           fisher_shapes=[SHAPE_DIAG], data_size=1, **kwargs)
+        cfg = FisherConfig(
+            fisher_type=self._ggn_type,
+            loss_type=self.loss_type,
+            fisher_shapes=[SHAPE_DIAG],
+            data_size=1,
+            **kwargs,
+        )
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
-            dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+            dummy = (
+                dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+            )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, X)
@@ -158,19 +181,26 @@ class AsdlInterface(CurvatureInterface):
         if type(self) is AsdlEF and self.likelihood == 'regression':
             curv_factor = 0.5  # correct scaling for diag ef
         else:
-            curv_factor = 1.0   # ASDL uses proper 1/2 * MSELoss
+            curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * diag_ggn
 
     def kron(self, X, y, N, **kwargs):
         if self.last_layer:
             _, X = self.model.forward_with_features(X)
-        cfg = FisherConfig(fisher_type=self._ggn_type, loss_type=self.loss_type,
-                           fisher_shapes=[SHAPE_KRON], data_size=1, **kwargs)
+        cfg = FisherConfig(
+            fisher_type=self._ggn_type,
+            loss_type=self.loss_type,
+            fisher_shapes=[SHAPE_KRON],
+            data_size=1,
+            **kwargs,
+        )
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
-            dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+            dummy = (
+                dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+            )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, X)
@@ -184,7 +214,7 @@ class AsdlInterface(CurvatureInterface):
         if type(self) is AsdlEF and self.likelihood == 'regression':
             curv_factor = 0.5  # correct scaling for diag ef
         else:
-            curv_factor = 1.0   # ASDL uses proper 1/2 * MSELoss
+            curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
 
     @staticmethod
@@ -206,7 +236,6 @@ class AsdlInterface(CurvatureInterface):
 
 
 class AsdlHessian(AsdlInterface):
-
     def __init__(self, model, likelihood, last_layer=False, low_rank=10):
         super().__init__(model, likelihood, last_layer)
         self.low_rank = low_rank
@@ -232,32 +261,18 @@ class AsdlHessian(AsdlInterface):
         loss = self.lossfunc(f, y)
         return self.factor * loss, self.factor * H
 
-    def eig_lowrank(self, data_loader):
-        # TODO: need to implement manually...
-        # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
-        if self.last_layer:
-            _, x = self.model.forward_with_features(x)
-        cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
-        hess_maker = HessianMaker(self.model, cfg)
-        dummy = hess_maker.setup_model_call(self._model, x)
-        hess_maker.setup_loss_call(self.lossfunc, dummy, y)
-        # iteratively go through data loader and average eigendecomposition
-        # previously:
-        eigvals, eigvecs = hessian_eig(self.model, self.lossfunc, data_loader=data_loader,
-                                       top_n=self.low_rank, max_iters=self.low_rank*10)
-        eigvals = torch.from_numpy(np.array(eigvals))
-        mask = (eigvals > EPS)
-        eigvecs = torch.stack([vec.get_flatten_vector() for vec in eigvecs], dim=1)[:, mask]
-        device = eigvecs.device
-        eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
-        loss = sum([self.lossfunc(self.model(x.to(device)).detach(), y.to(device)) for x, y in data_loader])
-        return eigvecs, self.factor * eigvals, self.factor * loss
-
 
 class AsdlGGN(AsdlInterface, GGNInterface):
-    """Implementation of the `GGNInterface` using asdfghjkl.
-    """
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False):
+    """Implementation of the `GGNInterface` using asdfghjkl."""
+
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        subnetwork_indices=None,
+        stochastic=False,
+    ):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
         self.stochastic = stochastic
 
@@ -267,8 +282,8 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 
 
 class AsdlEF(AsdlInterface, EFInterface):
-    """Implementation of the `EFInterface` using asdfghjkl.
-    """
+    """Implementation of the `EFInterface` using asdfghjkl."""
+
     def __init__(self, model, likelihood, last_layer=False):
         super().__init__(model, likelihood, last_layer)
 
