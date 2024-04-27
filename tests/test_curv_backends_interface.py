@@ -435,6 +435,16 @@ def test_logit_class_dim_class(backend_cls, method, logit_class_dim, model, clas
         # Classification should be sensitive to `logit_class_dim`
         backend = backend_cls(model, 'classification', logit_class_dim=logit_class_dim)
 
+        # Skip this due to https://github.com/aleximmer/Laplace/issues/178
+        if (
+            method == 'full'
+            and backend.full.__qualname__
+            == getattr(GGNInterface(model, 'classification'), method).__qualname__
+        ):
+            pytest.skip(
+                reason='Skip this due to https://github.com/aleximmer/Laplace/issues/178'
+            )
+
         ctx = pytest.raises(IndexError) if logit_class_dim == 1000 else nullcontext()
         # Curvlinops full and kron should be good to go
         ctx = (
@@ -444,6 +454,15 @@ def test_logit_class_dim_class(backend_cls, method, logit_class_dim, model, clas
         )
         # Asdfghjkl always assumes `logit_class_dim = -1`
         ctx = nullcontext() if 'Asdfghjkl' in backend_cls.__name__ else ctx
+        # Generic torch.func diag & full EF are also fine
+        ctx = (
+            nullcontext()
+            if method in ['diag', 'full']
+            and getattr(backend, method).__qualname__
+            == getattr(EFInterface(model, 'classification'), method).__qualname__
+            else ctx
+        )
+
         with ctx:
             getattr(backend, method)(X, y, N=N)
     except (NotImplementedError, AttributeError):
