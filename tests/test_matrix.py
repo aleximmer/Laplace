@@ -32,20 +32,20 @@ def small_model():
 
 def test_init_from_model(model):
     kron = Kron.init_from_model(model, 'cpu')
-    expected_init_values = [[0., 0.], [0.], [0., 0.], [0.]]
-    for facs, exp_facs in zip(kron.kfacs, expected_init_values):
-        assert len(facs) == len(exp_facs)
+    expected_sizes = [[20*20, 3*3], [20*20], [2*2, 20*20], [2*2]]
+    for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
-            assert fi == exp_fi
+            assert torch.all(fi == 0)
+            assert np.prod(fi.shape) == exp_fi
 
 
 def test_init_from_iterable(model):
     kron = Kron.init_from_model(model.parameters(), 'cpu')
-    expected_init_values = [[0., 0.], [0.], [0., 0.], [0.]]
-    for facs, exp_facs in zip(kron.kfacs, expected_init_values):
-        assert len(facs) == len(exp_facs)
+    expected_sizes = [[20*20, 3*3], [20*20], [2*2, 20*20], [2*2]]
+    for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
-            assert fi == exp_fi
+            assert torch.all(fi == 0)
+            assert np.prod(fi.shape) == exp_fi
 
 
 def test_addition(model):
