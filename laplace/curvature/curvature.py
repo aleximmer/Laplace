@@ -1,6 +1,9 @@
+from typing import List, Tuple
 import torch
+from torch import nn
 from torch.nn import MSELoss, CrossEntropyLoss
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
+
+from laplace.baselaplace import Likelihood
 
 
 class CurvatureInterface:
@@ -17,7 +20,7 @@ class CurvatureInterface:
     likelihood : {'classification', 'regression'}
     last_layer : bool, default=False
         only consider curvature of last layer
-    subnetwork_indices : torch.Tensor, default=None
+    subnetwork_indices : torch.LongTensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
 
@@ -29,29 +32,43 @@ class CurvatureInterface:
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
 
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
-        assert likelihood in ['regression', 'classification']
-        self.likelihood = likelihood
-        self.model = model
-        self.last_layer = last_layer
-        self.subnetwork_indices = subnetwork_indices
+    def __init__(
+        self,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        last_layer: bool = False,
+        subnetwork_indices: torch.LongTensor | None = None,
+    ):
+        assert likelihood in [Likelihood.REGRESSION, Likelihood.CLASSIFICATION]
+        self.likelihood: Likelihood | str = likelihood
+        self.model: nn.Module = model
+        self.last_layer: bool = last_layer
+        self.subnetwork_indices: torch.LongTensor | None = subnetwork_indices
+
         if likelihood == 'regression':
             self.lossfunc = MSELoss(reduction='sum')
             self.factor = 0.5
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.0
-        self.params = [p for p in self._model.parameters() if p.requires_grad]
-        self.params_dict = {
+
+        self.params: List[torch.Tensor] = [
+            p for p in self._model.parameters() if p.requires_grad
+        ]
+        self.params_dict: dict[str, torch.Tensor] = {
             k: v for k, v in self._model.named_parameters() if v.requires_grad
         }
-        self.buffers_dict = {k: v for k, v in self.model.named_buffers()}
+        self.buffers_dict: dict[str, torch.Tensor] = {
+            k: v for k, v in self.model.named_buffers()
+        }
 
     @property
-    def _model(self):
+    def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
 
-    def jacobians(self, x, enable_backprop=False):
+    def jacobians(
+        self, x: torch.Tensor, enable_backprop: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\),
         via torch.func.
 
@@ -90,7 +107,9 @@ class CurvatureInterface:
 
         return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
-    def functorch_jacobians(self, x, enable_backprop=False):
+    def functorch_jacobians(
+        self, x: torch.Tensor, enable_backprop: bool = False
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
@@ -130,7 +149,7 @@ class CurvatureInterface:
 
         return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
-    def last_layer_jacobians(self, x, enable_backprop=False):
+    def last_layer_jacobians(self, x: torch.Tensor, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
