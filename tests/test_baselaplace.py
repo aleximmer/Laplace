@@ -1,3 +1,4 @@
+from collections.abc import MutableMapping
 from math import sqrt, prod
 import pytest
 from itertools import product
@@ -9,11 +10,14 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
+from laplace.curvature.asdfghjkl import AsdfghjklGGN, AsdfghjklEF
+from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from torchvision.models import wide_resnet50_2
 
 from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from laplace.utils import KronDecomposed
-from tests.utils import jacobians_naive
+from laplace.curvature import AsdlGGN, BackPackGGN, AsdlEF
+from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
 
 torch.manual_seed(240)
@@ -39,6 +43,56 @@ def large_model():
 
 
 @pytest.fixture
+def custom_model():
+    class CustomModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.net = nn.Sequential(nn.Linear(5, 100), nn.ReLU(), nn.Linear(100, 2))
+
+        def forward(self, data: MutableMapping | torch.Tensor):
+            if isinstance(data, MutableMapping):
+                x = data['input_ids'].to(next(self.parameters()).device)
+            else:
+                x = data
+
+            logits = self.net(x)
+            return logits
+
+    return CustomModel()
+
+
+@pytest.fixture
+def reward_model():
+    class RewardModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.net = nn.Sequential(nn.Linear(3, 100), nn.ReLU(), nn.Linear(100, 1))
+
+        def forward(self, x):
+            """
+            x: torch.Tensor
+                If training == True then shape (batch_size, 2, dim)
+                Else shape (batch_size, dim)
+            """
+            if len(x.shape) == 3:
+                batch_size, _, dim = x.shape
+
+                # Flatten to (batch_size*2, dim)
+                flat_x = x.reshape(-1, dim)
+
+                # Forward
+                flat_logits = self.net(flat_x)  # (batch_size*2, 1)
+
+                # Reshape back to (batch_size, 2)
+                return flat_logits.reshape(batch_size, 2)
+            else:
+                logits = self.net(x)  # (batch_size, 1)
+                return logits
+
+    return RewardModel()
+
+
+@pytest.fixture
 def class_loader():
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
@@ -50,6 +104,28 @@ def reg_loader():
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
     return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def custom_loader():
+    data = []
+    for _ in range(10):
+        datum = {'input_ids': torch.randn(5), 'labels': torch.randint(2, (1,))}
+        data.append(datum)
+    return DataLoader(ListDataset(data), batch_size=3, collate_fn=dict_data_collator)
+
+
+@pytest.fixture
+def reward_loader():
+    X = torch.randn(10, 2, 3)
+    y = torch.randint(2, (10,))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reward_test_X():
+    X = torch.randn(10, 3)
+    return X
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -151,17 +227,21 @@ def test_laplace_init_precision(laplace, model):
 def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     mean = parameters_to_vector(model.parameters())
     P = len(mean)
-    lap_scalar_mean = laplace(model, 'classification',
-                              prior_precision=1e-2, prior_mean=1.)
-    assert torch.allclose(lap_scalar_mean.prior_mean, torch.tensor([1.]))
-    lap_tensor_mean = laplace(model, 'classification',
-                              prior_precision=1e-2, prior_mean=torch.ones(1))
-    assert torch.allclose(lap_tensor_mean.prior_mean, torch.tensor([1.]))
-    lap_tensor_scalar_mean = laplace(model, 'classification',
-                                     prior_precision=1e-2, prior_mean=torch.ones(1)[0])
-    assert torch.allclose(lap_tensor_scalar_mean.prior_mean, torch.tensor(1.))
-    lap_tensor_full_mean = laplace(model, 'classification',
-                                   prior_precision=1e-2, prior_mean=torch.ones(P))
+    lap_scalar_mean = laplace(
+        model, 'classification', prior_precision=1e-2, prior_mean=1.0
+    )
+    assert torch.allclose(lap_scalar_mean.prior_mean, torch.tensor([1.0]))
+    lap_tensor_mean = laplace(
+        model, 'classification', prior_precision=1e-2, prior_mean=torch.ones(1)
+    )
+    assert torch.allclose(lap_tensor_mean.prior_mean, torch.tensor([1.0]))
+    lap_tensor_scalar_mean = laplace(
+        model, 'classification', prior_precision=1e-2, prior_mean=torch.ones(1)[0]
+    )
+    assert torch.allclose(lap_tensor_scalar_mean.prior_mean, torch.tensor(1.0))
+    lap_tensor_full_mean = laplace(
+        model, 'classification', prior_precision=1e-2, prior_mean=torch.ones(P)
+    )
     assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(P))
 
     lap_scalar_mean.fit(class_loader)
@@ -170,7 +250,7 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     lap_tensor_full_mean.fit(class_loader)
     expected = torch.tensor(0).reshape(-1)
     # assert expected.ndim == 0
-    expected = ((mean -1) * 1e-2) @ (mean -1)
+    expected = ((mean - 1) * 1e-2) @ (mean - 1)
     assert torch.allclose(lap_scalar_mean.scatter, expected)
     assert lap_scalar_mean.scatter.shape == expected.shape
     assert torch.allclose(lap_tensor_mean.scatter, expected)
@@ -187,7 +267,7 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
 
     # unmatched dim
     with pytest.raises(ValueError):
-        prior_mean = torch.ones(P-3)
+        prior_mean = torch.ones(P - 3)
         laplace(model, 'classification', prior_precision=1e-2, prior_mean=prior_mean)
 
     # invalid argument type
@@ -203,11 +283,13 @@ def test_laplace_init_temperature(laplace, model):
     assert lap.temperature == T
 
 
-@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+@pytest.mark.parametrize(
+    'laplace,lh', product(flavors, ['classification', 'regression'])
+)
 def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     if lh == 'classification':
         loader = class_loader
-        sigma_noise = 1.
+        sigma_noise = 1.0
     else:
         loader = reg_loader
         sigma_noise = 0.3
@@ -243,7 +325,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     assert torch.allclose(theta, lap.mean)
     prior_prec = torch.diag(lap.prior_precision_diag)
     assert prior_prec.shape == torch.Size([len(theta), len(theta)])
-    lml = lml - 1/2 * theta @ prior_prec @ theta
+    lml = lml - 1 / 2 * theta @ prior_prec @ theta
     if laplace == DiagLaplace:
         log_det_post_prec = lap.posterior_precision.log().sum()
     elif laplace == LowRankLaplace:
@@ -251,7 +333,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
         log_det_post_prec = (U @ torch.diag(l) @ U.T + p0.diag()).logdet()
     else:
         log_det_post_prec = lap.posterior_precision.logdet()
-    lml = lml + 1/2 * (prior_prec.logdet() - log_det_post_prec)
+    lml = lml + 1 / 2 * (prior_prec.logdet() - log_det_post_prec)
     assert torch.allclose(lml, lap.log_marginal_likelihood())
 
     # test sampling
@@ -309,12 +391,12 @@ def test_online_fit(laplace, model, reg_loader):
         P = lap.H.to_matrix().clone()
     else:
         P = lap.H.clone()
-    loss, n_data = deepcopy(lap.loss), deepcopy(lap.n_data)
+    loss, n_data = deepcopy(lap.loss.item()), deepcopy(lap.n_data)
     # fit a second and third time but don't override
     lap.fit(reg_loader, override=False)
     lap.fit(reg_loader, override=False)
     # Hessian should be now roughly 3x the one before
-    assert torch.allclose(3 * loss, lap.loss)
+    assert torch.allclose(3 * torch.tensor(loss), lap.loss)
     assert (3 * n_data) == lap.n_data
     if type(lap.H) is KronDecomposed:
         assert torch.allclose(lap.H.to_matrix(), 3 * P)
@@ -326,20 +408,24 @@ def test_log_prob_full(model, class_loader):
     lap = FullLaplace(model, 'classification', prior_precision=0.7)
     theta = torch.randn_like(parameters_to_vector(model.parameters()))
     # posterior without fitting is just prior
-    posterior = Normal(loc=torch.zeros_like(theta), scale=sqrt(1/0.7))
+    posterior = Normal(loc=torch.zeros_like(theta), scale=sqrt(1 / 0.7))
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta).sum())
     lap.fit(class_loader)
-    posterior = MultivariateNormal(loc=lap.mean, precision_matrix=lap.posterior_precision)
+    posterior = MultivariateNormal(
+        loc=lap.mean, precision_matrix=lap.posterior_precision
+    )
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta))
 
-    
+
 def test_log_prob_kron(model, class_loader):
     lap = KronLaplace(model, 'classification', prior_precision=0.24)
     theta = torch.randn_like(parameters_to_vector(model.parameters()))
-    posterior = Normal(loc=lap.mean, scale=sqrt(1/0.24))
+    posterior = Normal(loc=lap.mean, scale=sqrt(1 / 0.24))
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta).sum())
     lap.fit(class_loader)
-    posterior = MultivariateNormal(loc=lap.mean, precision_matrix=lap.posterior_precision.to_matrix())
+    posterior = MultivariateNormal(
+        loc=lap.mean, precision_matrix=lap.posterior_precision.to_matrix()
+    )
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta))
 
 
@@ -357,7 +443,9 @@ def test_regression_predictive(laplace, model, reg_loader):
     # GLM predictive, functional variance tested already above.
     f_mu_glm, f_var_glm = lap(X, pred_type='glm')
     assert torch.allclose(f_mu_glm, f)
-    assert f_var_glm.shape == torch.Size([f_mu_glm.shape[0], f_mu_glm.shape[1], f_mu_glm.shape[1]])
+    assert f_var_glm.shape == torch.Size(
+        [f_mu_glm.shape[0], f_mu_glm.shape[1], f_mu_glm.shape[1]]
+    )
     assert len(f_mu_glm) == len(X)
 
     # NN predictive (only diagonal variance estimation)
@@ -366,7 +454,7 @@ def test_regression_predictive(laplace, model, reg_loader):
     assert f_var_nn.shape == torch.Size([f_mu_nn.shape[0], f_mu_nn.shape[1]])
     assert len(f_mu_nn) == len(X)
 
-    # Test joint prediction 
+    # Test joint prediction
     f_mu_joint, f_cov_joint = lap(X, pred_type='glm', joint=True)
     assert len(f_mu_joint.shape) == 1
     assert f_mu_joint.shape[0] == prod(f_mu_glm.shape)
@@ -393,21 +481,31 @@ def test_classification_predictive(laplace, model, class_loader):
     # GLM predictive
     f_pred = lap(X, pred_type='glm', link_approx='mc', n_samples=100)
     assert f_pred.shape == f.shape
-    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    assert torch.allclose(
+        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+    )  # sum up to 1
     f_pred = lap(X, pred_type='glm', link_approx='probit')
     assert f_pred.shape == f.shape
-    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    assert torch.allclose(
+        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+    )  # sum up to 1
     f_pred = lap(X, pred_type='glm', link_approx='bridge')
     assert f_pred.shape == f.shape
-    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    assert torch.allclose(
+        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+    )  # sum up to 1
     f_pred = lap(X, pred_type='glm', link_approx='bridge_norm')
     assert f_pred.shape == f.shape
-    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    assert torch.allclose(
+        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+    )  # sum up to 1
 
     # NN predictive
     f_pred = lap(X, pred_type='nn', link_approx='mc', n_samples=100)
     assert f_pred.shape == f.shape
-    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))  # sum up to 1
+    assert torch.allclose(
+        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+    )  # sum up to 1
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -452,19 +550,74 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
 
-# TODO: Add LowRankLaplace
+@pytest.mark.parametrize('laplace', [KronLaplace, DiagLaplace])
+def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
+    lap = laplace(reward_model, 'reward_modeling')
+    lap.fit(reward_loader)
+    f = reward_model(reward_test_X)
+
+    # error
+    with pytest.raises(ValueError):
+        lap(reward_test_X, pred_type='linear')
+
+    # GLM predictive, functional variance tested already above.
+    f_mu, f_var = lap(reward_test_X, pred_type='glm')
+    assert torch.allclose(f_mu, f)
+    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+    assert len(f_mu) == len(reward_test_X)
+
+    # NN predictive (only diagonal variance estimation)
+    f_mu, f_var = lap(reward_test_X, pred_type='nn', link_approx='mc')
+    assert f_mu.shape == f_var.shape
+    assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
+    assert len(f_mu) == len(reward_test_X)
+
+
+@pytest.mark.parametrize('laplace', [KronLaplace, DiagLaplace])
+@pytest.mark.parametrize('backend', [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+def test_dict_data(laplace, backend, custom_model, custom_loader):
+    if laplace == DiagLaplace and backend == CurvlinopsEF:
+        pytest.skip(
+            'DiagEF is unsupported with Curvlinops when the input is non-tensor.'
+        )
+
+    for data in custom_loader:
+        print(data)
+
+    lap = laplace(custom_model, 'classification', backend=backend)
+    lap.fit(custom_loader)
+
+    test_data = next(iter(custom_loader))
+    f = custom_model(test_data)
+
+    # GLM predictive
+    f_pred = lap(test_data, pred_type='glm')
+    assert f_pred.shape == f.shape
+    assert torch.allclose(
+        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+    )  # sum up to 1
+
+    # NN predictive
+    f_pred = lap(test_data, pred_type='nn', link_approx='mc')
+    assert f_pred.shape == f.shape
+    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))
+
+
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_glm(laplace, model, reg_loader):
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
+def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type='glm')
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -472,19 +625,21 @@ def test_backprop_glm(laplace, model, reg_loader):
         assert False
 
 
-# TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_glm_joint(laplace, model, reg_loader):
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
+def test_backprop_glm_joint(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_cov = lap(X, pred_type='glm', joint=True)
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_cov.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_cov.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -492,19 +647,21 @@ def test_backprop_glm_joint(laplace, model, reg_loader):
         assert False
 
 
-# TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_glm_mc(laplace, model, reg_loader):
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
+def test_backprop_glm_mc(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type='glm', link_approx='mc')
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
@@ -512,21 +669,31 @@ def test_backprop_glm_mc(laplace, model, reg_loader):
         assert False
 
 
-# TODO: Add LowRankLaplace
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
-def test_backprop_nn(laplace, model, reg_loader):
+@pytest.mark.parametrize(
+    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+)
+def test_backprop_nn(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, 'regression', enable_backprop=True)
+    lap = laplace(model, 'regression', enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type='nn', link_approx='mc', n_samples=10)
 
     try:
         grad_X_mu = torch.autograd.grad(f_mu.sum(), X, retain_graph=True)[0]
-        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0] 
+        grad_X_var = torch.autograd.grad(f_var.sum(), X)[0]
 
         assert grad_X_mu.shape == X.shape
         assert grad_X_var.shape == X.shape
     except ValueError:
         assert False
+
+
+@pytest.mark.parametrize('likelihood', ['classification', 'regression'])
+def test_dict_data_diagEF_curvlinops_fails(custom_model, custom_loader, likelihood):
+    lap = DiagLaplace(custom_model, likelihood=likelihood, backend=CurvlinopsEF)
+
+    with pytest.raises(ValueError):
+        lap.fit(custom_loader)

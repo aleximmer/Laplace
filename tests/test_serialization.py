@@ -26,7 +26,9 @@ from laplace.laplace import (
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace]
+lrlaplace_param = pytest.param(LowRankLaplace, marks=pytest.mark.xfail(reason='Unimplemented in the new ASDL'))
+flavors = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param, FullLLLaplace, KronLLLaplace, DiagLLLaplace]
+flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param]
 flavors_llla = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_subnet = [DiagSubnetLaplace, FullSubnetLaplace]
 flavors = flavors_llla + flavors_no_llla
@@ -102,7 +104,7 @@ def test_serialize(laplace, model, reg_loader):
     assert torch.allclose(f_var, f_var2)
 
 
-@pytest.mark.parametrize('laplace', set(flavors_no_llla) - {LowRankLaplace})
+@pytest.mark.parametrize('laplace', flavors_no_llla[:-1])
 def test_serialize_override(laplace, model, reg_loader):
     la = laplace(model, 'regression')
     la.fit(reg_loader)

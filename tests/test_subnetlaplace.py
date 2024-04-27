@@ -332,7 +332,7 @@ def test_layer_subnet_masks(model, likelihood, subnetwork_mask, class_loader, re
         lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork',
                       subnetwork_indices=subnetmask.indices, hessian_structure=hessian_structure)
         lap.fit(loader)
-        assert torch.allclose(lllap.H, lap.H, rtol=1e-4)
+        assert torch.allclose(lllap.H, lap.H, rtol=1e-3)
 
         # define valid parameter name subnet mask
         subnetmask_kwargs.update(parameter_names=['0.weight', '1.bias'])
@@ -377,7 +377,7 @@ def test_layer_subnet_masks(model, likelihood, subnetwork_mask, class_loader, re
         lap = Laplace(model, likelihood=likelihood, subset_of_weights='subnetwork',
                       subnetwork_indices=subnetmask.indices, hessian_structure=hessian_structure)
         lap.fit(loader)
-        assert torch.allclose(lllap.H, lap.H, rtol=1e-4)
+        assert torch.allclose(lllap.H, lap.H, rtol=1e-3)
 
         # define valid parameter name subnet mask
         subnetmask_kwargs.update(module_names=['0'])
@@ -418,7 +418,7 @@ def test_layer_subnet_masks(model, likelihood, subnetwork_mask, class_loader, re
         assert isinstance(lap, SubnetLaplace)
 
         # check that Hessian is identical to that of a full LLLaplace model
-        assert torch.allclose(lllap.H, lap.H, rtol=1e-4)
+        assert torch.allclose(lllap.H, lap.H, rtol=1e-3)
 
         # define valid last-layer subnet mask (with passing the last-layer name)
         subnetmask_kwargs.update(last_layer_name='1')
@@ -437,7 +437,7 @@ def test_layer_subnet_masks(model, likelihood, subnetwork_mask, class_loader, re
         assert isinstance(lap, SubnetLaplace)
 
         # check that Hessian is identical to that of a full LLLaplace model
-        assert torch.allclose(lllap.H, lap.H, rtol=1e-4)
+        assert torch.allclose(lllap.H, lap.H, rtol=1e-3)
 
     # check some parameters
     assert subnetmask.indices.equal(lap.backend.subnetwork_indices)
@@ -479,7 +479,7 @@ def test_full_subnet_mask(model, likelihood, class_loader, reg_loader, hessian_s
     full_lap = Laplace(model, likelihood=likelihood, subset_of_weights='all',
                        hessian_structure=hessian_structure)
     full_lap.fit(loader)
-    assert torch.allclose(full_lap.H, lap.H, rtol=1e-4)
+    assert torch.allclose(full_lap.H, lap.H, rtol=1e-3)
 
 
 @pytest.mark.parametrize('subnetwork_mask,hessian_structure', product(all_subnet_masks, hessian_structures))

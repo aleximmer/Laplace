@@ -6,6 +6,8 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 import warnings
 import logging
+from collections import UserDict
+import tqdm
 
 from laplace import Laplace
 from laplace.curvature import AsdlGGN
@@ -28,23 +30,25 @@ def marglik_training(
     n_epochs_burnin=0,
     n_hypersteps=10,
     marglik_frequency=1,
-    prior_prec_init=1.,
-    sigma_noise_init=1.,
-    temperature=1.,
-    enable_backprop=False
+    prior_prec_init=1.0,
+    sigma_noise_init=1.0,
+    temperature=1.0,
+    fix_sigma_noise=False,
+    progress_bar=False,
+    enable_backprop=False,
 ):
-    """Marginal-likelihood based training (Algorithm 1 in [1]). 
+    """Marginal-likelihood based training (Algorithm 1 in [1]).
     Optimize model parameters and hyperparameters jointly.
     Model parameters are optimized to minimize negative log joint (train loss)
     while hyperparameters minimize negative log marginal likelihood.
 
     This method replaces standard neural network training and adds hyperparameter
-    optimization to the procedure. 
-    
-    The settings of standard training can be controlled by passing `train_loader`, 
+    optimization to the procedure.
+
+    The settings of standard training can be controlled by passing `train_loader`,
     `optimizer_cls`, `optimizer_kwargs`, `scheduler_cls`, `scheduler_kwargs`, and `n_epochs`.
     The `model` should return logits, i.e., no softmax should be applied.
-    With `likelihood='classification'` or `'regression'`, one can choose between 
+    With `likelihood='classification'` or `'regression'`, one can choose between
     categorical likelihood (CrossEntropyLoss) and Gaussian likelihood (MSELoss).
 
     As in [1], we optimize prior precision and, for regression, observation noise
@@ -59,8 +63,8 @@ def marglik_training(
 
     References
     ----------
-    [1] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM. 
-    [*Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning*](https://arxiv.org/abs/2104.04975). 
+    [1] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM.
+    [*Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning*](https://arxiv.org/abs/2104.04975).
     ICML 2021.
 
     Parameters
@@ -96,7 +100,7 @@ def marglik_training(
         how many steps to take on the hyperparameters when marglik is estimated
     marglik_frequency : int
         how often to estimate (and differentiate) the marginal likelihood
-        `marglik_frequency=1` would be every epoch, 
+        `marglik_frequency=1` would be every epoch,
         `marglik_frequency=5` would be every 5 epochs.
     prior_prec_init : float, default=1.0
         initial prior precision
@@ -104,6 +108,11 @@ def marglik_training(
         initial observation noise (for regression only)
     temperature : float, default=1.0
         factor for the likelihood for 'overcounting' data. Might be required for data augmentation.
+    fix_sigma_noise: bool, default=False
+        if False, optimize observation noise via marglik otherwise use `sigma_noise_init` throughout.
+        Only works for regression.
+    progress_bar: bool, default=False
+        whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
         make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
 
@@ -125,22 +134,24 @@ def marglik_training(
     # get device, data set size N, number of layers H, number of parameters P
     device = parameters_to_vector(model.parameters()).device
     N = len(train_loader.dataset)
-    H = len(list(model.parameters()))
-    P = len(parameters_to_vector(model.parameters()))
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+    H = len(trainable_params)
+    P = len(parameters_to_vector(trainable_params))
 
     # differentiable hyperparameters
     hyperparameters = list()
     # prior precision
     log_prior_prec_init = np.log(temperature * prior_prec_init)
     log_prior_prec = fix_prior_prec_structure(
-        log_prior_prec_init, prior_structure, H, P, device)
+        log_prior_prec_init, prior_structure, H, P, device
+    )
     log_prior_prec.requires_grad = True
     hyperparameters.append(log_prior_prec)
 
     # set up loss (and observation noise hyperparam)
     if likelihood == 'classification':
         criterion = CrossEntropyLoss(reduction='mean')
-        sigma_noise = 1.
+        sigma_noise = 1.0
     elif likelihood == 'regression':
         criterion = MSELoss(reduction='mean')
         log_sigma_noise_init = np.log(sigma_noise_init)
@@ -168,21 +179,41 @@ def marglik_training(
     losses = list()
     margliks = list()
 
-    for epoch in range(1, n_epochs + 1):
+    pbar = tqdm.trange(
+        1,
+        n_epochs + 1,
+        disable=not progress_bar,
+        position=1,
+        leave=False,
+        desc='[Training]',
+        colour='blue',
+    )
+    for epoch in pbar:
         epoch_loss = 0
         epoch_perf = 0
-        
+
         # standard NN training per batch
-        for X, y in train_loader:
-            X, y = X.to(device), y.to(device)
+        for data in train_loader:
+            if isinstance(data, UserDict) or isinstance(data, dict):
+                X, y = data, data['labels']
+                y = y.to(device, non_blocking=True)
+            else:
+                X, y = data
+                X, y = X.to(device, non_blocking=True), y.to(device, non_blocking=True)
             optimizer.zero_grad()
             if likelihood == 'regression':
-                sigma_noise = torch.exp(log_sigma_noise).detach()
-                crit_factor = temperature / (2 * sigma_noise.square())
+                sigma_noise = (
+                    torch.exp(log_sigma_noise).detach()
+                    if not fix_sigma_noise
+                    else sigma_noise_init
+                )
+                crit_factor = temperature / (2 * sigma_noise**2)
             else:
                 crit_factor = temperature
             prior_prec = torch.exp(log_prior_prec).detach()
-            theta = parameters_to_vector(model.parameters())
+            theta = parameters_to_vector(
+                [p for p in model.parameters() if p.requires_grad]
+            )
             delta = expand_prior_precision(prior_prec, model)
             f = model(X)
             loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
@@ -199,8 +230,10 @@ def marglik_training(
         losses.append(epoch_loss / N)
 
         # compute validation error to report during training
-        logging.info(f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.' +
-                     f'Perf={epoch_perf/N:.3f}')
+        logging.info(
+            f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.'
+            + f'Perf={epoch_perf/N:.3f}'
+        )
 
         # only update hyperparameters every marglik_frequency steps after burnin
         if (epoch % marglik_frequency) != 0 or epoch < n_epochs_burnin:
@@ -208,21 +241,31 @@ def marglik_training(
 
         # optimizer hyperparameters by differentiating marglik
         # 1. fit laplace approximation
-        sigma_noise = 1 if likelihood == 'classification' else torch.exp(log_sigma_noise)
+        if likelihood == 'classification':
+            sigma_noise = 1
+        else:
+            sigma_noise = (
+                torch.exp(log_sigma_noise) if not fix_sigma_noise else sigma_noise_init
+            )
         prior_prec = torch.exp(log_prior_prec)
         lap = Laplace(
-            model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise, 
-            prior_precision=prior_prec, temperature=temperature, backend=backend,
-            subset_of_weights='all'
+            model,
+            likelihood,
+            hessian_structure=hessian_structure,
+            sigma_noise=sigma_noise,
+            prior_precision=prior_prec,
+            temperature=temperature,
+            backend=backend,
+            subset_of_weights='all',
         )
         lap.fit(train_loader)
 
         # 2. differentiate wrt. hyperparameters for n_hypersteps
         for _ in range(n_hypersteps):
             hyper_optimizer.zero_grad()
-            if likelihood == 'classification':
+            if likelihood == 'classification' or fix_sigma_noise:
                 sigma_noise = None
-            elif likelihood == 'regression':
+            else:
                 sigma_noise = torch.exp(log_sigma_noise)
             prior_prec = torch.exp(log_prior_prec)
             marglik = -lap.log_marginal_likelihood(prior_prec, sigma_noise)
@@ -234,13 +277,24 @@ def marglik_training(
         if margliks[-1] < best_marglik:
             best_model_dict = deepcopy(model.state_dict())
             best_precision = deepcopy(prior_prec.detach())
-            best_sigma = 1 if likelihood == 'classification' else deepcopy(sigma_noise.detach())
+            if likelihood == 'classification':
+                best_sigma = 1
+            else:
+                best_sigma = (
+                    deepcopy(sigma_noise.detach())
+                    if not fix_sigma_noise
+                    else sigma_noise_init
+                )
             best_marglik = margliks[-1]
-            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '
-                         + 'Saving new best model.')
+            logging.info(
+                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '
+                + 'Saving new best model.'
+            )
         else:
-            logging.info(f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}.'
-                         + f'No improvement over {best_marglik:.2f}')
+            logging.info(
+                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}.'
+                + f'No improvement over {best_marglik:.2f}'
+            )
 
     logging.info('MARGLIK: finished training. Recover best model and fit Laplace.')
     if best_model_dict is not None:
@@ -248,9 +302,15 @@ def marglik_training(
         sigma_noise = best_sigma
         prior_prec = best_precision
     lap = Laplace(
-        model, likelihood, hessian_structure=hessian_structure, sigma_noise=sigma_noise, 
-        prior_precision=prior_prec, temperature=temperature, backend=backend,
-        subset_of_weights='all', enable_backprop=enable_backprop
+        model,
+        likelihood,
+        hessian_structure=hessian_structure,
+        sigma_noise=sigma_noise,
+        prior_precision=prior_prec,
+        temperature=temperature,
+        backend=backend,
+        subset_of_weights='all',
+        enable_backprop=enable_backprop,
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses
