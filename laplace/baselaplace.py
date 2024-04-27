@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from math import sqrt, pi, log
-from typing import Callable, List, Tuple, Type
+from typing import Callable, List, Tuple, Type, Any
 import numpy as np
 import torch
 from torch import nn
@@ -202,7 +202,10 @@ class BaseLaplace:
         return self._backend
 
     def _curv_closure(
-        self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
@@ -242,7 +245,7 @@ class BaseLaplace:
 
     def __call__(
         self,
-        x: torch.Tensor | MutableMapping,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         pred_type: PredType | str,
         link_approx: LinkApprox | str,
         n_samples: int,
@@ -647,9 +650,9 @@ class ParametricLaplace(BaseLaplace):
         if not self.enable_backprop:
             self.mean = self.mean.detach()
 
-        data: Tuple[torch.Tensor, torch.Tensor] | MutableMapping = next(
-            iter(train_loader)
-        )
+        data: (
+            Tuple[torch.Tensor, torch.Tensor] | MutableMapping[str, torch.Tensor | Any]
+        ) = next(iter(train_loader))
 
         with torch.no_grad():
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
@@ -809,7 +812,7 @@ class ParametricLaplace(BaseLaplace):
 
     def __call__(
         self,
-        x: torch.Tensor | MutableMapping,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         pred_type: PredType | str = PredType.GLM,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
@@ -945,7 +948,7 @@ class ParametricLaplace(BaseLaplace):
 
     def predictive_samples(
         self,
-        x: torch.Tensor | MutableMapping,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         pred_type: PredType | str = PredType.GLM,
         n_samples: int = 100,
         diagonal_output: bool = False,
@@ -1003,7 +1006,9 @@ class ParametricLaplace(BaseLaplace):
 
     @torch.enable_grad()
     def _glm_predictive_distribution(
-        self, X: torch.Tensor | MutableMapping, joint: bool = False
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        joint: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         if 'backpack' in self._backend_cls.__name__.lower():
             # BackPACK supports backprop through Jacobians, but it interferes with functorch
@@ -1028,7 +1033,7 @@ class ParametricLaplace(BaseLaplace):
 
     def _nn_predictive_samples(
         self,
-        X: torch.Tensor | MutableMapping,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         n_samples: int = 100,
         generator: torch.Generator | None = None,
         **model_kwargs,
@@ -1050,7 +1055,10 @@ class ParametricLaplace(BaseLaplace):
         return fs
 
     def _nn_predictive_classification(
-        self, X: torch.Tensor | MutableMapping, n_samples: int = 100, **model_kwargs
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        n_samples: int = 100,
+        **model_kwargs,
     ) -> torch.Tensor:
         py = 0.0
         for sample in self.sample(n_samples):
@@ -1281,7 +1289,10 @@ class FullLaplace(ParametricLaplace):
         )
 
     def _curv_closure(
-        self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.backend.full(X, y, N=N)
 
@@ -1413,7 +1424,10 @@ class KronLaplace(ParametricLaplace):
         )
 
     def _curv_closure(
-        self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
@@ -1681,7 +1695,10 @@ class DiagLaplace(ParametricLaplace):
         self.H: torch.Tensor = torch.zeros(self.n_params, device=self._device)
 
     def _curv_closure(
-        self, X: torch.Tensor | MutableMapping, y: torch.Tensor, N: int
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         return self.backend.diag(X, y, N=N, **self._asdl_fisher_kwargs)
 

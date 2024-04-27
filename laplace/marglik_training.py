@@ -171,6 +171,7 @@ def marglik_training(
     optimizer = optimizer_cls(model.parameters(), **optimizer_kwargs)
 
     # set up learning rate scheduler
+    scheduler = None
     if scheduler_cls is not None:
         if scheduler_kwargs is None:
             scheduler_kwargs = dict()
@@ -194,6 +195,7 @@ def marglik_training(
         desc='[Training]',
         colour='blue',
     )
+
     for epoch in pbar:
         epoch_loss = 0
         epoch_perf = 0
@@ -206,7 +208,9 @@ def marglik_training(
             else:
                 X, y = data
                 X, y = X.to(device, non_blocking=True), y.to(device, non_blocking=True)
+
             optimizer.zero_grad()
+
             if likelihood == Likelihood.REGRESSION:
                 sigma_noise = (
                     torch.exp(log_sigma_noise).detach()
@@ -216,21 +220,25 @@ def marglik_training(
                 crit_factor = temperature / (2 * sigma_noise**2)
             else:
                 crit_factor = temperature
+
             prior_prec = torch.exp(log_prior_prec).detach()
             theta = parameters_to_vector(
                 [p for p in model.parameters() if p.requires_grad]
             )
             delta = expand_prior_precision(prior_prec, model)
+
             f = model(X)
             loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()
             optimizer.step()
             epoch_loss += loss.cpu().item() * len(y)
+
             if likelihood == Likelihood.REGRESSION:
                 epoch_perf += (f.detach() - y).square().sum()
             else:
                 epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
-            if scheduler_cls is not None:
+
+            if scheduler is not None:
                 scheduler.step()
 
         losses.append(epoch_loss / N)
@@ -303,10 +311,12 @@ def marglik_training(
             )
 
     logging.info('MARGLIK: finished training. Recover best model and fit Laplace.')
+
     if best_model_dict is not None:
         model.load_state_dict(best_model_dict)
         sigma_noise = best_sigma
         prior_prec = best_precision
+
     lap = Laplace(
         model,
         likelihood,
