@@ -4,9 +4,19 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from asdfghjkl.operations import Bias, Scale
+from asdl.operations import Bias, Scale
 
-from laplace.curvature import CurvlinopsGGN, CurvlinopsEF, BackPackGGN, BackPackEF, GGNInterface, EFInterface, AsdlGGN, AsdlEF, CurvatureInterface
+from laplace.curvature import (
+    CurvlinopsGGN,
+    CurvlinopsEF,
+    BackPackGGN,
+    BackPackEF,
+    GGNInterface,
+    EFInterface,
+    AsdlGGN,
+    AsdlEF,
+    CurvatureInterface,
+)
 
 
 @pytest.fixture
@@ -39,8 +49,14 @@ def reg_Xy():
 @pytest.fixture
 def complex_model():
     torch.manual_seed(711)
-    model = torch.nn.Sequential(nn.Conv2d(3, 4, 2, 2), nn.Flatten(), nn.Tanh(),
-                                nn.Linear(16, 20), nn.Tanh(), Scale(), Bias(), nn.Linear(20, 2))
+    model = torch.nn.Sequential(
+        nn.Conv2d(3, 4, 2, 2),
+        nn.Flatten(),
+        nn.Tanh(),
+        nn.Linear(16, 20),
+        nn.Tanh(),
+        nn.Linear(20, 2),
+    )
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
     setattr(model, 'n_layers', len(model_params))  # number of parameter groups
@@ -109,7 +125,9 @@ def test_diag_ggn_cls_curvlinops_against_backpack_full(class_Xy, model):
     assert torch.allclose(dggn, H_ggn.diag())
 
 
-def test_diag_ggn_complex_cls_curvlinops_against_backpack_full(complex_class_Xy, complex_model):
+def test_diag_ggn_complex_cls_curvlinops_against_backpack_full(
+    complex_class_Xy, complex_model
+):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = complex_class_Xy
@@ -347,4 +365,3 @@ def test_full_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.0001)
-

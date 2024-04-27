@@ -5,6 +5,9 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
 from laplace.utils import FeatureExtractor, Kron
 
+from collections.abc import MutableMapping
+from typing import Union
+
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -57,17 +60,39 @@ class LLLaplace(ParametricLaplace):
         arguments passed to the backend on initialization, for example to
         set the number of MC samples for stochastic approximations.
     """
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, last_layer_name=None,
-                 backend_kwargs=None):
+
+    def __init__(
+        self,
+        model,
+        likelihood,
+        sigma_noise=1.0,
+        prior_precision=1.0,
+        prior_mean=0.0,
+        temperature=1.0,
+        enable_backprop=False,
+        backend=None,
+        last_layer_name=None,
+        backend_kwargs=None,
+        asdl_fisher_kwargs=None,
+    ):
+        if asdl_fisher_kwargs is not None:
+            raise ValueError('Last-layer Laplace does not support asdl_fisher_kwargs.')
         self.H = None
-        super().__init__(model, likelihood, sigma_noise=sigma_noise, prior_precision=1.,
-                         prior_mean=0., temperature=temperature,
-                         enable_backprop=enable_backprop, backend=backend,
-                         backend_kwargs=backend_kwargs)
+        super().__init__(
+            model,
+            likelihood,
+            sigma_noise=sigma_noise,
+            prior_precision=1.0,
+            prior_mean=0.0,
+            temperature=temperature,
+            enable_backprop=enable_backprop,
+            backend=backend,
+            backend_kwargs=backend_kwargs,
+        )
         self.model = FeatureExtractor(
-            deepcopy(model), last_layer_name=last_layer_name,
-            enable_backprop=enable_backprop
+            deepcopy(model),
+            last_layer_name=last_layer_name,
+            enable_backprop=enable_backprop,
         )
         if self.model.last_layer is None:
             self.mean = None
@@ -77,7 +102,9 @@ class LLLaplace(ParametricLaplace):
             self._prior_precision = prior_precision
             self._prior_mean = prior_mean
         else:
-            self.n_params = len(parameters_to_vector(self.model.last_layer.parameters()))
+            self.n_params = len(
+                parameters_to_vector(self.model.last_layer.parameters())
+            )
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
@@ -99,18 +126,15 @@ class LLLaplace(ParametricLaplace):
             online learning settings to accumulate a sequential posterior approximation.
         """
         if not override:
-            raise ValueError('Last-layer Laplace approximations do not support `override=False`.')
+            raise ValueError(
+                'Last-layer Laplace approximations do not support `override=False`.'
+            )
 
         self.model.eval()
 
         if self.model.last_layer is None:
-            # Save an example batch for when loading the serialized Laplace
-            self.X, _ = next(iter(train_loader))
-            with torch.no_grad():
-                try:
-                    self.model.find_last_layer(self.X[:1].to(self._device))
-                except (TypeError, AttributeError):
-                    self.model.find_last_layer(self.X.to(self._device))
+            self.data = next(iter(train_loader))
+            self._find_last_layer(self.data)
             params = parameters_to_vector(self.model.last_layer.parameters()).detach()
             self.n_params = len(params)
             self.n_layers = len(list(self.model.last_layer.parameters()))
@@ -134,19 +158,35 @@ class LLLaplace(ParametricLaplace):
         else:
             f_var = self.functional_variance(Js)
 
-        return (f_mu.detach(), f_var.detach()) if not self.enable_backprop else (f_mu, f_var)
+        return (
+            (f_mu.detach(), f_var.detach())
+            if not self.enable_backprop
+            else (f_mu, f_var)
+        )
 
-    def _nn_predictive_samples(self, X, n_samples=100):
+    def _nn_predictive_samples(self, X, n_samples=100, generator=None, **model_kwargs):
         fs = list()
-        for sample in self.sample(n_samples):
+        for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            f = self.model(X.to(self._device))
+            f = self.model(X.to(self._device), **model_kwargs)
             fs.append(f.detach() if not self.enable_backprop else f)
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
         return fs
+
+    def _nn_predictive_classification(
+        self, X, n_samples=100, generator=None, **model_kwargs
+    ):
+        py = 0
+        for sample in self.sample(n_samples, generator):
+            vector_to_parameters(sample, self.model.last_layer.parameters())
+            # TODO: Implement with a single forward pass until last layer.
+            logits = self.model(X.to(self._device), **model_kwargs).detach()
+            py += torch.softmax(logits, dim=-1) / n_samples
+        vector_to_parameters(self.mean, self.model.last_layer.parameters())
+        return py
 
     @property
     def prior_precision_diag(self):
@@ -168,7 +208,7 @@ class LLLaplace(ParametricLaplace):
 
     def state_dict(self) -> dict:
         state_dict = super().state_dict()
-        state_dict['X'] = getattr(self, 'X', None)
+        state_dict['data'] = getattr(self, 'data', None)  # None if not present
         state_dict['_last_layer_name'] = self._last_layer_name
         return state_dict
 
@@ -176,19 +216,27 @@ class LLLaplace(ParametricLaplace):
         if self._last_layer_name != state_dict['_last_layer_name']:
             raise ValueError('Different `last_layer_name` detected!')
 
-        self.X = state_dict['X']
-        if self.X is not None:
-            with torch.no_grad():
-                try:
-                    self.model.find_last_layer(self.X[:1].to(self._device))
-                except (TypeError, AttributeError):
-                    self.model.find_last_layer(self.X.to(self._device))
+        self.data = state_dict['data']
+        if self.data is not None:
+            self._find_last_layer(self.data)
 
         super().load_state_dict(state_dict)
 
         params = parameters_to_vector(self.model.last_layer.parameters()).detach()
         self.n_params = len(params)
         self.n_layers = len(list(self.model.last_layer.parameters()))
+
+    @torch.no_grad()
+    def _find_last_layer(self, data: Union[torch.Tensor, MutableMapping]) -> None:
+        # To support Huggingface dataset
+        if isinstance(data, MutableMapping):
+            self.model.find_last_layer(data)
+        else:
+            X = data[0]
+            try:
+                self.model.find_last_layer(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                self.model.find_last_layer(X.to(self._device))
 
 
 class FullLLLaplace(LLLaplace, FullLaplace):
@@ -198,6 +246,7 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     Mathematically, we have \\(P \\in \\mathbb{R}^{P \\times P}\\).
     See `FullLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface.
     """
+
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'full')
 
@@ -214,15 +263,37 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     and computing posterior covariances, marginal likelihood, etc.
     Use of `damping` is possible by initializing or setting `damping=True`.
     """
+
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'kron')
 
-    def __init__(self, model, likelihood, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., enable_backprop=False, backend=None, last_layer_name=None,
-                 damping=False, **backend_kwargs):
+    def __init__(
+        self,
+        model,
+        likelihood,
+        sigma_noise=1.0,
+        prior_precision=1.0,
+        prior_mean=0.0,
+        temperature=1.0,
+        enable_backprop=False,
+        backend=None,
+        last_layer_name=None,
+        damping=False,
+        **backend_kwargs
+    ):
         self.damping = damping
-        super().__init__(model, likelihood, sigma_noise, prior_precision,
-                         prior_mean, temperature, enable_backprop, backend, last_layer_name, backend_kwargs)
+        super().__init__(
+            model,
+            likelihood,
+            sigma_noise,
+            prior_precision,
+            prior_mean,
+            temperature,
+            enable_backprop,
+            backend,
+            last_layer_name,
+            backend_kwargs,
+        )
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
@@ -234,5 +305,6 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     Mathematically, we have \\(P \\approx \\textrm{diag}(P)\\).
     See `DiagLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface.
     """
+
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'diag')
