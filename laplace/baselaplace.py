@@ -887,7 +887,7 @@ class ParametricLaplace(BaseLaplace):
             # BackPACK supports backprop through Jacobians, but it interferes with functorch
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
         else:
-            # For ASDL and Curvlinops, we use functorch
+            # For ASDL and Curvlinops, we use functorch (ASDL Jacobians are not backpropable)
             Js, f_mu = self.backend.functorch_jacobians(
                 X, enable_backprop=self.enable_backprop
             )

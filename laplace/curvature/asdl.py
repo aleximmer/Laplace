@@ -76,7 +76,7 @@ class AsdlInterface(CurvatureInterface):
                 Ji = Ji[:, self.subnetwork_indices]
             Js.append(Ji)
         Js = torch.stack(Js, dim=1)
-        return Js, f
+        return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter

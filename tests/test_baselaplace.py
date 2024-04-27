@@ -574,7 +574,9 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
 
 
 @pytest.mark.parametrize('laplace', [KronLaplace, DiagLaplace])
-@pytest.mark.parametrize('backend', [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+@pytest.mark.parametrize(
+    'backend', [AsdlEF, AsdlGGN, AsdfghjklGGN, AsdfghjklEF, CurvlinopsEF, CurvlinopsGGN]
+)
 def test_dict_data(laplace, backend, custom_model, custom_loader):
     if laplace == DiagLaplace and backend == CurvlinopsEF:
         pytest.skip(
@@ -605,7 +607,8 @@ def test_dict_data(laplace, backend, custom_model, custom_loader):
 
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
 @pytest.mark.parametrize(
-    'backend', [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
+    'backend',
+    [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF],
 )
 def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
