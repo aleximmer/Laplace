@@ -8,7 +8,7 @@ import os
 from collections import OrderedDict
 
 from laplace import Laplace
-from laplace.laplace import (
+from laplace import (
     FullLaplace,
     KronLaplace,
     DiagLaplace,

@@ -10,11 +10,10 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
-from laplace.curvature.asdfghjkl import AsdfghjklGGN, AsdfghjklEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from torchvision.models import wide_resnet50_2
 
-from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
+from laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
 from laplace.utils import KronDecomposed
 from laplace.curvature import AsdlGGN, BackPackGGN, AsdlEF
 from tests.utils import ListDataset, dict_data_collator, jacobians_naive

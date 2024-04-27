@@ -11,10 +11,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
 from torchvision.models import wide_resnet50_2
 
-from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
-from laplace.utils import KronDecomposed
+from laplace import FullLaplace, KronLaplace, DiagLaplace
 from laplace.curvature import AsdlGGN, AsdlHessian, AsdlEF, BackPackEF, BackPackGGN
-from tests.utils import jacobians_naive
 
 
 torch.manual_seed(240)

@@ -41,27 +41,35 @@ __all__ = [
     'LinkApprox',
     'TuningMethod',
     'PriorStructure',
+    'SubsetOfWeights',
 ]
 
 
-class Likelihood(str, Enum):
-    """Choices of likelihoods supported by Laplace"""
+class SubsetOfWeights(str, Enum):
+    ALL = 'all'
+    LAST_LAYER = 'last_layer'
+    SUBNETWORK = 'subnetwork'
 
+
+class HessianStructure(str, Enum):
+    FULL = 'full'
+    KRON = 'kron'
+    DIAG = 'diag'
+    LOWRANK = 'lowrank'
+
+
+class Likelihood(str, Enum):
     REGRESSION = 'regression'
     CLASSIFICATION = 'classification'
     REWARD_MODELING = 'reward_modeling'
 
 
 class PredType(str, Enum):
-    """Choices of predictive types. To obtain the p(f(x) | x, D)"""
-
     GLM = 'glm'
     NN = 'nn'
 
 
 class LinkApprox(str, Enum):
-    """Choices of the inverse link function p(f(x) | x, D) -> p(y | f(x), D)"""
-
     MC = 'mc'
     PROBIT = 'probit'
     BRIDGE = 'bridge'
@@ -69,15 +77,11 @@ class LinkApprox(str, Enum):
 
 
 class TuningMethod(str, Enum):
-    """Choices of prior precision tuning methods"""
-
     MARGLIK = 'marglik'
     GRIDSEARCH = 'gridsearch'
 
 
 class PriorStructure(str, Enum):
-    """Choices of prior precision structures"""
-
     SCALAR = 'scalar'
     DIAG = 'diag'
     LAYERWISE = 'layerwise'
@@ -1048,7 +1052,7 @@ class ParametricLaplace(BaseLaplace):
     def _nn_predictive_classification(
         self, X: torch.Tensor | MutableMapping, n_samples: int = 100, **model_kwargs
     ) -> torch.Tensor:
-        py = torch.Tensor(0.0)
+        py = 0.0
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
             logits = self.model(

@@ -5,9 +5,6 @@
 .. include:: ../examples/calibration_example.md
 """
 
-REGRESSION = 'regression'
-CLASSIFICATION = 'classification'
-
 from laplace.baselaplace import (
     BaseLaplace,
     ParametricLaplace,
@@ -15,6 +12,13 @@ from laplace.baselaplace import (
     KronLaplace,
     DiagLaplace,
     LowRankLaplace,
+    SubsetOfWeights,
+    HessianStructure,
+    Likelihood,
+    PredType,
+    LinkApprox,
+    TuningMethod,
+    PriorStructure,
 )
 from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
 from laplace.subnetlaplace import SubnetLaplace, FullSubnetLaplace, DiagSubnetLaplace
@@ -37,4 +41,12 @@ __all__ = [
     'FullSubnetLaplace',
     'DiagSubnetLaplace',  # subnetwork
     'marglik_training',
-]  # methods
+    # Enums
+    'SubsetOfWeights',
+    'HessianStructure',
+    'Likelihood',
+    'PredType',
+    'LinkApprox',
+    'TuningMethod',
+    'PriorStructure',
+]
