@@ -1,9 +1,9 @@
-from typing import List, Tuple
+from typing import Callable, MutableMapping, Any
 import torch
 from torch import nn
 from torch.nn import MSELoss, CrossEntropyLoss
 
-from laplace.baselaplace import Likelihood
+from laplace.utils import Kron, Likelihood
 
 
 class CurvatureInterface:
@@ -46,16 +46,20 @@ class CurvatureInterface:
         self.subnetwork_indices: torch.LongTensor | None = subnetwork_indices
 
         if likelihood == 'regression':
-            self.lossfunc = MSELoss(reduction='sum')
-            self.factor = 0.5
+            self.lossfunc: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = (
+                MSELoss(reduction='sum')
+            )
+            self.factor: float = 0.5
         else:
-            self.lossfunc = CrossEntropyLoss(reduction='sum')
-            self.factor = 1.0
+            self.lossfunc: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = (
+                CrossEntropyLoss(reduction='sum')
+            )
+            self.factor: float = 1.0
 
-        self.params: List[torch.Tensor] = [
+        self.params: list[nn.Parameter] = [
             p for p in self._model.parameters() if p.requires_grad
         ]
-        self.params_dict: dict[str, torch.Tensor] = {
+        self.params_dict: dict[str, nn.Parameter] = {
             k: v for k, v in self._model.named_parameters() if v.requires_grad
         }
         self.buffers_dict: dict[str, torch.Tensor] = {
@@ -67,8 +71,10 @@ class CurvatureInterface:
         return self.model.last_layer if self.last_layer else self.model
 
     def jacobians(
-        self, x: torch.Tensor, enable_backprop: bool = False
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        enable_backprop: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\),
         via torch.func.
 
@@ -109,7 +115,7 @@ class CurvatureInterface:
 
     def functorch_jacobians(
         self, x: torch.Tensor, enable_backprop: bool = False
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
 
         Parameters
@@ -149,7 +155,11 @@ class CurvatureInterface:
 
         return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
-    def last_layer_jacobians(self, x: torch.Tensor, enable_backprop=False):
+    def last_layer_jacobians(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        enable_backprop: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_{\\theta_\\textrm{last}} f(x;\\theta_\\textrm{last})\\)
         only at current last-layer parameter \\(\\theta_{\\textrm{last}}\\).
 
@@ -182,7 +192,9 @@ class CurvatureInterface:
 
         return Js, f
 
-    def gradients(self, x, y):
+    def gradients(
+        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute batch gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at
         current parameter \\(\\theta\\).
 
@@ -223,7 +235,12 @@ class CurvatureInterface:
 
         return Gs, loss
 
-    def full(self, x, y, **kwargs):
+    def full(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ):
         """Compute a dense curvature (approximation) in the form of a \\(P \\times P\\) matrix
         \\(H\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
 
@@ -242,7 +259,13 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
-    def kron(self, x, y, **kwargs):
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
         """Compute a Kronecker factored curvature approximation (such as KFAC).
         The approximation to \\(H\\) takes the form of two Kronecker factors \\(Q, H\\),
         i.e., \\(H \\approx Q \\otimes H\\) for each Module in the neural network permitting
@@ -256,6 +279,8 @@ class CurvatureInterface:
             input data `(batch, input_shape)`
         y : torch.Tensor
             labels `(batch, label_shape)`
+        N : int
+            total number of data points
 
         Returns
         -------
@@ -265,7 +290,12 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
-    def diag(self, x, y, **kwargs):
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ):
         """Compute a diagonal Hessian approximation to \\(H\\) and is represented as a
         vector of the dimensionality of parameters \\(\\theta\\).
 
@@ -308,18 +338,18 @@ class GGNInterface(CurvatureInterface):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        last_layer=False,
-        subnetwork_indices=None,
-        stochastic=False,
-        num_samples=1,
-    ):
-        self.stochastic = stochastic
-        self.num_samples = num_samples
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        last_layer: bool = False,
+        subnetwork_indices: torch.LongTensor | None = None,
+        stochastic: bool = False,
+        num_samples: int = 1,
+    ) -> None:
+        self.stochastic: bool = stochastic
+        self.num_samples: int = num_samples
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
-    def _get_mc_functional_fisher(self, f):
+    def _get_mc_functional_fisher(self, f: torch.Tensor) -> torch.Tensor:
         """Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
         using MC integral with `self.num_samples` many samples.
         """
@@ -343,7 +373,7 @@ class GGNInterface(CurvatureInterface):
 
         return F
 
-    def _get_functional_hessian(self, f):
+    def _get_functional_hessian(self, f: torch.Tensor) -> torch.Tensor | None:
         if self.likelihood == 'regression':
             return None
         else:
@@ -352,7 +382,12 @@ class GGNInterface(CurvatureInterface):
             G = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
             return G
 
-    def full(self, x, y, **kwargs):
+    def full(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the full GGN \\(P \\times P\\) matrix as Hessian approximation
         \\(H_{ggn}\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
         For last-layer, reduced to \\(\\theta_{last}\\)
@@ -385,8 +420,13 @@ class GGNInterface(CurvatureInterface):
 
         return loss.detach(), H.detach()
 
-    def diag(self, X, y, **kwargs):
-        Js, f = self.last_layer_jacobians(X) if self.last_layer else self.jacobians(X)
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
         loss = self.factor * self.lossfunc(f, y)
 
         H_lik = (
@@ -426,7 +466,12 @@ class EFInterface(CurvatureInterface):
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
 
-    def full(self, x, y, **kwargs):
+    def full(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the full EF \\(P \\times P\\) matrix as Hessian approximation
         \\(H_{ef}\\) with respect to parameters \\(\\theta \\in \\mathbb{R}^P\\).
         For last-layer, reduced to \\(\\theta_{last}\\)
@@ -448,8 +493,13 @@ class EFInterface(CurvatureInterface):
         H_ef = torch.einsum('bp,bq->pq', Gs, Gs)
         return self.factor * loss.detach(), self.factor * H_ef
 
-    def diag(self, X, y, **kwargs):
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         # Gs is (batchsize, n_params)
-        Gs, loss = self.gradients(X, y)
+        Gs, loss = self.gradients(x, y)
         diag_ef = torch.einsum('bp,bp->p', Gs, Gs)
         return self.factor * loss.detach(), self.factor * diag_ef

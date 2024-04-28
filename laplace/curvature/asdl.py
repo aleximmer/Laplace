@@ -1,7 +1,8 @@
+from typing import Any
 import warnings
 
-import numpy as np
 import torch
+from torch import nn
 
 from asdl.matrices import (
     FISHER_EXACT,
@@ -17,9 +18,9 @@ from asdl.hessian import HessianMaker, HessianConfig
 from asdl.gradient import batch_gradient
 
 from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
-from laplace.utils import Kron, _is_batchnorm
+from laplace.utils import Kron, _is_batchnorm, Likelihood
 
-from collections import UserDict
+from collections.abc import MutableMapping
 
 EPS = 1e-6
 
@@ -27,23 +28,34 @@ EPS = 1e-6
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
 
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
+    def __init__(
+        self,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        last_layer: bool = False,
+        subnetwork_indices: torch.LongTensor | None = None,
+    ):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
 
     @property
-    def loss_type(self):
-        return LOSS_MSE if self.likelihood == 'regression' else LOSS_CROSS_ENTROPY
+    def loss_type(self) -> str:
+        return (
+            LOSS_MSE if self.likelihood == Likelihood.REGRESSION else LOSS_CROSS_ENTROPY
+        )
 
-    def jacobians(self, x, enable_backprop=False):
+    def jacobians(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        enable_backprop: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using asdfghjkl's gradient per output dimension.
 
         Parameters
         ----------
-        x : torch.Tensor or UserDict
+        x : torch.Tensor or MutableMapping
             input data `(batch, input_shape)` on compatible device with model if torch.Tensor.
-            If UserDict, then at least contains key ['input_ids'] or ['input_ids_0', 'input_ids_1'].
-            The latter is specific for reward modeling.
+            Must contain the said tensor if dict-like.
         enable_backprop : bool, default = False
             whether to enable backprop through the Js and f w.r.t. x
 
@@ -78,7 +90,9 @@ class AsdlInterface(CurvatureInterface):
         Js = torch.stack(Js, dim=1)
         return Js, f
 
-    def gradients(self, x, y):
+    def gradients(
+        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
         \\(\\theta\\) using asdfghjkl's backend.
 
@@ -109,10 +123,10 @@ class AsdlInterface(CurvatureInterface):
         return Gs, loss
 
     @property
-    def _ggn_type(self):
+    def _ggn_type(self) -> str:
         raise NotImplementedError
 
-    def _get_kron_factors(self, M):
+    def _get_kron_factors(self, M: int) -> Kron:
         kfacs = list()
         for module in self.model.modules():
             if _is_batchnorm(module):
@@ -138,16 +152,24 @@ class AsdlInterface(CurvatureInterface):
         return Kron(kfacs)
 
     @staticmethod
-    def _rescale_kron_factors(kron, N):
+    def _rescale_kron_factors(kron: Kron, N: int) -> Kron:
         for F in kron.kfacs:
             if len(F) == 2:
                 F[1] *= 1 / N
         return kron
 
-    def diag(self, X, y, N=None, **kwargs):
-        del N
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        if 'N' in kwargs:
+            del kwargs['N']
+
         if self.last_layer:
-            _, X = self.model.forward_with_features(X)
+            _, x = self.model.forward_with_features(x)
+
         cfg = FisherConfig(
             fisher_type=self._ggn_type,
             loss_type=self.loss_type,
@@ -158,13 +180,13 @@ class AsdlInterface(CurvatureInterface):
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
-            dummy = fisher_maker.setup_model_call(self._model, X)
+            dummy = fisher_maker.setup_model_call(self._model, x)
             dummy = (
                 dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
             )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
-            fisher_maker.setup_model_call(self._model, X)
+            fisher_maker.setup_model_call(self._model, x)
         f, _ = fisher_maker.forward_and_backward()
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
@@ -184,9 +206,15 @@ class AsdlInterface(CurvatureInterface):
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * diag_ggn
 
-    def kron(self, X, y, N, **kwargs):
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
         if self.last_layer:
-            _, X = self.model.forward_with_features(X)
+            _, x = self.model.forward_with_features(x)
         cfg = FisherConfig(
             fisher_type=self._ggn_type,
             loss_type=self.loss_type,
@@ -197,13 +225,13 @@ class AsdlInterface(CurvatureInterface):
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if 'emp' in self._ggn_type:
-            dummy = fisher_maker.setup_model_call(self._model, X)
+            dummy = fisher_maker.setup_model_call(self._model, x)
             dummy = (
                 dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
             )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
-            fisher_maker.setup_model_call(self._model, X)
+            fisher_maker.setup_model_call(self._model, x)
         f, _ = fisher_maker.forward_and_backward()
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
@@ -218,14 +246,16 @@ class AsdlInterface(CurvatureInterface):
         return self.factor * loss, curv_factor * kron
 
     @staticmethod
-    def _get_batch_size(x):
+    def _get_batch_size(
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+    ) -> int | None:
         """
         ASDL assumes that all leading dimensions are the batch size by default (batch_size = None).
         Here, we want to specify that only the first dimension is the actual batch size.
         This is the case for LLMs.
         """
         # If x is UserDict, then it has weight-sharing dimension (from Huggingface datasets)
-        if isinstance(x, UserDict) or isinstance(x, dict):
+        if isinstance(x, MutableMapping):
             try:
                 return x['input_ids'].shape[0]
             except KeyError:
@@ -236,29 +266,45 @@ class AsdlInterface(CurvatureInterface):
 
 
 class AsdlHessian(AsdlInterface):
-    def __init__(self, model, likelihood, last_layer=False, low_rank=10):
+    def __init__(
+        self,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        last_layer: bool = False,
+        low_rank: int = 10,
+    ) -> None:
         super().__init__(model, likelihood, last_layer)
-        self.low_rank = low_rank
+        self.low_rank: int = low_rank
 
     @property
-    def _ggn_type(self):
+    def _ggn_type(self) -> str:
         raise NotImplementedError()
 
-    def full(self, x, y, **kwargs):
+    def full(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
+
         cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
         hess_maker = HessianMaker(self.model, cfg)
+
         dummy = hess_maker.setup_model_call(self._model, x)
         dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
+
         hess_maker.setup_loss_call(self.lossfunc, dummy, y)
         hess_maker.forward_and_backward()
+
         H = self._model.hessian.data
         f = self.model(x).detach()
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f, y)
+
         return self.factor * loss, self.factor * H
 
 
@@ -267,26 +313,28 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        last_layer=False,
-        subnetwork_indices=None,
-        stochastic=False,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        last_layer: bool = False,
+        subnetwork_indices: torch.LongTensor | None = None,
+        stochastic: bool = False,
     ):
         super().__init__(model, likelihood, last_layer, subnetwork_indices)
-        self.stochastic = stochastic
+        self.stochastic: bool = stochastic
 
     @property
-    def _ggn_type(self):
+    def _ggn_type(self) -> str:
         return FISHER_MC if self.stochastic else FISHER_EXACT
 
 
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl."""
 
-    def __init__(self, model, likelihood, last_layer=False):
+    def __init__(
+        self, model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False
+    ):
         super().__init__(model, likelihood, last_layer)
 
     @property
-    def _ggn_type(self):
+    def _ggn_type(self) -> str:
         return FISHER_EMP

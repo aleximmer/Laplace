@@ -27,6 +27,15 @@ from laplace.utils.subnetmask import (
     LastLayerSubnetMask,
 )
 from laplace.utils.metrics import RunningNLLMetric
+from laplace.utils.enums import (
+    SubsetOfWeights,
+    HessianStructure,
+    Likelihood,
+    PredType,
+    LinkApprox,
+    TuningMethod,
+    PriorStructure,
+)
 
 
 __all__ = [
@@ -56,4 +65,11 @@ __all__ = [
     'ModuleNameSubnetMask',
     'LastLayerSubnetMask',
     'RunningNLLMetric',
+    'SubsetOfWeights',
+    'HessianStructure',
+    'Likelihood',
+    'PredType',
+    'LinkApprox',
+    'TuningMethod',
+    'PriorStructure',
 ]

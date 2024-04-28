@@ -181,7 +181,7 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('subnetwork', 'full')
 
-    def _init_H(self):
+    def _init_H(self) -> None:
         self.H = torch.zeros(
             self.n_params_subnet, self.n_params_subnet, device=self._device
         )

@@ -12,6 +12,13 @@ from laplace.baselaplace import (
     KronLaplace,
     DiagLaplace,
     LowRankLaplace,
+)
+from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
+from laplace.subnetlaplace import SubnetLaplace, FullSubnetLaplace, DiagSubnetLaplace
+from laplace.laplace import Laplace
+from laplace.marglik_training import marglik_training
+
+from laplace.utils.enums import (
     SubsetOfWeights,
     HessianStructure,
     Likelihood,
@@ -20,10 +27,6 @@ from laplace.baselaplace import (
     TuningMethod,
     PriorStructure,
 )
-from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
-from laplace.subnetlaplace import SubnetLaplace, FullSubnetLaplace, DiagSubnetLaplace
-from laplace.laplace import Laplace
-from laplace.marglik_training import marglik_training
 
 __all__ = [
     'Laplace',  # direct access to all Laplace classes via unified interface

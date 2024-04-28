@@ -11,11 +11,17 @@ import logging
 from collections import UserDict
 import tqdm
 
-from laplace import Laplace, Likelihood, HessianStructure, PriorStructure
-from laplace.baselaplace import SubsetOfWeights
+from laplace import Laplace
 from laplace.curvature import AsdlGGN
 from laplace.curvature.curvature import CurvatureInterface
-from laplace.utils import expand_prior_precision, fix_prior_prec_structure
+from laplace.utils import (
+    expand_prior_precision,
+    fix_prior_prec_structure,
+    Likelihood,
+    SubsetOfWeights,
+    HessianStructure,
+    PriorStructure,
+)
 
 from typing import Type
 

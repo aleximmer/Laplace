@@ -15,7 +15,7 @@ from laplace.curvature.curvature import CurvatureInterface
 from laplace.utils import FeatureExtractor, Kron
 
 from collections.abc import MutableMapping
-from typing import Tuple, Type, Any
+from typing import Any
 
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
@@ -79,10 +79,10 @@ class LLLaplace(ParametricLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
-        backend: Type[CurvatureInterface] | None = None,
+        backend: type[CurvatureInterface] | None = None,
         last_layer_name: str | None = None,
-        backend_kwargs: dict | None = None,
-        asdl_fisher_kwargs: dict | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
+        asdl_fisher_kwargs: dict[str, Any] | None = None,
     ):
         if asdl_fisher_kwargs is not None:
             raise ValueError('Last-layer Laplace does not support asdl_fisher_kwargs.')
@@ -151,7 +151,7 @@ class LLLaplace(ParametricLaplace):
         self.model.eval()
 
         if self.model.last_layer is None:
-            self.data: Tuple[torch.Tensor, torch.Tensor] | MutableMapping = next(
+            self.data: tuple[torch.Tensor, torch.Tensor] | MutableMapping = next(
                 iter(train_loader)
             )
             self._find_last_layer(self.data)
@@ -175,7 +175,7 @@ class LLLaplace(ParametricLaplace):
 
     def _glm_predictive_distribution(
         self, X: torch.Tensor | MutableMapping, joint: bool = False
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         Js, f_mu = self.backend.last_layer_jacobians(X)
 
         if joint:
@@ -249,13 +249,13 @@ class LLLaplace(ParametricLaplace):
         else:
             raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
 
-    def state_dict(self) -> dict:
+    def state_dict(self) -> dict[str, Any]:
         state_dict = super().state_dict()
         state_dict['data'] = getattr(self, 'data', None)  # None if not present
         state_dict['_last_layer_name'] = self._last_layer_name
         return state_dict
 
-    def load_state_dict(self, state_dict: dict) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         if self._last_layer_name != state_dict['_last_layer_name']:
             raise ValueError('Different `last_layer_name` detected!')
 
@@ -322,11 +322,11 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
-        backend: Type[CurvatureInterface] | None = None,
+        backend: type[CurvatureInterface] | None = None,
         last_layer_name: str | None = None,
         damping: bool = False,
-        backend_kwargs: dict | None = None,
-        asdl_fisher_kwargs: dict | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
+        asdl_fisher_kwargs: dict[str, Any] | None = None,
     ):
         self.damping = damping
         super().__init__(
@@ -343,7 +343,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             asdl_fisher_kwargs,
         )
 
-    def _init_H(self):
+    def _init_H(self) -> None:
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
 

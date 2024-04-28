@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from math import sqrt, pi, log
-from typing import Callable, List, Tuple, Type, Any
+from typing import Callable, Any
 import numpy as np
 import torch
 from torch import nn
@@ -11,9 +11,7 @@ from torch.utils.data import DataLoader
 import torchmetrics
 import tqdm
 from collections.abc import MutableMapping
-from laplace.curvature.asdfghjkl import AsdfghjklHessian
-from laplace.curvature.curvature import CurvatureInterface
-from laplace.curvature.curvlinops import CurvlinopsEF
+
 import warnings
 from torchmetrics import MeanSquaredError
 
@@ -25,9 +23,17 @@ from laplace.utils import (
     fix_prior_prec_structure,
     RunningNLLMetric,
 )
-from laplace.curvature import CurvlinopsGGN
+from laplace.curvature.curvature import CurvatureInterface
+from laplace.curvature.asdfghjkl import AsdfghjklHessian
+from laplace.curvature.curvlinops import CurvlinopsGGN, CurvlinopsEF
 from laplace.utils.matrix import KronDecomposed
-
+from laplace.utils.enums import (
+    Likelihood,
+    PredType,
+    LinkApprox,
+    TuningMethod,
+    PriorStructure,
+)
 
 __all__ = [
     'BaseLaplace',
@@ -36,55 +42,7 @@ __all__ = [
     'KronLaplace',
     'DiagLaplace',
     'LowRankLaplace',
-    'Likelihood',
-    'PredType',
-    'LinkApprox',
-    'TuningMethod',
-    'PriorStructure',
-    'SubsetOfWeights',
 ]
-
-
-class SubsetOfWeights(str, Enum):
-    ALL = 'all'
-    LAST_LAYER = 'last_layer'
-    SUBNETWORK = 'subnetwork'
-
-
-class HessianStructure(str, Enum):
-    FULL = 'full'
-    KRON = 'kron'
-    DIAG = 'diag'
-    LOWRANK = 'lowrank'
-
-
-class Likelihood(str, Enum):
-    REGRESSION = 'regression'
-    CLASSIFICATION = 'classification'
-    REWARD_MODELING = 'reward_modeling'
-
-
-class PredType(str, Enum):
-    GLM = 'glm'
-    NN = 'nn'
-
-
-class LinkApprox(str, Enum):
-    MC = 'mc'
-    PROBIT = 'probit'
-    BRIDGE = 'bridge'
-    BRIDGE_NORM = 'bridge_norm'
-
-
-class TuningMethod(str, Enum):
-    MARGLIK = 'marglik'
-    GRIDSEARCH = 'gridsearch'
-
-
-class PriorStructure(str, Enum):
-    SCALAR = 'scalar'
-    DIAG = 'diag'
-    LAYERWISE = 'layerwise'
 
 
 class BaseLaplace:
@@ -131,9 +89,9 @@ class BaseLaplace:
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
-        backend: Type[CurvatureInterface] | None = None,
-        backend_kwargs: dict | None = None,
-        asdl_fisher_kwargs: dict | None = None,
+        backend: type[CurvatureInterface] | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
+        asdl_fisher_kwargs: dict[str, Any] | None = None,
     ) -> None:
         if likelihood not in [lik.value for lik in Likelihood]:
             raise ValueError(f'Invalid likelihood type {likelihood}')
@@ -141,7 +99,7 @@ class BaseLaplace:
         self.model: nn.Module = model
 
         # Only do Laplace on params that require grad
-        self.params: List[torch.Tensor] = []
+        self.params: list[torch.Tensor] = []
         self.is_subset_params: bool = False
         for p in model.parameters():
             if p.requires_grad:
@@ -176,11 +134,11 @@ class BaseLaplace:
                 )
 
         self._backend: CurvatureInterface | None = None
-        self._backend_cls: Type[CurvatureInterface] = backend
-        self._backend_kwargs: dict = (
+        self._backend_cls: type[CurvatureInterface] = backend
+        self._backend_kwargs: dict[str, Any] = (
             dict() if backend_kwargs is None else backend_kwargs
         )
-        self._asdl_fisher_kwargs: dict = (
+        self._asdl_fisher_kwargs: dict[str, Any] = (
             dict() if asdl_fisher_kwargs is None else asdl_fisher_kwargs
         )
 
@@ -188,6 +146,12 @@ class BaseLaplace:
         self.loss: float = 0.0
         self.n_outputs: int = 0
         self.n_data: int = 0
+
+        # Declare attributes
+        self._prior_mean: torch.Tensor
+        self._prior_precision: torch.Tensor
+        self._sigma_noise: torch.Tensor
+        self._posterior_scale: torch.Tensor | None
 
     @property
     def _device(self) -> torch.device:
@@ -206,7 +170,7 @@ class BaseLaplace:
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         y: torch.Tensor,
         N: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
     def fit(self, train_loader: DataLoader) -> None:
@@ -249,7 +213,7 @@ class BaseLaplace:
         pred_type: PredType | str,
         link_approx: LinkApprox | str,
         n_samples: int,
-    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         raise NotImplementedError
 
     def predictive(
@@ -258,7 +222,7 @@ class BaseLaplace:
         pred_type: PredType | str,
         link_approx: LinkApprox | str,
         n_samples: int,
-    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         return self(x, pred_type, link_approx, n_samples)
 
     def _check_jacobians(self, Js: torch.Tensor) -> None:
@@ -351,7 +315,7 @@ class BaseLaplace:
                 'Prior precision either scalar or torch.Tensor up to 1-dim.'
             )
 
-    def optimize_prior_precision_base(
+    def optimize_prior_precision(
         self,
         pred_type: PredType | str,
         method: TuningMethod | str = TuningMethod.MARGLIK,
@@ -360,7 +324,9 @@ class BaseLaplace:
         init_prior_prec: float | torch.Tensor = 1.0,
         prior_structure: PriorStructure | str = PriorStructure.SCALAR,
         val_loader: DataLoader | None = None,
-        loss: torchmetrics.Metric | Callable | None = None,
+        loss: torchmetrics.Metric
+        | Callable[[torch.Tensor], torch.Tensor | float]
+        | None = None,
         log_prior_prec_min: float = -4,
         log_prior_prec_max: float = 4,
         grid_size: int = 100,
@@ -488,7 +454,7 @@ class BaseLaplace:
 
     def _gridsearch(
         self,
-        loss: torchmetrics.Metric | Callable,
+        loss: torchmetrics.Metric | Callable[[torch.Tensor], torch.Tensor | float],
         interval: torch.Tensor,
         val_loader: DataLoader,
         pred_type: PredType | str,
@@ -496,11 +462,11 @@ class BaseLaplace:
         n_samples: int = 100,
         loss_with_var: bool = False,
         progress_bar: bool = False,
-    ):
+    ) -> torch.Tensor:
         assert callable(loss) or isinstance(loss, torchmetrics.Metric)
 
-        results = list()
-        prior_precs = list()
+        results: list[float] = list()
+        prior_precs: list[torch.Tensor] = list()
         pbar = tqdm.tqdm(interval, disable=not progress_bar)
 
         for prior_prec in pbar:
@@ -591,9 +557,9 @@ class ParametricLaplace(BaseLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
-        backend: Type[CurvatureInterface] | None = None,
-        backend_kwargs: dict | None = None,
-        asdl_fisher_kwargs: dict | None = None,
+        backend: type[CurvatureInterface] | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
+        asdl_fisher_kwargs: dict[str, Any] | None = None,
     ):
         super().__init__(
             model,
@@ -651,7 +617,7 @@ class ParametricLaplace(BaseLaplace):
             self.mean = self.mean.detach()
 
         data: (
-            Tuple[torch.Tensor, torch.Tensor] | MutableMapping[str, torch.Tensor | Any]
+            tuple[torch.Tensor, torch.Tensor] | MutableMapping[str, torch.Tensor | Any]
         ) = next(iter(train_loader))
 
         with torch.no_grad():
@@ -686,7 +652,7 @@ class ParametricLaplace(BaseLaplace):
                 X, y = data
                 X, y = X.to(self._device), y.to(self._device)
             self.model.zero_grad()
-            loss_batch, H_batch = self._curv_closure(X, y, N)
+            loss_batch, H_batch = self._curv_closure(X, y, N=N)
             self.loss += loss_batch
             self.H += H_batch
 
@@ -804,7 +770,7 @@ class ParametricLaplace(BaseLaplace):
 
         # update sigma_noise (useful when iterating on marglik)
         if sigma_noise is not None:
-            if self.likelihood != 'regression':
+            if self.likelihood != Likelihood.REGRESSION:
                 raise ValueError('Can only change sigma_noise for regression.')
             self.sigma_noise = sigma_noise
 
@@ -819,8 +785,8 @@ class ParametricLaplace(BaseLaplace):
         n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
-        **model_kwargs,
-    ) -> torch.Tensor | Tuple[torch.Tensor, torch.Tensor]:
+        **model_kwargs: dict[str, Any],
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute the posterior predictive on input data `x`.
 
         Parameters
@@ -859,7 +825,7 @@ class ParametricLaplace(BaseLaplace):
 
         Returns
         -------
-        predictive: torch.Tensor or Tuple[torch.Tensor]
+        predictive: torch.Tensor or tuple[torch.Tensor]
             For `likelihood='classification'`, a torch.Tensor is returned with
             a distribution over classes (similar to a Softmax).
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
@@ -887,7 +853,7 @@ class ParametricLaplace(BaseLaplace):
 
         # For reward modeling, replace the likelihood to regression and override model state
         if self.reward_modeling and self.likelihood == Likelihood.CLASSIFICATION:
-            self.likelihood = 'regression'
+            self.likelihood = Likelihood.REGRESSION
             setattr(self.model, 'output_size', 1)
 
         if pred_type == PredType.GLM:
@@ -1009,7 +975,7 @@ class ParametricLaplace(BaseLaplace):
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         joint: bool = False,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         if 'backpack' in self._backend_cls.__name__.lower():
             # BackPACK supports backprop through Jacobians, but it interferes with functorch
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
@@ -1036,7 +1002,7 @@ class ParametricLaplace(BaseLaplace):
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         n_samples: int = 100,
         generator: torch.Generator | None = None,
-        **model_kwargs,
+        **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
         fs = list()
         for sample in self.sample(n_samples, generator):
@@ -1058,7 +1024,7 @@ class ParametricLaplace(BaseLaplace):
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         n_samples: int = 100,
-        **model_kwargs,
+        **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
         py = 0.0
         for sample in self.sample(n_samples):
@@ -1144,7 +1110,9 @@ class ParametricLaplace(BaseLaplace):
         init_prior_prec: float | torch.Tensor = 1.0,
         prior_structure: PriorStructure | str = PriorStructure.SCALAR,
         val_loader: DataLoader | None = None,
-        loss: torchmetrics.Metric | Callable | None = None,
+        loss: torchmetrics.Metric
+        | Callable[[torch.Tensor], torch.Tensor | float]
+        | None = None,
         log_prior_prec_min: float = -4,
         log_prior_prec_max: float = 4,
         grid_size: int = 100,
@@ -1155,7 +1123,7 @@ class ParametricLaplace(BaseLaplace):
         progress_bar: bool = False,
     ) -> None:
         assert pred_type in PredType.__members__.values()
-        self.optimize_prior_precision_base(
+        super().optimize_prior_precision(
             pred_type,
             method,
             n_steps,
@@ -1184,7 +1152,7 @@ class ParametricLaplace(BaseLaplace):
         """
         raise NotImplementedError
 
-    def state_dict(self) -> dict:
+    def state_dict(self) -> dict[str, Any]:
         self._check_H_init()
         state_dict = {
             'mean': self.mean,
@@ -1202,7 +1170,7 @@ class ParametricLaplace(BaseLaplace):
         }
         return state_dict
 
-    def load_state_dict(self, state_dict: dict) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         # Dealbreaker errors
         if self.__class__.__name__ != state_dict['cls_name']:
             raise ValueError(
@@ -1267,8 +1235,8 @@ class FullLaplace(ParametricLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
-        backend: Type[CurvatureInterface] | None = None,
-        backend_kwargs: dict | None = None,
+        backend: type[CurvatureInterface] | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
     ):
         super().__init__(
             model,
@@ -1293,7 +1261,7 @@ class FullLaplace(ParametricLaplace):
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         y: torch.Tensor,
         N: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.backend.full(X, y, N=N)
 
     def fit(
@@ -1398,10 +1366,10 @@ class KronLaplace(ParametricLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
-        backend: Type[CurvatureInterface] | None = None,
+        backend: type[CurvatureInterface] | None = None,
         damping: bool = False,
-        backend_kwargs: dict | None = None,
-        asdl_fisher_kwargs: dict | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
+        asdl_fisher_kwargs: dict[str, Any] | None = None,
     ):
         self.damping: bool = damping
         self.H_facs: Kron | None = None
@@ -1428,7 +1396,7 @@ class KronLaplace(ParametricLaplace):
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         y: torch.Tensor,
         N: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
     @staticmethod
@@ -1522,13 +1490,13 @@ class KronLaplace(ParametricLaplace):
         if len(self.prior_precision) not in [1, self.n_layers]:
             raise ValueError('Prior precision for Kron either scalar or per-layer.')
 
-    def state_dict(self) -> dict:
+    def state_dict(self) -> dict[str, Any]:
         state_dict = super().state_dict()
         assert isinstance(self.H_facs, Kron)
         state_dict['H'] = self.H_facs.kfacs
         return state_dict
 
-    def load_state_dict(self, state_dict: dict):
+    def load_state_dict(self, state_dict: dict[str, Any]):
         super().load_state_dict(state_dict)
         self._init_H()
         assert isinstance(self.H, Kron)
@@ -1562,7 +1530,7 @@ class LowRankLaplace(ParametricLaplace):
         prior_mean: float | torch.Tensor = 0,
         temperature: float = 1,
         enable_backprop: bool = False,
-        backend_kwargs: dict | None = None,
+        backend_kwargs: dict[str, Any] | None = None,
     ):
         super().__init__(
             model,
@@ -1578,7 +1546,7 @@ class LowRankLaplace(ParametricLaplace):
         self.backend: AsdfghjklHessian
 
     def _init_H(self):
-        self.H: Tuple[torch.Tensor, torch.Tensor] | None = None
+        self.H: tuple[torch.Tensor, torch.Tensor] | None = None
 
     @property
     def V(self) -> torch.Tensor:
@@ -1625,7 +1593,7 @@ class LowRankLaplace(ParametricLaplace):
     @property
     def posterior_precision(
         self,
-    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         """Return correctly scaled posterior precision that would be constructed
         as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.
 
@@ -1675,7 +1643,7 @@ class LowRankLaplace(ParametricLaplace):
 
     @property
     def log_det_posterior_precision(self) -> torch.Tensor:
-        (U, eigvals), prior_prec_diag = self.posterior_precision
+        (_, eigvals), prior_prec_diag = self.posterior_precision
         return (
             eigvals.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
         )
@@ -1699,7 +1667,7 @@ class DiagLaplace(ParametricLaplace):
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         y: torch.Tensor,
         N: int,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.backend.diag(X, y, N=N, **self._asdl_fisher_kwargs)
 
     @property

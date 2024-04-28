@@ -1,9 +1,9 @@
-from laplace.baselaplace import (
+from laplace.utils.enums import (
     SubsetOfWeights,
     HessianStructure,
     Likelihood,
-    ParametricLaplace,
 )
+from laplace.baselaplace import ParametricLaplace
 import torch
 
 
