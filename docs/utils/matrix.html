@@ -58,7 +58,7 @@ or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 <div class="desc"><p>Initialize Kronecker factors based on a models architecture.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
+<dt><strong><code>model</code></strong> :&ensp;<code>nn.Module</code> or <code>iterable</code> of <code>parameters, e.g. model.parameters()</code></dt>
 <dd>&nbsp;</dd>
 <dt><strong><code>device</code></strong> :&ensp;<code>torch.device</code></dt>
 <dd>&nbsp;</dd>
@@ -223,6 +223,22 @@ Computes <span><span class="MathJax_Preview">H^{exponent} W</span><script type="
 <dd>result <code>(batch, classes, params)</code></dd>
 </dl></div>
 </dd>
+<dt id="laplace.utils.matrix.KronDecomposed.diag"><code class="name flex">
+<span>def <span class="ident">diag</span></span>(<span>self, exponent: float = 1) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Extract diagonal of the entire decomposed Kronecker factorization.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>exponent</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
+<dd>exponent of the Kronecker factorization</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>diag</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
+</dd>
 <dt id="laplace.utils.matrix.KronDecomposed.to_matrix"><code class="name flex">
 <span>def <span class="ident">to_matrix</span></span>(<span>self, exponent: float = 1) ‑> torch.Tensor</span>
 </code></dt>
@@ -230,6 +246,11 @@ Computes <span><span class="MathJax_Preview">H^{exponent} W</span><script type="
 <div class="desc"><p>Make the Kronecker factorization dense by computing the kronecker product.
 Warning: this should only be used for testing purposes as it will allocate
 large amounts of memory for big architectures.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>exponent</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
+<dd>exponent of the Kronecker factorization</dd>
+</dl>
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><strong><code>block_diag</code></strong> :&ensp;<code>torch.Tensor</code></dt>
@@ -267,11 +288,12 @@ large amounts of memory for big architectures.</p>
 </li>
 <li>
 <h4><code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="laplace.utils.matrix.KronDecomposed.detach" href="#laplace.utils.matrix.KronDecomposed.detach">detach</a></code></li>
 <li><code><a title="laplace.utils.matrix.KronDecomposed.logdet" href="#laplace.utils.matrix.KronDecomposed.logdet">logdet</a></code></li>
 <li><code><a title="laplace.utils.matrix.KronDecomposed.inv_square_form" href="#laplace.utils.matrix.KronDecomposed.inv_square_form">inv_square_form</a></code></li>
 <li><code><a title="laplace.utils.matrix.KronDecomposed.bmm" href="#laplace.utils.matrix.KronDecomposed.bmm">bmm</a></code></li>
+<li><code><a title="laplace.utils.matrix.KronDecomposed.diag" href="#laplace.utils.matrix.KronDecomposed.diag">diag</a></code></li>
 <li><code><a title="laplace.utils.matrix.KronDecomposed.to_matrix" href="#laplace.utils.matrix.KronDecomposed.to_matrix">to_matrix</a></code></li>
 </ul>
 </li>

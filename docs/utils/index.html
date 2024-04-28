@@ -35,6 +35,10 @@
 <dd>
 <div class="desc"></div>
 </dd>
+<dt><code class="name"><a title="laplace.utils.metrics" href="metrics.html">laplace.utils.metrics</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt><code class="name"><a title="laplace.utils.subnetmask" href="subnetmask.html">laplace.utils.subnetmask</a></code></dt>
 <dd>
 <div class="desc"></div>
@@ -61,7 +65,7 @@
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.validate"><code class="name flex">
-<span>def <span class="ident">validate</span></span>(<span>laplace, val_loader, pred_type='glm', link_approx='probit', n_samples=100)</span>
+<span>def <span class="ident">validate</span></span>(<span>laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False) ‑> float</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -169,6 +173,35 @@ adding and removing jitter to the diagonal.</p>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
+<dt id="laplace.utils.normal_samples"><code class="name flex">
+<span>def <span class="ident">normal_samples</span></span>(<span>mean, var, n_samples, generator=None)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Produce samples from a batch of Normal distributions either parameterized
+by a diagonal or full covariance given by <code>var</code>.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>mean</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd><code>(batch_size, output_dim)</code></dd>
+<dt><strong><code>var</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>(co)variance of the Normal distribution
+<code>(batch_size, output_dim, output_dim)</code> or <code>(batch_size, output_dim)</code></dd>
+<dt><strong><code>generator</code></strong> :&ensp;<code>torch.Generator</code></dt>
+<dd>random number generator</dd>
+</dl></div>
+</dd>
+<dt id="laplace.utils._is_batchnorm"><code class="name flex">
+<span>def <span class="ident">_is_batchnorm</span></span>(<span>module)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils._is_valid_scalar"><code class="name flex">
+<span>def <span class="ident">_is_valid_scalar</span></span>(<span>scalar: Union[float, int, torch.Tensor]) ‑> bool</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt id="laplace.utils.expand_prior_precision"><code class="name flex">
 <span>def <span class="ident">expand_prior_precision</span></span>(<span>prior_prec, model)</span>
 </code></dt>
@@ -186,6 +219,12 @@ adding and removing jitter to the diagonal.</p>
 <dt><strong><code>expanded_prior_prec</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>expanded prior precision has the same shape as model parameters</dd>
 </dl></div>
+</dd>
+<dt id="laplace.utils.fix_prior_prec_structure"><code class="name flex">
+<span>def <span class="ident">fix_prior_prec_structure</span></span>(<span>prior_prec_init, prior_structure, n_layers, n_params, device)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
 </dd>
 <dt id="laplace.utils.fit_diagonal_swag_var"><code class="name flex">
 <span>def <span class="ident">fit_diagonal_swag_var</span></span>(<span>model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1, lr=0.01, momentum=0.9, weight_decay=0.0003, min_var=1e-30)</span>
@@ -234,7 +273,7 @@ NeurIPS 2019.</p>
 <dl>
 <dt id="laplace.utils.FeatureExtractor"><code class="flex name class">
 <span>class <span class="ident">FeatureExtractor</span></span>
-<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None)</span>
+<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None, enable_backprop: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Feature extractor for a PyTorch neural network.
@@ -253,22 +292,11 @@ Based on <a href="https://gist.github.com/fkodom/27ed045c9051a39102e8bcf4ce31df7
 <dd>if the name of the last layer is already known, otherwise it will
 be determined automatically.</dd>
 </dl>
-<p>Initializes internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li>torch.nn.modules.module.Module</li>
 </ul>
-<h3>Class variables</h3>
-<dl>
-<dt id="laplace.utils.FeatureExtractor.dump_patches"><code class="name">var <span class="ident">dump_patches</span> : bool</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="laplace.utils.FeatureExtractor.training"><code class="name">var <span class="ident">training</span> : bool</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.FeatureExtractor.forward"><code class="name flex">
@@ -351,7 +379,7 @@ or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 <div class="desc"><p>Initialize Kronecker factors based on a models architecture.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
+<dt><strong><code>model</code></strong> :&ensp;<code>nn.Module</code> or <code>iterable</code> of <code>parameters, e.g. model.parameters()</code></dt>
 <dd>&nbsp;</dd>
 <dt><strong><code>device</code></strong> :&ensp;<code>torch.device</code></dt>
 <dd>&nbsp;</dd>
@@ -516,6 +544,22 @@ Computes <span><span class="MathJax_Preview">H^{exponent} W</span><script type="
 <dd>result <code>(batch, classes, params)</code></dd>
 </dl></div>
 </dd>
+<dt id="laplace.utils.KronDecomposed.diag"><code class="name flex">
+<span>def <span class="ident">diag</span></span>(<span>self, exponent: float = 1) ‑> torch.Tensor</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Extract diagonal of the entire decomposed Kronecker factorization.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>exponent</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
+<dd>exponent of the Kronecker factorization</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>diag</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
+</dd>
 <dt id="laplace.utils.KronDecomposed.to_matrix"><code class="name flex">
 <span>def <span class="ident">to_matrix</span></span>(<span>self, exponent: float = 1) ‑> torch.Tensor</span>
 </code></dt>
@@ -523,6 +567,11 @@ Computes <span><span class="MathJax_Preview">H^{exponent} W</span><script type="
 <div class="desc"><p>Make the Kronecker factorization dense by computing the kronecker product.
 Warning: this should only be used for testing purposes as it will allocate
 large amounts of memory for big architectures.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>exponent</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
+<dd>exponent of the Kronecker factorization</dd>
+</dl>
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><strong><code>block_diag</code></strong> :&ensp;<code>torch.Tensor</code></dt>
@@ -886,6 +935,47 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </li>
 </ul>
 </dd>
+<dt id="laplace.utils.RunningNLLMetric"><code class="flex name class">
+<span>class <span class="ident">RunningNLLMetric</span></span>
+<span>(</span><span>ignore_index=-100)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>NLL metrics that</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>ignore_index</code></strong> :&ensp;<code>int</code>, default <code>= -100</code></dt>
+<dd>which class label to ignore when computing the NLL loss</dd>
+</dl>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torchmetrics.metric.Metric</li>
+<li>torch.nn.modules.module.Module</li>
+<li>abc.ABC</li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.utils.RunningNLLMetric.update"><code class="name flex">
+<span>def <span class="ident">update</span></span>(<span>self, probs: torch.Tensor, targets: torch.Tensor) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>probs</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>probability tensor of shape (&hellip;, n_classes)</dd>
+<dt><strong><code>targets</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>integer tensor of shape (&hellip;)</dd>
+</dl></div>
+</dd>
+<dt id="laplace.utils.RunningNLLMetric.compute"><code class="name flex">
+<span>def <span class="ident">compute</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Override this method to compute the final metric value.</p>
+<p>This method will automatically synchronize state variables when running in distributed backend.</p></div>
+</dd>
+</dl>
+</dd>
 </dl>
 </section>
 </article>
@@ -904,6 +994,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <ul>
 <li><code><a title="laplace.utils.feature_extractor" href="feature_extractor.html">laplace.utils.feature_extractor</a></code></li>
 <li><code><a title="laplace.utils.matrix" href="matrix.html">laplace.utils.matrix</a></code></li>
+<li><code><a title="laplace.utils.metrics" href="metrics.html">laplace.utils.metrics</a></code></li>
 <li><code><a title="laplace.utils.subnetmask" href="subnetmask.html">laplace.utils.subnetmask</a></code></li>
 <li><code><a title="laplace.utils.swag" href="swag.html">laplace.utils.swag</a></code></li>
 <li><code><a title="laplace.utils.utils" href="utils.html">laplace.utils.utils</a></code></li>
@@ -919,7 +1010,11 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <li><code><a title="laplace.utils.diagonal_add_scalar" href="#laplace.utils.diagonal_add_scalar">diagonal_add_scalar</a></code></li>
 <li><code><a title="laplace.utils.symeig" href="#laplace.utils.symeig">symeig</a></code></li>
 <li><code><a title="laplace.utils.block_diag" href="#laplace.utils.block_diag">block_diag</a></code></li>
+<li><code><a title="laplace.utils.normal_samples" href="#laplace.utils.normal_samples">normal_samples</a></code></li>
+<li><code><a title="laplace.utils._is_batchnorm" href="#laplace.utils._is_batchnorm">_is_batchnorm</a></code></li>
+<li><code><a title="laplace.utils._is_valid_scalar" href="#laplace.utils._is_valid_scalar">_is_valid_scalar</a></code></li>
 <li><code><a title="laplace.utils.expand_prior_precision" href="#laplace.utils.expand_prior_precision">expand_prior_precision</a></code></li>
+<li><code><a title="laplace.utils.fix_prior_prec_structure" href="#laplace.utils.fix_prior_prec_structure">fix_prior_prec_structure</a></code></li>
 <li><code><a title="laplace.utils.fit_diagonal_swag_var" href="#laplace.utils.fit_diagonal_swag_var">fit_diagonal_swag_var</a></code></li>
 </ul>
 </li>
@@ -947,11 +1042,12 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </li>
 <li>
 <h4><code><a title="laplace.utils.KronDecomposed" href="#laplace.utils.KronDecomposed">KronDecomposed</a></code></h4>
-<ul class="">
+<ul class="two-column">
 <li><code><a title="laplace.utils.KronDecomposed.detach" href="#laplace.utils.KronDecomposed.detach">detach</a></code></li>
 <li><code><a title="laplace.utils.KronDecomposed.logdet" href="#laplace.utils.KronDecomposed.logdet">logdet</a></code></li>
 <li><code><a title="laplace.utils.KronDecomposed.inv_square_form" href="#laplace.utils.KronDecomposed.inv_square_form">inv_square_form</a></code></li>
 <li><code><a title="laplace.utils.KronDecomposed.bmm" href="#laplace.utils.KronDecomposed.bmm">bmm</a></code></li>
+<li><code><a title="laplace.utils.KronDecomposed.diag" href="#laplace.utils.KronDecomposed.diag">diag</a></code></li>
 <li><code><a title="laplace.utils.KronDecomposed.to_matrix" href="#laplace.utils.KronDecomposed.to_matrix">to_matrix</a></code></li>
 </ul>
 </li>
@@ -1003,6 +1099,13 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <h4><code><a title="laplace.utils.LastLayerSubnetMask" href="#laplace.utils.LastLayerSubnetMask">LastLayerSubnetMask</a></code></h4>
 <ul class="">
 <li><code><a title="laplace.utils.LastLayerSubnetMask.get_subnet_mask" href="#laplace.utils.LastLayerSubnetMask.get_subnet_mask">get_subnet_mask</a></code></li>
+</ul>
+</li>
+<li>
+<h4><code><a title="laplace.utils.RunningNLLMetric" href="#laplace.utils.RunningNLLMetric">RunningNLLMetric</a></code></h4>
+<ul class="">
+<li><code><a title="laplace.utils.RunningNLLMetric.update" href="#laplace.utils.RunningNLLMetric.update">update</a></code></li>
+<li><code><a title="laplace.utils.RunningNLLMetric.compute" href="#laplace.utils.RunningNLLMetric.compute">compute</a></code></li>
 </ul>
 </li>
 </ul>
