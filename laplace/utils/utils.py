@@ -1,15 +1,21 @@
+from __future__ import annotations
 import logging
-from typing import Union
+from typing import Callable, Union
 import numpy as np
 import torch
+from torch import nn
 import torch.nn.functional as F
 from torch.nn.utils import parameters_to_vector
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torch.utils.data import DataLoader
 from torchmetrics import Metric
 from collections import UserDict
-import math
 
+import torchmetrics
+
+import laplace.baselaplace
+from laplace.utils.enums import LinkApprox, PredType, PriorStructure
 
 __all__ = [
     'get_nll',
@@ -24,19 +30,21 @@ __all__ = [
 ]
 
 
-def get_nll(out_dist, targets):
+def get_nll(out_dist: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     return F.nll_loss(torch.log(out_dist), targets)
 
 
 @torch.no_grad()
 def validate(
-    laplace,
-    val_loader,
-    loss,
-    pred_type='glm',
-    link_approx='probit',
-    n_samples=100,
-    loss_with_var=False,
+    laplace: laplace.baselaplace.BaseLaplace,
+    val_loader: DataLoader,
+    loss: torchmetrics.Metric
+    | Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+    | Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor],
+    pred_type: PredType | str = PredType.GLM,
+    link_approx: LinkApprox | str = LinkApprox.PROBIT,
+    n_samples: int = 100,
+    loss_with_var: int = False,
 ) -> float:
     laplace.model.eval()
     assert callable(loss) or isinstance(loss, Metric)
@@ -84,7 +92,7 @@ def validate(
         return loss.compute().item()
 
 
-def parameters_per_layer(model):
+def parameters_per_layer(model: nn.Module) -> list[int]:
     """Get number of parameters per layer.
 
     Parameters
@@ -98,7 +106,7 @@ def parameters_per_layer(model):
     return [np.prod(p.shape) for p in model.parameters()]
 
 
-def invsqrt_precision(M):
+def invsqrt_precision(M: torch.Tensor) -> torch.Tensor:
     """Compute ``M^{-0.5}`` as a tridiagonal matrix.
 
     Parameters
@@ -112,7 +120,7 @@ def invsqrt_precision(M):
     return _precision_to_scale_tril(M)
 
 
-def _is_batchnorm(module):
+def _is_batchnorm(module: nn.Module) -> bool:
     if (
         isinstance(module, BatchNorm1d)
         or isinstance(module, BatchNorm2d)
@@ -122,7 +130,7 @@ def _is_batchnorm(module):
     return False
 
 
-def _is_valid_scalar(scalar: Union[float, int, torch.Tensor]) -> bool:
+def _is_valid_scalar(scalar: float | int | torch.Tensor) -> bool:
     if np.isscalar(scalar) and np.isreal(scalar):
         return True
     elif torch.is_tensor(scalar) and scalar.ndim <= 1:
@@ -132,7 +140,7 @@ def _is_valid_scalar(scalar: Union[float, int, torch.Tensor]) -> bool:
     return False
 
 
-def kron(t1, t2):
+def kron(t1: torch.Tensor, t2: torch.Tensor) -> torch.Tensor:
     """Computes the Kronecker product between two tensors.
 
     Parameters
@@ -160,7 +168,7 @@ def kron(t1, t2):
     return expanded_t1 * tiled_t2
 
 
-def diagonal_add_scalar(X, value):
+def diagonal_add_scalar(X: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
     """Add scalar value `value` to diagonal of `X`.
 
     Parameters
@@ -172,15 +180,12 @@ def diagonal_add_scalar(X, value):
     -------
     X_add_scalar : torch.Tensor
     """
-    if not X.device == torch.device('cpu'):
-        indices = torch.cuda.LongTensor([[i, i] for i in range(X.shape[0])])
-    else:
-        indices = torch.LongTensor([[i, i] for i in range(X.shape[0])])
+    indices = torch.LongTensor([[i, i] for i in range(X.shape[0])], device=X.device)
     values = X.new_ones(X.shape[0]).mul(value)
     return X.index_put(tuple(indices.t()), values, accumulate=True)
 
 
-def symeig(M):
+def symeig(M: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Symetric eigendecomposition avoiding failure cases by
     adding and removing jitter to the diagonal.
 
@@ -216,7 +221,7 @@ def symeig(M):
     return L, W
 
 
-def block_diag(blocks):
+def block_diag(blocks: list[torch.Tensor]) -> torch.Tensor:
     """Compose block-diagonal matrix of individual blocks.
 
     Parameters
@@ -237,7 +242,7 @@ def block_diag(blocks):
     return M
 
 
-def expand_prior_precision(prior_prec, model):
+def expand_prior_precision(prior_prec: torch.Tensor, model: nn.Module) -> torch.Tensor:
     """Expand prior precision to match the shape of the model parameters.
 
     Parameters
@@ -270,20 +275,46 @@ def expand_prior_precision(prior_prec, model):
 
 
 def fix_prior_prec_structure(
-    prior_prec_init, prior_structure, n_layers, n_params, device
-):
-    if prior_structure == 'scalar':
+    prior_prec_init: torch.Tensor,
+    prior_structure: PriorStructure | str,
+    n_layers: int,
+    n_params: int,
+    device: torch.device,
+) -> torch.Tensor:
+    """Create a tensor of prior precision with the correct shape, depending on the
+    choice of the prior structure type.
+
+    Parameters
+    ----------
+    prior_prec_init: torch.Tensor
+        the initial prior precision tensor (could be scalar)
+    prior_structure: PriorStructure | str
+        the choice of the prior structure type
+    n_layers: int
+    n_params: int
+    device: torch.device
+
+    Returns
+    -------
+    correct_prior_precision: torch.Tensor
+    """
+    if prior_structure == PriorStructure.SCALAR:
         prior_prec_init = torch.full((1,), prior_prec_init, device=device)
-    elif prior_structure == 'layerwise':
+    elif prior_structure == PriorStructure.LAYERWISE:
         prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device)
-    elif prior_structure == 'diag':
+    elif prior_structure == PriorStructure.DIAG:
         prior_prec_init = torch.full((n_params,), prior_prec_init, device=device)
     else:
         raise ValueError(f'Invalid prior structure {prior_structure}.')
     return prior_prec_init
 
 
-def normal_samples(mean, var, n_samples, generator=None):
+def normal_samples(
+    mean: torch.Tensor,
+    var: torch.Tensor,
+    n_samples: int,
+    generator: torch.Generator | None = None,
+) -> torch.Tensor:
     """Produce samples from a batch of Normal distributions either parameterized
     by a diagonal or full covariance given by `var`.
 

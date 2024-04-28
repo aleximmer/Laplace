@@ -1,27 +1,30 @@
 from copy import deepcopy
 
 import torch
+from torch import nn
 from torch.nn.utils import parameters_to_vector
+from torch.optim import Optimizer
+from torch.utils.data import DataLoader
 
 
 __all__ = ['fit_diagonal_swag_var']
 
 
-def _param_vector(model):
+def _param_vector(model: nn.Module) -> torch.Tensor:
     return parameters_to_vector(model.parameters()).detach()
 
 
 def fit_diagonal_swag_var(
-    model,
-    train_loader,
-    criterion,
-    n_snapshots_total=40,
-    snapshot_freq=1,
-    lr=0.01,
-    momentum=0.9,
-    weight_decay=3e-4,
-    min_var=1e-30,
-):
+    model: nn.Module,
+    train_loader: DataLoader,
+    criterion: nn.CrossEntropyLoss | nn.MSELoss,
+    n_snapshots_total: int = 40,
+    snapshot_freq: int = 1,
+    lr: float = 0.01,
+    momentum: float = 0.9,
+    weight_decay: float = 3e-4,
+    min_var: float = 1e-30,
+) -> torch.Tensor:
     """
     Fit diagonal SWAG [1], which estimates marginal variances of model parameters by
     computing the first and second moment of SGD iterates with a large learning rate.
@@ -63,20 +66,21 @@ def fit_diagonal_swag_var(
     """
 
     # create a copy of the model to avoid undesired changes to the original model parameters
-    _model = deepcopy(model)
+    _model: nn.Module = deepcopy(model)
     _model.train()
-    device = next(_model.parameters()).device
+    device: torch.device = next(_model.parameters()).device
 
     # initialize running estimates of first and second moment of model parameters
-    mean = torch.zeros_like(_param_vector(_model))
-    sq_mean = torch.zeros_like(_param_vector(_model))
-    n_snapshots = 0
+    mean: torch.Tensor = torch.zeros_like(_param_vector(_model))
+    sq_mean: torch.Tensor = torch.zeros_like(_param_vector(_model))
+    n_snapshots: int = 0
 
     # run SGD to collect model snapshots
-    optimizer = torch.optim.SGD(
+    optimizer: Optimizer = torch.optim.SGD(
         _model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
     )
-    n_epochs = snapshot_freq * n_snapshots_total
+    n_epochs: int = snapshot_freq * n_snapshots_total
+
     for epoch in range(n_epochs):
         for inputs, targets in train_loader:
             inputs, targets = inputs.to(device), targets.to(device)
@@ -93,5 +97,5 @@ def fit_diagonal_swag_var(
             n_snapshots += 1
 
     # compute marginal parameter variances, Var[P] = E[P^2] - E[P]^2
-    param_variances = torch.clamp(sq_mean - mean**2, min_var)
+    param_variances: torch.Tensor = torch.clamp(sq_mean - mean**2, min_var)
     return param_variances

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum
 from math import sqrt, pi, log
 from typing import Callable, Any
 import numpy as np
@@ -15,18 +14,17 @@ from collections.abc import MutableMapping
 import warnings
 from torchmetrics import MeanSquaredError
 
-from laplace.utils import (
-    invsqrt_precision,
-    validate,
-    Kron,
-    normal_samples,
-    fix_prior_prec_structure,
-    RunningNLLMetric,
-)
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.asdfghjkl import AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsGGN, CurvlinopsEF
-from laplace.utils.matrix import KronDecomposed
+from laplace.utils.matrix import Kron, KronDecomposed
+from laplace.utils.metrics import RunningNLLMetric
+from laplace.utils.utils import (
+    invsqrt_precision,
+    validate,
+    normal_samples,
+    fix_prior_prec_structure,
+)
 from laplace.utils.enums import (
     Likelihood,
     PredType,
