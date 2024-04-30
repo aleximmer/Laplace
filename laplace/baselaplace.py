@@ -113,9 +113,13 @@ class BaseLaplace:
         if backend is None:
             backend = CurvlinopsGGN
         else:
-            if self.is_subset_params and 'backpack' in backend.__name__.lower():
+            if self.is_subset_params and (
+                'backpack' in backend.__name__.lower()
+                or 'asdfghjkl' in backend.__name__.lower()
+            ):
                 raise ValueError(
-                    'If some grad are switched off, the BackPACK backend is not supported.'
+                    'If some grad are switched off, the BackPACK and Asdfghjkkl backend'
+                    ' is not supported.'
                 )
 
         self._backend = None
