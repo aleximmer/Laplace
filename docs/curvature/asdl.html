@@ -49,18 +49,29 @@
 <li><a title="laplace.curvature.asdl.AsdlGGN" href="#laplace.curvature.asdl.AsdlGGN">AsdlGGN</a></li>
 <li><a title="laplace.curvature.asdl.AsdlHessian" href="#laplace.curvature.asdl.AsdlHessian">AsdlHessian</a></li>
 </ul>
+<h3>Instance variables</h3>
+<dl>
+<dt id="laplace.curvature.asdl.AsdlInterface.loss_type"><code class="name">var <span class="ident">loss_type</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.asdl.AsdlInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>self, x)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
 using asdfghjkl's gradient per output dimension.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>input data <code>(batch, input_shape)</code> on compatible device with model.</dd>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>UserDict</code></dt>
+<dd>input data <code>(batch, input_shape)</code> on compatible device with model if torch.Tensor.
+If UserDict, then at least contains key ['input_ids'] or ['input_ids_0', 'input_ids_1'].
+The latter is specific for reward modeling.</dd>
+<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default <code>= False</code></dt>
+<dd>whether to enable backprop through the Js and f w.r.t. x</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
@@ -98,6 +109,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <ul class="hlist">
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
+<li><code><a title="laplace.curvature.curvature.CurvatureInterface.functorch_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.functorch_jacobians">functorch_jacobians</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>
 <li><code><a title="laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.last_layer_jacobians">last_layer_jacobians</a></code></li>
 </ul>
@@ -130,6 +142,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <ul class="hlist">
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.functorch_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.functorch_jacobians">functorch_jacobians</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.gradients" href="#laplace.curvature.asdl.AsdlInterface.gradients">gradients</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.jacobians" href="#laplace.curvature.asdl.AsdlInterface.jacobians">jacobians</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>
@@ -156,6 +169,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <ul class="hlist">
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.functorch_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.functorch_jacobians">functorch_jacobians</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.gradients" href="#laplace.curvature.asdl.AsdlInterface.gradients">gradients</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.jacobians" href="#laplace.curvature.asdl.AsdlInterface.jacobians">jacobians</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>
@@ -182,6 +196,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <ul class="hlist">
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.diag" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.diag">diag</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.full" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.full">full</a></code></li>
+<li><code><a title="laplace.curvature.asdl.AsdlInterface.functorch_jacobians" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.functorch_jacobians">functorch_jacobians</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.gradients" href="#laplace.curvature.asdl.AsdlInterface.gradients">gradients</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.jacobians" href="#laplace.curvature.asdl.AsdlInterface.jacobians">jacobians</a></code></li>
 <li><code><a title="laplace.curvature.asdl.AsdlInterface.kron" href="curvature.html#laplace.curvature.curvature.CurvatureInterface.kron">kron</a></code></li>

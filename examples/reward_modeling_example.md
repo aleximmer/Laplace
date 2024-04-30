@@ -1,4 +1,4 @@
-# Bayesian Bradley-Terry Reward Modeling with `laplace-torch`
+## Full Example: Bayesian Bradley-Terry Reward Modeling
 
 The `laplace-torch` library can also be used to "Bayesianize" a pretrained Bradley-Terry 
 reward model, popular in large language models. See <http://arxiv.org/abs/2009.01325> 
