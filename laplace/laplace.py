@@ -1,5 +1,5 @@
 from laplace.baselaplace import ParametricLaplace
-from laplace import *
+from laplace import *  # noqa F403
 
 
 def Laplace(

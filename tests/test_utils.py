@@ -1,7 +1,15 @@
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 from laplace import Laplace
-from laplace.utils import invsqrt_precision, diagonal_add_scalar, symeig, normal_samples, validate, get_nll, RunningNLLMetric
+from laplace.utils import (
+    invsqrt_precision,
+    diagonal_add_scalar,
+    symeig,
+    normal_samples,
+    validate,
+    get_nll,
+    RunningNLLMetric,
+)
 import math
 
 
@@ -71,7 +79,9 @@ def test_validate():
     y = torch.randint(3, size=(50,))
     dataloader = DataLoader(TensorDataset(X, y), batch_size=10)
 
-    model = torch.nn.Sequential(torch.nn.Linear(10, 20), torch.nn.ReLU(), torch.nn.Linear(20, 3))
+    model = torch.nn.Sequential(
+        torch.nn.Linear(10, 20), torch.nn.ReLU(), torch.nn.Linear(20, 3)
+    )
     la = Laplace(model, 'classification', 'all')
     la.fit(dataloader)
 
@@ -83,9 +93,13 @@ def test_validate():
     assert res > 0
 
     res = validate(
-        la, dataloader, RunningNLLMetric(), pred_type='nn', link_approx='mc', n_samples=10
+        la,
+        dataloader,
+        RunningNLLMetric(),
+        pred_type='nn',
+        link_approx='mc',
+        n_samples=10,
     )
     assert res != math.nan
     assert isinstance(res, float)
     assert res > 0
-

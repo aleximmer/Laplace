@@ -2,6 +2,7 @@ from math import sqrt, pi, log
 import numpy as np
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
+import torchmetrics
 import tqdm
 from collections.abc import MutableMapping
 from laplace.curvature.asdfghjkl import AsdfghjklHessian
@@ -17,7 +18,7 @@ from laplace.utils import (
     fix_prior_prec_structure,
     RunningNLLMetric,
 )
-from laplace.curvature import AsdlHessian, CurvlinopsGGN
+from laplace.curvature import CurvlinopsGGN
 
 
 __all__ = [
@@ -113,9 +114,13 @@ class BaseLaplace:
         if backend is None:
             backend = CurvlinopsGGN
         else:
-            if self.is_subset_params and 'backpack' in backend.__name__.lower():
+            if self.is_subset_params and (
+                'backpack' in backend.__name__.lower()
+                or 'asdfghjkl' in backend.__name__.lower()
+            ):
                 raise ValueError(
-                    'If some grad are switched off, the BackPACK backend is not supported.'
+                    'If some grad are switched off, the BackPACK and Asdfghjkl backends'
+                    ' are not supported.'
                 )
 
         self._backend = None
@@ -402,7 +407,7 @@ class BaseLaplace:
         loss_with_var=False,
         progress_bar=False,
     ):
-        assert callable(loss) or isinstance(loss, tm.Metric)
+        assert callable(loss) or isinstance(loss, torchmetrics.Metric)
 
         results = list()
         prior_precs = list()
@@ -1402,13 +1407,13 @@ class LowRankLaplace(ParametricLaplace):
 
     @property
     def V(self):
-        (U, l), prior_prec_diag = self.posterior_precision
+        (U, _), prior_prec_diag = self.posterior_precision
         return U / prior_prec_diag.reshape(-1, 1)
 
     @property
     def Kinv(self):
-        (U, l), _ = self.posterior_precision
-        return torch.inverse(torch.diag(1 / l) + U.T @ self.V)
+        (U, eigval), _ = self.posterior_precision
+        return torch.inverse(torch.diag(1 / eigval) + U.T @ self.V)
 
     def fit(self, train_loader, override=True):
         # override fit since output of eighessian not additive across batch
@@ -1486,8 +1491,10 @@ class LowRankLaplace(ParametricLaplace):
 
     @property
     def log_det_posterior_precision(self):
-        (U, l), prior_prec_diag = self.posterior_precision
-        return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
+        (U, eigval), prior_prec_diag = self.posterior_precision
+        return (
+            eigval.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
+        )
 
 
 class DiagLaplace(ParametricLaplace):

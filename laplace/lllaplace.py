@@ -279,7 +279,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         backend=None,
         last_layer_name=None,
         damping=False,
-        **backend_kwargs
+        **backend_kwargs,
     ):
         self.damping = damping
         super().__init__(

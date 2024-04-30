@@ -23,11 +23,20 @@ from laplace.laplace import (
 )
 
 
-
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-lrlaplace_param = pytest.param(LowRankLaplace, marks=pytest.mark.xfail(reason='Unimplemented in the new ASDL'))
-flavors = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param, FullLLLaplace, KronLLLaplace, DiagLLLaplace]
+lrlaplace_param = pytest.param(
+    LowRankLaplace, marks=pytest.mark.xfail(reason='Unimplemented in the new ASDL')
+)
+flavors = [
+    FullLaplace,
+    KronLaplace,
+    DiagLaplace,
+    lrlaplace_param,
+    FullLLLaplace,
+    KronLLLaplace,
+    DiagLLLaplace,
+]
 flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param]
 flavors_llla = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_subnet = [DiagSubnetLaplace, FullSubnetLaplace]
@@ -57,10 +66,7 @@ def model2():
 @pytest.fixture
 def model3():
     model = torch.nn.Sequential(
-        OrderedDict([
-            ('fc1', nn.Linear(3, 20)),
-            ('clf', nn.Linear(20, 2))
-        ])
+        OrderedDict([('fc1', nn.Linear(3, 20)), ('clf', nn.Linear(20, 2))])
     )
     setattr(model, 'output_size', 2)
     model_params = list(model.parameters())
@@ -180,20 +186,26 @@ def test_serialize_fail_different_hess_structures(model, reg_loader):
     la.sigma_noise = 1231
     torch.save(la.state_dict(), 'state_dict.bin')
 
-    la2 = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='diag')
+    la2 = Laplace(
+        model, 'regression', subset_of_weights='all', hessian_structure='diag'
+    )
 
     with pytest.raises(ValueError):
         la2.load_state_dict(torch.load('state_dict.bin'))
 
 
 def test_serialize_fail_different_subset_of_weights(model, reg_loader):
-    la = Laplace(model, 'regression', subset_of_weights='last_layer', hessian_structure='diag')
+    la = Laplace(
+        model, 'regression', subset_of_weights='last_layer', hessian_structure='diag'
+    )
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), 'state_dict.bin')
 
-    la2 = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='diag')
+    la2 = Laplace(
+        model, 'regression', subset_of_weights='all', hessian_structure='diag'
+    )
 
     with pytest.raises(ValueError):
         la2.load_state_dict(torch.load('state_dict.bin'))
@@ -214,7 +226,9 @@ def test_serialize_fail_different_liks(laplace, model, reg_loader):
 
 
 @pytest.mark.parametrize('laplace', flavors_llla)
-def test_serialize_fail_llla_different_last_layer_name(laplace, model, model3, reg_loader):
+def test_serialize_fail_llla_different_last_layer_name(
+    laplace, model, model3, reg_loader
+):
     print([n for n, _ in model.named_parameters()])
     la = laplace(model, 'regression', last_layer_name='1')
     la.fit(reg_loader)
@@ -244,19 +258,17 @@ def test_map_location(
     #   AttributeError: Can't pickle local object 'FeatureExtractor._get_hook.<locals>.hook'
     if issubclass(laplace, LLLaplace):
         if find_spec('dill') is None:
-            pytest.skip(
-                reason='dill package not found but needed for this test'
-            )
+            pytest.skip(reason='dill package not found but needed for this test')
         else:
             import dill
 
-            torch_save = lambda obj, fn: torch.save(
-                obj, fn, pickle_module=dill
-            )
+            def torch_save(obj, fn):
+                return torch.save(obj, fn, pickle_module=dill)
     else:
         # Use default pickle_module=pickle, but no need to import pickle here
         # just to set pickle_module=pickle.
-        torch_save = lambda obj, fn: torch.save(obj, fn)
+        def torch_save(obj, fn):
+            return torch.save(obj, fn)
 
     device = torch.device(model_device_str)
     kwds = dict(model=model.to(device), likelihood='regression')
@@ -287,12 +299,8 @@ def test_map_location(
         'prior_precision',
         'sigma_noise',
     ]:
-        assert (
-            getattr(la, name).device.type == device.type
-        ), f'la.{name} failed'
-        assert (
-            getattr(la2, name).device.type == map_location
-        ), f'la2.{name} failed'
+        assert getattr(la, name).device.type == device.type, f'la.{name} failed'
+        assert getattr(la2, name).device.type == map_location, f'la2.{name} failed'
 
     # Test tensor attrs.
     for name, obj in vars(la).items():
@@ -306,9 +314,7 @@ def test_map_location(
             continue
         if isinstance(obj, torch.Tensor):
             assert obj.device.type == device.type, f'la.{name} failed'
-            assert (
-                getattr(la2, name).device.type == map_location
-            ), f'la2.{name} failed'
+            assert getattr(la2, name).device.type == map_location, f'la2.{name} failed'
 
     assert la.sigma_noise == la2.sigma_noise
     X, _ = next(iter(reg_loader))

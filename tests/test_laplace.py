@@ -10,16 +10,27 @@ from laplace.lllaplace import FullLLLaplace, KronLLLaplace, DiagLLLaplace
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors = [FullLaplace, KronLaplace, DiagLaplace,
-           FullLLLaplace, KronLLLaplace, DiagLLLaplace]
-all_keys = [('all', 'full'), ('all', 'kron'), ('all', 'diag'),
-            ('last_layer', 'full'), ('last_layer', 'kron'), ('last_layer', 'diag')]
+flavors = [
+    FullLaplace,
+    KronLaplace,
+    DiagLaplace,
+    FullLLLaplace,
+    KronLLLaplace,
+    DiagLLLaplace,
+]
+all_keys = [
+    ('all', 'full'),
+    ('all', 'kron'),
+    ('all', 'diag'),
+    ('last_layer', 'full'),
+    ('last_layer', 'kron'),
+    ('last_layer', 'diag'),
+]
 
 
 @pytest.fixture
 def model():
     model = nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    model_params = list(model.parameters())
     return model
 
 
@@ -42,8 +53,15 @@ def test_opt_keywords(key, model, likelihood='classification'):
     # test if optional keywords are correctly passed on
     w, s = key
     prior_mean = torch.zeros_like(parameters_to_vector(model.parameters()))
-    lap = Laplace(model, likelihood, subset_of_weights=w, hessian_structure=s,
-                  prior_precision=0.01, prior_mean=prior_mean, temperature=10.)
+    lap = Laplace(
+        model,
+        likelihood,
+        subset_of_weights=w,
+        hessian_structure=s,
+        prior_precision=0.01,
+        prior_mean=prior_mean,
+        temperature=10.0,
+    )
     assert torch.allclose(lap.prior_mean, prior_mean)
     assert lap.prior_precision == 0.01
-    assert lap.temperature == 10.
+    assert lap.temperature == 10.0

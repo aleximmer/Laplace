@@ -11,42 +11,31 @@ class CNN(nn.Module):
         self.conv1 = nn.Sequential(
             # Input shape (3, 64, 64)
             nn.Conv2d(
-                in_channels=3,
-                out_channels=6,
-                kernel_size=5,
-                stride=1,
-                padding=2
+                in_channels=3, out_channels=6, kernel_size=5, stride=1, padding=2
             ),
             # Output shape (6, 60, 60)
             nn.ReLU(),
             # Output shape (6, 30, 30)
-            nn.MaxPool2d(kernel_size=2)
+            nn.MaxPool2d(kernel_size=2),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(in_features=16 * 16 * 16,
-                      out_features=300),
+            nn.Linear(in_features=16 * 16 * 16, out_features=300),
             nn.ReLU(),
-            nn.Linear(in_features=300,
-                      out_features=84),
+            nn.Linear(in_features=300, out_features=84),
             nn.ReLU(),
-            nn.Linear(in_features=84,
-                      out_features=num_classes)
+            nn.Linear(in_features=84, out_features=num_classes),
         )
 
         self.conv2 = nn.Sequential(
             # Input shape (6, 30, 30)
             nn.Conv2d(
-                in_channels=6,
-                out_channels=16,
-                kernel_size=5,
-                stride=1,
-                padding=2
+                in_channels=6, out_channels=16, kernel_size=5, stride=1, padding=2
             ),
             # Output shape (16, 26, 26)
             nn.ReLU(),
             # Output shape (16, 13, 13)
-            nn.MaxPool2d(kernel_size=2)
+            nn.MaxPool2d(kernel_size=2),
         )
 
     def forward(self, x):
@@ -94,9 +83,9 @@ def get_model(model_name):
             nn.Conv2d(3, 6, 3, 1, 1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(6*64*64, 10),
+            nn.Linear(6 * 64 * 64, 10),
             nn.ReLU(),
-            nn.Linear(10, 10)
+            nn.Linear(10, 10),
         )
     else:
         raise ValueError(f'{model_name} is not supported.')
@@ -107,10 +96,23 @@ def get_model(model_name):
 def test_feature_extractor():
     # all torchvision classifcation models but 'squeezenet' (no linear last layer)
     # + model where modules are initilaized in wrong order + nn.Sequential model
-    model_names = ['resnet18', 'alexnet', 'vgg16', 'densenet', 'inception',
-                   'googlenet', 'shufflenet', 'mobilenet_v2', 'mobilenet_v3_large',
-                   'mobilenet_v3_small', 'resnext50_32x4d', 'wide_resnet50_2',
-                   'mnasnet', 'switchedCNN', 'sequential']
+    model_names = [
+        'resnet18',
+        'alexnet',
+        'vgg16',
+        'densenet',
+        'inception',
+        'googlenet',
+        'shufflenet',
+        'mobilenet_v2',
+        'mobilenet_v3_large',
+        'mobilenet_v3_small',
+        'resnext50_32x4d',
+        'wide_resnet50_2',
+        'mnasnet',
+        'switchedCNN',
+        'sequential',
+    ]
 
     # to test the last_layer_name argument
     # last_layer_names = ['fc', 'classifier.6', 'classifier.6', 'classifier', 'fc',

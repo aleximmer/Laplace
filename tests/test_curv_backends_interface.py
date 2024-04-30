@@ -4,11 +4,8 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from asdl.operations import Bias, Scale
 
 from laplace.curvature import (
-    CurvlinopsGGN,
-    CurvlinopsEF,
     BackPackGGN,
     BackPackEF,
     GGNInterface,

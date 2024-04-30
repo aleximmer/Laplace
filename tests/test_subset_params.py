@@ -1,20 +1,13 @@
-from math import sqrt
 import pytest
 from itertools import product
-import numpy as np
-from copy import deepcopy
 import torch
 from torch import nn
-from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
-from torch.distributions import Normal, Categorical
-from torchvision.models import wide_resnet50_2
 
-from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
-from laplace.utils import KronDecomposed
+from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
+from laplace.laplace import FullLaplace, KronLaplace, DiagLaplace
 from laplace.curvature import AsdlGGN, AsdlHessian, AsdlEF, BackPackEF, BackPackGGN
-from tests.utils import jacobians_naive
 
 
 torch.manual_seed(240)
@@ -52,20 +45,27 @@ def reg_loader():
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
-@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
-def test_incompatible_backend(laplace, lh, model):
-    lap = laplace(model, lh, backend=AsdlEF)
-    lap = laplace(model, lh, backend=AsdlGGN)
-    lap = laplace(model, lh, backend=AsdlHessian)
+@pytest.mark.parametrize(
+    'laplace,lh', product(flavors, ['classification', 'regression'])
+)
+def test_compatible_backend(laplace, lh, model):
+    laplace(model, lh, backend=CurvlinopsEF)
+    laplace(model, lh, backend=CurvlinopsGGN)
+    laplace(model, lh, backend=CurvlinopsHessian)
+    laplace(model, lh, backend=AsdlEF)
+    laplace(model, lh, backend=AsdlGGN)
+    laplace(model, lh, backend=AsdlHessian)
 
 
-@pytest.mark.parametrize('laplace,lh', product(flavors, ['classification', 'regression']))
+@pytest.mark.parametrize(
+    'laplace,lh', product(flavors, ['classification', 'regression'])
+)
 def test_incompatible_backend(laplace, lh, model):
     with pytest.raises(ValueError):
-        lap = laplace(model, lh, backend=BackPackGGN)
+        laplace(model, lh, backend=BackPackGGN)
 
     with pytest.raises(ValueError):
-        lap = laplace(model, lh, backend=BackPackEF)
+        laplace(model, lh, backend=BackPackEF)
 
 
 @pytest.mark.parametrize('laplace', flavors)
@@ -106,15 +106,16 @@ def test_predictive(laplace, model, class_loader):
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_marglik(laplace, model, class_loader):
+def test_marglik_glm(laplace, model, class_loader):
     lap = laplace(model, 'classification')
     lap.fit(class_loader)
     lap.optimize_prior_precision(method='marglik')
 
 
 @pytest.mark.parametrize('laplace', flavors)
-def test_marglik(laplace, model, class_loader):
+def test_marglik_nn(laplace, model, class_loader):
     lap = laplace(model, 'classification')
     lap.fit(class_loader)
-    lap.optimize_prior_precision(method='gridsearch', val_loader=class_loader,
-                                 pred_type='nn', link_approx='mc')
+    lap.optimize_prior_precision(
+        method='gridsearch', val_loader=class_loader, pred_type='nn', link_approx='mc'
+    )
