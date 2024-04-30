@@ -1,4 +1,4 @@
-# Applying Laplace on a Huggingface LLM model
+## Full Example: Applying Laplace on a Huggingface LLM model
 
 In this example, we will see how to apply Laplace on a GPT2 Huggingface (HF) model.
 Laplace only has lightweight requirements for this; namely that the model's `forward`
@@ -50,20 +50,20 @@ tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 data = [
-{'text': 'Today is hot, but I will manage!!!!', 'label': 1},
-{'text': 'Tomorrow is cold', 'label': 0},
-{'text': 'Carpe diem', 'label': 1},
-{'text': 'Tempus fugit', 'label': 1},
+    {'text': 'Today is hot, but I will manage!!!!', 'label': 1},
+    {'text': 'Tomorrow is cold', 'label': 0},
+    {'text': 'Carpe diem', 'label': 1},
+    {'text': 'Tempus fugit', 'label': 1},
 ]
 dataset = Dataset.from_list(data)
 
 def tokenize(row):
-return tokenizer(row['text'])
+    return tokenizer(row['text'])
 
 dataset = dataset.map(tokenize, remove_columns=['text'])
 dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label'])
 dataloader = data_utils.DataLoader(
-dataset, batch_size=100, collate_fn=DataCollatorWithPadding(tokenizer)
+    dataset, batch_size=100, collate_fn=DataCollatorWithPadding(tokenizer)
 )
 
 data = next(iter(dataloader))
@@ -83,7 +83,7 @@ attention_mask torch.Size([4, 9])
 labels torch.Size([4])
 ```
 
-## Last-layer Laplace on a LLM
+### Laplace on a subset of an LLM's weights
 
 Now, let's do the main "meat" of this example: Wrapping the HF model into a model that is
 compatible with Laplace. Notice that this wrapper just wraps the HF model and nothing else.
@@ -130,7 +130,9 @@ class MyGPT2(nn.Module):
 model = MyGPT2(tokenizer)
 ```
 
-Now, let's apply Laplace. Let's do a last-layer Laplace first. We do so by switching off the
+Now, let's apply Laplace. We emulate a last-layer Laplace first 
+(don't do this in practice, though, use 
+`Laplace(..., subset_of_weights='last_layer', ...)` instead!). We do so by switching off the
 gradients of all layers except the top layer. Laplace will automatically only compute the
 Hessian (and Jacobians) of the parameters in which `requires_grad` is `True`.
 
@@ -168,7 +170,7 @@ Here are the outputs to validate that Laplace works:
 [Foundation Model] The predictive tensor is of shape: torch.Size([4, 2]).
 ```
 
-## Laplace on LoRA parameters only
+### Laplace on LoRA parameters only
 
 Of course, you can also apply Laplace on the parameter-efficient fine tuning weights (like LoRA).
 To do this, simply extend your LLM with LoRA, using HF's `peft` library, and apply Laplace as
@@ -214,7 +216,7 @@ As a final note, the dict-like input requirement of Laplace is very flexible. It
 be applicable to any tasks and any models. You just need to wrap the said model and make sure
 that your data loaders emit dict-like objects, where the input tensors are the dicts' values.
 
-## Caveats
+### Caveats
 
 Currently, diagonal EF with the Curvlinops backend is unsupported for dict-based inputs.
 This is because we use `torch.func`'s `vmap` to compute the diag-EF, and it only accepts

@@ -92,7 +92,15 @@ ml.backward()
 ### Laplace on foundation models like LLMs
 
 This library also supports Huggingface models and parameter-efficient fine-tuning.
-See `examples/huggingface_examples.py` for a runnable example.
+See `examples/huggingface_examples.py` and `examples/huggingface_examples.md` for the 
+exposition.
+
+First, we need to wrap the pretrained model so that the `forward` method takes a
+dict-like input. Note that when you iterate over a Huggingface dataloader,
+this is what you get by default. Having a dict-like input is nice since different models
+have different number of inputs (e.g. GPT-like LLMs only take `input_ids`, while BERT-like
+ones take both `input_ids` and `attention_mask`, etc.). Inside this `forward` method you
+can do your usual preprocessing like moving the tensor inputs into the correct device.
 
 ```python
 class MyGPT2(nn.Module):
@@ -106,26 +114,18 @@ class MyGPT2(nn.Module):
         )
 
     def forward(self, data: MutableMapping) -> torch.Tensor:
-        '''
-        Custom forward function. Handles things like moving the
-        input tensor to the correct device inside.
-
-        Args:
-            data: A dict-like data structure with `input_ids` inside.
-                This is the default data structure assumed by Huggingface
-                dataloaders.
-
-        Returns:
-            logits: An `(batch_size, n_classes)`-sized tensor of logits.
-        '''
         device = next(self.parameters()).device
         input_ids = data['input_ids'].to(device)
         attn_mask = data['attention_mask'].to(device)
         output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
         return output_dict.logits
+```
 
-# Last-layer Laplace on the foundation model itself
-# -------------------------------------------------
+Then you can "select" which parameters of the LLM you want to apply the Laplace approximation
+on, by switching off the gradients of the "unneeded" parameters. 
+For example, we can replicate a last-layer Laplace: (in actual practice, use `Laplace(..., subset_of_weights='last_layer', ...)` instead, though!)
+
+```python
 model = MyGPT2(tokenizer)
 model.eval()
 
@@ -145,10 +145,16 @@ la = Laplace(
 la.fit(dataloader)
 la.optimize_prior_precision()
 
-pred = la(next(iter(dataloader))
+test_data = next(iter(dataloader))
+pred = la(test_data)
+```
 
-# Laplace on the LoRA-attached LLM
-# --------------------------------
+This is useful because we can apply the LA only on the parameter-efficient finetuning
+weights. E.g., we can fix the LLM itself, and apply the Laplace approximation only
+on the LoRA weights. Huggingface will automatically switch off the non-LoRA weights'
+gradients.
+
+```python
 def get_lora_model():
     model = MyGPT2(tokenizer)  # Note we don't disable grad
     config = LoraConfig(
@@ -162,7 +168,9 @@ def get_lora_model():
     return lora_model
 
 lora_model = get_lora_model()
+
 # Train it as usual here...
+
 lora_model.eval()
 
 lora_la = Laplace(
@@ -173,10 +181,11 @@ lora_la = Laplace(
     backend=AsdlGGN,
 )
 
-lora_pred = lora_la(next(iter(dataloader)))
+test_data = next(iter(dataloader))
+lora_pred = lora_la(test_data)
 ```
 
-### Applying the LA over only a subset of the model parameters
+### Applying the LA over only a subset of the model parameters via the Subnetwork Laplace
 
 This example shows how to fit the Laplace approximation over only
 a subnetwork within a neural network (while keeping all other parameters

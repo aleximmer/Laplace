@@ -99,7 +99,14 @@ ml.backward()
 </code></pre>
 <h3 id="laplace-on-foundation-models-like-llms">Laplace on foundation models like LLMs</h3>
 <p>This library also supports Huggingface models and parameter-efficient fine-tuning.
-See <code>examples/huggingface_examples.py</code> for a runnable example.</p>
+See <code>examples/huggingface_examples.py</code> and <code>examples/huggingface_examples.md</code> for the
+exposition.</p>
+<p>First, we need to wrap the pretrained model so that the <code>forward</code> method takes a
+dict-like input. Note that when you iterate over a Huggingface dataloader,
+this is what you get by default. Having a dict-like input is nice since different models
+have different number of inputs (e.g.\ GPT-like LLMs only take <code>input_ids</code>, while BERT-like
+ones take both <code>input_ids</code> and <code>attention_mask</code>, etc.). Inside this <code>forward</code> method you
+can do your usual preprocessing like moving the tensor inputs into the correct device.</p>
 <pre><code class="language-python">class MyGPT2(nn.Module):
     def __init__(self, tokenizer: PreTrainedTokenizer) -&gt; None:
         super().__init__()
@@ -111,27 +118,16 @@ See <code>examples/huggingface_examples.py</code> for a runnable example.</p>
         )
 
     def forward(self, data: MutableMapping) -&gt; torch.Tensor:
-        '''
-        Custom forward function. Handles things like moving the
-        input tensor to the correct device inside.
-
-        Args:
-            data: A dict-like data structure with `input_ids` inside.
-                This is the default data structure assumed by Huggingface
-                dataloaders.
-
-        Returns:
-            logits: An `(batch_size, n_classes)`-sized tensor of logits.
-        '''
         device = next(self.parameters()).device
         input_ids = data['input_ids'].to(device)
         attn_mask = data['attention_mask'].to(device)
         output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
         return output_dict.logits
-
-# Last-layer Laplace on the foundation model itself
-# -------------------------------------------------
-model = MyGPT2(tokenizer)
+</code></pre>
+<p>Then you can "select" which parameters of the LLM you want to apply the Laplace approximation
+on, by switching off the gradients of the "unneeded" parameters.
+For example, we can replicate a last-layer Laplace: (in actual practice, use <code>Laplace(..., subset_of_weights='last_layer', ...)</code> instead, though!)</p>
+<pre><code class="language-python">model = MyGPT2(tokenizer)
 model.eval()
 
 # Enable grad only for the last layer
@@ -150,11 +146,14 @@ la = Laplace(
 la.fit(dataloader)
 la.optimize_prior_precision()
 
-pred = la(next(iter(dataloader))
-
-# Laplace on the LoRA-attached LLM
-# --------------------------------
-def get_lora_model():
+test_data = next(iter(dataloader))
+pred = la(test_data)
+</code></pre>
+<p>This is useful because we can apply the LA only on the parameter-efficient finetuning
+weights. E.g., we can fix the LLM itself, and apply the Laplace approximation only
+on the LoRA weights. Huggingface will automatically switch off the non-LoRA weights'
+gradients. </p>
+<pre><code class="language-python">def get_lora_model():
     model = MyGPT2(tokenizer)  # Note we don't disable grad
     config = LoraConfig(
         r=4,
@@ -167,7 +166,9 @@ def get_lora_model():
     return lora_model
 
 lora_model = get_lora_model()
+
 # Train it as usual here...
+
 lora_model.eval()
 
 lora_la = Laplace(
@@ -178,9 +179,10 @@ lora_la = Laplace(
     backend=AsdlGGN,
 )
 
-lora_pred = lora_la(next(iter(dataloader)))
+test_data = next(iter(dataloader)) 
+lora_pred = lora_la(test_data)
 </code></pre>
-<h3 id="applying-the-la-over-only-a-subset-of-the-model-parameters">Applying the LA over only a subset of the model parameters</h3>
+<h3 id="applying-the-la-over-only-a-subset-of-the-model-parameters-via-the-subnetwork-laplace">Applying the LA over only a subset of the model parameters via the Subnetwork Laplace</h3>
 <p>This example shows how to fit the Laplace approximation over only
 a subnetwork within a neural network (while keeping all other parameters
 fixed at their MAP estimates), as proposed in [11]. It also exemplifies
@@ -485,6 +487,211 @@ print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_lap
 <pre><code>[Laplace] Acc.: 94.8%; ECE: 0.8%; NLL: 0.157
 </code></pre>
 <p>Notice that the last-layer LA does not do any harm to the accuracy, yet it improves the calibration of the MAP model substantially.</p>
+<h2 id="full-example-applying-laplace-on-a-huggingface-llm-model">Full Example: Applying Laplace on a Huggingface LLM model</h2>
+<p>In this example, we will see how to apply Laplace on a GPT2 Huggingface (HF) model.
+Laplace only has lightweight requirements for this; namely that the model's <code>forward</code>
+method must only take a single dict-like object (<code>dict</code>, <code>UserDict</code>, or in general,
+<code>collections.abc.MutableMapping</code>). This is entirely compatible with HF since HF's
+data loaders are assumed to emit an object derived from <code>UserDict</code>. However, you
+need to ensure this yourself &mdash; you need to wrap the standard HF model to conform
+to that requirement. Also, you need to e.g. do <code>torch.to(device)</code> <em>inside</em> the
+said <code>forward</code> method.</p>
+<p>Let's start with as usual with importing stuff.</p>
+<pre><code class="language-python">from collections.abc import MutableMapping
+from collections import UserDict
+import numpy
+import torch
+from torch import nn
+import torch.utils.data as data_utils
+
+from laplace import Laplace
+
+import logging
+import warnings
+
+logging.basicConfig(level='ERROR')
+warnings.filterwarnings('ignore')
+
+from transformers import ( # noqa: E402
+    GPT2Config,
+    GPT2ForSequenceClassification,
+    GPT2Tokenizer,
+    DataCollatorWithPadding,
+    PreTrainedTokenizer,
+)
+from peft import LoraConfig, get_peft_model # noqa: E402
+from datasets import Dataset # noqa: E402
+
+# make deterministic
+
+torch.manual_seed(0)
+numpy.random.seed(0)
+</code></pre>
+<p>Next, we create a toy dataset. You can use any HF datasets or your own, of course.</p>
+<pre><code class="language-python">tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
+tokenizer.pad_token_id = tokenizer.eos_token_id
+
+data = [
+    {'text': 'Today is hot, but I will manage!!!!', 'label': 1},
+    {'text': 'Tomorrow is cold', 'label': 0},
+    {'text': 'Carpe diem', 'label': 1},
+    {'text': 'Tempus fugit', 'label': 1},
+]
+dataset = Dataset.from_list(data)
+
+def tokenize(row):
+    return tokenizer(row['text'])
+
+dataset = dataset.map(tokenize, remove_columns=['text'])
+dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label'])
+dataloader = data_utils.DataLoader(
+    dataset, batch_size=100, collate_fn=DataCollatorWithPadding(tokenizer)
+)
+
+data = next(iter(dataloader))
+print(
+    f'Huggingface data defaults to UserDict, which is a MutableMapping? {isinstance(data, UserDict)}'
+)
+for k, v in data.items():
+    print(k, v.shape)
+</code></pre>
+<p>This is the output:</p>
+<pre><code>Huggingface data defaults to UserDict, which is a MutableMapping? True
+input_ids torch.Size([4, 9])
+attention_mask torch.Size([4, 9])
+labels torch.Size([4])
+</code></pre>
+<h3 id="laplace-on-a-subset-of-an-llms-weights">Laplace on a subset of an LLM's weights</h3>
+<p>Now, let's do the main "meat" of this example: Wrapping the HF model into a model that is
+compatible with Laplace. Notice that this wrapper just wraps the HF model and nothing else.
+Notice also we do <code>inputs.to(device)</code> inside <code>self.forward()</code>.</p>
+<pre><code class="language-python">class MyGPT2(nn.Module):
+    &quot;&quot;&quot;
+    Huggingface LLM wrapper.
+
+    Args:
+        tokenizer: The tokenizer used for preprocessing the text data. Needed
+            since the model needs to know the padding token id.
+    &quot;&quot;&quot;
+
+    def __init__(self, tokenizer: PreTrainedTokenizer) -&gt; None:
+        super().__init__()
+        config = GPT2Config.from_pretrained('gpt2')
+        config.pad_token_id = tokenizer.pad_token_id
+        config.num_labels = 2
+        self.hf_model = GPT2ForSequenceClassification.from_pretrained(
+            'gpt2', config=config
+        )
+
+    def forward(self, data: MutableMapping) -&gt; torch.Tensor:
+        '''
+        Custom forward function. Handles things like moving the
+        input tensor to the correct device inside.
+
+        Args:
+            data: A dict-like data structure with `input_ids` inside.
+                This is the default data structure assumed by Huggingface
+                dataloaders.
+
+        Returns:
+            logits: An `(batch_size, n_classes)`-sized tensor of logits.
+        '''
+        device = next(self.parameters()).device
+        input_ids = data['input_ids'].to(device)
+        attn_mask = data['attention_mask'].to(device)
+        output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
+        return output_dict.logits
+
+model = MyGPT2(tokenizer)
+</code></pre>
+<p>Now, let's apply Laplace. We emulate a last-layer Laplace first
+(don't do this in practice, though, use
+<code>Laplace(..., subset_of_weights='last_layer', ...)</code> instead!). We do so by switching off the
+gradients of all layers except the top layer. Laplace will automatically only compute the
+Hessian (and Jacobians) of the parameters in which <code>requires_grad</code> is <code>True</code>.</p>
+<p>Notice that you can "mix-and-match" this gradient switching. You can do a subnetwork Laplace
+easily by doing so!</p>
+<pre><code class="language-python">model.eval()
+
+# Enable grad only for the last layer
+
+for p in model.hf_model.parameters():
+    p.requires_grad = False
+
+for p in model.hf_model.score.parameters():
+    p.requires_grad = True
+
+la = Laplace(
+    model,
+    # Will only hit the last-layer since it's the only one that is grad-enabled
+    likelihood='classification',
+    subset_of_weights='all',
+    hessian_structure='diag',
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+X_test = next(iter(dataloader))
+print(f'[Foundation Model] The predictive tensor is of shape: {la(X_test).shape}.')
+</code></pre>
+<p>Here are the outputs to validate that Laplace works:</p>
+<pre><code>[Foundation Model] The predictive tensor is of shape: torch.Size([4, 2]).
+</code></pre>
+<h3 id="laplace-on-lora-parameters-only">Laplace on LoRA parameters only</h3>
+<p>Of course, you can also apply Laplace on the parameter-efficient fine tuning weights (like LoRA).
+To do this, simply extend your LLM with LoRA, using HF's <code>peft</code> library, and apply Laplace as
+usual. Note that <code>peft</code> automatically switches off the non-LoRA weights.</p>
+<pre><code class="language-python">def get_lora_model():
+    model = MyGPT2(tokenizer) # Note we don't disable grad
+        config = LoraConfig(
+        r=4,
+        lora_alpha=16,
+        target_modules=['c_attn'], # LoRA on the attention weights
+        lora_dropout=0.1,
+        bias='none',
+    )
+    lora_model = get_peft_model(model, config)
+    return lora_model
+
+lora_model = get_lora_model()
+
+# Train it as usual
+
+lora_model.eval()
+
+lora_la = Laplace(
+    lora_model,
+    likelihood='classification',
+    subset_of_weights='all',
+    hessian_structure='diag',
+)
+
+X_test = next(iter(dataloader))
+print(f'[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.')
+</code></pre>
+<p>Here is the output, as expected:</p>
+<pre><code>[LoRA-LLM] The predictive tensor is of shape: torch.Size([4, 2]).
+</code></pre>
+<p>As a final note, the dict-like input requirement of Laplace is very flexible. It can essentially
+be applicable to any tasks and any models. You just need to wrap the said model and make sure
+that your data loaders emit dict-like objects, where the input tensors are the dicts' values.</p>
+<h3 id="caveats">Caveats</h3>
+<p>Currently, diagonal EF with the Curvlinops backend is unsupported for dict-based inputs.
+This is because we use <code>torch.func</code>'s <code>vmap</code> to compute the diag-EF, and it only accepts
+tensor input in the model's <code>forward</code>.
+See <a href="https://github.com/pytorch/functorch/issues/159">this issue</a>.
+So, if you can write down your Huggingface model's <code>forward</code> to accept only a single tensor,
+this is much preferable.</p>
+<p>For instance, in the case of causal LLM like GPTs, only <code>input_ids</code>
+tensor is necessary.
+Then, any backend and any hessian factorization can be used in this case.</p>
+<p>Otherwise, if you must use dict-based inputs, choose the following backends:</p>
+<ul>
+<li><code>CurvlinopsGGN</code> for <code>hessian_factorization = {'kron', 'diag'}</code></li>
+<li><code>CurvlinopsEF</code> for <code>hessian_factorization = {'kron'}</code></li>
+<li><code>AsdlGGN</code> for <code>hessian_factorization = {'kron', 'diag'}</code></li>
+<li><code>AsdlEF</code> for <code>hessian_factorization = {'kron', 'diag'}</code></li>
+</ul>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
@@ -1873,7 +2080,7 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><a href="#post-hoc-prior-precision-tuning-of-diagonal-la">Post-hoc prior precision tuning of diagonal LA</a></li>
 <li><a href="#differentiating-the-log-marginal-likelihood-wrt-hyperparameters">Differentiating the log marginal likelihood w.r.t. hyperparameters</a></li>
 <li><a href="#laplace-on-foundation-models-like-llms">Laplace on foundation models like LLMs</a></li>
-<li><a href="#applying-the-la-over-only-a-subset-of-the-model-parameters">Applying the LA over only a subset of the model parameters</a></li>
+<li><a href="#applying-the-la-over-only-a-subset-of-the-model-parameters-via-the-subnetwork-laplace">Applying the LA over only a subset of the model parameters via the Subnetwork Laplace</a></li>
 <li><a href="#serialization">Serialization</a></li>
 </ul>
 </li>
@@ -1894,6 +2101,12 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><a href="#load-a-pre-trained-model">Load a pre-trained model</a></li>
 <li><a href="#the-calibration-of-map">The calibration of MAP</a></li>
 <li><a href="#the-calibration-of-laplace">The calibration of Laplace</a></li>
+</ul>
+</li>
+<li><a href="#full-example-applying-laplace-on-a-huggingface-llm-model">Full Example: Applying Laplace on a Huggingface LLM model</a><ul>
+<li><a href="#laplace-on-a-subset-of-an-llms-weights">Laplace on a subset of an LLM's weights</a></li>
+<li><a href="#laplace-on-lora-parameters-only">Laplace on LoRA parameters only</a></li>
+<li><a href="#caveats">Caveats</a></li>
 </ul>
 </li>
 </ul>
