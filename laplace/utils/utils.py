@@ -9,10 +9,11 @@ from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torchmetrics import Metric
 from collections import UserDict
 import math
+from torch.utils.data import Sampler
 
 
 __all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
-           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision']
+           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision', 'SoDSampler']
 
 
 def get_nll(out_dist, targets):
@@ -41,7 +42,6 @@ def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n
             X, pred_type=pred_type,
             link_approx=link_approx,
             n_samples=n_samples)
-
         if type(out) == tuple:
             if is_offline:
                 output_means.append(out[0])
@@ -217,6 +217,19 @@ def block_diag(blocks):
         M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
         p_cur += p_block
     return M
+
+
+class SoDSampler(Sampler):
+
+    def __init__(self, N, M, seed: int = 0):
+        np.random.seed(seed)
+        self.indices = torch.tensor(np.random.choice(list(range(N)), M, replace=False))
+
+    def __iter__(self):
+        return (i for i in self.indices)
+
+    def __len__(self):
+        return len(self.indices)
 
 
 def expand_prior_precision(prior_prec, model):

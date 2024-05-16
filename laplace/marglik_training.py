@@ -301,6 +301,7 @@ def marglik_training(
         model.load_state_dict(best_model_dict)
         sigma_noise = best_sigma
         prior_prec = best_precision
+    logging.info(f'best params: {sigma_noise}, {prior_prec}')
     lap = Laplace(
         model,
         likelihood,

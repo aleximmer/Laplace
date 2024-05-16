@@ -1,6 +1,6 @@
 from typing import Tuple
 import torch
-
+from torch.nn.utils import parameters_to_vector
 from backpack import backpack, extend, memory_cleanup
 from backpack.extensions import (
     DiagGGNExact,
@@ -44,7 +44,11 @@ class BackPackInterface(CurvatureInterface):
             output function `(batch, outputs)`
         """
         model = extend(self.model)
-        to_stack = []
+        if self.subnetwork_indices is not None:
+            P = len(self.subnetwork_indices)
+        else:
+            P = len(parameters_to_vector(model.parameters()).detach())
+        Jks = torch.empty(model.output_size, x.shape[0], P, device=x.device)  # (C, b, P)
         for i in range(model.output_size):
             model.zero_grad()
             out = model(x)
@@ -64,7 +68,7 @@ class BackPackInterface(CurvatureInterface):
                 Jk = torch.cat(to_cat, dim=1)
                 if self.subnetwork_indices is not None:
                     Jk = Jk[:, self.subnetwork_indices]
-            to_stack.append(Jk)
+            Jks[i] = Jk
             if i == 0:
                 f = out
 
@@ -72,7 +76,7 @@ class BackPackInterface(CurvatureInterface):
         CTX.remove_hooks()
         _cleanup(model)
         if model.output_size > 1:
-            return torch.stack(to_stack, dim=2).transpose(1, 2), f
+            return Jks.transpose(0, 1), f
         else:
             return Jk.unsqueeze(-1).transpose(1, 2), f
 

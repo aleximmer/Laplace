@@ -1,4 +1,4 @@
-from laplace.baselaplace import ParametricLaplace
+from laplace.baselaplace import BaseLaplace
 from laplace import *
 
 
@@ -18,13 +18,14 @@ def Laplace(
     likelihood : {'classification', 'regression'}
     subset_of_weights : {'last_layer', 'subnetwork', 'all'}, default='last_layer'
         subset of weights to consider for inference
-    hessian_structure : {'diag', 'kron', 'full', 'lowrank'}, default='kron'
-        structure of the Hessian approximation
+    hessian_structure : {'diag', 'kron', 'full', 'lowrank', 'gp'}, default='kron'
+        structure of the Hessian approximation (note that in case of hessian_structure='GP',
+        we are not actually doing any Hessian approximation, the inference is instead done in the functional space)
 
     Returns
     -------
-    laplace : ParametricLaplace
-        chosen subclass of ParametricLaplace instantiated with additional arguments
+    laplace : BaseLaplace
+        chosen subclass of BaseLaplace instantiated with additional arguments
     """
     if subset_of_weights == 'subnetwork' and hessian_structure not in ['full', 'diag']:
         raise ValueError(
