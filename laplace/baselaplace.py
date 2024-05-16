@@ -883,14 +883,16 @@ class ParametricLaplace(BaseLaplace):
 
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X, joint=False):
-        if 'backpack' in self._backend_cls.__name__.lower():
-            # BackPACK supports backprop through Jacobians, but it interferes with functorch
-            Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
-        else:
-            # For ASDL and Curvlinops, we use functorch
-            Js, f_mu = self.backend.functorch_jacobians(
-                X, enable_backprop=self.enable_backprop
+        backend_name = self._backend_cls.__name__.lower()
+        if self.enable_backprop and (
+            'curvlinops' not in backend_name and 'backpack' not in backend_name
+        ):
+            raise ValueError(
+                'Backprop through the GLM predictive is only available for the '
+                'Curvlinops and BackPACK backends.'
             )
+
+        Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
