@@ -31,10 +31,9 @@ def Laplace(
         raise ValueError(
             'Subnetwork Laplace requires a full or diagonal Hessian approximation!'
         )
-
     laplace_map = {
         subclass._key: subclass
-        for subclass in _all_subclasses(ParametricLaplace)
+        for subclass in _all_subclasses(BaseLaplace)
         if hasattr(subclass, '_key')
     }
     laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
