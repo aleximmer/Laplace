@@ -36,7 +36,7 @@ For development purposes, clone the repository and then install:
 # or after cloning the repository for development
 pip install -e .
 # run tests
-pip install -e .[tests]
+pip install -e '.[tests]'
 pytest tests/
 ```
 
