@@ -57,6 +57,10 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     func_la.batch_size = batch_size
 
     func_la._init_K_MM()
+    # Right now K_MM is initialized with torch.empty. To run this tests we
+    #  must set it to zero.
+    func_la.K_MM *= 0
+
     assert torch.equal(torch.zeros(size=(M*C, M*C)), func_la.K_MM)
 
     func_la._store_K_batch(torch.ones(size=(4, 4)), 0, 0)
@@ -98,6 +102,13 @@ def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=
             assert torch.equal(expected_K_MM[c], func_la.K_MM[c])
 
     func_la._init_K_MM()
+    # Right now K_MM is initialized with torch.empty. To run this tests we
+    #  must set it to zero.
+    func_la.K_MM = [
+                0 * func_la.K_MM[i]
+                for i in range(func_la.n_outputs)
+            ]
+
     expected = [torch.zeros(size=(M, M)) for _ in range(C)]
     _check(expected)
 
@@ -180,7 +191,8 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
     # mocking jacobians
     def mock_jacobians(self, x):
         return jacobians_2, None
-    mocker.patch('laplace.curvature.BackPackInterface.jacobians', mock_jacobians)
+    
+    mocker.patch('laplace.baselaplace.FunctionalLaplace._jacobians', mock_jacobians)
 
     #  mocking prior precision
     mocker.patch('laplace.baselaplace.FunctionalLaplace.prior_precision_diag', torch.ones(3))
@@ -190,6 +202,7 @@ def test_gp_kernel(mocker, reg_Xy, model, kernel_type, jacobians, jacobians_2,
         full_kernel = kernel(jacobians)
     else:
         full_kernel = kernel(jacobians, X)
+
     assert torch.all(torch.isclose(expected_full_kernel, full_kernel))
 
     func_la.diagonal_kernel = True
