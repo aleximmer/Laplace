@@ -1586,13 +1586,13 @@ class FunctionalLaplace(BaseLaplace):
 
     Note that for `likelihood='classification'`, we approximate \( L_{NN} \\) with a diagonal matrix
     ( \\( L_{NN} \\) is a block-diagonal matrix, where blocks represent Hessians of per-data-point log-likelihood w.r.t.
-     neural network output \\( f \\), See Appendix [A.2.1](https://arxiv.org/abs/2008.08400) for exact definition). We
-     resort to such an approximation because of the (possible) errors found in Laplace approximation for
-     multiclass GP classification in Chapter 3.5 of [R&W 2006 GP book](http://www.gaussianprocess.org/gpml/),
-     see the question
-     [here](https://stats.stackexchange.com/questions/555183/gaussian-processes-multi-class-laplace-approximation)
-     for more details. Alternatively, one could also resort to *one-vs-one* or *one-vs-rest* implementations
-     for multiclass classification, however, that is not (yet) supported here.
+    neural network output \\( f \\), See Appendix [A.2.1](https://arxiv.org/abs/2008.08400) for exact definition). We
+    resort to such an approximation because of the (possible) errors found in Laplace approximation for
+    multiclass GP classification in Chapter 3.5 of [R&W 2006 GP book](http://www.gaussianprocess.org/gpml/),
+    see the question
+    [here](https://stats.stackexchange.com/questions/555183/gaussian-processes-multi-class-laplace-approximation)
+    for more details. Alternatively, one could also resort to *one-vs-one* or *one-vs-rest* implementations
+    for multiclass classification, however, that is not (yet) supported here.
 
     Parameters
     ----------
@@ -1661,6 +1661,10 @@ class FunctionalLaplace(BaseLaplace):
 
     @staticmethod
     def _check_prior_precision(prior_precision):
+        """
+        Checks if the given prior precision is suitable for the GP interpretation of LLA.
+        As such, only single value priors, i.e., isotropic priors are suitable.
+        """
         if torch.is_tensor(prior_precision):
             if not (
                 prior_precision.ndim == 0
@@ -1669,6 +1673,12 @@ class FunctionalLaplace(BaseLaplace):
                 raise ValueError("Only isotropic priors supported in FunctionalLaplace")
 
     def _init_K_MM(self):
+        """
+        Allocates memory for the kernel matrix evaluated at the subset of the training
+        data points. If the subset is of size \(M\) and the problem has \(C\) outputs,
+        this is a list of C \((M,M\)) tensors for diagonal kernel and \((M x C, M x C)\)
+        otherwise.
+        """
         if self.diagonal_kernel:
             self.K_MM = [
                 torch.empty(size=(self.M, self.M), device=self._device)
@@ -1681,6 +1691,14 @@ class FunctionalLaplace(BaseLaplace):
             )
 
     def _init_Sigma_inv(self):
+        """
+        Allocates memory for the cholesky decomposition of
+        \[
+            K_{MM} + \Lambda_{MM}^{-1}.
+        \]
+        See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
+        Equation 15 for more information.
+        """
         if self.diagonal_kernel:
             self.Sigma_inv = [
                 torch.empty(size=(self.M, self.M), device=self._device)
@@ -1693,6 +1711,10 @@ class FunctionalLaplace(BaseLaplace):
             )
 
     def _store_K_batch(self, K_batch, i, j):
+        """
+        Given the kernel matrix between the i-th and the j-th batch, stores it in the
+        corresponding position in self.K_MM.
+        """
         if self.diagonal_kernel:
             for c in range(self.n_outputs):
                 self.K_MM[c][
@@ -1716,13 +1738,44 @@ class FunctionalLaplace(BaseLaplace):
                 ] = torch.transpose(K_batch, 0, 1)
 
     def _build_L(self, lambdas):
+        """
+        Given a list of the Hessians of per-batch log-likelihood w.r.t. neural network output \\( f \\),
+        returns the contatenation of these hessians in a suitable format for the used kernel
+        (diagonal or not).
+
+        In this function the diagonal approximation is performed. Please refer to the introduction of the 
+        class for more details.
+
+        Parameters
+        ----------
+        lambdas : list of torch.Tensor of shape (C, C)
+                  Contains per-batch log-likelihood w.r.t. neural network output \\( f \\).
+
+        Returns
+        -------
+        L : list with length C of tensors with shape M or tensor (MxC)
+            Contains the given Hessians in a suitable format.
+        """
+        # Concatenate batch dimension and discard non-diagonal entries.
         L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
+
         if self.diagonal_kernel:
             return [L_diag[i :: self.n_outputs] for i in range(self.n_outputs)]
         else:
             return L_diag
 
     def _build_Sigma_inv(self):
+        """
+        Computes the cholesky decomposition of
+        \[
+            K_{MM} + \Lambda_{MM}^{-1}.
+        \]
+        See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
+        Equation 15 for more information.
+
+        As the diagonal approximation is performed with \Lambda_{MM} (which is stored in self.L),
+        the code is greatly simplified.
+        """
         if self.diagonal_kernel:
             self.Sigma_inv = [
                 torch.linalg.cholesky(
@@ -1797,8 +1850,7 @@ class FunctionalLaplace(BaseLaplace):
         f, lambdas, mu = [], [], []
         for i, (X, y) in enumerate(train_loader):
             X, y = X.to(self._device), y.to(self._device)
-            # TODO Compute lambdas from another way
-            #loss_batch, Js_batch, f_batch, lambdas_batch = self._curv_closure(X, y)
+
             Js_batch, f_batch = self._jacobians(X)
             loss_batch = self.backend.factor * self.backend.lossfunc(f_batch, y)
 
@@ -1844,7 +1896,6 @@ class FunctionalLaplace(BaseLaplace):
             else (f_mu, f_var)
         )
     
-
     def __call__(
         self,
         x,
@@ -2004,13 +2055,18 @@ class FunctionalLaplace(BaseLaplace):
 
         Parameters
         ----------
-        Js_star : torch.Tensor
-            Jacobians of test data points
-        X_star : torch.Tensor
-            test data points \\(X \in \mathbb{R}^{N_{test} \\times C} \\)
+        Js_star : torch.Tensor of shape (N*, C, P)
+                  Jacobians of test data points
+
+        Returns
+        -------
+        f_var : torch.Tensor of shape (N*,C, C)
+                Contains the posterior variances of N* testing points.
         """
+        # Compute K_{**}
         K_star = self.gp_kernel_prior_variance * self._kernel_star(Js_star)
 
+        # Compute K_{*M}
         K_M_star = []
         for X_batch, _ in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
@@ -2019,75 +2075,103 @@ class FunctionalLaplace(BaseLaplace):
             K_M_star.append(K_M_star_batch)
             del X_batch
 
+        # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star)
 
+        # If the considered kernel is diagonal, embed the covariances.
+        # from (N*, C) -> (N*, C, C)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
+
         return f_var
     
     def functional_covariance(self, Js_star):
-        K_star = self.gp_kernel_prior_variance * self._kernel_star(Js_star, joint = True)
+        """
+        GP posterior covariance: \\( k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\)
 
+        Parameters
+        ----------
+        Js_star : torch.Tensor of shape (N*, C, P)
+                  Jacobians of test data points
+
+        Returns
+        -------
+        f_var : torch.Tensor of shape (N*xC, N*xC)
+                Contains the posterior covariances of N* testing points.
+        """
+        # Compute K_{**}
+        K_star = self.gp_kernel_prior_variance * self._kernel_star(Js_star, joint=True)
+
+        # Compute K_{*M}
         K_M_star = []
         for X_batch, _ in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
-                Js_star, X_batch.to(self._device),
+                Js_star, X_batch.to(self._device)
             )
             K_M_star.append(K_M_star_batch)
             del X_batch
 
+        # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star, joint = True)
 
+        # If the considered kernel is diagonal, embed the covariances.
+        # from (N*, N*, C) -> (N*, N*, C, C)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
+        
+        # Reshape from (N*, N*, C, C) to (N*xC, N*xC)
         f_var = f_var.permute(0,2,1,3).flatten(0,1).flatten(1,2)
+
         return f_var
 
     def _build_K_star_M(self, K_M_star, joint = False):
+        """
+        Computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*} given K_{M*}.
 
+        Parameters
+        ----------
+        K_M_star : list of torch.Tensor 
+                   Contains K_{M*}. Tensors have shape (N_test, C, C)
+                   or (N_test, C) for diagonal kernel.
+        
+        joint : boolean
+                Wether to compute cross covariances or not.
+
+        Returns
+        -------
+        torch.tensor of shape (N_test, N_test, C) for joint diagonal,
+        (N_test, C) for non-joint diagonal, (N_test, N_test, C, C) for 
+        joint non-diagonal and (N_test, C, C) for non-joint non-diagonal.
+        """
+        # Shape (N_test, N, C, C) or (N_test, N, C) for diagonal
         K_M_star = torch.cat(K_M_star, dim=1)
-        if joint == False:
-            if self.diagonal_kernel:
-                prods = []
-                for c in range(self.n_outputs):
-                    v = torch.squeeze(
-                        torch.linalg.solve(
-                            self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)
-                        ),
-                        2,
-                    )
-                    prod = torch.einsum("bm,bm->b", v, v)
-                    prods.append(prod.unsqueeze(1))
-                prods = torch.cat(prods, dim=1)
-                return prods
 
-            else:
-                # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
-                K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
-                v = torch.linalg.solve(self.Sigma_inv, K_M_star)
-                return torch.einsum("bcm,bcn->bmn", v, v)
-        else:
-            if self.diagonal_kernel:
-                prods = []
-                for c in range(self.n_outputs):
-                    v = torch.squeeze(
-                        torch.linalg.solve(
-                            self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)
-                        ),
-                        2,
-                    )
-
+        if self.diagonal_kernel:
+            prods = []
+            for c in range(self.n_outputs):
+                # Compute K_{*M}L^{-1}
+                v = torch.squeeze(
+                    torch.linalg.solve(
+                        self.Sigma_inv[c], K_M_star[:, :, c].unsqueeze(2)
+                    ),
+                    2,
+                )
+                if joint:
                     prod = torch.einsum("bm,am->ba", v, v)
-                    prods.append(prod.unsqueeze(-1))
-                prods = torch.cat(prods, dim=1)
-                return prods
-
-            else:
-                # in the reshape below we go from (N_test, M, C, C) to (N_test, M*C, C)
-                K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
-                v = torch.linalg.solve(self.Sigma_inv, K_M_star)
-
+                else:
+                    prod = torch.einsum("bm,bm->b", v, v)
+                prods.append(prod.unsqueeze(1))
+            prods = torch.cat(prods, dim=-1)
+            return prods
+        else:
+            # Reshape to (N_test, NxC, C) or (N_test, N, C)
+            K_M_star = K_M_star.reshape(K_M_star.shape[0], -1, K_M_star.shape[-1])
+            # Compute K_{*M}L^{-1}
+            v = torch.linalg.solve(self.Sigma_inv, K_M_star)
+            if joint:
                 return torch.einsum("acm,bcn->abmn", v, v)
+            else:
+                return torch.einsum("bcm,bcn->bmn", v, v)
 
     @property
     def log_det_ratio(self):
@@ -2202,9 +2286,9 @@ class FunctionalLaplace(BaseLaplace):
         progress_bar=False,
     ):
         """
-        `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='GP'`
+        `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='glm'`
         """
-        assert pred_type == "gp"
+        assert pred_type == "glm"
         if method == "marglik":
             warnings.warn(
                 "Use of method='marglik' in case of FunctionalLaplace is discouraged, rather use method='CV'."
@@ -2415,10 +2499,11 @@ class FunctionalLaplace(BaseLaplace):
             raise ValueError(
                 'Prior precision either scalar or torch.Tensor up to 1-dim.'
             )
+        # This is a change from BaseLaplace. If the prior precision is changed, the cholesky
+        #  decomposition needs to be recomputed.
         self._recompute_Sigma = True
 
     def state_dict(self) -> dict:
-
         state_dict = {
             'map_estimate': self.map_estimate,
             'M': self.M,
