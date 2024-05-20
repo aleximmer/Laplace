@@ -1805,7 +1805,7 @@ class FunctionalLaplace(BaseLaplace):
             shuffle=False,
         )
 
-    def fit(self, train_loader):
+    def fit(self, train_loader, progress_bar = False):
         """Fit the Laplace approximation of a GP posterior.
 
         Parameters
@@ -1848,7 +1848,13 @@ class FunctionalLaplace(BaseLaplace):
         self._init_Sigma_inv()
 
         f, lambdas, mu = [], [], []
-        for i, (X, y) in enumerate(train_loader):
+
+        if progress_bar:
+            loader = enumerate(tqdm.tqdm(train_loader, desc = "Fitting"))
+        else:
+            loader = enumerate(train_loader)
+
+        for i, (X, y) in loader:
             X, y = X.to(self._device), y.to(self._device)
 
             Js_batch, f_batch = self._jacobians(X)
