@@ -1,4 +1,5 @@
 botorch==0.8.2
 gpytorch==1.9.1
 tqdm
-netcal==1.1.3
+netcal==1.3.5
+deepobs==1.1.2

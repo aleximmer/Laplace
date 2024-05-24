@@ -1905,7 +1905,7 @@ class FunctionalLaplace(BaseLaplace):
     def __call__(
         self,
         x,
-        pred_type='glm',
+        pred_type='gp',
         joint=False,
         link_approx='probit',
         n_samples=100,
@@ -1921,9 +1921,9 @@ class FunctionalLaplace(BaseLaplace):
             `(batch_size, input_shape)` if tensor. If MutableMapping, must contain
             the said tensor.
 
-        pred_type : {'glm'}, default='glm'
+        pred_type : {'gp'}, default='gp'
             type of posterior predictive, linearized GLM predictive (GP). 
-            The GLM predictive is consistent with
+            The GP predictive is consistent with
             the curvature approximations used here.
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
@@ -1966,8 +1966,8 @@ class FunctionalLaplace(BaseLaplace):
                     'Re-compututing its value...')
             self._build_Sigma_inv()
 
-        if pred_type not in ['glm']:
-            raise ValueError('Only glm (GP) supported as prediction types.')
+        if pred_type not in ['gp']:
+            raise ValueError('Only gp supported as prediction types.')
 
         if link_approx not in ['mc', 'probit', 'bridge', 'bridge_norm']:
             raise ValueError(f'Unsupported link approximation {link_approx}.')
@@ -1993,10 +1993,9 @@ class FunctionalLaplace(BaseLaplace):
         # classification
         if link_approx == 'mc':
             return self.predictive_samples(
-                x,
-                pred_type='glm',
+                f_mu, 
+                f_var,
                 n_samples=n_samples,
-                diagonal_output=diagonal_output,
             ).mean(dim=0)
         elif link_approx == 'probit':
             kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
@@ -2026,14 +2025,15 @@ class FunctionalLaplace(BaseLaplace):
             alpha = (1 - 2 / K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
             return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
 
-    def predictive_samples(self, x, n_samples=100):
+    def predictive_samples(self, f_mu, f_var, n_samples=100):
         """Sample from the posterior predictive on input data `x`.
 
         Parameters
         ----------
-        x : torch.Tensor
-            input data `(batch_size, input_shape)`
-
+        f_mu : torch.Tensor
+               posterior gp mean `(batch_size, output_shape)`
+        f_var : torch.Tensor
+                posterior gp var `(batch_size, output_shape, output_shape)`
         n_samples : int
             number of samples
 
@@ -2043,7 +2043,6 @@ class FunctionalLaplace(BaseLaplace):
             samples `(n_samples, batch_size, output_shape)`
         """
 
-        f_mu, f_var = self.gp_posterior(x)
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
         dist = MultivariateNormal(f_mu, f_var)
         samples = dist.sample((n_samples,))
@@ -2274,7 +2273,7 @@ class FunctionalLaplace(BaseLaplace):
 
     def optimize_prior_precision(
         self,
-        pred_type,
+        pred_type = "gp",
         method="marglik",
         n_steps=100,
         lr=1e-1,
@@ -2292,15 +2291,15 @@ class FunctionalLaplace(BaseLaplace):
         progress_bar=False,
     ):
         """
-        `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='glm'`
+        `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='gp'`
         """
-        assert pred_type == "glm"
+        assert pred_type == "gp" # only gp supported
+        assert prior_structure == "scalar" # only isotropic gaussian prior supported
         if method == "marglik":
             warnings.warn(
                 "Use of method='marglik' in case of FunctionalLaplace is discouraged, rather use method='CV'."
             )
         self.optimize_prior_precision_base(
-            self,
             pred_type,
             method,
             n_steps,
@@ -2317,7 +2316,7 @@ class FunctionalLaplace(BaseLaplace):
             verbose,
             cv_loss_with_var,
             progress_bar,
-        )
+        ) 
         self._build_Sigma_inv()
 
     def _kernel_batch(self, jacobians, batch):
