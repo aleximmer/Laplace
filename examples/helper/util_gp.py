@@ -1,12 +1,12 @@
+import os
+
+import torch
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
-from torchvision.datasets import VisionDataset
-import torch
+from deepobs.pytorch.testproblems.testproblems_utils import (tfconv2d,
+                                                             tfmaxpool2d)
 from torch import nn
-from deepobs.pytorch.testproblems.testproblems_utils import tfconv2d, \
-    tfmaxpool2d
-
-import os
+from torchvision.datasets import VisionDataset
 
 PACKAGE_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT = '/'.join(PACKAGE_DIR.split('/')[:-1])
@@ -16,10 +16,11 @@ MNIST_transform = transforms.ToTensor()
 
 
 class QuickDS(VisionDataset):
-
     def __init__(self, ds, device):
-        self.D = [(ds[i][0].to(device).requires_grad_(), torch.tensor(ds[i][1]).to(device))
-                  for i in range(len(ds))]
+        self.D = [
+            (ds[i][0].to(device).requires_grad_(), torch.tensor(ds[i][1]).to(device))
+            for i in range(len(ds))
+        ]
         self.K = ds.K
         self.channels = ds.channels
         self.pixels = ds.pixels
@@ -44,11 +45,15 @@ def get_dataset(dataset, double, device=None):
 
 
 class FMNIST(dset.FashionMNIST):
-
-    def __init__(self, root=DATA_DIR, train=True, download=True,
-                 transform=MNIST_transform, double=False):
-        super().__init__(root=root, train=train, download=download,
-                         transform=transform)
+    def __init__(
+        self,
+        root=DATA_DIR,
+        train=True,
+        download=True,
+        transform=MNIST_transform,
+        double=False,
+    ):
+        super().__init__(root=root, train=train, download=download, transform=transform)
         self.K = 10
         self.pixels = 28
         self.channels = 1
@@ -68,28 +73,36 @@ class CIFAR10Net(nn.Sequential):
         self.output_size = n_out
         activ = nn.Tanh if use_tanh else nn.ReLU
 
-        self.add_module('conv1', tfconv2d(
-            in_channels=in_channels, out_channels=64, kernel_size=5))
+        self.add_module(
+            'conv1', tfconv2d(in_channels=in_channels, out_channels=64, kernel_size=5)
+        )
         self.add_module('relu1', nn.ReLU())
-        self.add_module('maxpool1', tfmaxpool2d(
-            kernel_size=3, stride=2, tf_padding_type='same'))
+        self.add_module(
+            'maxpool1', tfmaxpool2d(kernel_size=3, stride=2, tf_padding_type='same')
+        )
 
-        self.add_module('conv2', tfconv2d(
-            in_channels=64, out_channels=96, kernel_size=3))
+        self.add_module(
+            'conv2', tfconv2d(in_channels=64, out_channels=96, kernel_size=3)
+        )
         self.add_module('relu2', nn.ReLU())
-        self.add_module('maxpool2', tfmaxpool2d(
-            kernel_size=3, stride=2, tf_padding_type='same'))
+        self.add_module(
+            'maxpool2', tfmaxpool2d(kernel_size=3, stride=2, tf_padding_type='same')
+        )
 
-        self.add_module('conv3', tfconv2d(
-            in_channels=96, out_channels=128, kernel_size=3, tf_padding_type='same'))
+        self.add_module(
+            'conv3',
+            tfconv2d(
+                in_channels=96, out_channels=128, kernel_size=3, tf_padding_type='same'
+            ),
+        )
         self.add_module('relu3', nn.ReLU())
-        self.add_module('maxpool3', tfmaxpool2d(
-            kernel_size=3, stride=2, tf_padding_type='same'))
+        self.add_module(
+            'maxpool3', tfmaxpool2d(kernel_size=3, stride=2, tf_padding_type='same')
+        )
 
         self.add_module('flatten', nn.Flatten())
 
-        self.add_module('dense1', nn.Linear(
-            in_features=3 * 3 * 128, out_features=512))
+        self.add_module('dense1', nn.Linear(in_features=3 * 3 * 128, out_features=512))
         self.add_module('relu4', activ())
         self.add_module('dense2', nn.Linear(in_features=512, out_features=256))
         self.add_module('relu5', activ())

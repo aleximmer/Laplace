@@ -1,39 +1,33 @@
-from math import sqrt, pi, log
+import warnings
+from collections.abc import MutableMapping
+from math import log, pi, sqrt
+
 import numpy as np
 import torch
-import warnings
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
+import torchmetrics as tm
 import tqdm
-
 from torch.distributions import MultivariateNormal
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
-from collections.abc import MutableMapping
-from laplace.curvature.asdfghjkl import AsdfghjklHessian
-from laplace.curvature.curvlinops import CurvlinopsEF
-import warnings
 from torchmetrics import MeanSquaredError
 
-from laplace.utils import (
-    invsqrt_precision,
-    validate,
-    Kron,
-    SoDSampler,
-    normal_samples,
-    fix_prior_prec_structure,
-    RunningNLLMetric,
-)
-from laplace.curvature import CurvlinopsGGN, BackPackGGN, AsdlGGN
-
+from laplace.curvature import AsdlGGN, BackPackGGN, CurvlinopsGGN
+from laplace.curvature.asdfghjkl import AsdfghjklHessian
+from laplace.curvature.curvlinops import CurvlinopsEF
+from laplace.utils import (Kron, RunningNLLMetric, SoDSampler,
+                           fix_prior_prec_structure, invsqrt_precision,
+                           normal_samples, validate)
 
 __all__ = [
-    "BaseLaplace",
-    "ParametricLaplace",
-    "FunctionalLaplace",
-    "FullLaplace",
-    "KronLaplace",
-    "DiagLaplace",
-    "LowRankLaplace",
+    'BaseLaplace',
+    'ParametricLaplace',
+    'FunctionalLaplace',
+    'FullLaplace',
+    'KronLaplace',
+    'DiagLaplace',
+    'LowRankLaplace',
 ]
+
 
 class BaseLaplace:
     """Baseclass for all Laplace approximations in this library.
@@ -1407,13 +1401,13 @@ class LowRankLaplace(ParametricLaplace):
 
     @property
     def V(self):
-        (U, l), prior_prec_diag = self.posterior_precision
+        (U, _), prior_prec_diag = self.posterior_precision
         return U / prior_prec_diag.reshape(-1, 1)
 
     @property
     def Kinv(self):
-        (U, l), _ = self.posterior_precision
-        return torch.inverse(torch.diag(1 / l) + U.T @ self.V)
+        (U, eig), _ = self.posterior_precision
+        return torch.inverse(torch.diag(1 / eig) + U.T @ self.V)
 
     def fit(self, train_loader, override=True):
         # override fit since output of eighessian not additive across batch
@@ -1491,8 +1485,8 @@ class LowRankLaplace(ParametricLaplace):
 
     @property
     def log_det_posterior_precision(self):
-        (U, l), prior_prec_diag = self.posterior_precision
-        return l.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
+        (_, eig), prior_prec_diag = self.posterior_precision
+        return eig.log().sum() + prior_prec_diag.log().sum() - torch.logdet(self.Kinv)
 
 
 class DiagLaplace(ParametricLaplace):
@@ -1670,7 +1664,7 @@ class FunctionalLaplace(BaseLaplace):
                 prior_precision.ndim == 0
                 or (prior_precision.ndim == 1 and len(prior_precision) == 1)
             ):
-                raise ValueError("Only isotropic priors supported in FunctionalLaplace")
+                raise ValueError('Only isotropic priors supported in FunctionalLaplace')
 
     def _init_K_MM(self):
         """
@@ -1743,7 +1737,7 @@ class FunctionalLaplace(BaseLaplace):
         returns the contatenation of these hessians in a suitable format for the used kernel
         (diagonal or not).
 
-        In this function the diagonal approximation is performed. Please refer to the introduction of the 
+        In this function the diagonal approximation is performed. Please refer to the introduction of the
         class for more details.
 
         Parameters
@@ -1805,7 +1799,7 @@ class FunctionalLaplace(BaseLaplace):
             shuffle=False,
         )
 
-    def fit(self, train_loader, progress_bar = False):
+    def fit(self, train_loader, progress_bar=False):
         """Fit the Laplace approximation of a GP posterior.
 
         Parameters
@@ -1818,17 +1812,17 @@ class FunctionalLaplace(BaseLaplace):
         X, _ = next(iter(train_loader))
         with torch.no_grad():
             self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
-        setattr(self.model, "output_size", self.n_outputs)
+        setattr(self.model, 'output_size', self.n_outputs)
         self.batch_size = train_loader.batch_size
 
         if (
-            self.likelihood == "regression"
+            self.likelihood == 'regression'
             and self.n_outputs > 1
             and self.diagonal_kernel
         ):
             warnings.warn(
-                "Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended "
-                "in the case of multivariate regression. Predictive variance will likely be overestimated."
+                'Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended '
+                'in the case of multivariate regression. Predictive variance will likely be overestimated.'
             )
 
         self.model.eval()
@@ -1850,7 +1844,7 @@ class FunctionalLaplace(BaseLaplace):
         f, lambdas, mu = [], [], []
 
         if progress_bar:
-            loader = enumerate(tqdm.tqdm(train_loader, desc = "Fitting"))
+            loader = enumerate(tqdm.tqdm(train_loader, desc='Fitting'))
         else:
             loader = enumerate(train_loader)
 
@@ -1866,7 +1860,9 @@ class FunctionalLaplace(BaseLaplace):
             else:
                 # second derivative of log lik is diag(p) - pp^T
                 ps = torch.softmax(f_batch, dim=-1)
-                lambdas_batch = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
+                lambdas_batch = torch.diag_embed(ps) - torch.einsum(
+                    'mk,mc->mck', ps, ps
+                )
 
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
@@ -1885,7 +1881,6 @@ class FunctionalLaplace(BaseLaplace):
         self._build_Sigma_inv()
         self._fitted = True
 
-
     @torch.enable_grad()
     def _glm_predictive_distribution(self, X, joint=False):
         Js, f_mu = self._jacobians(X)
@@ -1901,7 +1896,7 @@ class FunctionalLaplace(BaseLaplace):
             if not self.enable_backprop
             else (f_mu, f_var)
         )
-    
+
     def __call__(
         self,
         x,
@@ -1922,7 +1917,7 @@ class FunctionalLaplace(BaseLaplace):
             the said tensor.
 
         pred_type : {'gp'}, default='gp'
-            type of posterior predictive, linearized GLM predictive (GP). 
+            type of posterior predictive, linearized GLM predictive (GP).
             The GP predictive is consistent with
             the curvature approximations used here.
 
@@ -1958,12 +1953,16 @@ class FunctionalLaplace(BaseLaplace):
         """
 
         if self._fitted is False:
-            raise RuntimeError('Functional Laplace has not been fitted to any ' + 
-                               'training dataset. Please call .fit method.')
+            raise RuntimeError(
+                'Functional Laplace has not been fitted to any '
+                + 'training dataset. Please call .fit method.'
+            )
 
         if self._recompute_Sigma is True:
-            Warning('The prior precision has been changed since fit. ' +
-                    'Re-compututing its value...')
+            Warning(
+                'The prior precision has been changed since fit. '
+                + 'Re-compututing its value...'
+            )
             self._build_Sigma_inv()
 
         if pred_type not in ['gp']:
@@ -1993,7 +1992,7 @@ class FunctionalLaplace(BaseLaplace):
         # classification
         if link_approx == 'mc':
             return self.predictive_samples(
-                f_mu, 
+                f_mu,
                 f_var,
                 n_samples=n_samples,
             ).mean(dim=0)
@@ -2016,9 +2015,7 @@ class FunctionalLaplace(BaseLaplace):
             # optional: variance correction
             if link_approx == 'bridge_norm':
                 f_var_diag_mean = f_var_diag.mean(dim=1)
-                f_var_diag_mean /= torch.as_tensor(
-                    [K / 2], device=self._device
-                ).sqrt()
+                f_var_diag_mean /= torch.as_tensor([K / 2], device=self._device).sqrt()
                 f_mu /= f_var_diag_mean.sqrt().unsqueeze(-1)
                 f_var_diag /= f_var_diag_mean.unsqueeze(-1)
             sum_exp = torch.exp(-f_mu).sum(dim=1).unsqueeze(-1)
@@ -2046,7 +2043,7 @@ class FunctionalLaplace(BaseLaplace):
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
         dist = MultivariateNormal(f_mu, f_var)
         samples = dist.sample((n_samples,))
-        if self.likelihood == "regression":
+        if self.likelihood == 'regression':
             return samples
         return torch.softmax(samples, dim=-1)
 
@@ -2089,7 +2086,7 @@ class FunctionalLaplace(BaseLaplace):
             f_var = torch.diag_embed(f_var)
 
         return f_var
-    
+
     def functional_covariance(self, Js_star):
         """
         GP posterior covariance: \\( k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\)
@@ -2117,35 +2114,35 @@ class FunctionalLaplace(BaseLaplace):
             del X_batch
 
         # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
-        f_var = K_star - self._build_K_star_M(K_M_star, joint = True)
+        f_var = K_star - self._build_K_star_M(K_M_star, joint=True)
 
         # If the considered kernel is diagonal, embed the covariances.
         # from (N*, N*, C) -> (N*, N*, C, C)
         if self.diagonal_kernel:
             f_var = torch.diag_embed(f_var)
-        
+
         # Reshape from (N*, N*, C, C) to (N*xC, N*xC)
-        f_var = f_var.permute(0,2,1,3).flatten(0,1).flatten(1,2)
+        f_var = f_var.permute(0, 2, 1, 3).flatten(0, 1).flatten(1, 2)
 
         return f_var
 
-    def _build_K_star_M(self, K_M_star, joint = False):
+    def _build_K_star_M(self, K_M_star, joint=False):
         """
         Computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*} given K_{M*}.
 
         Parameters
         ----------
-        K_M_star : list of torch.Tensor 
+        K_M_star : list of torch.Tensor
                    Contains K_{M*}. Tensors have shape (N_test, C, C)
                    or (N_test, C) for diagonal kernel.
-        
+
         joint : boolean
                 Wether to compute cross covariances or not.
 
         Returns
         -------
         torch.tensor of shape (N_test, N_test, C) for joint diagonal,
-        (N_test, C) for non-joint diagonal, (N_test, N_test, C, C) for 
+        (N_test, C) for non-joint diagonal, (N_test, N_test, C, C) for
         joint non-diagonal and (N_test, C, C) for non-joint non-diagonal.
         """
         # Shape (N_test, N, C, C) or (N_test, N, C) for diagonal
@@ -2162,9 +2159,9 @@ class FunctionalLaplace(BaseLaplace):
                     2,
                 )
                 if joint:
-                    prod = torch.einsum("bm,am->ba", v, v)
+                    prod = torch.einsum('bm,am->ba', v, v)
                 else:
-                    prod = torch.einsum("bm,bm->b", v, v)
+                    prod = torch.einsum('bm,bm->b', v, v)
                 prods.append(prod.unsqueeze(1))
             prods = torch.cat(prods, dim=-1)
             return prods
@@ -2174,9 +2171,9 @@ class FunctionalLaplace(BaseLaplace):
             # Compute K_{*M}L^{-1}
             v = torch.linalg.solve(self.Sigma_inv, K_M_star)
             if joint:
-                return torch.einsum("acm,bcn->abmn", v, v)
+                return torch.einsum('acm,bcn->abmn', v, v)
             else:
-                return torch.einsum("bcm,bcn->bmn", v, v)
+                return torch.einsum('bcm,bcn->bmn', v, v)
 
     @property
     def log_det_ratio(self):
@@ -2193,7 +2190,7 @@ class FunctionalLaplace(BaseLaplace):
 
         log determinant term := \\( \log | K + \\sigma_2 I | \\)
         """
-        if self.likelihood == "regression":
+        if self.likelihood == 'regression':
             if self.diagonal_kernel:
                 log_det = torch.tensor(0.0, requires_grad=True)
                 for c in range(self.n_outputs):
@@ -2243,7 +2240,7 @@ class FunctionalLaplace(BaseLaplace):
         \\( m := f + J (\\theta - \\theta_{MAP}) \\)
 
         """
-        if self.likelihood == "regression":
+        if self.likelihood == 'regression':
             noise = self.sigma_noise.square()
         else:
             noise = eps
@@ -2273,18 +2270,18 @@ class FunctionalLaplace(BaseLaplace):
 
     def optimize_prior_precision(
         self,
-        pred_type = "gp",
-        method="marglik",
+        pred_type='gp',
+        method='marglik',
         n_steps=100,
         lr=1e-1,
         init_prior_prec=1.0,
-        prior_structure="scalar",
+        prior_structure='scalar',
         val_loader=None,
         loss=None,
         log_prior_prec_min=-4,
         log_prior_prec_max=4,
         grid_size=100,
-        link_approx="probit",
+        link_approx='probit',
         n_samples=100,
         verbose=False,
         cv_loss_with_var=False,
@@ -2293,9 +2290,9 @@ class FunctionalLaplace(BaseLaplace):
         """
         `optimize_prior_precision_base` from `BaseLaplace` with `pred_type='gp'`
         """
-        assert pred_type == "gp" # only gp supported
-        assert prior_structure == "scalar" # only isotropic gaussian prior supported
-        if method == "marglik":
+        assert pred_type == 'gp'  # only gp supported
+        assert prior_structure == 'scalar'  # only isotropic gaussian prior supported
+        if method == 'marglik':
             warnings.warn(
                 "Use of method='marglik' in case of FunctionalLaplace is discouraged, rather use method='CV'."
             )
@@ -2316,7 +2313,7 @@ class FunctionalLaplace(BaseLaplace):
             verbose,
             cv_loss_with_var,
             progress_bar,
-        ) 
+        )
         self._build_Sigma_inv()
 
     def _kernel_batch(self, jacobians, batch):
@@ -2342,16 +2339,16 @@ class FunctionalLaplace(BaseLaplace):
             )
             for c in range(self.n_outputs):
                 kernel[:, :, c] = torch.einsum(
-                    "bp,ep->be", jacobians[:, c, :], jacobians_2[:, c, :]
+                    'bp,ep->be', jacobians[:, c, :], jacobians_2[:, c, :]
                 )
         else:
             kernel = torch.einsum(
-                "ap,bp->ab", jacobians.reshape(-1, P), jacobians_2.reshape(-1, P)
+                'ap,bp->ab', jacobians.reshape(-1, P), jacobians_2.reshape(-1, P)
             )
         del jacobians_2
         return kernel
 
-    def _kernel_star(self, jacobians, joint = False):
+    def _kernel_star(self, jacobians, joint=False):
         """
         Compute K_star_star kernel matrix.
 
@@ -2367,10 +2364,10 @@ class FunctionalLaplace(BaseLaplace):
         """
         if joint:
             if self.diagonal_kernel:
-                kernel = torch.einsum("acp,bcp->abcc", jacobians, jacobians)
+                kernel = torch.einsum('acp,bcp->abcc', jacobians, jacobians)
             else:
-                kernel = torch.einsum("acp,bep->abce", jacobians, jacobians)
-            
+                kernel = torch.einsum('acp,bep->abce', jacobians, jacobians)
+
         else:
             if self.diagonal_kernel:
                 kernel = torch.empty(
@@ -2379,7 +2376,7 @@ class FunctionalLaplace(BaseLaplace):
                 for c in range(self.n_outputs):
                     kernel[:, c] = torch.norm(jacobians[:, c, :], dim=1) ** 2
             else:
-                kernel = torch.einsum("bcp,bep->bce", jacobians, jacobians)
+                kernel = torch.einsum('bcp,bep->bce', jacobians, jacobians)
         return kernel
 
     def _kernel_batch_star(self, jacobians, batch):
@@ -2404,10 +2401,10 @@ class FunctionalLaplace(BaseLaplace):
             )
             for c in range(self.n_outputs):
                 kernel[:, :, c] = torch.einsum(
-                    "bp,ep->be", jacobians[:, c, :], jacobians_2[:, c, :]
+                    'bp,ep->be', jacobians[:, c, :], jacobians_2[:, c, :]
                 )
         else:
-            kernel = torch.einsum("bcp,dep->bdce", jacobians, jacobians_2)
+            kernel = torch.einsum('bcp,dep->bdce', jacobians, jacobians_2)
         return kernel
 
     def _jacobians(self, X):
@@ -2439,12 +2436,12 @@ class FunctionalLaplace(BaseLaplace):
             K_batch_star with shape (batch, output_shape)
         """
 
-        if self.likelihood == "regression":
+        if self.likelihood == 'regression':
             return y - (
-                f + torch.einsum("bcp,p->bc", Js, self.prior_mean - self.map_estimate)
+                f + torch.einsum('bcp,p->bc', Js, self.prior_mean - self.map_estimate)
             )
-        elif self.likelihood == "classification":
-            return -torch.einsum("bcp,p->bc", Js, self.prior_mean - self.map_estimate)
+        elif self.likelihood == 'classification':
+            return -torch.einsum('bcp,p->bc', Js, self.prior_mean - self.map_estimate)
 
     def log_marginal_likelihood(self, prior_precision=None, sigma_noise=None):
         """Compute the Laplace approximation to the log marginal likelihood.
@@ -2467,7 +2464,7 @@ class FunctionalLaplace(BaseLaplace):
         """
         # update prior precision (useful when iterating on marglik)
         if prior_precision is not None:
-            self.prior_precision = prior_precision            
+            self.prior_precision = prior_precision
 
         # update sigma_noise (useful when iterating on marglik)
         if sigma_noise is not None:
@@ -2542,7 +2539,10 @@ class FunctionalLaplace(BaseLaplace):
                 'Loading a wrong Laplace type. Make sure `subset_of_weights` and'
                 + ' `hessian_structure` are correct!'
             )
-        if self.n_params is not None and len(state_dict['map_estimate']) != self.n_params:
+        if (
+            self.n_params is not None
+            and len(state_dict['map_estimate']) != self.n_params
+        ):
             raise ValueError(
                 'Attempting to load Laplace with different number of parameters than the model.'
                 + ' Make sure that you use the same `subset_of_weights` value and the same `.requires_grad`'

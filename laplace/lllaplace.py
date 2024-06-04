@@ -1,16 +1,27 @@
+from collections.abc import MutableMapping
 from copy import deepcopy
+from typing import Union
+
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace, FunctionalLaplace
-from laplace.utils import FeatureExtractor, Kron
+from laplace.baselaplace import (
+    DiagLaplace,
+    FullLaplace,
+    FunctionalLaplace,
+    KronLaplace,
+    ParametricLaplace,
+)
 from laplace.curvature import BackPackGGN
+from laplace.utils import FeatureExtractor, Kron
 
-from collections.abc import MutableMapping
-from typing import Union
-
-
-__all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace', 'FunctionalLLLaplace']
+__all__ = [
+    'LLLaplace',
+    'FullLLLaplace',
+    'KronLLLaplace',
+    'DiagLLLaplace',
+    'FunctionalLLLaplace',
+]
 
 
 class LLLaplace(ParametricLaplace):
@@ -280,7 +291,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         backend=None,
         last_layer_name=None,
         damping=False,
-        **backend_kwargs
+        **backend_kwargs,
     ):
         self.damping = damping
         super().__init__(
@@ -324,12 +335,34 @@ class FunctionalLLLaplace(FunctionalLaplace):
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ('last_layer', 'gp')
 
-    def __init__(self, model, likelihood, M=None, sigma_noise=1., prior_precision=1.,
-                 prior_mean=0., temperature=1., backend=BackPackGGN, last_layer_name=None,
-                 backend_kwargs=None, diagonal_kernel=False, seed=0):
-        super().__init__(model, likelihood, M=M, sigma_noise=sigma_noise, prior_precision=prior_precision,
-                         prior_mean=0., temperature=temperature, backend=backend,
-                         backend_kwargs=backend_kwargs, diagonal_kernel=diagonal_kernel, seed=seed)
+    def __init__(
+        self,
+        model,
+        likelihood,
+        M=None,
+        sigma_noise=1.0,
+        prior_precision=1.0,
+        prior_mean=0.0,
+        temperature=1.0,
+        backend=BackPackGGN,
+        last_layer_name=None,
+        backend_kwargs=None,
+        diagonal_kernel=False,
+        seed=0,
+    ):
+        super().__init__(
+            model,
+            likelihood,
+            M=M,
+            sigma_noise=sigma_noise,
+            prior_precision=prior_precision,
+            prior_mean=0.0,
+            temperature=temperature,
+            backend=backend,
+            backend_kwargs=backend_kwargs,
+            diagonal_kernel=diagonal_kernel,
+            seed=seed,
+        )
         self.model = FeatureExtractor(model, last_layer_name=last_layer_name)
         if self.model.last_layer is None:
             self.map_estimate = None
@@ -339,7 +372,9 @@ class FunctionalLLLaplace(FunctionalLaplace):
             self._prior_precision = prior_precision
             self._prior_mean = prior_mean
         else:
-            self.map_estimate = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.map_estimate = parameters_to_vector(
+                self.model.last_layer.parameters()
+            ).detach()
             self.n_params = len(self.map_estimate)
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
@@ -361,7 +396,9 @@ class FunctionalLLLaplace(FunctionalLaplace):
             X, _ = next(iter(train_loader))
             with torch.no_grad():
                 self.model.find_last_layer(X[:1].to(self._device))
-            self.map_estimate = parameters_to_vector(self.model.last_layer.parameters()).detach()
+            self.map_estimate = parameters_to_vector(
+                self.model.last_layer.parameters()
+            ).detach()
             self.n_params = len(self.map_estimate)
             self.n_layers = len(list(self.model.last_layer.parameters()))
             # here, check the already set prior precision again

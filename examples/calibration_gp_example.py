@@ -1,19 +1,21 @@
 import warnings
-warnings.simplefilter("ignore", UserWarning)
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 import torch.distributions as dists
+from helper.util_gp import CIFAR10Net, get_dataset
 from netcal.metrics import ECE
+from torch.utils.data import DataLoader
 
-from helper.util_gp import get_dataset, CIFAR10Net
 from laplace import Laplace
 
 np.random.seed(7777)
 torch.manual_seed(7777)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
+
+warnings.simplefilter('ignore', UserWarning)
+
 
 assert torch.cuda.is_available()
 
@@ -30,6 +32,7 @@ state = torch.load(f'helper/models/{MODEL_NAME}')
 model.load_state_dict(state['model'])
 model = model.cuda()
 prior_precision = state['delta']
+
 
 @torch.no_grad()
 def predict(dataloader, model, laplace=False):
@@ -53,17 +56,23 @@ print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 
 for m in [50, 200, 800, 1600]:
     print(f'Fitting Laplace-GP for m={m}')
-    la = Laplace(model, 'classification',
-                 subset_of_weights='all',
-                 hessian_structure='gp',
-                 diagonal_kernel=True, M=m,
-                 prior_precision=prior_precision)
+    la = Laplace(
+        model,
+        'classification',
+        subset_of_weights='all',
+        hessian_structure='gp',
+        diagonal_kernel=True,
+        M=m,
+        prior_precision=prior_precision,
+    )
     la.fit(train_loader)
     la.optimize_prior_precision(method='marglik', progress_bar=True)
-    
+
     probs_laplace = predict(test_loader, la, laplace=True)
     acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
     ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
     nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
-    print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
+    print(
+        f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}'
+    )
