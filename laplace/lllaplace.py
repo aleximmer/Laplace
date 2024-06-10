@@ -73,6 +73,14 @@ class LLLaplace(ParametricLaplace):
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     last_layer_name: str, default=None
@@ -91,6 +99,8 @@ class LLLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        dict_key_x='inputs_id',
+        dict_key_y='labels',
         backend=None,
         last_layer_name=None,
         backend_kwargs=None,
@@ -107,6 +117,8 @@ class LLLaplace(ParametricLaplace):
             prior_mean=0.0,
             temperature=temperature,
             enable_backprop=enable_backprop,
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
             backend=backend,
             backend_kwargs=backend_kwargs,
         )
@@ -297,6 +309,8 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        dict_key_x='inputs_id',
+        dict_key_y='labels',
         backend=None,
         last_layer_name=None,
         damping=False,
@@ -311,6 +325,8 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            dict_key_x,
+            dict_key_y,
             backend,
             last_layer_name,
             backend_kwargs,

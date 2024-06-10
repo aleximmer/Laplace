@@ -19,8 +19,19 @@ from laplace.utils import Kron
 class BackPackInterface(CurvatureInterface):
     """Interface for Backpack backend."""
 
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        subnetwork_indices=None,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
+    ):
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
+
         extend(self._model)
         extend(self.lossfunc)
 
@@ -115,9 +126,13 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
         stochastic=False,
     ):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
         self.stochastic = stochastic
 
     def _get_diag_ggn(self):
