@@ -485,6 +485,139 @@ print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_lap
 <pre><code>[Laplace] Acc.: 94.8%; ECE: 0.8%; NLL: 0.157
 </code></pre>
 <p>Notice that the last-layer LA does not do any harm to the accuracy, yet it improves the calibration of the MAP model substantially.</p>
+<h2 id="full-example-bayesian-bradley-terry-reward-modeling">Full Example: Bayesian Bradley-Terry Reward Modeling</h2>
+<p>The <code>laplace-torch</code> library can also be used to "Bayesianize" a pretrained Bradley-Terry
+reward model, popular in large language models. See <a href="http://arxiv.org/abs/2009.01325">http://arxiv.org/abs/2009.01325</a>
+for a primer in reward modeling.</p>
+<p>First order of business, let's define our comparison dataset. We will use the <code>datasets</code>
+library from Huggingface to handle the data.</p>
+<pre><code class="language-python">import numpy as np
+import torch
+from torch import nn, optim
+from torch.nn import functional as F
+import torch.utils.data as data_utils
+
+from datasets import Dataset
+
+from laplace import Laplace
+
+import logging
+import warnings
+
+logging.basicConfig(level='ERROR')
+warnings.filterwarnings('ignore')
+
+# make deterministic
+torch.manual_seed(0)
+np.random.seed(0)
+
+
+# Pairwise comparison dataset. The label indicates which `x0` or `x1` is preferred.
+data_dict = [
+    {
+        'x0': torch.randn(3),
+        'x1': torch.randn(3),
+        'label': torch.randint(2, size=(1,)).item(),
+    }
+    for _ in range(10)
+]
+dataset = Dataset.from_list(data_dict)
+</code></pre>
+<p>Now, let's define the reward model.
+During training, it assumes that <code>x</code> is a tensor
+of shape <code>(batch_size, 2, dim)</code>, which is a concatenation of <code>x0</code> and <code>x1</code> above.
+The second dimension of size 2 is preserved through the forward pass, resulting in
+a logit tensor of shape <code>(batch_size, 2)</code> (the network itself is single-output).
+Then, the standard cross-entropy loss is applied.</p>
+<p>Note that this requirement is quite weak and can covers general cases. However, if you
+prefer to use the dict-like inputs as in Huggingface LLM models, this can also be done.
+Simply combine what you have learned from this example with the Huggingface LLM example
+provided in this library.</p>
+<p>During testing, this model behaves like a standard single-output regression
+model.</p>
+<pre><code class="language-python">class SimpleRewardModel(nn.Module):
+    &quot;&quot;&quot;A simple reward model, compatible with the Bradley-Terry likelihood.
+    &quot;&quot;&quot;
+
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(3, 100), nn.ReLU(), nn.Linear(100, 1))
+
+    def forward(self, x):
+        &quot;&quot;&quot;Args:
+            x: torch.Tensor
+                If training == True then shape (batch_size, 2, dim)
+                Else shape (batch_size, dim)
+
+        Returns:
+            logits: torch.Tensor
+                If training then shape (batch_size, 2)
+                Else shape (batch_size, 1)
+        &quot;&quot;&quot;
+        if len(x.shape) == 3:
+            batch_size, _, dim = x.shape
+
+            # Flatten to (batch_size*2, dim)
+            flat_x = x.reshape(-1, dim)
+
+            # Forward
+            flat_logits = self.net(flat_x)  # (batch_size*2, 1)
+
+            # Reshape back to (batch_size, 2)
+            return flat_logits.reshape(batch_size, 2)
+        else:
+            logits = self.net(x)  # (batch_size, 1)
+            return logits
+</code></pre>
+<p>To fulfill the 3D tensor requirement, we need to preprocess the dict-based dataset. </p>
+<pre><code class="language-python"># Preprocess to coalesce x0 and x1 into a single array/tensor
+def append_x0_x1(row):
+    # The tensor values above are automatically casted as lists by `Dataset`
+    row['x'] = np.stack([row['x0'], row['x1']])  # (2, dim)
+    return row
+
+
+tensor_dataset = dataset.map(append_x0_x1, remove_columns=['x0', 'x1'])
+tensor_dataset.set_format(type='torch', columns=['x', 'label'])
+tensor_dataloader = data_utils.DataLoader(
+    data_utils.TensorDataset(tensor_dataset['x'], tensor_dataset['label']), batch_size=3
+)
+</code></pre>
+<p>Then, we can train as usual using the cross entropy loss.</p>
+<pre><code class="language-python">reward_model = SimpleRewardModel()
+opt = optim.AdamW(reward_model.parameters(), weight_decay=1e-3)
+
+# Train as usual
+for epoch in range(10):
+    for x, y in tensor_dataloader:
+        opt.zero_grad()
+        out = reward_model(x)
+        loss = F.cross_entropy(out, y)
+        loss.backward()
+        opt.step()
+</code></pre>
+<p>Applying Laplace to this model is a breeze. Simply state that the likelihood is <code>reward_modeling</code>.</p>
+<pre><code class="language-python"># Laplace !!! Notice the likelihood !!!
+reward_model.eval()
+la = Laplace(reward_model, likelihood='reward_modeling', subset_of_weights='all')
+la.fit(tensor_dataloader)
+la.optimize_prior_precision()
+</code></pre>
+<p>As we can see, during prediction, even though we train &amp; fit Laplace using the cross entropy
+loss (i.e. classification), in test time, the model behaves like a regression model.
+So, you don't get probability vectors as outputs. Instead, you get two tensors
+containing the predictive means and predictive variance.</p>
+<pre><code class="language-python">x_test = torch.randn(5, 3)
+pred_mean, pred_var = la(x_test)
+print(
+    f'Input shape {tuple(x_test.shape)}, predictive mean of shape '
+    + f'{tuple(pred_mean.shape)}, predictive covariance of shape '
+    + f'{tuple(pred_var.shape)}'
+)
+</code></pre>
+<p>Here's the output:</p>
+<pre><code>Input shape (5, 3), predictive mean of shape (5, 1), predictive covariance of shape (5, 1, 1)
+</code></pre>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
@@ -648,8 +781,8 @@ Only works for regression.</dd>
 <dd>&nbsp;</dd>
 <dt><strong><code>likelihood</code></strong> :&ensp;<code>{'classification', 'regression', 'reward_modeling'}</code></dt>
 <dd>determines the log likelihood Hessian approximation.
-In the case of 'reward_modeling', it fits Laplace in using the classification likelihood,
-then do prediction as in regression likelihood. The model needs to be defined accordingly:
+In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
+then does prediction as in regression likelihood. The model needs to be defined accordingly:
 The forward pass during training takes <code>x.shape == (batch_size, 2, dim)</code> with
 <code>y.shape = (batch_size,)</code>. Meanwhile, during evaluation <code>x.shape == (batch_size, dim)</code>.
 Note that 'reward_modeling' only supports <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code> and <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>.</dd>
@@ -1896,6 +2029,7 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><a href="#the-calibration-of-laplace">The calibration of Laplace</a></li>
 </ul>
 </li>
+<li><a href="#full-example-bayesian-bradley-terry-reward-modeling">Full Example: Bayesian Bradley-Terry Reward Modeling</a></li>
 </ul>
 </div>
 <ul id="index">

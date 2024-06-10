@@ -1,24 +1,18 @@
-from math import sqrt, pi, log
+import warnings
+from collections.abc import MutableMapping
+from math import log, pi, sqrt
+
 import numpy as np
 import torch
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
+import torchmetrics as tm
 import tqdm
-from collections.abc import MutableMapping
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
+
+from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.asdfghjkl import AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsEF
-import warnings
-from torchmetrics import MeanSquaredError
-
-from laplace.utils import (
-    invsqrt_precision,
-    validate,
-    Kron,
-    normal_samples,
-    fix_prior_prec_structure,
-    RunningNLLMetric,
-)
-from laplace.curvature import AsdlHessian, CurvlinopsGGN
-
+from laplace.utils import (Kron, RunningNLLMetric, fix_prior_prec_structure,
+                           invsqrt_precision, normal_samples, validate)
 
 __all__ = [
     'BaseLaplace',
@@ -38,8 +32,8 @@ class BaseLaplace:
     model : torch.nn.Module
     likelihood : {'classification', 'regression', 'reward_modeling'}
         determines the log likelihood Hessian approximation.
-        In the case of 'reward_modeling', it fits Laplace in using the classification likelihood,
-        then do prediction as in regression likelihood. The model needs to be defined accordingly:
+        In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
+        then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
         `y.shape = (batch_size,)`. Meanwhile, during evaluation `x.shape == (batch_size, dim)`.
         Note that 'reward_modeling' only supports `KronLaplace` and `DiagLaplace`.
@@ -371,7 +365,7 @@ class BaseLaplace:
 
             if loss is None:
                 loss = (
-                    MeanSquaredError(num_outputs=self.n_outputs)
+                    tm.MeanSquaredError(num_outputs=self.n_outputs)
                     if self.likelihood == 'regression'
                     else RunningNLLMetric()
                 )

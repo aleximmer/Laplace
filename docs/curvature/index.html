@@ -113,7 +113,7 @@ via torch.func.</p>
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><strong><code>Js</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>Jacobians <code>(batch, parameters, outputs)</code></dd>
+<dd>Jacobians <code>(batch, outputs, parameters)</code></dd>
 <dt><strong><code>f</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>output function <code>(batch, outputs)</code></dd>
 </dl></div>
@@ -133,7 +133,7 @@ via torch.func.</p>
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><strong><code>Js</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>Jacobians <code>(batch, parameters, outputs)</code></dd>
+<dd>Jacobians <code>(batch, outputs, parameters)</code></dd>
 <dt><strong><code>f</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>output function <code>(batch, outputs)</code></dd>
 </dl></div>
@@ -154,7 +154,7 @@ only at current last-layer parameter <span><span class="MathJax_Preview">\theta_
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><strong><code>Js</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>Jacobians <code>(batch, last-layer-parameters, outputs)</code></dd>
+<dd>Jacobians <code>(batch, outputs, last-layer-parameters)</code></dd>
 <dt><strong><code>f</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>output function <code>(batch, outputs)</code></dd>
 </dl></div>
