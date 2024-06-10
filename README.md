@@ -30,12 +30,6 @@ To install laplace with `pip`, run the following:
 pip install laplace-torch
 ```
 
-
-Note that, if you would like to use ASDL as a backend, please install it via the following, for full compatibility:
-```bash
-pip install git+https://github.com/wiseodd/asdl.git@dev
-```
-
 For development purposes, clone the repository and then install:
 ```bash
 # or after cloning the repository for development

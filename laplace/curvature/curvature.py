@@ -85,7 +85,7 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `(batch, outputs, parameters)`
         f : torch.Tensor
             output function `(batch, outputs)`
         """
@@ -123,7 +123,7 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `(batch, outputs, parameters)`
         f : torch.Tensor
             output function `(batch, outputs)`
         """
@@ -162,7 +162,7 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, last-layer-parameters, outputs)`
+            Jacobians `(batch, outputs, last-layer-parameters)`
         f : torch.Tensor
             output function `(batch, outputs)`
         """
