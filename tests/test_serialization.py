@@ -14,6 +14,8 @@ from laplace.laplace import (
     DiagLaplace,
     LowRankLaplace,
     FullLLLaplace,
+    FunctionalLaplace,
+    FunctionalLLLaplace,
     KronLLLaplace,
     DiagLLLaplace,
     LLLaplace,
@@ -27,11 +29,11 @@ from laplace.laplace import (
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
 lrlaplace_param = pytest.param(LowRankLaplace, marks=pytest.mark.xfail(reason='Unimplemented in the new ASDL'))
-flavors = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param, FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param]
 flavors_llla = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_subnet = [DiagSubnetLaplace, FullSubnetLaplace]
-flavors = flavors_llla + flavors_no_llla
+flavors_functional = [FunctionalLaplace, FunctionalLLLaplace]
+flavors = flavors_llla
 
 
 @pytest.fixture
@@ -103,6 +105,26 @@ def test_serialize(laplace, model, reg_loader):
     assert torch.allclose(f_mean, f_mean2)
     assert torch.allclose(f_var, f_var2)
 
+@pytest.mark.parametrize('laplace', flavors_functional)
+def test_serialize_functional(laplace, model, reg_loader):
+    la = laplace(model, 'regression', num_data = 10)
+    la.fit(reg_loader)
+    la.optimize_prior_precision()
+    la.sigma_noise = 1231
+    torch.save(la.state_dict(), 'state_dict.bin')
+
+    la2 = laplace(model, 'regression', num_data = 10)
+    la2.load_state_dict(torch.load('state_dict.bin'))
+
+
+    assert la.sigma_noise == la2.sigma_noise
+
+    X, _ = next(iter(reg_loader))
+    f_mean, f_var = la(X)
+    f_mean2, f_var2 = la2(X)
+    assert torch.allclose(f_mean, f_mean2)
+    assert torch.allclose(f_var, f_var2)
+
 
 @pytest.mark.parametrize('laplace', flavors_no_llla[:-1])
 def test_serialize_override(laplace, model, reg_loader):
@@ -136,6 +158,21 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
     for val in state_dict.values():
         if val is not None:
             assert isinstance(val, (list, tuple, int, float, str, bool, torch.Tensor))
+
+
+@pytest.mark.parametrize('laplace', flavors_functional)
+def test_serialize_no_pickle_functional(laplace, model, reg_loader):
+    la = laplace(model, 'regression', num_data = 10)
+    la.fit(reg_loader)
+    la.optimize_prior_precision()
+    la.sigma_noise = 1231
+    torch.save(la.state_dict(), 'state_dict.bin')
+    state_dict = torch.load('state_dict.bin')
+
+    # Make sure no pickle object
+    for val in state_dict.values():
+        if val is not None:
+            assert isinstance(val, (DataLoader, list, tuple, int, float, str, bool, torch.Tensor))
 
 
 @pytest.mark.parametrize('laplace', flavors_subnet)
