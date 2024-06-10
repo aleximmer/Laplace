@@ -1,23 +1,17 @@
-from math import sqrt, pi, log
+import warnings
+from collections.abc import MutableMapping
+from math import log, pi, sqrt
+
 import numpy as np
 import torch
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
-import tqdm
-from collections.abc import MutableMapping
-from laplace.curvature.curvlinops import CurvlinopsEF
 import torchmetrics as tm
-import warnings
+import tqdm
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.utils import (
-    invsqrt_precision,
-    get_nll,
-    validate,
-    Kron,
-    normal_samples,
-    fix_prior_prec_structure,
-)
 from laplace.curvature import AsdlHessian, CurvlinopsGGN
-
+from laplace.curvature.curvlinops import CurvlinopsEF
+from laplace.utils import (Kron, fix_prior_prec_structure, get_nll,
+                           invsqrt_precision, normal_samples, validate)
 
 __all__ = [
     'BaseLaplace',
@@ -37,8 +31,8 @@ class BaseLaplace:
     model : torch.nn.Module
     likelihood : {'classification', 'regression', 'reward_modeling'}
         determines the log likelihood Hessian approximation.
-        In the case of 'reward_modeling', it fits Laplace in using the classification likelihood,
-        then do prediction as in regression likelihood. The model needs to be defined accordingly:
+        In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
+        then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
         `y.shape = (batch_size,)`. Meanwhile, during evaluation `x.shape == (batch_size, dim)`.
         Note that 'reward_modeling' only supports `KronLaplace` and `DiagLaplace`.
