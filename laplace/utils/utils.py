@@ -1,14 +1,14 @@
-from collections.abc import MutableMapping
 import logging
+from collections.abc import MutableMapping
 from typing import Union
+
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.nn.utils import parameters_to_vector
-from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
+from torch.nn.utils import parameters_to_vector
 from torchmetrics import Metric
-
 
 __all__ = [
     'get_nll',
@@ -112,11 +112,7 @@ def invsqrt_precision(M):
 
 
 def _is_batchnorm(module):
-    if (
-        isinstance(module, BatchNorm1d)
-        or isinstance(module, BatchNorm2d)
-        or isinstance(module, BatchNorm3d)
-    ):
+    if isinstance(module, (BatchNorm1d, BatchNorm2d, BatchNorm3d)):
         return True
     return False
 
