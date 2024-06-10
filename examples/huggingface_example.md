@@ -83,7 +83,7 @@ attention_mask torch.Size([4, 9])
 labels torch.Size([4])
 ```
 
-## Las-layer Laplace on a LLM
+## Last-layer Laplace on a LLM
 
 Now, let's do the main "meat" of this example: Wrapping the HF model into a model that is
 compatible with Laplace. Notice that this wrapper just wraps the HF model and nothing else.
