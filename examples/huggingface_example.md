@@ -50,15 +50,15 @@ tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 data = [
-{'text': 'Today is hot, but I will manage!!!!', 'label': 1},
-{'text': 'Tomorrow is cold', 'label': 0},
-{'text': 'Carpe diem', 'label': 1},
-{'text': 'Tempus fugit', 'label': 1},
+    {'text': 'Today is hot, but I will manage!!!!', 'label': 1},
+    {'text': 'Tomorrow is cold', 'label': 0},
+    {'text': 'Carpe diem', 'label': 1},
+    {'text': 'Tempus fugit', 'label': 1},
 ]
 dataset = Dataset.from_list(data)
 
 def tokenize(row):
-return tokenizer(row['text'])
+    return tokenizer(row['text'])
 
 dataset = dataset.map(tokenize, remove_columns=['text'])
 dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label'])
@@ -197,8 +197,9 @@ lora_la = Laplace(
     lora_model,
     likelihood='classification',
     subset_of_weights='all',
-    hessian_structure='diag',
+    hessian_structure='kron',
 )
+lora_la.fit(dataloader)
 
 X_test = next(iter(dataloader))
 print(f'[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.')

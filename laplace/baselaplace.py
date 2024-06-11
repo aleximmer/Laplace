@@ -1,24 +1,18 @@
-from math import sqrt, pi, log
+import warnings
+from collections.abc import MutableMapping
+from math import log, pi, sqrt
+
 import numpy as np
 import torch
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
 import tqdm
-from collections.abc import MutableMapping
-from laplace.curvature.asdfghjkl import AsdfghjklHessian
-from laplace.curvature.curvlinops import CurvlinopsEF
-import warnings
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torchmetrics import MeanSquaredError
 
-from laplace.utils import (
-    invsqrt_precision,
-    validate,
-    Kron,
-    normal_samples,
-    fix_prior_prec_structure,
-    RunningNLLMetric,
-)
 from laplace.curvature import AsdlHessian, CurvlinopsGGN
-
+from laplace.curvature.asdfghjkl import AsdfghjklHessian
+from laplace.curvature.curvlinops import CurvlinopsEF
+from laplace.utils import (Kron, RunningNLLMetric, fix_prior_prec_structure,
+                           invsqrt_precision, normal_samples, validate)
 
 __all__ = [
     'BaseLaplace',
@@ -1258,6 +1252,10 @@ class KronLaplace(ParametricLaplace):
     def _init_H(self):
         self.H = Kron.init_from_model(self.params, self._device)
 
+    def _check_H_init(self):
+        if getattr(self, 'H_facs', None) is None:
+            raise AttributeError('Laplace not fitted. Run fit() first.')
+
     def _curv_closure(self, X, y, N):
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
@@ -1303,10 +1301,6 @@ class KronLaplace(ParametricLaplace):
         precision : `laplace.utils.matrix.KronDecomposed`
         """
         self._check_H_init()
-
-        if self.H_facs is None:
-            raise AttributeError('Laplace not fitted. Run fit() first.')
-
         return self.H * self._H_factor + self.prior_precision
 
     @property
