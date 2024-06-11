@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.subnetlaplace.SubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">SubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Class for subnetwork Laplace, which computes the Laplace approximation over just a subset
@@ -137,6 +137,7 @@ a scalar or diagonal prior precision.</p>
 <li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -156,7 +157,7 @@ a scalar or diagonal prior precision.</p>
 </dd>
 <dt id="laplace.subnetlaplace.FullSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">FullSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with full, i.e., dense, log likelihood Hessian
@@ -176,6 +177,7 @@ See <code>FullLaplace</code>, <code><a title="laplace.subnetlaplace.SubnetLaplac
 <li><code><b><a title="laplace.subnetlaplace.SubnetLaplace" href="#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -202,7 +204,7 @@ See <code>FullLaplace</code>, <code><a title="laplace.subnetlaplace.SubnetLaplac
 </dd>
 <dt id="laplace.subnetlaplace.DiagSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with diagonal log likelihood Hessian approximation
@@ -221,6 +223,7 @@ See <code>DiagLaplace</code>, <code><a title="laplace.subnetlaplace.SubnetLaplac
 <li><code><b><a title="laplace.subnetlaplace.SubnetLaplace" href="#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>

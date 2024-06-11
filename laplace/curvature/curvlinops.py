@@ -18,8 +18,18 @@ from collections import UserDict
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        subnetwork_indices=None,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
+    ):
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
 
     @property
     def _kron_fisher_type(self):
@@ -62,7 +72,7 @@ class CurvlinopsInterface(CurvatureInterface):
 
     def kron(self, X, y, N, **kwargs):
         if isinstance(X, (dict, UserDict)):
-            kwargs['batch_size_fn'] = lambda x: x['input_ids'].shape[0]
+            kwargs['batch_size_fn'] = lambda x: x[self.dict_key_x].shape[0]
         linop = KFACLinearOperator(
             self.model,
             self.lossfunc,
@@ -94,7 +104,7 @@ class CurvlinopsInterface(CurvatureInterface):
 
         curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != 'N'}
         if isinstance(X, (dict, UserDict)):
-            curvlinops_kwargs['batch_size_fn'] = lambda x: x['input_ids'].shape[0]
+            curvlinops_kwargs['batch_size_fn'] = lambda x: x[self.dict_key_x].shape[0]
 
         linop = self._linop_context(
             self.model,
@@ -124,9 +134,13 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
         stochastic=False,
     ):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
         self.stochastic = stochastic
 
     @property

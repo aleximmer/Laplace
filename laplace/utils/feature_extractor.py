@@ -1,8 +1,8 @@
+from enum import Enum
+from typing import Callable, Optional, Tuple
+
 import torch
 import torch.nn as nn
-from enum import Enum
-from typing import Tuple, Callable, Optional
-
 
 __all__ = ['FeatureExtractor']
 

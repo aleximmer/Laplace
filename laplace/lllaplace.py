@@ -1,15 +1,14 @@
+from collections.abc import MutableMapping
 from copy import deepcopy
+from typing import Union
+
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import (DiagLaplace, FullLaplace, KronLaplace,
+                                 ParametricLaplace)
 from laplace.utils import FeatureExtractor, Kron
-
-from collections.abc import MutableMapping
-from typing import Union
-
 from laplace.utils.feature_extractor import FeatureReduction
-
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -61,6 +60,14 @@ class LLLaplace(ParametricLaplace):
         But the last layer maps `(batch_size, embd_dim)` to `(batch_size, n_classes)`.
         Note: Make sure that this option faithfully reflects the reduction in the model
         definition.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     last_layer_name: str, default=None
@@ -80,6 +87,8 @@ class LLLaplace(ParametricLaplace):
         temperature=1.0,
         enable_backprop=False,
         feature_reduction=None,
+        dict_key_x='inputs_id',
+        dict_key_y='labels',
         backend=None,
         last_layer_name=None,
         backend_kwargs=None,
@@ -96,6 +105,8 @@ class LLLaplace(ParametricLaplace):
             prior_mean=0.0,
             temperature=temperature,
             enable_backprop=enable_backprop,
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
             backend=backend,
             backend_kwargs=backend_kwargs,
         )
@@ -177,25 +188,50 @@ class LLLaplace(ParametricLaplace):
 
     def _nn_predictive_samples(self, X, n_samples=100, generator=None, **model_kwargs):
         fs = list()
+
+        feats = None
         for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            f = self.model(X.to(self._device), **model_kwargs)
+
+            if feats is None:
+                # Cache features at the first iteration
+                f, feats = self.model.forward_with_features(
+                    X.to(self._device), **model_kwargs
+                )
+            else:
+                # Used the cached features for the rest iterations
+                f = self.model.last_layer(feats)
+
             fs.append(f.detach() if not self.enable_backprop else f)
+
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
+
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
+
         return fs
 
     def _nn_predictive_classification(
         self, X, n_samples=100, generator=None, **model_kwargs
     ):
         py = 0
+
+        feats = None
         for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            # TODO: Implement with a single forward pass until last layer.
-            logits = self.model(X.to(self._device), **model_kwargs).detach()
-            py += torch.softmax(logits, dim=-1) / n_samples
+
+            if feats is None:
+                # Cache features at the first iteration
+                logits, feats = self.model.forward_with_features(
+                    X.to(self._device), **model_kwargs
+                )
+            else:
+                # Used the cached features for the rest iterations
+                logits = self.model.last_layer(feats)
+
+            py += torch.softmax(logits.detach(), dim=-1) / n_samples
+
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         return py
 
@@ -288,6 +324,8 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         temperature=1.0,
         enable_backprop=False,
         feature_reduction=None,
+        dict_key_x='inputs_id',
+        dict_key_y='labels',
         backend=None,
         last_layer_name=None,
         damping=False,
@@ -303,6 +341,8 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             temperature,
             enable_backprop,
             feature_reduction,
+            dict_key_x,
+            dict_key_y,
             backend,
             last_layer_name,
             backend_kwargs,

@@ -20,6 +20,14 @@ class CurvatureInterface:
     subnetwork_indices : torch.Tensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
 
     Attributes
     ----------
@@ -29,18 +37,30 @@ class CurvatureInterface:
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
 
-    def __init__(self, model, likelihood, last_layer=False, subnetwork_indices=None):
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        subnetwork_indices=None,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
+    ):
         assert likelihood in ['regression', 'classification']
         self.likelihood = likelihood
         self.model = model
         self.last_layer = last_layer
         self.subnetwork_indices = subnetwork_indices
+        self.dict_key_x = dict_key_x
+        self.dict_key_y = dict_key_y
+
         if likelihood == 'regression':
             self.lossfunc = MSELoss(reduction='sum')
             self.factor = 0.5
         else:
             self.lossfunc = CrossEntropyLoss(reduction='sum')
             self.factor = 1.0
+
         self.params = [p for p in self._model.parameters() if p.requires_grad]
         self.params_dict = {
             k: v for k, v in self._model.named_parameters() if v.requires_grad
@@ -65,7 +85,7 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `(batch, outputs, parameters)`
         f : torch.Tensor
             output function `(batch, outputs)`
         """
@@ -103,7 +123,7 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `(batch, outputs, parameters)`
         f : torch.Tensor
             output function `(batch, outputs)`
         """
@@ -142,7 +162,7 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, last-layer-parameters, outputs)`
+            Jacobians `(batch, outputs, last-layer-parameters)`
         f : torch.Tensor
             output function `(batch, outputs)`
         """
@@ -281,9 +301,17 @@ class GGNInterface(CurvatureInterface):
     subnetwork_indices : torch.Tensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
     stochastic : bool, default=False
         Fisher if stochastic else GGN
-    num_samples: int, default=100
+    num_samples: int, default=1
         Number of samples used to approximate the stochastic Fisher
     """
 
@@ -293,12 +321,16 @@ class GGNInterface(CurvatureInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
+        dict_key_x='input_ids',
+        dict_key_y='labels',
         stochastic=False,
         num_samples=1,
     ):
         self.stochastic = stochastic
         self.num_samples = num_samples
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
 
     def _get_mc_functional_fisher(self, f):
         """Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
@@ -398,6 +430,14 @@ class EFInterface(CurvatureInterface):
     subnetwork_indices : torch.Tensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
 
     Attributes
     ----------

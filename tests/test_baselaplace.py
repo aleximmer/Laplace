@@ -10,7 +10,7 @@ from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torch.distributions import Normal, Categorical
-from laplace.curvature.asdfghjkl import AsdfghjklGGN, AsdfghjklEF
+from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from torchvision.models import wide_resnet50_2
 
@@ -51,7 +51,7 @@ def custom_model():
 
         def forward(self, data: MutableMapping | torch.Tensor):
             if isinstance(data, MutableMapping):
-                x = data['input_ids'].to(next(self.parameters()).device)
+                x = data['test_input_key'].to(next(self.parameters()).device)
             else:
                 x = data
 
@@ -107,10 +107,25 @@ def reg_loader():
 
 
 @pytest.fixture
-def custom_loader():
+def custom_loader_clf():
     data = []
     for _ in range(10):
-        datum = {'input_ids': torch.randn(5), 'labels': torch.randint(2, (1,))}
+        datum = {
+            'test_input_key': torch.randn(5),
+            'test_label_key': torch.randint(2, (1,)),
+        }
+        data.append(datum)
+    return DataLoader(ListDataset(data), batch_size=3, collate_fn=dict_data_collator)
+
+
+@pytest.fixture
+def custom_loader_reg():
+    data = []
+    for _ in range(10):
+        datum = {
+            'test_input_key': torch.randn(5),
+            'test_label_key': torch.randn(2),
+        }
         data.append(datum)
     return DataLoader(ListDataset(data), batch_size=3, collate_fn=dict_data_collator)
 
@@ -574,33 +589,74 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
 
 
 @pytest.mark.parametrize('laplace', [KronLaplace, DiagLaplace])
-@pytest.mark.parametrize('backend', [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
-def test_dict_data(laplace, backend, custom_model, custom_loader):
-    if laplace == DiagLaplace and backend == CurvlinopsEF:
-        pytest.skip(
-            'DiagEF is unsupported with Curvlinops when the input is non-tensor.'
-        )
+@pytest.mark.parametrize(
+    'backend', [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN, BackPackGGN, BackPackEF]
+)
+@pytest.mark.parametrize(
+    'lik,custom_loader',
+    [
+        ('classification', 'custom_loader_clf'),
+        ('regression', 'custom_loader_reg'),
+        ('reward_modeling', 'custom_loader_clf'),
+    ],
+)
+def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
+    custom_loader = request.getfixturevalue(custom_loader)
 
-    for data in custom_loader:
-        print(data)
+    if (
+        'backpack' not in backend.__name__.lower()
+        and laplace != DiagLaplace
+        and laplace != CurvlinopsEF
+    ):
+        with pytest.raises(KeyError):
+            # Raises an error since custom_loader's input is under the key 'test_input_key'
+            # but the default is 'input_ids'
+            lap = laplace(custom_model, lik, backend=backend)
+            lap.fit(custom_loader)
 
-    lap = laplace(custom_model, 'classification', backend=backend)
+    lap = laplace(
+        custom_model,
+        lik,
+        backend=backend,
+        dict_key_x='test_input_key',
+        dict_key_y='test_label_key',
+    )
+
+    if ('backpack' in backend.__name__.lower()) or (
+        laplace == DiagLaplace and backend == CurvlinopsEF
+    ):
+        # Unsupported, thus raises an exception
+        with pytest.raises(ValueError):
+            lap.fit(custom_loader)
+
+        return
+
     lap.fit(custom_loader)
 
     test_data = next(iter(custom_loader))
     f = custom_model(test_data)
 
-    # GLM predictive
-    f_pred = lap(test_data, pred_type='glm')
-    assert f_pred.shape == f.shape
-    assert torch.allclose(
-        f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
-    )  # sum up to 1
+    if lik == 'classification':
+        f_pred = lap(test_data, pred_type='glm')
+        assert f_pred.shape == f.shape
+        assert torch.allclose(
+            f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+        )  # sum up to 1
 
-    # NN predictive
-    f_pred = lap(test_data, pred_type='nn', link_approx='mc')
-    assert f_pred.shape == f.shape
-    assert torch.allclose(f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double))
+        f_pred = lap(test_data, pred_type='nn', link_approx='mc')
+        assert f_pred.shape == f.shape
+        assert torch.allclose(
+            f_pred.sum(), torch.tensor(len(f_pred), dtype=torch.double)
+        )
+    else:
+        f_pred, f_var = lap(test_data, pred_type='glm')
+        assert f_pred.shape == f.shape
+        assert torch.allclose(f_pred, f)
+        assert f_var.shape == (f_pred.shape[0], f_pred.shape[1], f_pred.shape[1])
+
+        f_pred, f_var = lap(test_data, pred_type='nn', link_approx='mc')
+        assert f_pred.shape == f.shape
+        assert f_var.shape == (f_pred.shape[0], f_pred.shape[1])
 
 
 @pytest.mark.parametrize('laplace', [FullLaplace, KronLaplace, DiagLaplace])
@@ -689,11 +745,3 @@ def test_backprop_nn(laplace, model, reg_loader, backend):
         assert grad_X_var.shape == X.shape
     except ValueError:
         assert False
-
-
-@pytest.mark.parametrize('likelihood', ['classification', 'regression'])
-def test_dict_data_diagEF_curvlinops_fails(custom_model, custom_loader, likelihood):
-    lap = DiagLaplace(custom_model, likelihood=likelihood, backend=CurvlinopsEF)
-
-    with pytest.raises(ValueError):
-        lap.fit(custom_loader)
