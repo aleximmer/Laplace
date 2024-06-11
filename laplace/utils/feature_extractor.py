@@ -101,7 +101,7 @@ class FeatureExtractor(nn.Module):
         out = self.forward(x)
         features = self._features[self._last_layer_name]
 
-        if len(features.shape) > 2 and self.feature_reduction is not None:
+        if features.dim() > 2 and self.feature_reduction is not None:
             n_intermediate_dims = len(features.shape) - 2
 
             if self.feature_reduction == FeatureReduction.PICK_FIRST:
