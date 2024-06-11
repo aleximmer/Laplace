@@ -546,7 +546,7 @@ class ParametricLaplace(BaseLaplace):
         raise NotImplementedError
 
     def _check_H_init(self):
-        if self.H is None:
+        if getattr(self, 'H', None) is None:
             raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def fit(self, train_loader, override=True, progress_bar=False):
@@ -1296,6 +1296,10 @@ class KronLaplace(ParametricLaplace):
 
     def _init_H(self):
         self.H = Kron.init_from_model(self.params, self._device)
+
+    def _check_H_init(self):
+        if getattr(self, 'H_facs', None) is None:
+            raise AttributeError('Laplace not fitted. Run fit() first.')
 
     def _curv_closure(self, X, y, N):
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
