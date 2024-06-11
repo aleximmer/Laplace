@@ -1,13 +1,13 @@
+from collections.abc import MutableMapping
 from copy import deepcopy
+from typing import Union
+
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import (DiagLaplace, FullLaplace, KronLaplace,
+                                 ParametricLaplace)
 from laplace.utils import FeatureExtractor, Kron
-
-from collections.abc import MutableMapping
-from typing import Union
-
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -178,25 +178,50 @@ class LLLaplace(ParametricLaplace):
 
     def _nn_predictive_samples(self, X, n_samples=100, generator=None, **model_kwargs):
         fs = list()
+
+        feats = None
         for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            f = self.model(X.to(self._device), **model_kwargs)
+
+            if feats is None:
+                # Cache features at the first iteration
+                f, feats = self.model.forward_with_features(
+                    X.to(self._device), **model_kwargs
+                )
+            else:
+                # Used the cached features for the rest iterations
+                f = self.model.last_layer(feats)
+
             fs.append(f.detach() if not self.enable_backprop else f)
+
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
+
         if self.likelihood == 'classification':
             fs = torch.softmax(fs, dim=-1)
+
         return fs
 
     def _nn_predictive_classification(
         self, X, n_samples=100, generator=None, **model_kwargs
     ):
         py = 0
+
+        feats = None
         for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
-            # TODO: Implement with a single forward pass until last layer.
-            logits = self.model(X.to(self._device), **model_kwargs).detach()
-            py += torch.softmax(logits, dim=-1) / n_samples
+
+            if feats is None:
+                # Cache features at the first iteration
+                logits, feats = self.model.forward_with_features(
+                    X.to(self._device), **model_kwargs
+                )
+            else:
+                # Used the cached features for the rest iterations
+                logits = self.model.last_layer(feats)
+
+            py += torch.softmax(logits.detach(), dim=-1) / n_samples
+
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         return py
 
