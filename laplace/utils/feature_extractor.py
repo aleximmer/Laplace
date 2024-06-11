@@ -7,10 +7,10 @@ import torch.nn as nn
 __all__ = ['FeatureExtractor']
 
 
-class FeatureReduction(Enum):
-    PICK_FIRST = 1
-    PICK_LAST = 2
-    AVERAGE = 3
+class FeatureReduction(str, Enum):
+    PICK_FIRST = 'pick_first'
+    PICK_LAST = 'pick_last'
+    AVERAGE = 'average'
 
 
 class FeatureExtractor(nn.Module):
@@ -33,13 +33,14 @@ class FeatureExtractor(nn.Module):
     enable_backprop: bool, default=False
         whether to enable backprop through the feature extactor to get the gradients of
         the inputs. Useful for e.g. Bayesian optimization.
-    feature_reduction: FeatureReduction, default=None
+    feature_reduction: FeatureReduction or str, default=None
         when the last-layer `features` is a tensor of dim >= 3, this tells how to reduce
         it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
         the penultultimate output is a tensor of shape `(batch_size, seq_len, embd_dim)`.
         But the last layer maps `(batch_size, embd_dim)` to `(batch_size, n_classes)`.
         Note: Make sure that this option faithfully reflects the reduction in the model
-        definition.
+        definition. When inputting a string, available options are
+        `{'pick_first', 'pick_last', 'average'}`.
     """
 
     def __init__(
@@ -49,6 +50,14 @@ class FeatureExtractor(nn.Module):
         enable_backprop: bool = False,
         feature_reduction: Optional[FeatureReduction] = None,
     ) -> None:
+        if feature_reduction is not None and feature_reduction not in [
+            fr.value for fr in FeatureReduction
+        ]:
+            raise ValueError(
+                '`feature_reduction` must take value in the `FeatureReduction enum` or '
+                "one of `{'pick_first', 'pick_last', 'average'}`!"
+            )
+
         super().__init__()
         self.model = model
         self._features = dict()
