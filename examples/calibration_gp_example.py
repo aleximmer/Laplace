@@ -3,7 +3,7 @@ import warnings
 import numpy as np
 import torch
 import torch.distributions as dists
-from helper.util_gp import CIFAR10Net, get_dataset
+from helper.util_gp import CIFAR10Net, download_pretrained_model, get_dataset
 from netcal.metrics import ECE
 from torch.utils.data import DataLoader
 
@@ -28,7 +28,8 @@ targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 
 MODEL_NAME = 'FMNIST_CNN_10_2.2e+02.pt'
 model = CIFAR10Net(ds_train.channels, ds_train.K, use_tanh=True).to('cuda')
-state = torch.load(f'helper/models/{MODEL_NAME}')
+download_pretrained_model()
+state = torch.load(f'./temp/{MODEL_NAME}')
 model.load_state_dict(state['model'])
 model = model.cuda()
 prior_precision = state['delta']

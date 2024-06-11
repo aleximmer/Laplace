@@ -1,10 +1,10 @@
 import os
+import urllib
 
 import torch
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
-from deepobs.pytorch.testproblems.testproblems_utils import (tfconv2d,
-                                                             tfmaxpool2d)
+from deepobs.pytorch.testproblems.testproblems_utils import tfconv2d, tfmaxpool2d
 from torch import nn
 from torchvision.datasets import VisionDataset
 
@@ -13,6 +13,18 @@ ROOT = '/'.join(PACKAGE_DIR.split('/')[:-1])
 DATA_DIR = ROOT + '/data'
 
 MNIST_transform = transforms.ToTensor()
+
+
+def download_pretrained_model():
+    # Download pre-trained model if necessary
+    if not os.path.isfile('FMNIST_CNN_10_2.2e+02.pt'):
+        if not os.path.exists('./temp'):
+            os.makedirs('./temp')
+
+        urllib.request.urlretrieve(
+            'https://drive.usercontent.google.com/download?id=1jPDKrykvU2viKisXT-8Q7ANMOPoTnPyO&export=download',
+            './temp/FMNIST_CNN_10_2.2e+02.pt',
+        )
 
 
 class QuickDS(VisionDataset):
