@@ -1,18 +1,26 @@
 import logging
+from collections.abc import MutableMapping
 from typing import Union
+
 import numpy as np
 import torch
 import torch.nn.functional as F
-from torch.nn.utils import parameters_to_vector
-from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
+from torch.nn.utils import parameters_to_vector
 from torchmetrics import Metric
-from collections import UserDict
-import math
 
-
-__all__ = ['get_nll', 'validate', 'parameters_per_layer', 'invsqrt_precision', 'kron',
-           'diagonal_add_scalar', 'symeig', 'block_diag', 'expand_prior_precision']
+__all__ = [
+    'get_nll',
+    'validate',
+    'parameters_per_layer',
+    'invsqrt_precision',
+    'kron',
+    'diagonal_add_scalar',
+    'symeig',
+    'block_diag',
+    'expand_prior_precision',
+]
 
 
 def get_nll(out_dist, targets):
@@ -20,7 +28,16 @@ def get_nll(out_dist, targets):
 
 
 @torch.no_grad()
-def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False) -> float:
+def validate(
+    laplace,
+    val_loader,
+    loss,
+    pred_type='glm',
+    link_approx='probit',
+    n_samples=100,
+    loss_with_var=False,
+    dict_key_y='labels',
+) -> float:
     laplace.model.eval()
     assert callable(loss) or isinstance(loss, Metric)
     is_offline = not isinstance(loss, Metric)
@@ -30,17 +47,15 @@ def validate(laplace, val_loader, loss, pred_type='glm', link_approx='probit', n
         targets = list()
 
     for data in val_loader:
-        # If x is UserDict, then it is a from Huggingface dataset
-        if isinstance(data, UserDict) or isinstance(data, dict):
-            X, y = data, data['labels']
+        if isinstance(data, MutableMapping):
+            X, y = data, data[dict_key_y]
         else:
             X, y = data
             X = X.to(laplace._device)
         y = y.to(laplace._device)
         out = laplace(
-            X, pred_type=pred_type,
-            link_approx=link_approx,
-            n_samples=n_samples)
+            X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples
+        )
 
         if type(out) == tuple:
             if is_offline:
@@ -97,9 +112,7 @@ def invsqrt_precision(M):
 
 
 def _is_batchnorm(module):
-    if isinstance(module, BatchNorm1d) or \
-        isinstance(module, BatchNorm2d) or \
-            isinstance(module, BatchNorm3d):
+    if isinstance(module, (BatchNorm1d, BatchNorm2d, BatchNorm3d)):
         return True
     return False
 
@@ -134,9 +147,9 @@ def kron(t1, t2):
     tiled_t2 = t2.repeat(t1_height, t1_width)
     expanded_t1 = (
         t1.unsqueeze(2)
-          .unsqueeze(3)
-          .repeat(1, t2_height, t2_width, 1)
-          .view(out_height, out_width)
+        .unsqueeze(3)
+        .repeat(1, t2_height, t2_width, 1)
+        .view(out_height, out_width)
     )
 
     return expanded_t1 * tiled_t2
@@ -185,7 +198,7 @@ def symeig(M):
         M = M + torch.eye(M.shape[0], device=M.device)
         try:
             L, W = torch.linalg.eigh(M, UPLO='U')
-            L -= 1.
+            L -= 1.0
         except RuntimeError:
             stats = f'diag: {M.diagonal()}, max: {M.abs().max()}, '
             stats = stats + f'min: {M.abs().min()}, mean: {M.abs().mean()}'
@@ -214,7 +227,7 @@ def block_diag(blocks):
     p_cur = 0
     for block in blocks:
         p_block = block.shape[0]
-        M[p_cur:p_cur+p_block, p_cur:p_cur+p_block] = block
+        M[p_cur : p_cur + p_block, p_cur : p_cur + p_block] = block
         p_cur += p_block
     return M
 
@@ -243,11 +256,17 @@ def expand_prior_precision(prior_prec, model):
     elif len(prior_prec) == P:  # full diagonal
         return prior_prec.to(device)
     else:
-        return torch.cat([delta * torch.ones_like(m).flatten() for delta, m
-                          in zip(prior_prec, trainable_params)])
+        return torch.cat(
+            [
+                delta * torch.ones_like(m).flatten()
+                for delta, m in zip(prior_prec, trainable_params)
+            ]
+        )
 
 
-def fix_prior_prec_structure(prior_prec_init, prior_structure, n_layers, n_params, device):
+def fix_prior_prec_structure(
+    prior_prec_init, prior_structure, n_layers, n_params, device
+):
     if prior_structure == 'scalar':
         prior_prec_init = torch.full((1,), prior_prec_init, device=device)
     elif prior_structure == 'layerwise':
@@ -275,8 +294,12 @@ def normal_samples(mean, var, n_samples, generator=None):
     """
     assert mean.ndim == 2, 'Invalid input shape of mean, should be 2-dimensional.'
     _, output_dim = mean.shape
-    randn_samples = torch.randn((output_dim, n_samples), device=mean.device,
-                                dtype=mean.dtype, generator=generator)
+    randn_samples = torch.randn(
+        (output_dim, n_samples),
+        device=mean.device,
+        dtype=mean.dtype,
+        generator=generator,
+    )
 
     if mean.shape == var.shape:
         # diagonal covariance
@@ -285,7 +308,9 @@ def normal_samples(mean, var, n_samples, generator=None):
     elif mean.shape == var.shape[:2] and var.shape[-1] == mean.shape[1]:
         # full covariance
         scale = torch.linalg.cholesky(var)
-        scaled_samples = torch.matmul(scale, randn_samples.unsqueeze(0))  # expand batch dim
+        scaled_samples = torch.matmul(
+            scale, randn_samples.unsqueeze(0)
+        )  # expand batch dim
         return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
     else:
         raise ValueError('Invalid input shapes.')
