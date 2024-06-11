@@ -24,9 +24,13 @@ class FeatureExtractor(nn.Module):
         if the name of the last layer is already known, otherwise it will
         be determined automatically.
     """
+
     def __init__(
-        self, model: nn.Module, last_layer_name: Optional[str] = None, 
-        enable_backprop: bool = False) -> None:
+        self,
+        model: nn.Module,
+        last_layer_name: Optional[str] = None,
+        enable_backprop: bool = False,
+    ) -> None:
         super().__init__()
         self.model = model
         self._features = dict()
@@ -54,7 +58,9 @@ class FeatureExtractor(nn.Module):
             out = self.model(x)
         return out
 
-    def forward_with_features(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward_with_features(
+        self, x: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Forward pass which returns the output of the penultimate layer along
         with the output of the last layer. If the last layer is not known yet,
         it will be determined when this function is called for the first time.
@@ -90,9 +96,10 @@ class FeatureExtractor(nn.Module):
         def hook(_, input, __):
             # only accepts one input (expects linear layer)
             self._features[name] = input[0]
-            
+
             if not self.enable_backprop:
                 self._features[name] = self._features[name].detach()
+
         return hook
 
     def find_last_layer(self, x: torch.Tensor) -> torch.Tensor:
@@ -112,6 +119,7 @@ class FeatureExtractor(nn.Module):
             raise ValueError('Last layer is already known.')
 
         act_out = dict()
+
         def get_act_hook(name):
             def act_hook(_, input, __):
                 # only accepts one input (expects linear layer)
@@ -121,6 +129,7 @@ class FeatureExtractor(nn.Module):
                     act_out[name] = None
                 # remove hook
                 handles[name].remove()
+
             return act_hook
 
         # set hooks for all modules
