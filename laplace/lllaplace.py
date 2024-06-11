@@ -1,13 +1,13 @@
+from collections.abc import MutableMapping
 from copy import deepcopy
+from typing import Union
+
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import (DiagLaplace, FullLaplace, KronLaplace,
+                                 ParametricLaplace)
 from laplace.utils import FeatureExtractor, Kron
-
-from collections.abc import MutableMapping
-from typing import Union
-
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -167,10 +167,11 @@ class LLLaplace(ParametricLaplace):
     def _nn_predictive_samples(self, X, n_samples=100, generator=None, **model_kwargs):
         fs = list()
 
-        for i, sample in enumerate(self.sample(n_samples, generator)):
+        feats = None
+        for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
 
-            if i == 0:
+            if feats is None:
                 # Cache features at the first iteration
                 f, feats = self.model.forward_with_features(
                     X.to(self._device), **model_kwargs
@@ -194,10 +195,11 @@ class LLLaplace(ParametricLaplace):
     ):
         py = 0
 
-        for i, sample in enumerate(self.sample(n_samples, generator)):
+        feats = None
+        for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.model.last_layer.parameters())
 
-            if i == 0:
+            if feats is None:
                 # Cache features at the first iteration
                 logits, feats = self.model.forward_with_features(
                     X.to(self._device), **model_kwargs
