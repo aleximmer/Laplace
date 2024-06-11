@@ -8,6 +8,7 @@ from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from laplace.baselaplace import (DiagLaplace, FullLaplace, KronLaplace,
                                  ParametricLaplace)
 from laplace.utils import FeatureExtractor, Kron
+from laplace.utils.feature_extractor import FeatureReduction
 
 __all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
 
@@ -52,6 +53,15 @@ class LLLaplace(ParametricLaplace):
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    feature_reduction: FeatureReduction or str, optional, default=None
+        when the last-layer `features` is a tensor of dim >= 3, this tells how to reduce
+        it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+        the penultultimate output is a tensor of shape `(batch_size, seq_len, embd_dim)`.
+        But the last layer maps `(batch_size, embd_dim)` to `(batch_size, n_classes)`.
+        Note: Make sure that this option faithfully reflects the reduction in the model
+        definition. When inputting a string, available options are
+        `{'pick_first', 'pick_last', 'average'}`.
+
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
@@ -78,6 +88,7 @@ class LLLaplace(ParametricLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        feature_reduction=None,
         dict_key_x='inputs_id',
         dict_key_y='labels',
         backend=None,
@@ -87,6 +98,7 @@ class LLLaplace(ParametricLaplace):
     ):
         if asdl_fisher_kwargs is not None:
             raise ValueError('Last-layer Laplace does not support asdl_fisher_kwargs.')
+
         self.H = None
         super().__init__(
             model,
@@ -105,6 +117,7 @@ class LLLaplace(ParametricLaplace):
             deepcopy(model),
             last_layer_name=last_layer_name,
             enable_backprop=enable_backprop,
+            feature_reduction=feature_reduction,
         )
         if self.model.last_layer is None:
             self.mean = None
@@ -313,6 +326,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         prior_mean=0.0,
         temperature=1.0,
         enable_backprop=False,
+        feature_reduction=None,
         dict_key_x='inputs_id',
         dict_key_y='labels',
         backend=None,
@@ -329,6 +343,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            feature_reduction,
             dict_key_x,
             dict_key_y,
             backend,

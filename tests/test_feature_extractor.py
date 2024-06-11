@@ -4,6 +4,10 @@ import torchvision.models as models
 
 from laplace.utils import FeatureExtractor
 
+import pytest
+
+from laplace.utils.feature_extractor import FeatureReduction
+
 
 class CNN(nn.Module):
     def __init__(self, num_classes):
@@ -11,42 +15,31 @@ class CNN(nn.Module):
         self.conv1 = nn.Sequential(
             # Input shape (3, 64, 64)
             nn.Conv2d(
-                in_channels=3,
-                out_channels=6,
-                kernel_size=5,
-                stride=1,
-                padding=2
+                in_channels=3, out_channels=6, kernel_size=5, stride=1, padding=2
             ),
             # Output shape (6, 60, 60)
             nn.ReLU(),
             # Output shape (6, 30, 30)
-            nn.MaxPool2d(kernel_size=2)
+            nn.MaxPool2d(kernel_size=2),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(in_features=16 * 16 * 16,
-                      out_features=300),
+            nn.Linear(in_features=16 * 16 * 16, out_features=300),
             nn.ReLU(),
-            nn.Linear(in_features=300,
-                      out_features=84),
+            nn.Linear(in_features=300, out_features=84),
             nn.ReLU(),
-            nn.Linear(in_features=84,
-                      out_features=num_classes)
+            nn.Linear(in_features=84, out_features=num_classes),
         )
 
         self.conv2 = nn.Sequential(
             # Input shape (6, 30, 30)
             nn.Conv2d(
-                in_channels=6,
-                out_channels=16,
-                kernel_size=5,
-                stride=1,
-                padding=2
+                in_channels=6, out_channels=16, kernel_size=5, stride=1, padding=2
             ),
             # Output shape (16, 26, 26)
             nn.ReLU(),
             # Output shape (16, 13, 13)
-            nn.MaxPool2d(kernel_size=2)
+            nn.MaxPool2d(kernel_size=2),
         )
 
     def forward(self, x):
@@ -94,9 +87,9 @@ def get_model(model_name):
             nn.Conv2d(3, 6, 3, 1, 1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(6*64*64, 10),
+            nn.Linear(6 * 64 * 64, 10),
             nn.ReLU(),
-            nn.Linear(10, 10)
+            nn.Linear(10, 10),
         )
     else:
         raise ValueError(f'{model_name} is not supported.')
@@ -107,10 +100,23 @@ def get_model(model_name):
 def test_feature_extractor():
     # all torchvision classifcation models but 'squeezenet' (no linear last layer)
     # + model where modules are initilaized in wrong order + nn.Sequential model
-    model_names = ['resnet18', 'alexnet', 'vgg16', 'densenet', 'inception',
-                   'googlenet', 'shufflenet', 'mobilenet_v2', 'mobilenet_v3_large',
-                   'mobilenet_v3_small', 'resnext50_32x4d', 'wide_resnet50_2',
-                   'mnasnet', 'switchedCNN', 'sequential']
+    model_names = [
+        'resnet18',
+        'alexnet',
+        'vgg16',
+        'densenet',
+        'inception',
+        'googlenet',
+        'shufflenet',
+        'mobilenet_v2',
+        'mobilenet_v3_large',
+        'mobilenet_v3_small',
+        'resnext50_32x4d',
+        'wide_resnet50_2',
+        'mnasnet',
+        'switchedCNN',
+        'sequential',
+    ]
 
     # to test the last_layer_name argument
     # last_layer_names = ['fc', 'classifier.6', 'classifier.6', 'classifier', 'fc',
@@ -135,3 +141,32 @@ def test_feature_extractor():
         last_layer = feature_extractor.last_layer
         out2 = last_layer(features)
         assert (out == out2).all().item()
+
+
+@torch.no_grad()
+@pytest.mark.parametrize('reduction', [r.value for r in FeatureReduction] + [None])
+@pytest.mark.parametrize('additional_dims', [tuple(), (7,), (7, 8, 9)])
+def test_multidim_features(reduction, additional_dims):
+    BATCH_SIZE = 6
+    IN_DIM = 5
+    HIDDEN_DIM = 10
+    OUT_DIM = 2
+    EXPECTED_FEATS_SHAPE = (BATCH_SIZE, HIDDEN_DIM)
+
+    model = nn.Sequential(
+        nn.Linear(IN_DIM, HIDDEN_DIM),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_DIM, OUT_DIM),
+    ).eval()
+
+    X = torch.randn(BATCH_SIZE, *(additional_dims), IN_DIM)
+    out = model(X)
+    assert out.shape == (BATCH_SIZE, *(additional_dims), OUT_DIM)
+
+    feature_extractor = FeatureExtractor(model, feature_reduction=reduction)
+    out, feats = feature_extractor.forward_with_features(X)
+
+    if reduction is None:
+        assert feats.shape == (BATCH_SIZE, *(additional_dims), HIDDEN_DIM)
+    else:
+        assert feats.shape == EXPECTED_FEATS_SHAPE
