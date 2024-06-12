@@ -14,25 +14,25 @@ torch.manual_seed(7777)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
-warnings.simplefilter('ignore', UserWarning)
+warnings.simplefilter("ignore", UserWarning)
 
 
 assert torch.cuda.is_available()
 
-DATASET = 'FMNIST'
+DATASET = "FMNIST"
 BATCH_SIZE = 25
-ds_train, ds_test = get_dataset(DATASET, False, 'cuda')
+ds_train, ds_test = get_dataset(DATASET, False, "cuda")
 train_loader = DataLoader(ds_train, batch_size=BATCH_SIZE, shuffle=True)
 test_loader = DataLoader(ds_test, batch_size=BATCH_SIZE, shuffle=False)
 targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 
-MODEL_NAME = 'FMNIST_CNN_10_2.2e+02.pt'
-model = CIFAR10Net(ds_train.channels, ds_train.K, use_tanh=True).to('cuda')
+MODEL_NAME = "FMNIST_CNN_10_2.2e+02.pt"
+model = CIFAR10Net(ds_train.channels, ds_train.K, use_tanh=True).to("cuda")
 download_pretrained_model()
-state = torch.load(f'./temp/{MODEL_NAME}')
-model.load_state_dict(state['model'])
+state = torch.load(f"./temp/{MODEL_NAME}")
+model.load_state_dict(state["model"])
 model = model.cuda()
-prior_precision = state['delta']
+prior_precision = state["delta"]
 
 
 @torch.no_grad()
@@ -53,21 +53,20 @@ acc_map = (probs_map.argmax(-1) == targets).float().mean()
 ece_map = ECE(bins=15).measure(probs_map.numpy(), targets.numpy())
 nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
-print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
+print(f"[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}")
 
 for m in [50, 200, 800, 1600]:
-    print(f'Fitting Laplace-GP for m={m}')
+    print(f"Fitting Laplace-GP for m={m}")
     la = Laplace(
         model,
-        'classification',
-        subset_of_weights='all',
-        hessian_structure='gp',
+        "classification",
+        subset_of_weights="all",
+        hessian_structure="gp",
         diagonal_kernel=True,
-        M=m,
+        num_data=m,
         prior_precision=prior_precision,
     )
     la.fit(train_loader)
-    la.optimize_prior_precision(method='marglik', progress_bar=True)
 
     probs_laplace = predict(test_loader, la, laplace=True)
     acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
@@ -75,5 +74,5 @@ for m in [50, 200, 800, 1600]:
     nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
     print(
-        f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}'
+        f"[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}"
     )

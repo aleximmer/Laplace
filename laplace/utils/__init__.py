@@ -1,4 +1,3 @@
-
 from laplace.utils.feature_extractor import FeatureExtractor
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.metrics import RunningNLLMetric
@@ -14,6 +13,7 @@ from laplace.utils.subnetmask import (
 )
 from laplace.utils.swag import fit_diagonal_swag_var
 from laplace.utils.utils import (
+    SoDSampler,
     _is_batchnorm,
     _is_valid_scalar,
     block_diag,
@@ -27,7 +27,6 @@ from laplace.utils.utils import (
     parameters_per_layer,
     symeig,
     validate,
-    SoDSampler
 )
 
 __all__ = [
@@ -40,7 +39,7 @@ __all__ = [
     "symeig",
     "block_diag",
     "normal_samples",
-    'SoDSampler',
+    "SoDSampler",
     "_is_batchnorm",
     "_is_valid_scalar",
     "expand_prior_precision",

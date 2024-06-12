@@ -7,18 +7,15 @@ import numpy as np
 import torch
 import torchmetrics as tm
 import tqdm
-
 from torch import nn
 from torch.distributions import MultivariateNormal
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
-from torchmetrics import MeanSquaredError
 
 from laplace.curvature import AsdlGGN, BackPackGGN, CurvlinopsGGN
 from laplace.curvature.asdfghjkl import AsdfghjklHessian
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.curvlinops import CurvlinopsEF
-
 from laplace.utils import (
     Kron,
     RunningNLLMetric,
@@ -28,16 +25,22 @@ from laplace.utils import (
     normal_samples,
     validate,
 )
+from laplace.utils.enums import (
+    Likelihood,
+    LinkApprox,
+    PredType,
+    PriorStructure,
+    TuningMethod,
+)
 
 __all__ = [
     "BaseLaplace",
     "ParametricLaplace",
-    'FunctionalLaplace',
+    "FunctionalLaplace",
     "FullLaplace",
     "KronLaplace",
     "DiagLaplace",
     "LowRankLaplace",
-
 ]
 
 
@@ -1660,7 +1663,7 @@ class FunctionalLaplace(BaseLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('all', 'gp')
+    _key = ("all", "gp")
 
     def __init__(
         self,
@@ -1672,6 +1675,8 @@ class FunctionalLaplace(BaseLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
+        dict_key_x="inputs_id",
+        dict_key_y="labels",
         backend: type[CurvatureInterface] | None = BackPackGGN,
         backend_kwargs: dict[str, Any] | None = None,
         diagonal_kernel: bool = False,
@@ -1686,6 +1691,9 @@ class FunctionalLaplace(BaseLaplace):
             prior_precision,
             prior_mean,
             temperature,
+            enable_backprop,
+            dict_key_x,
+            dict_key_y,
             backend,
             backend_kwargs,
         )
@@ -1721,7 +1729,7 @@ class FunctionalLaplace(BaseLaplace):
                 prior_precision.ndim == 0
                 or (prior_precision.ndim == 1 and len(prior_precision) == 1)
             ):
-                raise ValueError('Only isotropic priors supported in FunctionalLaplace')
+                raise ValueError("Only isotropic priors supported in FunctionalLaplace")
 
     def _init_K_MM(self):
         """Allocates memory for the kernel matrix evaluated at the subset of the training
@@ -1771,8 +1779,12 @@ class FunctionalLaplace(BaseLaplace):
                 ] = K_batch[:, :, c]
                 if i != j:
                     self.K_MM[c][
-                        j * self.batch_size : min((j + 1) * self.batch_size, self.num_data),
-                        i * self.batch_size : min((i + 1) * self.batch_size, self.num_data),
+                        j * self.batch_size : min(
+                            (j + 1) * self.batch_size, self.num_data
+                        ),
+                        i * self.batch_size : min(
+                            (i + 1) * self.batch_size, self.num_data
+                        ),
                     ] = torch.transpose(K_batch[:, :, c], 0, 1)
         else:
             bC = self.batch_size * self.n_outputs
@@ -1845,11 +1857,15 @@ class FunctionalLaplace(BaseLaplace):
         return DataLoader(
             dataset=train_loader.dataset,
             batch_size=train_loader.batch_size,
-            sampler=SoDSampler(N=len(train_loader.dataset), M=self.num_data, seed=self.seed),
+            sampler=SoDSampler(
+                N=len(train_loader.dataset), M=self.num_data, seed=self.seed
+            ),
             shuffle=False,
         )
 
-    def fit(self, train_loader: DataLoader, progress_bar: bool = False):
+    def fit(
+        self, train_loader: DataLoader | MutableMapping, progress_bar: bool = False
+    ):
         """Fit the Laplace approximation of a GP posterior.
 
         Parameters
@@ -1863,20 +1879,36 @@ class FunctionalLaplace(BaseLaplace):
         # Set model to evaluation mode
         self.model.eval()
 
-        X, _ = next(iter(train_loader))
+        data = next(iter(train_loader))
         with torch.no_grad():
-            self.n_outputs = self.model(X[:1].to(self._device)).shape[-1]
-        setattr(self.model, 'output_size', self.n_outputs)
+            if isinstance(data, MutableMapping):  # To support Huggingface dataset
+                if "backpack" in self._backend_cls.__name__.lower():
+                    raise ValueError(
+                        "Currently BackPACK backend is not supported "
+                        + "for custom models with non-tensor inputs "
+                        + "(https://github.com/pytorch/functorch/issues/159). Consider "
+                        + "using AsdlGGN backend instead."
+                    )
+
+                out = self.model(data)
+            else:
+                X = data[0]
+                try:
+                    out = self.model(X[:1].to(self._device))
+                except (TypeError, AttributeError):
+                    out = self.model(X.to(self._device))
+        self.n_outputs = out.shape[-1]
+        setattr(self.model, "output_size", self.n_outputs)
         self.batch_size = train_loader.batch_size
 
         if (
-            self.likelihood == 'regression'
+            self.likelihood == "regression"
             and self.n_outputs > 1
             and self.diagonal_kernel
         ):
             warnings.warn(
-                'Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended '
-                'in the case of multivariate regression. Predictive variance will likely be overestimated.'
+                "Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended "
+                "in the case of multivariate regression. Predictive variance will likely be overestimated."
             )
 
         N = len(train_loader.dataset)
@@ -1884,7 +1916,7 @@ class FunctionalLaplace(BaseLaplace):
 
         assert (
             self.num_data <= N
-        ), '`num_data` must be less than or equal to the original number of data points.'
+        ), "`num_data` must be less than or equal to the original number of data points."
 
         train_loader = self._get_SoD_data_loader(train_loader)
         self.train_loader = train_loader
@@ -1896,24 +1928,30 @@ class FunctionalLaplace(BaseLaplace):
         f, lambdas, mu = [], [], []
 
         if progress_bar:
-            loader = enumerate(tqdm.tqdm(train_loader, desc='Fitting'))
+            loader = enumerate(tqdm.tqdm(train_loader, desc="Fitting"))
         else:
             loader = enumerate(train_loader)
 
-        for i, (X, y) in loader:
-            X, y = X.to(self._device), y.to(self._device)
+        for i, data in loader:
+            if isinstance(data, MutableMapping):  # To support Huggingface dataset
+                X, y = data, data[self.dict_key_y].to(self._device)
+            else:
+                X, y = data
+                X, y = X.to(self._device), y.to(self._device)
 
-            Js_batch, f_batch = self._jacobians(X)
-            loss_batch = self.backend.factor * self.backend.lossfunc(f_batch, y)
+            Js_batch, f_batch = self._jacobians(X, enable_backprop=False)
 
-            if self.likelihood == 'regression':
+            with torch.no_grad():
+                loss_batch = self.backend.factor * self.backend.lossfunc(f_batch, y)
+
+            if self.likelihood == "regression":
                 b, C = f_batch.shape
                 lambdas_batch = torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
             else:
                 # second derivative of log lik is diag(p) - pp^T
                 ps = torch.softmax(f_batch, dim=-1)
                 lambdas_batch = torch.diag_embed(ps) - torch.einsum(
-                    'mk,mc->mck', ps, ps
+                    "mk,mc->mck", ps, ps
                 )
 
             self.loss += loss_batch
@@ -1951,7 +1989,7 @@ class FunctionalLaplace(BaseLaplace):
 
     def __call__(
         self,
-        x: torch.Tensor,
+        x: torch.Tensor | MutableMapping,
         pred_type: PredType | str = PredType.GP,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
@@ -2006,29 +2044,29 @@ class FunctionalLaplace(BaseLaplace):
 
         if self._fitted is False:
             raise RuntimeError(
-                'Functional Laplace has not been fitted to any '
-                + 'training dataset. Please call .fit method.'
+                "Functional Laplace has not been fitted to any "
+                + "training dataset. Please call .fit method."
             )
 
         if self._recompute_Sigma is True:
             Warning(
-                'The prior precision has been changed since fit. '
-                + 'Re-compututing its value...'
+                "The prior precision has been changed since fit. "
+                + "Re-compututing its value..."
             )
             self._build_Sigma_inv()
 
         if pred_type != PredType.GP:
-            raise ValueError('Only gp supported as prediction types.')
+            raise ValueError("Only gp supported as prediction types.")
 
         if link_approx not in [la for la in LinkApprox]:
-            raise ValueError(f'Unsupported link approximation {link_approx}.')
+            raise ValueError(f"Unsupported link approximation {link_approx}.")
 
         if generator is not None:
             if (
                 not isinstance(generator, torch.Generator)
                 or generator.device != x.device
             ):
-                raise ValueError('Invalid random generator (check type and device).')
+                raise ValueError("Invalid random generator (check type and device).")
 
         # For reward modeling, replace the likelihood to regression and override model state
         if self.reward_modeling and self.likelihood == Likelihood.CLASSIFICATION:
@@ -2053,7 +2091,7 @@ class FunctionalLaplace(BaseLaplace):
         elif link_approx == LinkApprox.PROBIT:
             kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
             return torch.softmax(kappa * f_mu, dim=-1)
-        elif 'bridge' in link_approx:
+        elif "bridge" in link_approx:
             # zero mean correction
             f_mu -= (
                 f_var.sum(-1)
@@ -2061,7 +2099,7 @@ class FunctionalLaplace(BaseLaplace):
                 / f_var.sum(dim=(1, 2)).reshape(-1, 1)
             )
             f_var -= torch.einsum(
-                'bi,bj->bij', f_var.sum(-1), f_var.sum(-2)
+                "bi,bj->bij", f_var.sum(-1), f_var.sum(-2)
             ) / f_var.sum(dim=(1, 2)).reshape(-1, 1, 1)
             # Laplace Bridge
             _, K = f_mu.size(0), f_mu.size(-1)
@@ -2099,7 +2137,7 @@ class FunctionalLaplace(BaseLaplace):
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
         dist = MultivariateNormal(f_mu, f_var)
         samples = dist.sample((n_samples,))
-        if self.likelihood == 'regression':
+        if self.likelihood == "regression":
             return samples
         return torch.softmax(samples, dim=-1)
 
@@ -2218,9 +2256,9 @@ class FunctionalLaplace(BaseLaplace):
                     2,
                 )
                 if joint:
-                    prod = torch.einsum('bm,am->ba', v, v)
+                    prod = torch.einsum("bm,am->ba", v, v)
                 else:
-                    prod = torch.einsum('bm,bm->b', v, v)
+                    prod = torch.einsum("bm,bm->b", v, v)
                 prods.append(prod.unsqueeze(1))
             prods = torch.cat(prods, dim=-1)
             return prods
@@ -2230,9 +2268,9 @@ class FunctionalLaplace(BaseLaplace):
             # Compute K_{*M}L^{-1}
             v = torch.linalg.solve(self.Sigma_inv, K_M_star)
             if joint:
-                return torch.einsum('acm,bcn->abmn', v, v)
+                return torch.einsum("acm,bcn->abmn", v, v)
             else:
-                return torch.einsum('bcm,bcn->bmn', v, v)
+                return torch.einsum("bcm,bcn->bmn", v, v)
 
     @property
     def log_det_ratio(self) -> torch.Tensor:
@@ -2297,7 +2335,7 @@ class FunctionalLaplace(BaseLaplace):
         \\( m := f + J (\\theta - \\theta_{MAP}) \\)
 
         """
-        if self.likelihood == 'regression':
+        if self.likelihood == "regression":
             noise = self.sigma_noise.square()
         else:
             noise = eps
@@ -2334,9 +2372,7 @@ class FunctionalLaplace(BaseLaplace):
         init_prior_prec: float | torch.Tensor = 1.0,
         prior_structure: PriorStructure | str = PriorStructure.SCALAR,
         val_loader: DataLoader | None = None,
-        loss: tm.Metric
-        | Callable[[torch.Tensor], torch.Tensor | float]
-        | None = None,
+        loss: tm.Metric | Callable[[torch.Tensor], torch.Tensor | float] | None = None,
         log_prior_prec_min: float = -4,
         log_prior_prec_max: float = 4,
         grid_size: int = 100,
@@ -2348,8 +2384,8 @@ class FunctionalLaplace(BaseLaplace):
     ) -> None:
         """`optimize_prior_precision_base` from `BaseLaplace` with `pred_type='gp'`"""
         assert pred_type == PredType.GP  # only gp supported
-        assert prior_structure == 'scalar'  # only isotropic gaussian prior supported
-        if method == 'marglik':
+        assert prior_structure == "scalar"  # only isotropic gaussian prior supported
+        if method == "marglik":
             warnings.warn(
                 "Use of method='marglik' in case of FunctionalLaplace is discouraged, rather use method='CV'."
             )
@@ -2397,11 +2433,11 @@ class FunctionalLaplace(BaseLaplace):
             )
             for c in range(self.n_outputs):
                 kernel[:, :, c] = torch.einsum(
-                    'bp,ep->be', jacobians[:, c, :], jacobians_2[:, c, :]
+                    "bp,ep->be", jacobians[:, c, :], jacobians_2[:, c, :]
                 )
         else:
             kernel = torch.einsum(
-                'ap,bp->ab', jacobians.reshape(-1, P), jacobians_2.reshape(-1, P)
+                "ap,bp->ab", jacobians.reshape(-1, P), jacobians_2.reshape(-1, P)
             )
         del jacobians_2
         return kernel
@@ -2423,9 +2459,9 @@ class FunctionalLaplace(BaseLaplace):
         """
         if joint:
             if self.diagonal_kernel:
-                kernel = torch.einsum('acp,bcp->abcc', jacobians, jacobians)
+                kernel = torch.einsum("acp,bcp->abcc", jacobians, jacobians)
             else:
-                kernel = torch.einsum('acp,bep->abce', jacobians, jacobians)
+                kernel = torch.einsum("acp,bep->abce", jacobians, jacobians)
 
         else:
             if self.diagonal_kernel:
@@ -2435,7 +2471,7 @@ class FunctionalLaplace(BaseLaplace):
                 for c in range(self.n_outputs):
                     kernel[:, c] = torch.norm(jacobians[:, c, :], dim=1) ** 2
             else:
-                kernel = torch.einsum('bcp,bep->bce', jacobians, jacobians)
+                kernel = torch.einsum("bcp,bep->bce", jacobians, jacobians)
         return kernel
 
     def _kernel_batch_star(
@@ -2461,18 +2497,20 @@ class FunctionalLaplace(BaseLaplace):
             )
             for c in range(self.n_outputs):
                 kernel[:, :, c] = torch.einsum(
-                    'bp,ep->be', jacobians[:, c, :], jacobians_2[:, c, :]
+                    "bp,ep->be", jacobians[:, c, :], jacobians_2[:, c, :]
                 )
         else:
-            kernel = torch.einsum('bcp,dep->bdce', jacobians, jacobians_2)
+            kernel = torch.einsum("bcp,dep->bdce", jacobians, jacobians_2)
         return kernel
 
-    def _jacobians(self, X: torch.Tensor):
+    def _jacobians(self, X: torch.Tensor, enable_backprop: bool = None) -> tuple:
         """A wrapper function to compute jacobians - this enables reusing same
         kernel methods (kernel_batch etc.) in FunctionalLaplace and FunctionalLLLaplace
         by simply overwriting this method instead of all kernel methods.
         """
-        return self.backend.jacobians(X, enable_backprop=self.enable_backprop)
+        if enable_backprop is None:
+            enable_backprop = self.enable_backprop
+        return self.backend.jacobians(X, enable_backprop=enable_backprop)
 
     def _mean_scatter_term_batch(
         self, Js: torch.Tensor, f: torch.Tensor, y: torch.Tensor
@@ -2498,9 +2536,9 @@ class FunctionalLaplace(BaseLaplace):
         """
 
         if self.likelihood == Likelihood.REGRESSION:
-            return y - (f + torch.einsum('bcp,p->bc', Js, self.prior_mean - self.mean))
+            return y - (f + torch.einsum("bcp,p->bc", Js, self.prior_mean - self.mean))
         elif self.likelihood == Likelihood.CLASSIFICATION:
-            return -torch.einsum('bcp,p->bc', Js, self.prior_mean - self.mean)
+            return -torch.einsum("bcp,p->bc", Js, self.prior_mean - self.mean)
 
     def log_marginal_likelihood(
         self,
@@ -2532,9 +2570,11 @@ class FunctionalLaplace(BaseLaplace):
         # update sigma_noise (useful when iterating on marglik)
         if sigma_noise is not None:
             if self.likelihood != Likelihood.REGRESSION:
-                raise ValueError('Can only change sigma_noise for regression.')
+                raise ValueError("Can only change sigma_noise for regression.")
             self.sigma_noise = sigma_noise
 
+        print(self.prior_precision)
+        print(self.log_likelihood, self.log_det_ratio, self.scatter)
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     @property
@@ -2553,16 +2593,16 @@ class FunctionalLaplace(BaseLaplace):
             elif prior_precision.ndim == 1:
                 if len(prior_precision) not in [1, self.n_layers, self.n_params]:
                     raise ValueError(
-                        'Length of prior precision does not align with architecture.'
+                        "Length of prior precision does not align with architecture."
                     )
                 self._prior_precision = prior_precision.to(self._device)
             else:
                 raise ValueError(
-                    'Prior precision needs to be at most one-dimensional tensor.'
+                    "Prior precision needs to be at most one-dimensional tensor."
                 )
         else:
             raise ValueError(
-                'Prior precision either scalar or torch.Tensor up to 1-dim.'
+                "Prior precision either scalar or torch.Tensor up to 1-dim."
             )
         # This is a change from BaseLaplace. If the prior precision is changed, the cholesky
         #  decomposition needs to be recomputed.
@@ -2570,82 +2610,82 @@ class FunctionalLaplace(BaseLaplace):
 
     def state_dict(self) -> dict:
         state_dict = {
-            'mean': self.mean,
-            'num_data': self.num_data,
-            'diagonal_kernel': self.diagonal_kernel,
-            'seed': self.seed,
-            'K_MM': self.K_MM,
-            'Sigma_inv': self.Sigma_inv,
-            '_prior_factor_sod': self._prior_factor_sod,
-            '_fitted': self._fitted,
-            '_recompute_Sigma': self._recompute_Sigma,
-            'mu': self.mu,
-            'L': self.L,
-            'train_loader': self.train_loader,
-            'loss': self.loss,
-            'prior_mean': self.prior_mean,
-            'prior_precision': self.prior_precision,
-            'sigma_noise': self.sigma_noise,
-            'n_data': self.n_data,
-            'n_outputs': self.n_outputs,
-            'likelihood': self.likelihood,
-            'temperature': self.temperature,
-            'enable_backprop': self.enable_backprop,
-            'cls_name': self.__class__.__name__,
+            "mean": self.mean,
+            "num_data": self.num_data,
+            "diagonal_kernel": self.diagonal_kernel,
+            "seed": self.seed,
+            "K_MM": self.K_MM,
+            "Sigma_inv": self.Sigma_inv,
+            "_prior_factor_sod": self._prior_factor_sod,
+            "_fitted": self._fitted,
+            "_recompute_Sigma": self._recompute_Sigma,
+            "mu": self.mu,
+            "L": self.L,
+            "train_loader": self.train_loader,
+            "loss": self.loss,
+            "prior_mean": self.prior_mean,
+            "prior_precision": self.prior_precision,
+            "sigma_noise": self.sigma_noise,
+            "n_data": self.n_data,
+            "n_outputs": self.n_outputs,
+            "likelihood": self.likelihood,
+            "temperature": self.temperature,
+            "enable_backprop": self.enable_backprop,
+            "cls_name": self.__class__.__name__,
         }
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
         # Dealbreaker errors
-        if self.__class__.__name__ != state_dict['cls_name']:
+        if self.__class__.__name__ != state_dict["cls_name"]:
             raise ValueError(
-                'Loading a wrong Laplace type. Make sure `subset_of_weights` and'
-                + ' `hessian_structure` are correct!'
+                "Loading a wrong Laplace type. Make sure `subset_of_weights` and"
+                + " `hessian_structure` are correct!"
             )
-        if self.n_params is not None and len(state_dict['mean']) != self.n_params:
+        if self.n_params is not None and len(state_dict["mean"]) != self.n_params:
             raise ValueError(
-                'Attempting to load Laplace with different number of parameters than the model.'
-                + ' Make sure that you use the same `subset_of_weights` value and the same `.requires_grad`'
-                + ' switch on `model.parameters()`.'
+                "Attempting to load Laplace with different number of parameters than the model."
+                + " Make sure that you use the same `subset_of_weights` value and the same `.requires_grad`"
+                + " switch on `model.parameters()`."
             )
-        if self.likelihood != state_dict['likelihood']:
-            raise ValueError('Different likelihoods detected!')
+        if self.likelihood != state_dict["likelihood"]:
+            raise ValueError("Different likelihoods detected!")
 
         # Ignorable warnings
-        if self.prior_mean is None and state_dict['prior_mean'] is not None:
+        if self.prior_mean is None and state_dict["prior_mean"] is not None:
             warnings.warn(
-                'Loading non-`None` prior mean into a `None` prior mean. You might get wrong results.'
+                "Loading non-`None` prior mean into a `None` prior mean. You might get wrong results."
             )
-        if self.temperature != state_dict['temperature']:
+        if self.temperature != state_dict["temperature"]:
             warnings.warn(
-                'Different `temperature` parameters detected. Some calculation might be off!'
+                "Different `temperature` parameters detected. Some calculation might be off!"
             )
-        if self.enable_backprop != state_dict['enable_backprop']:
+        if self.enable_backprop != state_dict["enable_backprop"]:
             warnings.warn(
-                'Different `enable_backprop` values. You might encounter error when differentiating'
-                + ' the predictive mean and variance.'
+                "Different `enable_backprop` values. You might encounter error when differentiating"
+                + " the predictive mean and variance."
             )
 
-        self.mean = state_dict['mean']
-        self.num_data = state_dict['num_data']
-        self.diagonal_kernel = state_dict['diagonal_kernel']
-        self.seed = state_dict['seed']
-        self.K_MM = state_dict['K_MM']
-        self.Sigma_inv = state_dict['Sigma_inv']
-        self._prior_factor_sod = state_dict['_prior_factor_sod']
-        self.mu = state_dict['mu']
-        self.L = state_dict['L']
-        self._fitted = state_dict['_fitted']
-        self._recompute_Sigma = state_dict['_recompute_Sigma']
-        self.train_loader = state_dict['train_loader']
+        self.mean = state_dict["mean"]
+        self.num_data = state_dict["num_data"]
+        self.diagonal_kernel = state_dict["diagonal_kernel"]
+        self.seed = state_dict["seed"]
+        self.K_MM = state_dict["K_MM"]
+        self.Sigma_inv = state_dict["Sigma_inv"]
+        self._prior_factor_sod = state_dict["_prior_factor_sod"]
+        self.mu = state_dict["mu"]
+        self.L = state_dict["L"]
+        self._fitted = state_dict["_fitted"]
+        self._recompute_Sigma = state_dict["_recompute_Sigma"]
+        self.train_loader = state_dict["train_loader"]
 
-        self.loss = state_dict['loss']
-        self.prior_mean = state_dict['prior_mean']
-        self.prior_precision = state_dict['prior_precision']
-        self.sigma_noise = state_dict['sigma_noise']
-        self.n_data = state_dict['n_data']
-        self.n_outputs = state_dict['n_outputs']
-        setattr(self.model, 'output_size', self.n_outputs)
-        self.likelihood = state_dict['likelihood']
-        self.temperature = state_dict['temperature']
-        self.enable_backprop = state_dict['enable_backprop']
+        self.loss = state_dict["loss"]
+        self.prior_mean = state_dict["prior_mean"]
+        self.prior_precision = state_dict["prior_precision"]
+        self.sigma_noise = state_dict["sigma_noise"]
+        self.n_data = state_dict["n_data"]
+        self.n_outputs = state_dict["n_outputs"]
+        setattr(self.model, "output_size", self.n_outputs)
+        self.likelihood = state_dict["likelihood"]
+        self.temperature = state_dict["temperature"]
+        self.enable_backprop = state_dict["enable_backprop"]

@@ -83,7 +83,7 @@ print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 Running this snippet, we would get:
 
 ```
-[MAP] Acc.: 94.8%; ECE: 2.0%; NLL: 0.172
+[MAP] Acc.: 91.7%; ECE: 1.6%; NLL: 0.253
 ```
 
 ### The calibration of Laplace
@@ -98,7 +98,8 @@ for m in [50, 200, 800, 1600]:
     la = Laplace(model, 'classification',
                  subset_of_weights='all',
                  hessian_structure='gp',
-                 diagonal_kernel=True, M=m,
+                 diagonal_kernel=True, 
+                 num_data=m,
                  prior_precision=prior_precision)
     la.fit(train_loader)
 

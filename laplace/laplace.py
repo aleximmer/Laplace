@@ -1,4 +1,4 @@
-from laplace import * # noqa F403
+from laplace import *  # noqa F403
 from laplace.baselaplace import BaseLaplace
 
 
@@ -34,7 +34,7 @@ def Laplace(
     laplace_map = {
         subclass._key: subclass
         for subclass in _all_subclasses(BaseLaplace)
-        if hasattr(subclass, '_key')
+        if hasattr(subclass, "_key")
     }
     laplace_class = laplace_map[(subset_of_weights, hessian_structure)]
     return laplace_class(model, likelihood, *args, **kwargs)

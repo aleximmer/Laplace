@@ -8,11 +8,8 @@ import torch.nn.functional as F
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.nn.utils import parameters_to_vector
-from torchmetrics import Metric
-
-from collections import UserDict
-import math
 from torch.utils.data import Sampler
+from torchmetrics import Metric
 
 __all__ = [
     "get_nll",
@@ -24,9 +21,8 @@ __all__ = [
     "symeig",
     "block_diag",
     "expand_prior_precision",
-    "SoDSampler"
+    "SoDSampler",
 ]
-
 
 
 def get_nll(out_dist, targets):
@@ -238,7 +234,6 @@ def block_diag(blocks):
 
 
 class SoDSampler(Sampler):
-
     def __init__(self, N, M, seed: int = 0):
         np.random.seed(seed)
         self.indices = torch.tensor(np.random.choice(list(range(N)), M, replace=False))

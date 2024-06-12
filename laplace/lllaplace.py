@@ -1,12 +1,11 @@
 from collections.abc import MutableMapping
 from copy import deepcopy
-
-from typing import Union, Any
+from typing import Any, Union
 
 import torch
 from torch import nn
-
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
+from torch.utils.data import DataLoader
 
 from laplace.baselaplace import (
     DiagLaplace,
@@ -15,24 +14,19 @@ from laplace.baselaplace import (
     KronLaplace,
     ParametricLaplace,
 )
-from torch.utils.data import DataLoader
-
 from laplace.curvature import BackPackGGN
 from laplace.curvature.curvature import CurvatureInterface
-
 from laplace.utils import FeatureExtractor, Kron
 from laplace.utils.enums import Likelihood
 from laplace.utils.feature_extractor import FeatureReduction
 
-
 __all__ = [
-    'LLLaplace',
-    'FullLLLaplace',
-    'KronLLLaplace',
-    'DiagLLLaplace',
-    'FunctionalLLLaplace',
+    "LLLaplace",
+    "FullLLLaplace",
+    "KronLLLaplace",
+    "DiagLLLaplace",
+    "FunctionalLLLaplace",
 ]
-
 
 
 class LLLaplace(ParametricLaplace):
@@ -197,7 +191,7 @@ class LLLaplace(ParametricLaplace):
             self.mean = self.mean.detach()
 
     def _glm_predictive_distribution(self, X, joint=False):
-        Js, f_mu = self.backend.last_layer_jacobians(X)
+        Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
@@ -385,7 +379,7 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('last_layer', 'diag')
+    _key = ("last_layer", "diag")
 
 
 class FunctionalLLLaplace(FunctionalLaplace):
@@ -399,7 +393,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('last_layer', 'gp')
+    _key = ("last_layer", "gp")
 
     def __init__(
         self,
@@ -411,7 +405,10 @@ class FunctionalLLLaplace(FunctionalLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
-        last_layer_name=None,
+        feature_reduction: FeatureReduction = None,
+        dict_key_x: str = "inputs_id",
+        dict_key_y: str = "labels",
+        last_layer_name: str = None,
         backend: type[CurvatureInterface] | None = BackPackGGN,
         backend_kwargs: dict[str, Any] | None = None,
         diagonal_kernel: bool = False,
@@ -427,6 +424,8 @@ class FunctionalLLLaplace(FunctionalLaplace):
             temperature=temperature,
             backend=backend,
             enable_backprop=enable_backprop,
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
             backend_kwargs=backend_kwargs,
             diagonal_kernel=diagonal_kernel,
             seed=seed,
@@ -436,6 +435,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
             deepcopy(model),
             last_layer_name=last_layer_name,
             enable_backprop=enable_backprop,
+            feature_reduction=feature_reduction,
         )
         if self.model.last_layer is None:
             self.n_params = None
@@ -448,9 +448,9 @@ class FunctionalLLLaplace(FunctionalLaplace):
             self.n_layers = len(list(self.model.last_layer.parameters()))
             self.prior_precision = prior_precision
             self.prior_mean = prior_mean
-        self._backend_kwargs['last_layer'] = True
+        self._backend_kwargs["last_layer"] = True
 
-    def fit(self, train_loader : DataLoader) -> None:
+    def fit(self, train_loader: DataLoader) -> None:
         """Fit the Laplace approximation of a GP posterior.
 
         Parameters
@@ -476,11 +476,13 @@ class FunctionalLLLaplace(FunctionalLaplace):
 
         super().fit(train_loader)
 
-    def _jacobians(self, X : torch.Tensor) -> torch.Tensor:
+    def _jacobians(self, X: torch.Tensor, enable_backprop: bool = None) -> torch.Tensor:
         """
         A helper function to compute jacobians.
         """
-        return self.backend.last_layer_jacobians(X, enable_backprop=self.enable_backprop)
+        if enable_backprop is None:
+            enable_backprop = self.enable_backprop
+        return self.backend.last_layer_jacobians(X, enable_backprop=enable_backprop)
 
     @torch.no_grad()
     def _find_last_layer(self, data: Union[torch.Tensor, MutableMapping]) -> None:
@@ -494,18 +496,17 @@ class FunctionalLLLaplace(FunctionalLaplace):
             except (TypeError, AttributeError):
                 self.model.find_last_layer(X.to(self._device))
 
-
     def state_dict(self) -> dict:
         state_dict = super().state_dict()
-        state_dict['data'] = getattr(self, 'data', None)  # None if not present
-        state_dict['_last_layer_name'] = self._last_layer_name
+        state_dict["data"] = getattr(self, "data", None)  # None if not present
+        state_dict["_last_layer_name"] = self._last_layer_name
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
-        if self._last_layer_name != state_dict['_last_layer_name']:
-            raise ValueError('Different `last_layer_name` detected!')
+        if self._last_layer_name != state_dict["_last_layer_name"]:
+            raise ValueError("Different `last_layer_name` detected!")
 
-        self.data = state_dict['data']
+        self.data = state_dict["data"]
         if self.data is not None:
             self._find_last_layer(self.data)
 
