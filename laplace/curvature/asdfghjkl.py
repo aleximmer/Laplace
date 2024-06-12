@@ -1,14 +1,20 @@
 import warnings
+
 import numpy as np
 import torch
-
-from asdfghjkl import FISHER_EXACT, FISHER_MC, COV
-from asdfghjkl import SHAPE_KRON, SHAPE_DIAG, SHAPE_FULL
-from asdfghjkl import fisher_for_cross_entropy
-from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
+from asdfghjkl import (
+    COV,
+    FISHER_EXACT,
+    FISHER_MC,
+    SHAPE_DIAG,
+    SHAPE_FULL,
+    SHAPE_KRON,
+    fisher_for_cross_entropy,
+)
 from asdfghjkl.gradient import batch_gradient
+from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
 
-from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, _is_batchnorm
 
 EPS = 1e-6
@@ -80,24 +86,24 @@ class AsdfghjklInterface(CurvatureInterface):
         kfacs = list()
         for module in curv._model.modules():
             if _is_batchnorm(module):
-                warnings.warn('BatchNorm unsupported for Kron, ignore.')
+                warnings.warn("BatchNorm unsupported for Kron, ignore.")
                 continue
 
             stats = getattr(module, self._ggn_type, None)
             if stats is None:
                 continue
-            if hasattr(module, 'bias') and module.bias is not None:
+            if hasattr(module, "bias") and module.bias is not None:
                 # split up bias and weights
                 kfacs.append([stats.kron.B, stats.kron.A[:-1, :-1]])
                 kfacs.append([stats.kron.B * stats.kron.A[-1, -1] / M])
-            elif hasattr(module, 'weight'):
+            elif hasattr(module, "weight"):
                 p, q = stats.kron.B.numel(), stats.kron.A.numel()
                 if p == q == 1:
                     kfacs.append([stats.kron.B * stats.kron.A])
                 else:
                     kfacs.append([stats.kron.B, stats.kron.A])
             else:
-                raise ValueError(f'Whats happening with {module}?')
+                raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
     @staticmethod
@@ -139,8 +145,23 @@ class AsdfghjklInterface(CurvatureInterface):
 
 
 class AsdfghjklHessian(AsdfghjklInterface):
-    def __init__(self, model, likelihood, last_layer=False, low_rank=10):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        dict_key_x="input_ids",
+        dict_key_y="labels",
+        low_rank=10,
+    ):
+        super().__init__(
+            model,
+            likelihood,
+            last_layer,
+            None,
+            dict_key_x="input_ids",
+            dict_key_y="labels",
+        )
         self.low_rank = low_rank
 
     @property
@@ -187,11 +208,15 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
+        dict_key_x="input_ids",
+        dict_key_y="labels",
         stochastic=False,
     ):
-        if likelihood != 'classification':
-            raise ValueError('This backend only supports classification currently.')
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        if likelihood != "classification":
+            raise ValueError("This backend only supports classification currently.")
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
         self.stochastic = stochastic
 
     @property
@@ -202,10 +227,17 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
 class AsdfghjklEF(AsdfghjklInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl."""
 
-    def __init__(self, model, likelihood, last_layer=False):
-        if likelihood != 'classification':
-            raise ValueError('This backend only supports classification currently.')
-        super().__init__(model, likelihood, last_layer)
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        dict_key_x="input_ids",
+        dict_key_y="labels",
+    ):
+        if likelihood != "classification":
+            raise ValueError("This backend only supports classification currently.")
+        super().__init__(model, likelihood, last_layer, None, dict_key_x, dict_key_y)
 
     @property
     def _ggn_type(self):
@@ -222,12 +254,12 @@ def _flatten_after_batch(tensor: torch.Tensor):
 def _get_batch_grad(model):
     batch_grads = list()
     for module in model.modules():
-        if hasattr(module, 'op_results'):
-            res = module.op_results['batch_grads']
-            if 'weight' in res:
-                batch_grads.append(_flatten_after_batch(res['weight']))
-            if 'bias' in res:
-                batch_grads.append(_flatten_after_batch(res['bias']))
-            if len(set(res.keys()) - {'weight', 'bias'}) > 0:
-                raise ValueError(f'Invalid parameter keys {res.keys()}')
+        if hasattr(module, "op_results"):
+            res = module.op_results["batch_grads"]
+            if "weight" in res:
+                batch_grads.append(_flatten_after_batch(res["weight"]))
+            if "bias" in res:
+                batch_grads.append(_flatten_after_batch(res["bias"]))
+            if len(set(res.keys()) - {"weight", "bias"}) > 0:
+                raise ValueError(f"Invalid parameter keys {res.keys()}")
     return torch.cat(batch_grads, dim=1)

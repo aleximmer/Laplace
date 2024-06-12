@@ -1,13 +1,14 @@
+import logging
+import warnings
+from collections.abc import MutableMapping
 from copy import deepcopy
+
 import numpy as np
 import torch
-from torch.optim import Adam
+import tqdm
 from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
-import warnings
-import logging
-from collections import UserDict
-import tqdm
+from torch.optim import Adam
 
 from laplace import Laplace
 from laplace.curvature import AsdlGGN
@@ -17,8 +18,8 @@ from laplace.utils import expand_prior_precision, fix_prior_prec_structure
 def marglik_training(
     model,
     train_loader,
-    likelihood='classification',
-    hessian_structure='kron',
+    likelihood="classification",
+    hessian_structure="kron",
     backend=AsdlGGN,
     optimizer_cls=Adam,
     optimizer_kwargs=None,
@@ -26,7 +27,7 @@ def marglik_training(
     scheduler_kwargs=None,
     n_epochs=300,
     lr_hyp=1e-1,
-    prior_structure='layerwise',
+    prior_structure="layerwise",
     n_epochs_burnin=0,
     n_hypersteps=10,
     marglik_frequency=1,
@@ -36,6 +37,8 @@ def marglik_training(
     fix_sigma_noise=False,
     progress_bar=False,
     enable_backprop=False,
+    dict_key_x="input_ids",
+    dict_key_y="labels",
 ):
     """Marginal-likelihood based training (Algorithm 1 in [1]).
     Optimize model parameters and hyperparameters jointly.
@@ -115,6 +118,14 @@ def marglik_training(
         whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
         make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
 
     Returns
     -------
@@ -127,9 +138,9 @@ def marglik_training(
     losses : list
         list of losses (log joints) obtained during training (to monitor convergence)
     """
-    if 'weight_decay' in optimizer_kwargs:
-        warnings.warn('Weight decay is handled and optimized. Will be set to 0.')
-        optimizer_kwargs['weight_decay'] = 0.0
+    if "weight_decay" in optimizer_kwargs:
+        warnings.warn("Weight decay is handled and optimized. Will be set to 0.")
+        optimizer_kwargs["weight_decay"] = 0.0
 
     # get device, data set size N, number of layers H, number of parameters P
     device = parameters_to_vector(model.parameters()).device
@@ -149,11 +160,11 @@ def marglik_training(
     hyperparameters.append(log_prior_prec)
 
     # set up loss (and observation noise hyperparam)
-    if likelihood == 'classification':
-        criterion = CrossEntropyLoss(reduction='mean')
+    if likelihood == "classification":
+        criterion = CrossEntropyLoss(reduction="mean")
         sigma_noise = 1.0
-    elif likelihood == 'regression':
-        criterion = MSELoss(reduction='mean')
+    elif likelihood == "regression":
+        criterion = MSELoss(reduction="mean")
         log_sigma_noise_init = np.log(sigma_noise_init)
         log_sigma_noise = log_sigma_noise_init * torch.ones(1, device=device)
         log_sigma_noise.requires_grad = True
@@ -185,8 +196,8 @@ def marglik_training(
         disable=not progress_bar,
         position=1,
         leave=False,
-        desc='[Training]',
-        colour='blue',
+        desc="[Training]",
+        colour="blue",
     )
     for epoch in pbar:
         epoch_loss = 0
@@ -194,14 +205,14 @@ def marglik_training(
 
         # standard NN training per batch
         for data in train_loader:
-            if isinstance(data, UserDict) or isinstance(data, dict):
-                X, y = data, data['labels']
+            if isinstance(data, MutableMapping):
+                X, y = data, data[dict_key_y]
                 y = y.to(device, non_blocking=True)
             else:
                 X, y = data
                 X, y = X.to(device, non_blocking=True), y.to(device, non_blocking=True)
             optimizer.zero_grad()
-            if likelihood == 'regression':
+            if likelihood == "regression":
                 sigma_noise = (
                     torch.exp(log_sigma_noise).detach()
                     if not fix_sigma_noise
@@ -220,7 +231,7 @@ def marglik_training(
             loss.backward()
             optimizer.step()
             epoch_loss += loss.cpu().item() * len(y)
-            if likelihood == 'regression':
+            if likelihood == "regression":
                 epoch_perf += (f.detach() - y).square().sum()
             else:
                 epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
@@ -231,8 +242,8 @@ def marglik_training(
 
         # compute validation error to report during training
         logging.info(
-            f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.'
-            + f'Perf={epoch_perf/N:.3f}'
+            f"MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}."
+            + f"Perf={epoch_perf/N:.3f}"
         )
 
         # only update hyperparameters every marglik_frequency steps after burnin
@@ -241,7 +252,7 @@ def marglik_training(
 
         # optimizer hyperparameters by differentiating marglik
         # 1. fit laplace approximation
-        if likelihood == 'classification':
+        if likelihood == "classification":
             sigma_noise = 1
         else:
             sigma_noise = (
@@ -256,14 +267,16 @@ def marglik_training(
             prior_precision=prior_prec,
             temperature=temperature,
             backend=backend,
-            subset_of_weights='all',
+            subset_of_weights="all",
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
         )
         lap.fit(train_loader)
 
         # 2. differentiate wrt. hyperparameters for n_hypersteps
         for _ in range(n_hypersteps):
             hyper_optimizer.zero_grad()
-            if likelihood == 'classification' or fix_sigma_noise:
+            if likelihood == "classification" or fix_sigma_noise:
                 sigma_noise = None
             else:
                 sigma_noise = torch.exp(log_sigma_noise)
@@ -277,7 +290,7 @@ def marglik_training(
         if margliks[-1] < best_marglik:
             best_model_dict = deepcopy(model.state_dict())
             best_precision = deepcopy(prior_prec.detach())
-            if likelihood == 'classification':
+            if likelihood == "classification":
                 best_sigma = 1
             else:
                 best_sigma = (
@@ -287,16 +300,16 @@ def marglik_training(
                 )
             best_marglik = margliks[-1]
             logging.info(
-                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '
-                + 'Saving new best model.'
+                f"MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. "
+                + "Saving new best model."
             )
         else:
             logging.info(
-                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}.'
-                + f'No improvement over {best_marglik:.2f}'
+                f"MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}."
+                + f"No improvement over {best_marglik:.2f}"
             )
 
-    logging.info('MARGLIK: finished training. Recover best model and fit Laplace.')
+    logging.info("MARGLIK: finished training. Recover best model and fit Laplace.")
     if best_model_dict is not None:
         model.load_state_dict(best_model_dict)
         sigma_noise = best_sigma
@@ -309,8 +322,10 @@ def marglik_training(
         prior_precision=prior_prec,
         temperature=temperature,
         backend=backend,
-        subset_of_weights='all',
+        subset_of_weights="all",
         enable_backprop=enable_backprop,
+        dict_key_x=dict_key_x,
+        dict_key_y=dict_key_y,
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses
