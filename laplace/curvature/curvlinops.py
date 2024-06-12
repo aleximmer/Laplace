@@ -79,7 +79,6 @@ class CurvlinopsInterface(CurvatureInterface):
             self.params,
             [(X, y)],
             fisher_type=self._kron_fisher_type,
-            loss_average=None,  # Since self.lossfunc is sum
             separate_weight_and_bias=True,
             check_deterministic=False,  # To avoid overhead
             # `kwargs` for `mc_samples` when `stochastic=True` and `kfac_approx` to
