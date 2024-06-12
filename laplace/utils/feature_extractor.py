@@ -105,9 +105,13 @@ class FeatureExtractor(nn.Module):
             n_intermediate_dims = len(features.shape) - 2
 
             if self.feature_reduction == FeatureReduction.PICK_FIRST:
-                features = features[:, *([0] * n_intermediate_dims), :].squeeze()
+                features = features[
+                    (slice(None), *([0] * n_intermediate_dims), slice(None))
+                ].squeeze()
             elif self.feature_reduction == FeatureReduction.PICK_LAST:
-                features = features[:, *([0] * n_intermediate_dims), :].squeeze()
+                features = features[
+                    (slice(None), *([-1] * n_intermediate_dims), slice(None))
+                ].squeeze()
             else:
                 ndim = features.ndim
                 features = features.mean(
