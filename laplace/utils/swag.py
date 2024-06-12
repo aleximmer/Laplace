@@ -3,8 +3,7 @@ from copy import deepcopy
 import torch
 from torch.nn.utils import parameters_to_vector
 
-
-__all__ = ['fit_diagonal_swag_var']
+__all__ = ["fit_diagonal_swag_var"]
 
 
 def _param_vector(model):

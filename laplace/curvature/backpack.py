@@ -1,18 +1,18 @@
 from typing import Tuple
-import torch
 
+import torch
 from backpack import backpack, extend, memory_cleanup
+from backpack.context import CTX
 from backpack.extensions import (
-    DiagGGNExact,
-    DiagGGNMC,
     KFAC,
     KFLR,
-    SumGradSquared,
     BatchGrad,
+    DiagGGNExact,
+    DiagGGNMC,
+    SumGradSquared,
 )
-from backpack.context import CTX
 
-from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron
 
 
@@ -60,7 +60,7 @@ class BackPackInterface(CurvatureInterface):
                 to_cat = []
                 for param in model.parameters():
                     to_cat.append(param.grad_batch.reshape(x.shape[0], -1))
-                    delattr(param, 'grad_batch')
+                    delattr(param, "grad_batch")
                 Jk = torch.cat(to_cat, dim=1)
                 if self.subnetwork_indices is not None:
                     Jk = Jk[:, self.subnetwork_indices]
@@ -149,8 +149,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(X)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
-        y = y if self.likelihood == 'regression' else y.view(-1)
+        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -164,8 +164,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = KFAC if self.stochastic else KFLR
         f = self.model(X)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
-        y = y if self.likelihood == 'regression' else y.view(-1)
+        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -181,8 +181,8 @@ class BackPackEF(BackPackInterface, EFInterface):
     def diag(self, X, y, **kwargs):
         f = self.model(X)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
-        y = y if self.likelihood == 'regression' else y.view(-1)
+        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward()
@@ -195,12 +195,12 @@ class BackPackEF(BackPackInterface, EFInterface):
         return self.factor * loss.detach(), self.factor * diag_EF
 
     def kron(self, X, y, **kwargs):
-        raise NotImplementedError('Unavailable through Backpack.')
+        raise NotImplementedError("Unavailable through Backpack.")
 
 
 def _cleanup(module):
     for child in module.children():
         _cleanup(child)
 
-    setattr(module, '_backpack_extend', False)
+    setattr(module, "_backpack_extend", False)
     memory_cleanup(module)

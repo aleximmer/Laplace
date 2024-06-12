@@ -1,14 +1,13 @@
-import pytest
 import numpy as np
+import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
+from laplace.curvature import AsdlGGN, BackPackGGN
 from laplace.utils import Kron, block_diag
 from laplace.utils import kron as kron_prod
-from laplace.curvature import BackPackGGN, AsdlGGN
-from tests.utils import get_psd_matrix, get_diag_psd_matrix, jacobians_naive
-
+from tests.utils import get_diag_psd_matrix, get_psd_matrix, jacobians_naive
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 
@@ -16,22 +15,22 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 @pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     model_params = list(model.parameters())
-    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
-    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
     return model
 
 
 @pytest.fixture
 def small_model():
     model = torch.nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     return model
 
 
 def test_init_from_model(model):
-    kron = Kron.init_from_model(model, 'cpu')
+    kron = Kron.init_from_model(model, "cpu")
     expected_sizes = [[20 * 20, 3 * 3], [20 * 20], [2 * 2, 20 * 20], [2 * 2]]
     for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
@@ -40,7 +39,7 @@ def test_init_from_model(model):
 
 
 def test_init_from_iterable(model):
-    kron = Kron.init_from_model(model.parameters(), 'cpu')
+    kron = Kron.init_from_model(model.parameters(), "cpu")
     expected_sizes = [[20 * 20, 3 * 3], [20 * 20], [2 * 2, 20 * 20], [2 * 2]]
     for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
@@ -49,7 +48,7 @@ def test_init_from_iterable(model):
 
 
 def test_addition(model):
-    kron = Kron.init_from_model(model.parameters(), 'cpu')
+    kron = Kron.init_from_model(model.parameters(), "cpu")
     expected_sizes = [[20, 3], [20], [2, 20], [2]]
     to_add = Kron([[torch.randn(i, i) for i in sizes] for sizes in expected_sizes])
     kron += to_add
@@ -141,7 +140,7 @@ def test_bmm_dense(small_model):
     y = torch.randn(5, 2)
 
     # Dense Kronecker factors.
-    backend = BackPackGGN(model, 'regression', stochastic=False)
+    backend = BackPackGGN(model, "regression", stochastic=False)
     _, kron = backend.kron(X, y, N=5)
     kron_decomp = kron.decompose()
     Js, _ = jacobians_naive(model, X)
@@ -178,7 +177,7 @@ def test_bmm_dense(small_model):
     # test J @ S^-1/2  (sampling)
     JS = kron_decomp.bmm(Js, exponent=-1 / 2)
     JSJ = torch.bmm(JS, Js.transpose(1, 2))
-    eigval, Q = torch.linalg.eigh(S_inv, UPLO='U')
+    eigval, Q = torch.linalg.eigh(S_inv, UPLO="U")
     JS_true = Js @ Q @ torch.diag(torch.sqrt(eigval)) @ Q.T
     JSJ_true = torch.bmm(JS_true, Js.transpose(1, 2))
     assert torch.allclose(JS, JS_true)
@@ -199,7 +198,7 @@ def test_bmm_dense(small_model):
     assert torch.allclose(JS, JS_nodecomp)
 
 
-@pytest.mark.skip(reason='For compatibility with ASDL master')
+@pytest.mark.skip(reason="For compatibility with ASDL master")
 def test_bmm_diag(small_model):
     model = small_model
     # model = single_output_model
@@ -207,7 +206,7 @@ def test_bmm_diag(small_model):
     y = torch.randn(5, 2)
 
     # Diagonal Kronecker factors.
-    backend = AsdlGGN(model, 'regression', stochastic=False)
+    backend = AsdlGGN(model, "regression", stochastic=False)
     _, kron = backend.kron(X, y, N=5, diag_A=True, diag_B=True)
     kron_decomp = kron.decompose()
     Js, _ = jacobians_naive(model, X)
@@ -246,7 +245,7 @@ def test_bmm_diag(small_model):
     # test J @ S^-1/2  (sampling)
     JS = kron_decomp.bmm(Js, exponent=-1 / 2)
     JSJ = torch.bmm(JS, Js.transpose(1, 2))
-    eigval, Q = torch.linalg.eigh(S_inv, UPLO='U')
+    eigval, Q = torch.linalg.eigh(S_inv, UPLO="U")
     JS_true = Js @ Q @ torch.diag(torch.sqrt(eigval)) @ Q.T
     JSJ_true = torch.bmm(JS_true, Js.transpose(1, 2))
     assert torch.allclose(JS, JS_true)

@@ -48,37 +48,37 @@ class CNN(nn.Module):
 
 
 def get_model(model_name):
-    if model_name == 'resnet18':
+    if model_name == "resnet18":
         model = models.resnet18()
-    elif model_name == 'alexnet':
+    elif model_name == "alexnet":
         model = models.alexnet()
-    elif model_name == 'vgg16':
+    elif model_name == "vgg16":
         model = models.vgg16()
-    elif model_name == 'squeezenet':
+    elif model_name == "squeezenet":
         model = models.squeezenet1_0()
-    elif model_name == 'densenet':
+    elif model_name == "densenet":
         model = models.densenet161()
-    elif model_name == 'inception':
+    elif model_name == "inception":
         model = models.inception_v3(init_weights=True)
-    elif model_name == 'googlenet':
+    elif model_name == "googlenet":
         model = models.googlenet(init_weights=True)
-    elif model_name == 'shufflenet':
+    elif model_name == "shufflenet":
         model = models.shufflenet_v2_x1_0()
-    elif model_name == 'mobilenet_v2':
+    elif model_name == "mobilenet_v2":
         model = models.mobilenet_v2()
-    elif model_name == 'mobilenet_v3_large':
+    elif model_name == "mobilenet_v3_large":
         model = models.mobilenet_v3_large()
-    elif model_name == 'mobilenet_v3_small':
+    elif model_name == "mobilenet_v3_small":
         model = models.mobilenet_v3_small()
-    elif model_name == 'resnext50_32x4d':
+    elif model_name == "resnext50_32x4d":
         model = models.resnext50_32x4d()
-    elif model_name == 'wide_resnet50_2':
+    elif model_name == "wide_resnet50_2":
         model = models.wide_resnet50_2()
-    elif model_name == 'mnasnet':
+    elif model_name == "mnasnet":
         model = models.mnasnet1_0()
-    elif model_name == 'switchedCNN':
+    elif model_name == "switchedCNN":
         model = CNN(10)
-    elif model_name == 'sequential':
+    elif model_name == "sequential":
         model = nn.Sequential(
             nn.Conv2d(3, 6, 3, 1, 1),
             nn.ReLU(),
@@ -88,7 +88,7 @@ def get_model(model_name):
             nn.Linear(10, 10),
         )
     else:
-        raise ValueError(f'{model_name} is not supported.')
+        raise ValueError(f"{model_name} is not supported.")
     return model
 
 
@@ -97,21 +97,21 @@ def test_feature_extractor():
     # all torchvision classifcation models but 'squeezenet' (no linear last layer)
     # + model where modules are initilaized in wrong order + nn.Sequential model
     model_names = [
-        'resnet18',
-        'alexnet',
-        'vgg16',
-        'densenet',
-        'inception',
-        'googlenet',
-        'shufflenet',
-        'mobilenet_v2',
-        'mobilenet_v3_large',
-        'mobilenet_v3_small',
-        'resnext50_32x4d',
-        'wide_resnet50_2',
-        'mnasnet',
-        'switchedCNN',
-        'sequential',
+        "resnet18",
+        "alexnet",
+        "vgg16",
+        "densenet",
+        "inception",
+        "googlenet",
+        "shufflenet",
+        "mobilenet_v2",
+        "mobilenet_v3_large",
+        "mobilenet_v3_small",
+        "resnext50_32x4d",
+        "wide_resnet50_2",
+        "mnasnet",
+        "switchedCNN",
+        "sequential",
     ]
 
     # to test the last_layer_name argument
@@ -121,7 +121,7 @@ def test_feature_extractor():
 
     for model_name in model_names:
         # generate random test input
-        if model_name == 'inception':
+        if model_name == "inception":
             x = torch.randn(1, 3, 299, 299)
         else:
             x = torch.randn(1, 3, 64, 64)

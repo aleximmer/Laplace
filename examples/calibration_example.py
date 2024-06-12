@@ -1,17 +1,16 @@
 import warnings
 
-warnings.simplefilter('ignore', UserWarning)
+warnings.simplefilter("ignore", UserWarning)
 
+import helper.dataloaders as dl
+import helper.wideresnet as wrn
+import numpy as np
 import torch
 import torch.distributions as dists
-import numpy as np
-import helper.wideresnet as wrn
-import helper.dataloaders as dl
 from helper import util
 from netcal.metrics import ECE
 
 from laplace import Laplace
-
 
 np.random.seed(7777)
 torch.manual_seed(7777)
@@ -27,7 +26,7 @@ targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
 
 util.download_pretrained_model()
-model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
+model.load_state_dict(torch.load("./temp/CIFAR10_plain.pt"))
 
 
 @torch.no_grad()
@@ -48,14 +47,14 @@ acc_map = (probs_map.argmax(-1) == targets).float().mean()
 ece_map = ECE(bins=15).measure(probs_map.numpy(), targets.numpy())
 nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
-print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
+print(f"[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}")
 
 # Laplace
 la = Laplace(
-    model, 'classification', subset_of_weights='last_layer', hessian_structure='kron'
+    model, "classification", subset_of_weights="last_layer", hessian_structure="kron"
 )
 la.fit(train_loader)
-la.optimize_prior_precision(method='marglik')
+la.optimize_prior_precision(method="marglik")
 
 probs_laplace = predict(test_loader, la, laplace=True)
 acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
@@ -63,5 +62,5 @@ ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
 nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
 print(
-    f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}'
+    f"[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}"
 )

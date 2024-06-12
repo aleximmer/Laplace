@@ -1,15 +1,14 @@
+from collections.abc import MutableMapping
 from copy import deepcopy
+from typing import Union
+
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace
+from laplace.baselaplace import DiagLaplace, FullLaplace, KronLaplace, ParametricLaplace
 from laplace.utils import FeatureExtractor, Kron
 
-from collections.abc import MutableMapping
-from typing import Union
-
-
-__all__ = ['LLLaplace', 'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace']
+__all__ = ["LLLaplace", "FullLLLaplace", "KronLLLaplace", "DiagLLLaplace"]
 
 
 class LLLaplace(ParametricLaplace):
@@ -76,7 +75,7 @@ class LLLaplace(ParametricLaplace):
         asdl_fisher_kwargs=None,
     ):
         if asdl_fisher_kwargs is not None:
-            raise ValueError('Last-layer Laplace does not support asdl_fisher_kwargs.')
+            raise ValueError("Last-layer Laplace does not support asdl_fisher_kwargs.")
         self.H = None
         super().__init__(
             model,
@@ -110,7 +109,7 @@ class LLLaplace(ParametricLaplace):
             self.prior_mean = prior_mean
             self.mean = self.prior_mean
             self._init_H()
-        self._backend_kwargs['last_layer'] = True
+        self._backend_kwargs["last_layer"] = True
         self._last_layer_name = last_layer_name
 
     def fit(self, train_loader, override=True):
@@ -127,7 +126,7 @@ class LLLaplace(ParametricLaplace):
         """
         if not override:
             raise ValueError(
-                'Last-layer Laplace approximations do not support `override=False`.'
+                "Last-layer Laplace approximations do not support `override=False`."
             )
 
         self.model.eval()
@@ -172,7 +171,7 @@ class LLLaplace(ParametricLaplace):
             fs.append(f.detach() if not self.enable_backprop else f)
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
         fs = torch.stack(fs)
-        if self.likelihood == 'classification':
+        if self.likelihood == "classification":
             fs = torch.softmax(fs, dim=-1)
         return fs
 
@@ -204,19 +203,19 @@ class LLLaplace(ParametricLaplace):
             return self.prior_precision
 
         else:
-            raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
+            raise ValueError("Mismatch of prior and model. Diagonal or scalar prior.")
 
     def state_dict(self) -> dict:
         state_dict = super().state_dict()
-        state_dict['data'] = getattr(self, 'data', None)  # None if not present
-        state_dict['_last_layer_name'] = self._last_layer_name
+        state_dict["data"] = getattr(self, "data", None)  # None if not present
+        state_dict["_last_layer_name"] = self._last_layer_name
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
-        if self._last_layer_name != state_dict['_last_layer_name']:
-            raise ValueError('Different `last_layer_name` detected!')
+        if self._last_layer_name != state_dict["_last_layer_name"]:
+            raise ValueError("Different `last_layer_name` detected!")
 
-        self.data = state_dict['data']
+        self.data = state_dict["data"]
         if self.data is not None:
             self._find_last_layer(self.data)
 
@@ -248,7 +247,7 @@ class FullLLLaplace(LLLaplace, FullLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('last_layer', 'full')
+    _key = ("last_layer", "full")
 
 
 class KronLLLaplace(LLLaplace, KronLaplace):
@@ -265,7 +264,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('last_layer', 'kron')
+    _key = ("last_layer", "kron")
 
     def __init__(
         self,
@@ -307,4 +306,4 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('last_layer', 'diag')
+    _key = ("last_layer", "diag")

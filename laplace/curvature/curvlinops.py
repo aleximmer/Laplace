@@ -1,17 +1,16 @@
-import torch
+from collections import UserDict
 
+import torch
 from curvlinops import (
-    HessianLinearOperator,
-    GGNLinearOperator,
-    FisherMCLinearOperator,
     EFLinearOperator,
+    FisherMCLinearOperator,
+    GGNLinearOperator,
+    HessianLinearOperator,
     KFACLinearOperator,
 )
 
-from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron
-
-from collections import UserDict
 
 
 class CurvlinopsInterface(CurvatureInterface):
@@ -46,22 +45,22 @@ class CurvlinopsInterface(CurvatureInterface):
             A = linop._input_covariances[name]
             B = linop._gradient_covariances[name]
 
-            if hasattr(module, 'bias') and module.bias is not None:
+            if hasattr(module, "bias") and module.bias is not None:
                 kfacs.append([B, A])
                 kfacs.append([B])
-            elif hasattr(module, 'weight'):
+            elif hasattr(module, "weight"):
                 p, q = B.numel(), A.numel()
                 if p == q == 1:
                     kfacs.append([B * A])
                 else:
                     kfacs.append([B, A])
             else:
-                raise ValueError(f'Whats happening with {module}?')
+                raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
     def kron(self, X, y, N, **kwargs):
         if isinstance(X, (dict, UserDict)):
-            kwargs['batch_size_fn'] = lambda x: x['input_ids'].shape[0]
+            kwargs["batch_size_fn"] = lambda x: x["input_ids"].shape[0]
         linop = KFACLinearOperator(
             self.model,
             self.lossfunc,
@@ -91,9 +90,9 @@ class CurvlinopsInterface(CurvatureInterface):
         if self.subnetwork_indices is not None:
             return super().full(X, y, **kwargs)
 
-        curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != 'N'}
+        curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != "N"}
         if isinstance(X, (dict, UserDict)):
-            curvlinops_kwargs['batch_size_fn'] = lambda x: x['input_ids'].shape[0]
+            curvlinops_kwargs["batch_size_fn"] = lambda x: x["input_ids"].shape[0]
 
         linop = self._linop_context(
             self.model,
@@ -130,7 +129,7 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
 
     @property
     def _kron_fisher_type(self):
-        return 'mc' if self.stochastic else 'type-2'
+        return "mc" if self.stochastic else "type-2"
 
     @property
     def _linop_context(self):
@@ -142,7 +141,7 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
 
     @property
     def _kron_fisher_type(self):
-        return 'empirical'
+        return "empirical"
 
     @property
     def _linop_context(self):

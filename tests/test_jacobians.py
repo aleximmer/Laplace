@@ -10,21 +10,21 @@ from tests.utils import jacobians_naive
 @pytest.fixture
 def multioutput_model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     return model
 
 
 @pytest.fixture
 def singleoutput_model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 1))
-    setattr(model, 'output_size', 1)
+    setattr(model, "output_size", 1)
     return model
 
 
 @pytest.fixture
 def linear_model():
     model = torch.nn.Sequential(nn.Linear(3, 1, bias=False))
-    setattr(model, 'output_size', 1)
+    setattr(model, "output_size", 1)
     return model
 
 
@@ -35,11 +35,11 @@ def X():
 
 
 @pytest.mark.parametrize(
-    'backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface]
+    "backend_cls", [CurvatureInterface, AsdlInterface, BackPackInterface]
 )
 def test_linear_jacobians(linear_model, X, backend_cls):
     # jacobian of linear model is input X.
-    backend = backend_cls(linear_model, 'classification')
+    backend = backend_cls(linear_model, "classification")
     Js, f = backend.jacobians(X)
     # into Jacs shape (batch_size, output_size, params)
     true_Js = X.reshape(len(X), 1, -1)
@@ -49,11 +49,11 @@ def test_linear_jacobians(linear_model, X, backend_cls):
 
 
 @pytest.mark.parametrize(
-    'backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface]
+    "backend_cls", [CurvatureInterface, AsdlInterface, BackPackInterface]
 )
 def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = singleoutput_model
-    backend = backend_cls(model, 'classification')
+    backend = backend_cls(model, "classification")
     Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
@@ -63,11 +63,11 @@ def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
 
 
 @pytest.mark.parametrize(
-    'backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface]
+    "backend_cls", [CurvatureInterface, AsdlInterface, BackPackInterface]
 )
 def test_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = multioutput_model
-    backend = backend_cls(model, 'classification')
+    backend = backend_cls(model, "classification")
     Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
@@ -77,11 +77,11 @@ def test_jacobians_multioutput(multioutput_model, X, backend_cls):
 
 
 @pytest.mark.parametrize(
-    'backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface]
+    "backend_cls", [CurvatureInterface, AsdlInterface, BackPackInterface]
 )
 def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = FeatureExtractor(singleoutput_model)
-    backend = backend_cls(model, 'classification')
+    backend = backend_cls(model, "classification")
     Js, f = backend.last_layer_jacobians(X)
     _, phi = model.forward_with_features(X)
     Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
@@ -92,11 +92,11 @@ def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
 
 
 @pytest.mark.parametrize(
-    'backend_cls', [CurvatureInterface, AsdlInterface, BackPackInterface]
+    "backend_cls", [CurvatureInterface, AsdlInterface, BackPackInterface]
 )
 def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = FeatureExtractor(multioutput_model)
-    backend = backend_cls(model, 'classification')
+    backend = backend_cls(model, "classification")
     Js, f = backend.last_layer_jacobians(X)
     _, phi = model.forward_with_features(X)
     Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
@@ -106,10 +106,10 @@ def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     assert torch.allclose(f, f_naive)
 
 
-@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
+@pytest.mark.parametrize("backend_cls", [CurvatureInterface, BackPackInterface])
 def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     X.requires_grad = True
-    backend = backend_cls(singleoutput_model, 'regression')
+    backend = backend_cls(singleoutput_model, "regression")
 
     try:
         Js, f = backend.jacobians(X, enable_backprop=True)
@@ -124,10 +124,10 @@ def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
         assert False
 
 
-@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
+@pytest.mark.parametrize("backend_cls", [CurvatureInterface, BackPackInterface])
 def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
     X.requires_grad = True
-    backend = backend_cls(multioutput_model, 'regression')
+    backend = backend_cls(multioutput_model, "regression")
 
     try:
         Js, f = backend.jacobians(X, enable_backprop=True)
@@ -143,11 +143,11 @@ def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
         assert False
 
 
-@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
+@pytest.mark.parametrize("backend_cls", [CurvatureInterface, BackPackInterface])
 def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(
-        FeatureExtractor(singleoutput_model, enable_backprop=True), 'regression'
+        FeatureExtractor(singleoutput_model, enable_backprop=True), "regression"
     )
 
     try:
@@ -163,11 +163,11 @@ def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backe
         assert False
 
 
-@pytest.mark.parametrize('backend_cls', [CurvatureInterface, BackPackInterface])
+@pytest.mark.parametrize("backend_cls", [CurvatureInterface, BackPackInterface])
 def test_backprop_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(
-        FeatureExtractor(multioutput_model, enable_backprop=True), 'regression'
+        FeatureExtractor(multioutput_model, enable_backprop=True), "regression"
     )
 
     try:

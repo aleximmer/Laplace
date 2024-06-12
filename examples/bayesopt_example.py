@@ -1,34 +1,28 @@
 import warnings
 
-warnings.filterwarnings('ignore')
-
-import numpy as np
-import torch
-from torch import nn, optim
-from torch import distributions as dists
-from torch.nn import functional as F
-from gpytorch import distributions as gdists
-import torch.utils.data as data_utils
-from botorch.models.model import Model
-from botorch.posteriors.gpytorch import GPyTorchPosterior
-import tqdm
-
-from laplace import Laplace
+warnings.filterwarnings("ignore")
 
 import argparse
 import sys
+from typing import Any, List, Optional
 
-from botorch.models.gp_regression import SingleTaskGP
-from botorch.test_functions import Ackley, Branin
+import numpy as np
+import torch
+import torch.utils.data as data_utils
+import tqdm
 from botorch.acquisition.analytic import ExpectedImprovement, UpperConfidenceBound
 from botorch.acquisition.monte_carlo import qExpectedImprovement
+from botorch.models.gp_regression import SingleTaskGP
+from botorch.models.model import Model
 from botorch.optim.optimize import optimize_acqf
+from botorch.posteriors.gpytorch import GPyTorchPosterior
+from botorch.test_functions import Ackley, Branin
+from gpytorch import distributions as gdists
+from torch import distributions as dists
+from torch import nn, optim
+from torch.nn import functional as F
 
-from typing import (
-    Any,
-    List,
-    Optional,
-)
+from laplace import Laplace
 
 
 class LaplaceBNN(Model):
@@ -42,7 +36,7 @@ class LaplaceBNN(Model):
         train_X: torch.Tensor,
         train_Y: torch.Tensor,
         bnn: Laplace = None,
-        likelihood: str = 'regression',
+        likelihood: str = "regression",
         batch_size: int = 1024,
     ):
         super().__init__()
@@ -89,7 +83,7 @@ class LaplaceBNN(Model):
         # Cov is `(batch_shape, q*k, q*k)`
         cov_y += 1e-4 * torch.eye(B * Q * K)
         cov_y = cov_y.reshape(B, Q, K, B, Q, K)
-        cov_y = torch.einsum('bqkbrl->bqkrl', cov_y)  # (B, Q, K, Q, K)
+        cov_y = torch.einsum("bqkbrl->bqkrl", cov_y)  # (B, Q, K, Q, K)
         cov_y = cov_y.reshape(B, Q * K, Q * K)
 
         dist = gdists.MultivariateNormal(mean_y, covariance_matrix=cov_y)
@@ -148,8 +142,8 @@ class LaplaceBNN(Model):
         self.bnn = Laplace(
             self.nn,
             self.likelihood,
-            subset_of_weights='all',
-            hessian_structure='kron',
+            subset_of_weights="all",
+            hessian_structure="kron",
             enable_backprop=True,
         )
         self.bnn.fit(train_loader)
@@ -166,7 +160,7 @@ class LaplaceBNN(Model):
             Tensor of size `(batch_shape, k)`
         """
         if self.bnn is None:
-            print('Train your model first before making prediction!')
+            print("Train your model first before making prediction!")
             sys.exit(1)
 
         if not use_test_loader:
@@ -197,32 +191,32 @@ class LaplaceBNN(Model):
         )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--test_func', choices=['ackley', 'branin'], default='branin')
-    parser.add_argument('--acqf', choices=['EI', 'UCB', 'qEI'], default='EI')
-    parser.add_argument('--init_data', type=int, default=20)
-    parser.add_argument('--exp_len', type=int, default=500)
-    parser.add_argument('--randseed', type=int, default=1)
+    parser.add_argument("--test_func", choices=["ackley", "branin"], default="branin")
+    parser.add_argument("--acqf", choices=["EI", "UCB", "qEI"], default="EI")
+    parser.add_argument("--init_data", type=int, default=20)
+    parser.add_argument("--exp_len", type=int, default=500)
+    parser.add_argument("--randseed", type=int, default=1)
     args = parser.parse_args()
 
     np.random.seed(args.randseed)
     torch.set_default_dtype(torch.float64)
     torch.manual_seed(args.randseed)
 
-    if args.test_func == 'ackley':
+    if args.test_func == "ackley":
         true_f = Ackley(dim=2)
         bounds = torch.tensor([[-32.768, 32.768], [-32.768, 32.768]]).T.double()
-    elif args.test_func == 'branin':
+    elif args.test_func == "branin":
         true_f = Branin()
         bounds = torch.tensor([[-5, 10], [0, 15]]).T.double()
     else:
-        print('Invalid test function!')
+        print("Invalid test function!")
         sys.exit(1)
 
     print()
-    print(f'Test Function: {args.test_func}')
-    print('-------------------------------------')
+    print(f"Test Function: {args.test_func}")
+    print("-------------------------------------")
     print()
 
     train_data_points = 20
@@ -246,15 +240,15 @@ if __name__ == '__main__':
     test_y = true_f(test_x)
 
     models = {
-        'RandomSearch': None,
-        'BNN-LA': LaplaceBNN(train_x, train_y),
-        'GP': SingleTaskGP(train_x, train_y),
+        "RandomSearch": None,
+        "BNN-LA": LaplaceBNN(train_x, train_y),
+        "GP": SingleTaskGP(train_x, train_y),
     }
 
     def evaluate_model(model_name, model):
-        if model_name == 'GP':
+        if model_name == "GP":
             pred = model.posterior(test_x).mean.squeeze()
-        elif model_name == 'BNN-LA':
+        elif model_name == "BNN-LA":
             pred, _ = model._get_prediction(test_x, use_test_loader=True, joint=False)
         else:
             return -1
@@ -270,11 +264,11 @@ if __name__ == '__main__':
         trace_best_y = []
         pbar = tqdm.trange(args.exp_len)
         pbar.set_description(
-            f'[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}]'
+            f"[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}]"
         )
 
         for i in pbar:
-            if model_name == 'RandomSearch':
+            if model_name == "RandomSearch":
                 new_x = torch.cat(
                     [
                         dists.Uniform(*bounds.T[i]).sample((1, 1))
@@ -283,21 +277,21 @@ if __name__ == '__main__':
                     dim=1,
                 ).squeeze()
             else:
-                if args.acqf == 'EI':
+                if args.acqf == "EI":
                     acq_f = ExpectedImprovement(model, best_f=best_y, maximize=False)
-                elif args.acqf == 'UCB':
+                elif args.acqf == "UCB":
                     acq_f = UpperConfidenceBound(model, beta=0.2, maximize=False)
-                elif args.acqf == 'qEI':
+                elif args.acqf == "qEI":
                     acq_f = qExpectedImprovement(model, best_f=best_y, maximize=False)
                 else:
-                    print('Invalid acquisition function!')
+                    print("Invalid acquisition function!")
                     sys.exit(1)
 
                 # Get a proposal for new x
                 new_x, val = optimize_acqf(
                     acq_f,
                     bounds=bounds,
-                    q=1 if args.acqf not in ['qEI'] else 5,
+                    q=1 if args.acqf not in ["qEI"] else 5,
                     num_restarts=10,
                     raw_samples=20,
                 )
@@ -309,7 +303,7 @@ if __name__ == '__main__':
             new_y = true_f(new_x).unsqueeze(-1)  # (q, 1)
 
             # Update posterior
-            if model_name != 'RandomSearch':
+            if model_name != "RandomSearch":
                 model = model.condition_on_observations(new_x, new_y)
 
             # Update the current best y
@@ -318,5 +312,5 @@ if __name__ == '__main__':
 
             trace_best_y.append(best_y)
             pbar.set_description(
-                f'[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}, curr f(x) = {new_y.min().item():.3f}]'
+                f"[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}, curr f(x) = {new_y.min().item():.3f}]"
             )

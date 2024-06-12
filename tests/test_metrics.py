@@ -1,7 +1,9 @@
+import math
+
 import torch
 from torch.nn import functional as F
+
 from laplace.utils import RunningNLLMetric
-import math
 
 
 def test_running_nll_metric():

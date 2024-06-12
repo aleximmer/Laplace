@@ -1,9 +1,9 @@
+from typing import Callable, Optional, Tuple
+
 import torch
 import torch.nn as nn
-from typing import Tuple, Callable, Optional
 
-
-__all__ = ['FeatureExtractor']
+__all__ = ["FeatureExtractor"]
 
 
 class FeatureExtractor(nn.Module):
@@ -87,7 +87,7 @@ class FeatureExtractor(nn.Module):
         self._last_layer_name = last_layer_name
         self.last_layer = dict(self.model.named_modules())[last_layer_name]
         if not isinstance(self.last_layer, nn.Linear):
-            raise ValueError('Use model with a linear last layer.')
+            raise ValueError("Use model with a linear last layer.")
 
         # set forward hook to extract features in future forward passes
         self.last_layer.register_forward_hook(self._get_hook(last_layer_name))
@@ -116,7 +116,7 @@ class FeatureExtractor(nn.Module):
             one batch of data to use as input for the forward pass
         """
         if self.last_layer is not None:
-            raise ValueError('Last layer is already known.')
+            raise ValueError("Last layer is already known.")
 
         act_out = dict()
 
@@ -140,7 +140,7 @@ class FeatureExtractor(nn.Module):
         # check if model has more than one module
         # (there might be pathological exceptions)
         if len(handles) <= 2:
-            raise ValueError('The model only has one module.')
+            raise ValueError("The model only has one module.")
 
         # forward pass to find execution order
         out = self.model(x)
@@ -157,4 +157,4 @@ class FeatureExtractor(nn.Module):
 
                 return out
 
-        raise ValueError('Something went wrong (all modules have children).')
+        raise ValueError("Something went wrong (all modules have children).")
