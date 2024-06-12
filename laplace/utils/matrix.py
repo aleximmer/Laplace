@@ -5,7 +5,7 @@ import numpy as np
 import opt_einsum as oe
 import torch
 
-from laplace.utils import _is_valid_scalar, block_diag, kron, symeig
+from laplace.utils.utils import _is_valid_scalar, block_diag, kron, symeig
 
 __all__ = ["Kron", "KronDecomposed"]
 

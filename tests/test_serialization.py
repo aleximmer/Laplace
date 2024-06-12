@@ -8,8 +8,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
-from laplace.laplace import (
+from laplace import (
     DiagLaplace,
     DiagLLLaplace,
     DiagSubnetLaplace,
@@ -18,6 +17,7 @@ from laplace.laplace import (
     FullSubnetLaplace,
     KronLaplace,
     KronLLLaplace,
+    Laplace,
     LLLaplace,
     LowRankLaplace,
     SubnetLaplace,

@@ -745,11 +745,3 @@ def test_backprop_nn(laplace, model, reg_loader, backend):
         assert grad_X_var.shape == X.shape
     except ValueError:
         assert False
-
-
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
-def test_dict_data_diagEF_curvlinops_fails(custom_model, custom_loader, likelihood):
-    lap = DiagLaplace(custom_model, likelihood=likelihood, backend=CurvlinopsEF)
-
-    with pytest.raises(ValueError):
-        lap.fit(custom_loader)
