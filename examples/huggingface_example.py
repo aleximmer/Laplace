@@ -21,6 +21,7 @@ from laplace import Laplace
 
 logging.basicConfig(level="ERROR")
 warnings.filterwarnings("ignore")
+
 # make deterministic
 torch.manual_seed(0)
 numpy.random.seed(0)
@@ -105,7 +106,7 @@ la = Laplace(
     hessian_structure="full",
     # This must reflect faithfully the reduction technique used in the model
     # Otherwise, correctness is not guaranteed
-    feature_reduction=FeatureReduction.PICK_LAST,
+    feature_reduction="pick_last",
 )
 la.fit(dataloader)
 la.optimize_prior_precision()

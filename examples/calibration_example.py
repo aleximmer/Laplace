@@ -1,5 +1,4 @@
 import warnings
-<<<<<<< HEAD
 
 warnings.simplefilter("ignore", UserWarning)
 
@@ -9,18 +8,6 @@ import numpy as np
 import torch
 import torch.distributions as dists
 from helper import util
-from netcal.metrics import ECE
-=======
-
-warnings.simplefilter('ignore', UserWarning)
->>>>>>> main
-
-import torch  # noqa: E402
-import torch.distributions as dists  # noqa: E402
-import numpy as np  # noqa: E402
-import helper.wideresnet as wrn  # noqa: E402
-import helper.dataloaders as dl  # noqa: E402
-from helper import util  # noqa: E402
 from netcal.metrics import ECE  # noqa: E402
 
 from laplace import Laplace  # noqa: E402
@@ -64,11 +51,7 @@ print(f"[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}")
 
 # Laplace
 la = Laplace(
-<<<<<<< HEAD
     model, "classification", subset_of_weights="last_layer", hessian_structure="kron"
-=======
-    model, 'classification', subset_of_weights='last_layer', hessian_structure='kron'
->>>>>>> main
 )
 la.fit(train_loader)
 la.optimize_prior_precision(method="marglik")
@@ -79,9 +62,5 @@ ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
 nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
 print(
-<<<<<<< HEAD
     f"[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}"
-=======
-    f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}'
->>>>>>> main
 )

@@ -145,7 +145,7 @@ la = Laplace(
     hessian_structure="full",
     # This must reflect faithfully the reduction technique used in the model
     # Otherwise, correctness is not guaranteed
-    feature_reduction=FeatureReduction.PICK_LAST,
+    feature_reduction="pick_last",
 )
 la.fit(dataloader)
 la.optimize_prior_precision()

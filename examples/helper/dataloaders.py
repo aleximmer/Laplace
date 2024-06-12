@@ -20,11 +20,7 @@ def CIFAR10(train=True, batch_size=None, augm_flag=True):
     transform_train = transforms.Compose(
         [
             transforms.RandomHorizontalFlip(),
-<<<<<<< HEAD
             transforms.RandomCrop(32, padding=4, padding_mode="reflect"),
-=======
-            transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
->>>>>>> main
         ]
         + transform_base
     )
@@ -34,11 +30,7 @@ def CIFAR10(train=True, batch_size=None, augm_flag=True):
 
     dataset = datasets.CIFAR10(path, train=train, transform=transform, download=True)
     loader = torch.utils.data.DataLoader(
-<<<<<<< HEAD
-        dataset, batch_size=batch_size, shuffle=train, num_workers=4
-=======
         dataset, batch_size=batch_size, shuffle=train, num_workers=0
->>>>>>> main
     )
 
     return loader
