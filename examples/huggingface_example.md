@@ -50,15 +50,15 @@ tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 data = [
-{'text': 'Today is hot, but I will manage!!!!', 'label': 1},
-{'text': 'Tomorrow is cold', 'label': 0},
-{'text': 'Carpe diem', 'label': 1},
-{'text': 'Tempus fugit', 'label': 1},
+    {'text': 'Today is hot, but I will manage!!!!', 'label': 1},
+    {'text': 'Tomorrow is cold', 'label': 0},
+    {'text': 'Carpe diem', 'label': 1},
+    {'text': 'Tempus fugit', 'label': 1},
 ]
 dataset = Dataset.from_list(data)
 
 def tokenize(row):
-return tokenizer(row['text'])
+    return tokenizer(row['text'])
 
 dataset = dataset.map(tokenize, remove_columns=['text'])
 dataset.set_format(type='torch', columns=['input_ids', 'attention_mask', 'label'])
@@ -130,9 +130,40 @@ class MyGPT2(nn.Module):
 model = MyGPT2(tokenizer)
 ```
 
-Now, let's apply Laplace. Let's do a last-layer Laplace first. We do so by switching off the
-gradients of all layers except the top layer. Laplace will automatically only compute the
-Hessian (and Jacobians) of the parameters in which `requires_grad` is `True`.
+Now, let's apply Laplace. Let's do a last-layer Laplace first. Notice that we add 
+an argument `feature_reduction` there. This is because Huggingface models reduce the 
+logits and [not the features](https://github.com/huggingface/transformers/blob/a98c41798cf6ed99e1ff17e3792d6e06a2ff2ff3/src/transformers/models/gpt2/modeling_gpt2.py#L1678-L1704). 
+
+```python
+model = MyGPT2(tokenizer)
+model.eval()
+
+la = Laplace(
+    model,
+    likelihood='classification',
+    subset_of_weights='last_layer',
+    hessian_structure='full',
+    # This must reflect faithfully the reduction technique used in the model
+    # Otherwise, correctness is not guaranteed
+    feature_reduction=FeatureReduction.PICK_LAST,
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+X_test = next(iter(dataloader))
+print(f'[Last-layer Laplace] The predictive tensor is of shape: {la(X_test).shape}.')
+```
+
+Here's the output:
+```
+[Last-layer Laplace] The predictive tensor is of shape: torch.Size([4, 2]).
+```
+
+## Subnetwork Laplace
+
+Also, we can do the same thing by switching off the gradients of all layers except the 
+top layer. Laplace will automatically only compute the Hessian (and Jacobians) of the 
+parameters in which `requires_grad` is `True`.
 
 Notice that you can "mix-and-match" this gradient switching. You can do a subnetwork Laplace
 easily by doing so!
@@ -159,16 +190,16 @@ la.fit(dataloader)
 la.optimize_prior_precision()
 
 X_test = next(iter(dataloader))
-print(f'[Foundation Model] The predictive tensor is of shape: {la(X_test).shape}.')
+print(f'[Subnetwork Laplace] The predictive tensor is of shape: {la(X_test).shape}.')
 ```
 
 Here are the outputs to validate that Laplace works:
 
 ```
-[Foundation Model] The predictive tensor is of shape: torch.Size([4, 2]).
+[Subnetwork Laplace] The predictive tensor is of shape: torch.Size([4, 2]).
 ```
 
-## Laplace on LoRA parameters only
+## Full Laplace on LoRA parameters only
 
 Of course, you can also apply Laplace on the parameter-efficient fine tuning weights (like LoRA).
 To do this, simply extend your LLM with LoRA, using HF's `peft` library, and apply Laplace as
@@ -197,8 +228,9 @@ lora_la = Laplace(
     lora_model,
     likelihood='classification',
     subset_of_weights='all',
-    hessian_structure='diag',
+    hessian_structure='kron',
 )
+lora_la.fit(dataloader)
 
 X_test = next(iter(dataloader))
 print(f'[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.')

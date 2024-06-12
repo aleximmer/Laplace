@@ -11,6 +11,7 @@ from torchvision.models import wide_resnet50_2
 
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
+from laplace.utils.feature_extractor import FeatureReduction
 from tests.utils import jacobians_naive
 
 
@@ -31,6 +32,24 @@ def model():
 
 
 @pytest.fixture
+def model_with_reduction():
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.fc1 = nn.Linear(3, 20)
+            self.fc2 = nn.Linear(20, 2)
+            self.output_size = 2
+
+        def forward(self, x):
+            x = self.fc1(x)
+            x = nn.functional.relu(x)
+            x = x.mean(1)
+            return self.fc2(x)
+
+    return Model()
+
+
+@pytest.fixture
 def large_model():
     model = wide_resnet50_2()
     return model
@@ -46,6 +65,20 @@ def class_loader():
 @pytest.fixture
 def reg_loader():
     X = torch.randn(10, 3)
+    y = torch.randn(10, 2)
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def multidim_class_loader():
+    X = torch.randn(10, 6, 3)
+    y = torch.randint(2, (10,))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def multidim_reg_loader():
+    X = torch.randn(10, 6, 3)
     y = torch.randn(10, 2)
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
@@ -166,6 +199,7 @@ def test_laplace_init_precision(laplace, model):
     laplace(
         model, likelihood="regression", prior_precision=precision, last_layer_name="1"
     )
+
     # torch.tensor 1-dim param-shape
     if laplace == KronLLLaplace:  # kron only supports per layer
         with pytest.raises(ValueError):
@@ -314,15 +348,43 @@ def test_laplace_init_temperature(laplace, model):
 @pytest.mark.parametrize(
     "laplace,lh", product(flavors, ["classification", "regression"])
 )
-def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
+@pytest.mark.parametrize("multidim", [False, True])
+@pytest.mark.parametrize("reduction", [f.value for f in FeatureReduction] + [None])
+def test_laplace_functionality(
+    laplace,
+    lh,
+    multidim,
+    reduction,
+    model,
+    model_with_reduction,
+    reg_loader,
+    multidim_reg_loader,
+    class_loader,
+    multidim_class_loader,
+):
     if lh == "classification":
-        loader = class_loader
+        loader = class_loader if not multidim else multidim_class_loader
         sigma_noise = 1.0
     else:
-        loader = reg_loader
+        loader = reg_loader if not multidim else multidim_reg_loader
         sigma_noise = 0.3
-    lap = laplace(model, lh, sigma_noise=sigma_noise, prior_precision=0.7)
+
+    if not multidim:
+        model = model
+        last_layer_name = "1"
+    else:
+        model = model_with_reduction
+        last_layer_name = "fc2"
+
+    lap = laplace(
+        model,
+        lh,
+        sigma_noise=sigma_noise,
+        prior_precision=0.7,
+        feature_reduction=reduction,
+    )
     lap.fit(loader)
+
     assert lap.n_data == len(loader.dataset)
     assert lap.n_outputs == model.output_size
     X = loader.dataset.tensors[0]
@@ -350,7 +412,9 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     # lml = log p(y|f) - 1/2 theta @ prior_prec @ theta
     #       + 1/2 logdet prior_prec - 1/2 log det post_prec
     lml = log_lik_true
-    feature_extractor = FeatureExtractor(model, last_layer_name="1")
+    feature_extractor = FeatureExtractor(
+        model, last_layer_name=last_layer_name, feature_reduction=reduction
+    )
     theta = parameters_to_vector(feature_extractor.last_layer.parameters()).detach()
     assert torch.allclose(theta, lap.mean)
     prior_prec = torch.diag(lap.prior_precision_diag)

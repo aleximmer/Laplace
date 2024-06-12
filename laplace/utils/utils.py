@@ -1,5 +1,5 @@
 import logging
-from collections import UserDict
+from collections.abc import MutableMapping
 from typing import Union
 
 import numpy as np
@@ -36,6 +36,7 @@ def validate(
     link_approx="probit",
     n_samples=100,
     loss_with_var=False,
+    dict_key_y="labels",
 ) -> float:
     laplace.model.eval()
     assert callable(loss) or isinstance(loss, Metric)
@@ -46,9 +47,8 @@ def validate(
         targets = list()
 
     for data in val_loader:
-        # If x is UserDict, then it is a from Huggingface dataset
-        if isinstance(data, UserDict) or isinstance(data, dict):
-            X, y = data, data["labels"]
+        if isinstance(data, MutableMapping):
+            X, y = data, data[dict_key_y]
         else:
             X, y = data
             X = X.to(laplace._device)
@@ -112,11 +112,7 @@ def invsqrt_precision(M):
 
 
 def _is_batchnorm(module):
-    if (
-        isinstance(module, BatchNorm1d)
-        or isinstance(module, BatchNorm2d)
-        or isinstance(module, BatchNorm3d)
-    ):
+    if isinstance(module, (BatchNorm1d, BatchNorm2d, BatchNorm3d)):
         return True
     return False
 

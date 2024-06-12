@@ -21,7 +21,6 @@ from laplace import Laplace
 
 logging.basicConfig(level="ERROR")
 warnings.filterwarnings("ignore")
-
 # make deterministic
 torch.manual_seed(0)
 numpy.random.seed(0)
@@ -94,10 +93,33 @@ class MyGPT2(nn.Module):
         return output_dict.logits
 
 
+# Last-layer Laplace
+# ------------------
 model = MyGPT2(tokenizer)
+model.eval()
 
-# Last-layer Laplace on the foundation model itself
-# -------------------------------------------------
+la = Laplace(
+    model,
+    likelihood="classification",
+    subset_of_weights="last_layer",
+    hessian_structure="full",
+    # This must reflect faithfully the reduction technique used in the model
+    # Otherwise, correctness is not guaranteed
+    feature_reduction=FeatureReduction.PICK_LAST,
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+X_test = next(iter(dataloader))
+print(f"[Last-layer Laplace] The predictive tensor is of shape: {la(X_test).shape}.")
+
+del model
+del la
+
+
+# Laplace on a subset of parameters by disabling gradients
+# --------------------------------------------------------
+model = MyGPT2(tokenizer)
 model.eval()
 
 # Enable grad only for the last layer
@@ -118,7 +140,7 @@ la.fit(dataloader)
 la.optimize_prior_precision()
 
 X_test = next(iter(dataloader))
-print(f"[Foundation Model] The predictive tensor is of shape: {la(X_test).shape}.")
+print(f"[Subnetwork Laplace] The predictive tensor is of shape: {la(X_test).shape}.")
 
 del model
 del la
@@ -150,8 +172,9 @@ lora_la = Laplace(
     lora_model,
     likelihood="classification",
     subset_of_weights="all",
-    hessian_structure="diag",
+    hessian_structure="kron",
 )
+# lora_la.fit(dataloader)
 
 X_test = next(iter(dataloader))
 print(f"[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.")

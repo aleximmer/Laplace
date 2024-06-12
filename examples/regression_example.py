@@ -79,7 +79,7 @@ f_sigma = f_var.squeeze().detach().sqrt().cpu().numpy()
 pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item() ** 2)
 
 plot_regression(
-    X_train, y_train, x, f_mu, pred_std, file_name="regression_example", plot=True
+    X_train, y_train, x, f_mu, pred_std, file_name="regression_example", plot=False
 )
 
 # alternatively, optimize parameters and hyperparameters of the prior jointly

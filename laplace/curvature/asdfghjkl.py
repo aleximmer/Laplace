@@ -145,8 +145,23 @@ class AsdfghjklInterface(CurvatureInterface):
 
 
 class AsdfghjklHessian(AsdfghjklInterface):
-    def __init__(self, model, likelihood, last_layer=False, low_rank=10):
-        super().__init__(model, likelihood, last_layer)
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        dict_key_x="input_ids",
+        dict_key_y="labels",
+        low_rank=10,
+    ):
+        super().__init__(
+            model,
+            likelihood,
+            last_layer,
+            None,
+            dict_key_x="input_ids",
+            dict_key_y="labels",
+        )
         self.low_rank = low_rank
 
     @property
@@ -193,11 +208,15 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
+        dict_key_x="input_ids",
+        dict_key_y="labels",
         stochastic=False,
     ):
         if likelihood != "classification":
             raise ValueError("This backend only supports classification currently.")
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
         self.stochastic = stochastic
 
     @property
@@ -208,10 +227,17 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
 class AsdfghjklEF(AsdfghjklInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl."""
 
-    def __init__(self, model, likelihood, last_layer=False):
+    def __init__(
+        self,
+        model,
+        likelihood,
+        last_layer=False,
+        dict_key_x="input_ids",
+        dict_key_y="labels",
+    ):
         if likelihood != "classification":
             raise ValueError("This backend only supports classification currently.")
-        super().__init__(model, likelihood, last_layer)
+        super().__init__(model, likelihood, last_layer, None, dict_key_x, dict_key_y)
 
     @property
     def _ggn_type(self):

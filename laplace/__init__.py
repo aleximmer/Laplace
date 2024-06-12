@@ -3,6 +3,7 @@
 
 .. include:: ../examples/regression_example.md
 .. include:: ../examples/calibration_example.md
+.. include:: ../examples/reward_modeling_example.md
 """
 
 REGRESSION = "regression"

@@ -22,19 +22,19 @@ def plot_regression(
     fig, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, sharey=True, figsize=(4.5, 2.8))
     ax1.set_title("MAP")
     ax1.scatter(X_train.flatten(), y_train.flatten(), alpha=0.3, color="tab:orange")
-    ax1.plot(X_test, f_test, color="black", label="$f_{MAP}$")
+    ax1.plot(X_test, f_test, color="black", label=r"$f_{MAP}$")
     ax1.legend()
 
     ax2.set_title("LA")
     ax2.scatter(X_train.flatten(), y_train.flatten(), alpha=0.3, color="tab:orange")
-    ax2.plot(X_test, f_test, label="$\mathbb{E}[f]$")
+    ax2.plot(X_test, f_test, label=r"$\mathbb{E}[f]$")
     ax2.fill_between(
         X_test,
         f_test - y_std * 2,
         f_test + y_std * 2,
         alpha=0.3,
         color="tab:blue",
-        label="$2\sqrt{\mathbb{V}\,[y]}$",
+        label=r"$2\sqrt{\mathbb{V}\,[y]}$",
     )
     ax2.legend()
     ax1.set_ylim([-4, 6])

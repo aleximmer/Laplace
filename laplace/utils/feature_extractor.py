@@ -1,9 +1,16 @@
+from enum import Enum
 from typing import Callable, Optional, Tuple
 
 import torch
 import torch.nn as nn
 
 __all__ = ["FeatureExtractor"]
+
+
+class FeatureReduction(str, Enum):
+    PICK_FIRST = "pick_first"
+    PICK_LAST = "pick_last"
+    AVERAGE = "average"
 
 
 class FeatureExtractor(nn.Module):
@@ -23,6 +30,17 @@ class FeatureExtractor(nn.Module):
     last_layer_name : str, default=None
         if the name of the last layer is already known, otherwise it will
         be determined automatically.
+    enable_backprop: bool, default=False
+        whether to enable backprop through the feature extactor to get the gradients of
+        the inputs. Useful for e.g. Bayesian optimization.
+    feature_reduction: FeatureReduction or str, default=None
+        when the last-layer `features` is a tensor of dim >= 3, this tells how to reduce
+        it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+        the penultultimate output is a tensor of shape `(batch_size, seq_len, embd_dim)`.
+        But the last layer maps `(batch_size, embd_dim)` to `(batch_size, n_classes)`.
+        Note: Make sure that this option faithfully reflects the reduction in the model
+        definition. When inputting a string, available options are
+        `{'pick_first', 'pick_last', 'average'}`.
     """
 
     def __init__(
@@ -30,11 +48,21 @@ class FeatureExtractor(nn.Module):
         model: nn.Module,
         last_layer_name: Optional[str] = None,
         enable_backprop: bool = False,
+        feature_reduction: Optional[FeatureReduction] = None,
     ) -> None:
+        if feature_reduction is not None and feature_reduction not in [
+            fr.value for fr in FeatureReduction
+        ]:
+            raise ValueError(
+                "`feature_reduction` must take value in the `FeatureReduction enum` or "
+                "one of `{'pick_first', 'pick_last', 'average'}`!"
+            )
+
         super().__init__()
         self.model = model
         self._features = dict()
         self.enable_backprop = enable_backprop
+        self.feature_reduction = feature_reduction
 
         if last_layer_name is None:
             self.last_layer = None
@@ -72,6 +100,20 @@ class FeatureExtractor(nn.Module):
         """
         out = self.forward(x)
         features = self._features[self._last_layer_name]
+
+        if features.dim() > 2 and self.feature_reduction is not None:
+            n_intermediate_dims = len(features.shape) - 2
+
+            if self.feature_reduction == FeatureReduction.PICK_FIRST:
+                features = features[:, *([0] * n_intermediate_dims), :].squeeze()
+            elif self.feature_reduction == FeatureReduction.PICK_LAST:
+                features = features[:, *([0] * n_intermediate_dims), :].squeeze()
+            else:
+                ndim = features.ndim
+                features = features.mean(
+                    dim=tuple(d for d in range(ndim) if d not in [0, ndim - 1])
+                ).squeeze()
+
         return out, features
 
     def set_last_layer(self, last_layer_name: str) -> None:

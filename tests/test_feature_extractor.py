@@ -1,8 +1,10 @@
+import pytest
 import torch
 import torch.nn as nn
 import torchvision.models as models
 
 from laplace.utils import FeatureExtractor
+from laplace.utils.feature_extractor import FeatureReduction
 
 
 class CNN(nn.Module):
@@ -137,3 +139,32 @@ def test_feature_extractor():
         last_layer = feature_extractor.last_layer
         out2 = last_layer(features)
         assert (out == out2).all().item()
+
+
+@torch.no_grad()
+@pytest.mark.parametrize("reduction", [r.value for r in FeatureReduction] + [None])
+@pytest.mark.parametrize("additional_dims", [tuple(), (7,), (7, 8, 9)])
+def test_multidim_features(reduction, additional_dims):
+    BATCH_SIZE = 6
+    IN_DIM = 5
+    HIDDEN_DIM = 10
+    OUT_DIM = 2
+    EXPECTED_FEATS_SHAPE = (BATCH_SIZE, HIDDEN_DIM)
+
+    model = nn.Sequential(
+        nn.Linear(IN_DIM, HIDDEN_DIM),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_DIM, OUT_DIM),
+    ).eval()
+
+    X = torch.randn(BATCH_SIZE, *(additional_dims), IN_DIM)
+    out = model(X)
+    assert out.shape == (BATCH_SIZE, *(additional_dims), OUT_DIM)
+
+    feature_extractor = FeatureExtractor(model, feature_reduction=reduction)
+    out, feats = feature_extractor.forward_with_features(X)
+
+    if reduction is None:
+        assert feats.shape == (BATCH_SIZE, *(additional_dims), HIDDEN_DIM)
+    else:
+        assert feats.shape == EXPECTED_FEATS_SHAPE
