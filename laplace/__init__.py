@@ -8,15 +8,18 @@
 REGRESSION = "regression"
 CLASSIFICATION = "classification"
 
-from laplace.baselaplace import (BaseLaplace, DiagLaplace, FullLaplace,
-                                 KronLaplace, LowRankLaplace,
-                                 ParametricLaplace)
+from laplace.baselaplace import (
+    BaseLaplace,
+    DiagLaplace,
+    FullLaplace,
+    KronLaplace,
+    LowRankLaplace,
+    ParametricLaplace,
+)
 from laplace.laplace import Laplace
-from laplace.lllaplace import (DiagLLLaplace, FullLLLaplace, KronLLLaplace,
-                               LLLaplace)
+from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace, LLLaplace
 from laplace.marglik_training import marglik_training
-from laplace.subnetlaplace import (DiagSubnetLaplace, FullSubnetLaplace,
-                                   SubnetLaplace)
+from laplace.subnetlaplace import DiagSubnetLaplace, FullSubnetLaplace, SubnetLaplace
 
 __all__ = [
     "Laplace",  # direct access to all Laplace classes via unified interface

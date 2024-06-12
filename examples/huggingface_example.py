@@ -6,22 +6,21 @@ from collections.abc import MutableMapping
 import numpy
 import torch
 import torch.utils.data as data_utils
+from datasets import Dataset
+from peft import LoraConfig, get_peft_model
 from torch import nn
+from transformers import (
+    DataCollatorWithPadding,
+    GPT2Config,
+    GPT2ForSequenceClassification,
+    GPT2Tokenizer,
+    PreTrainedTokenizer,
+)
 
 from laplace import Laplace
 
 logging.basicConfig(level="ERROR")
 warnings.filterwarnings("ignore")
-
-from datasets import Dataset  # noqa: E402
-from peft import LoraConfig, get_peft_model  # noqa: E402
-from transformers import (
-    DataCollatorWithPadding,
-    GPT2Config,  # noqa: E402
-    GPT2ForSequenceClassification,
-    GPT2Tokenizer,
-    PreTrainedTokenizer,
-)
 
 # make deterministic
 torch.manual_seed(0)

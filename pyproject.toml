@@ -6,14 +6,11 @@ build-backend = "setuptools.build_meta"
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
 # Unlike Flake8, Ruff doesn't enable pycodestyle warnings (`W`) or
 # McCabe complexity (`C901`) by default.
-# Adds isort ("I") and pylint ("PL") to defaults.
-select = ["E4", "E7", "E9", "F", "I", "PL"]
+# Adds isort ("I") and pylint errors and warning ("PLE", "PLW") to defaults.
+select = ["E4", "E7", "E9", "F", "I", "PLE", "PLW"]
 # Ignore pylint's overwritten loop variable by assignment error
 # Skip "Module level import not at top of file"
 ignore = ["PLW2901", "E402"]
-
-[tool.ruff.lint.pylint]
-max-args = 10
 
 [tool.ruff.format]
 quote-style = "double"
