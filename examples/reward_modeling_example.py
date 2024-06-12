@@ -1,18 +1,17 @@
-import numpy as np
-import torch
-from torch import nn, optim
-from torch.nn import functional as F
-import torch.utils.data as data_utils
-
-from datasets import Dataset
-
-from laplace import Laplace
-
 import logging
 import warnings
 
-logging.basicConfig(level='ERROR')
-warnings.filterwarnings('ignore')
+import numpy as np
+import torch
+import torch.utils.data as data_utils
+from datasets import Dataset
+from torch import nn, optim
+from torch.nn import functional as F
+
+from laplace import Laplace
+
+logging.basicConfig(level="ERROR")
+warnings.filterwarnings("ignore")
 
 # make deterministic
 torch.manual_seed(0)
@@ -22,9 +21,9 @@ np.random.seed(0)
 # Pairwise comparison dataset. The label indicates which `x0` or `x1` is preferred.
 data_dict = [
     {
-        'x0': torch.randn(3),
-        'x1': torch.randn(3),
-        'label': torch.randint(2, size=(1,)).item(),
+        "x0": torch.randn(3),
+        "x1": torch.randn(3),
+        "label": torch.randint(2, size=(1,)).item(),
     }
     for _ in range(10)
 ]
@@ -77,14 +76,14 @@ class SimpleRewardModel(nn.Module):
 # Preprocess to coalesce x0 and x1 into a single array/tensor
 def append_x0_x1(row):
     # The tensor values above are automatically casted as lists by `Dataset`
-    row['x'] = np.stack([row['x0'], row['x1']])  # (2, dim)
+    row["x"] = np.stack([row["x0"], row["x1"]])  # (2, dim)
     return row
 
 
-tensor_dataset = dataset.map(append_x0_x1, remove_columns=['x0', 'x1'])
-tensor_dataset.set_format(type='torch', columns=['x', 'label'])
+tensor_dataset = dataset.map(append_x0_x1, remove_columns=["x0", "x1"])
+tensor_dataset.set_format(type="torch", columns=["x", "label"])
 tensor_dataloader = data_utils.DataLoader(
-    data_utils.TensorDataset(tensor_dataset['x'], tensor_dataset['label']), batch_size=3
+    data_utils.TensorDataset(tensor_dataset["x"], tensor_dataset["label"]), batch_size=3
 )
 
 reward_model = SimpleRewardModel()
@@ -101,14 +100,14 @@ for epoch in range(10):
 
 # Laplace !!! Notice the likelihood !!!
 reward_model.eval()
-la = Laplace(reward_model, likelihood='reward_modeling', subset_of_weights='all')
+la = Laplace(reward_model, likelihood="reward_modeling", subset_of_weights="all")
 la.fit(tensor_dataloader)
 la.optimize_prior_precision()
 
 x_test = torch.randn(5, 3)
 pred_mean, pred_var = la(x_test)
 print(
-    f'Input shape {tuple(x_test.shape)}, predictive mean of shape '
-    + f'{tuple(pred_mean.shape)}, predictive covariance of shape '
-    + f'{tuple(pred_var.shape)}'
+    f"Input shape {tuple(x_test.shape)}, predictive mean of shape "
+    + f"{tuple(pred_mean.shape)}, predictive covariance of shape "
+    + f"{tuple(pred_var.shape)}"
 )

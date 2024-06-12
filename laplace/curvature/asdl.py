@@ -1,23 +1,21 @@
-from collections.abc import MutableMapping
 import warnings
+from collections.abc import MutableMapping
 
-import numpy as np
 import torch
-
+from asdl.fisher import FisherConfig, get_fisher_maker
+from asdl.grad_maker import LOSS_CROSS_ENTROPY, LOSS_MSE
+from asdl.gradient import batch_gradient
+from asdl.hessian import HessianConfig, HessianMaker
 from asdl.matrices import (
+    FISHER_EMP,
     FISHER_EXACT,
     FISHER_MC,
-    FISHER_EMP,
-    SHAPE_KRON,
     SHAPE_DIAG,
     SHAPE_FULL,
+    SHAPE_KRON,
 )
-from asdl.grad_maker import LOSS_MSE, LOSS_CROSS_ENTROPY
-from asdl.fisher import FisherConfig, get_fisher_maker
-from asdl.hessian import HessianMaker, HessianConfig
-from asdl.gradient import batch_gradient
 
-from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, _is_batchnorm
 
 EPS = 1e-6
@@ -32,8 +30,8 @@ class AsdlInterface(CurvatureInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
     ):
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
@@ -41,7 +39,7 @@ class AsdlInterface(CurvatureInterface):
 
     @property
     def loss_type(self):
-        return LOSS_MSE if self.likelihood == 'regression' else LOSS_CROSS_ENTROPY
+        return LOSS_MSE if self.likelihood == "regression" else LOSS_CROSS_ENTROPY
 
     def jacobians(self, x, enable_backprop=False):
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
@@ -125,25 +123,25 @@ class AsdlInterface(CurvatureInterface):
         kfacs = list()
         for module in self.model.modules():
             if _is_batchnorm(module):
-                warnings.warn('BatchNorm unsupported for Kron, ignore.')
+                warnings.warn("BatchNorm unsupported for Kron, ignore.")
                 continue
 
-            stats = getattr(module, 'fisher', None)
+            stats = getattr(module, "fisher", None)
             if stats is None:
                 continue
 
-            if hasattr(module, 'bias') and module.bias is not None:
+            if hasattr(module, "bias") and module.bias is not None:
                 # split up bias and weights
                 kfacs.append([stats.kron.B, stats.kron.A])
                 kfacs.append([stats.kron.B])
-            elif hasattr(module, 'weight'):
+            elif hasattr(module, "weight"):
                 p, q = stats.kron.B.numel(), stats.kron.A.numel()
                 if p == q == 1:
                     kfacs.append([stats.kron.B * stats.kron.A])
                 else:
                     kfacs.append([stats.kron.B, stats.kron.A])
             else:
-                raise ValueError(f'Whats happening with {module}?')
+                raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
     @staticmethod
@@ -166,7 +164,7 @@ class AsdlInterface(CurvatureInterface):
         )
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
-        if 'emp' in self._ggn_type:
+        if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
             dummy = (
                 dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
@@ -180,14 +178,14 @@ class AsdlInterface(CurvatureInterface):
         loss = self.lossfunc(f.detach(), y)
         vec = list()
         for module in self.model.modules():
-            stats = getattr(module, 'fisher', None)
+            stats = getattr(module, "fisher", None)
             if stats is None:
                 continue
             vec.extend(stats.to_vector())
         diag_ggn = torch.cat(vec)
         if self.subnetwork_indices is not None:
             diag_ggn = diag_ggn[self.subnetwork_indices]
-        if type(self) is AsdlEF and self.likelihood == 'regression':
+        if type(self) is AsdlEF and self.likelihood == "regression":
             curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
@@ -205,7 +203,7 @@ class AsdlInterface(CurvatureInterface):
         )
         fisher_maker = get_fisher_maker(self.model, cfg)
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
-        if 'emp' in self._ggn_type:
+        if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, X)
             dummy = (
                 dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
@@ -220,7 +218,7 @@ class AsdlInterface(CurvatureInterface):
         M = len(y)
         kron = self._get_kron_factors(M)
         kron = self._rescale_kron_factors(kron, N)
-        if type(self) is AsdlEF and self.likelihood == 'regression':
+        if type(self) is AsdlEF and self.likelihood == "regression":
             curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
@@ -244,8 +242,8 @@ class AsdlHessian(AsdlInterface):
         model,
         likelihood,
         last_layer=False,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
     ):
         super().__init__(
             model,
@@ -287,8 +285,8 @@ class AsdlGGN(AsdlInterface, GGNInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
         stochastic=False,
     ):
         super().__init__(
@@ -309,8 +307,8 @@ class AsdlEF(AsdlInterface, EFInterface):
         model,
         likelihood,
         last_layer=False,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
     ):
         super().__init__(model, likelihood, last_layer, None, dict_key_x, dict_key_y)
 

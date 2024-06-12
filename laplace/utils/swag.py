@@ -3,28 +3,36 @@ from copy import deepcopy
 import torch
 from torch.nn.utils import parameters_to_vector
 
-
-__all__ = ['fit_diagonal_swag_var']
+__all__ = ["fit_diagonal_swag_var"]
 
 
 def _param_vector(model):
     return parameters_to_vector(model.parameters()).detach()
 
 
-def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1,
-                          lr=0.01, momentum=0.9, weight_decay=3e-4, min_var=1e-30):
+def fit_diagonal_swag_var(
+    model,
+    train_loader,
+    criterion,
+    n_snapshots_total=40,
+    snapshot_freq=1,
+    lr=0.01,
+    momentum=0.9,
+    weight_decay=3e-4,
+    min_var=1e-30,
+):
     """
     Fit diagonal SWAG [1], which estimates marginal variances of model parameters by
     computing the first and second moment of SGD iterates with a large learning rate.
-    
+
     Implementation partly adapted from:
     - https://github.com/wjmaddox/swa_gaussian/blob/master/swag/posteriors/swag.py
     - https://github.com/wjmaddox/swa_gaussian/blob/master/experiments/train/run_swag.py
 
     References
     ----------
-    [1] Maddox, W., Garipov, T., Izmailov, P., Vetrov, D., Wilson, AG. 
-    [*A Simple Baseline for Bayesian Uncertainty in Deep Learning*](https://arxiv.org/abs/1902.02476). 
+    [1] Maddox, W., Garipov, T., Izmailov, P., Vetrov, D., Wilson, AG.
+    [*A Simple Baseline for Bayesian Uncertainty in Deep Learning*](https://arxiv.org/abs/1902.02476).
     NeurIPS 2019.
 
     Parameters
@@ -65,7 +73,8 @@ def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, 
 
     # run SGD to collect model snapshots
     optimizer = torch.optim.SGD(
-        _model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
+        _model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay
+    )
     n_epochs = snapshot_freq * n_snapshots_total
     for epoch in range(n_epochs):
         for inputs, targets in train_loader:
@@ -83,5 +92,5 @@ def fit_diagonal_swag_var(model, train_loader, criterion, n_snapshots_total=40, 
             n_snapshots += 1
 
     # compute marginal parameter variances, Var[P] = E[P^2] - E[P]^2
-    param_variances = torch.clamp(sq_mean - mean ** 2, min_var)
+    param_variances = torch.clamp(sq_mean - mean**2, min_var)
     return param_variances

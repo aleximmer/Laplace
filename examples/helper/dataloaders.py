@@ -1,13 +1,12 @@
 # Taken from https://github.com/AlexMeinke/certified-certain-uncertainty
 import torch
-from torchvision import datasets, transforms
 import torch.utils.data as data_utils
-
+from torchvision import datasets, transforms
 
 train_batch_size = 128
 test_batch_size = 100
 
-path = './temp/'
+path = "./temp/"
 
 
 def CIFAR10(train=True, batch_size=None, augm_flag=True):
@@ -21,7 +20,7 @@ def CIFAR10(train=True, batch_size=None, augm_flag=True):
     transform_train = transforms.Compose(
         [
             transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+            transforms.RandomCrop(32, padding=4, padding_mode="reflect"),
         ]
         + transform_base
     )
