@@ -58,7 +58,7 @@
 <dl>
 <dt id="laplace.curvature.CurvatureInterface"><code class="flex name class">
 <span>class <span class="ident">CurvatureInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface to access curvature for a model and corresponding likelihood.
@@ -77,6 +77,14 @@ structures, for example, a block-diagonal one.</p>
 <dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.Tensor</code>, default=<code>None</code></dt>
 <dd>indices of the vectorized model parameters that define the subnetwork
 to apply the Laplace approximation over</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 </dl>
 <h2 id="attributes">Attributes</h2>
 <dl>
@@ -251,7 +259,7 @@ vector of the dimensionality of parameters <span><span class="MathJax_Preview">\
 </dd>
 <dt id="laplace.curvature.GGNInterface"><code class="flex name class">
 <span>class <span class="ident">GGNInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False, num_samples=1)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False, num_samples=1)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generalized Gauss-Newton or Fisher Curvature Interface.
@@ -268,9 +276,17 @@ In addition to <code><a title="laplace.curvature.CurvatureInterface" href="#lapl
 <dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.Tensor</code>, default=<code>None</code></dt>
 <dd>indices of the vectorized model parameters that define the subnetwork
 to apply the Laplace approximation over</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 <dt><strong><code>stochastic</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>Fisher if stochastic else GGN</dd>
-<dt><strong><code>num_samples</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
+<dt><strong><code>num_samples</code></strong> :&ensp;<code>int</code>, default=<code>1</code></dt>
 <dd>Number of samples used to approximate the stochastic Fisher</dd>
 </dl></div>
 <h3>Ancestors</h3>
@@ -325,7 +341,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 </dd>
 <dt id="laplace.curvature.EFInterface"><code class="flex name class">
 <span>class <span class="ident">EFInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Empirical Fisher as Hessian approximation.
@@ -341,6 +357,14 @@ In addition to <code><a title="laplace.curvature.CurvatureInterface" href="#lapl
 <dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.Tensor</code>, default=<code>None</code></dt>
 <dd>indices of the vectorized model parameters that define the subnetwork
 to apply the Laplace approximation over</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 </dl>
 <h2 id="attributes">Attributes</h2>
 <dl>
@@ -402,7 +426,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 </dd>
 <dt id="laplace.curvature.BackPackInterface"><code class="flex name class">
 <span>class <span class="ident">BackPackInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Backpack backend.</p></div>
@@ -477,7 +501,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.BackPackGGN"><code class="flex name class">
 <span>class <span class="ident">BackPackGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using Backpack.</p></div>
@@ -504,7 +528,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.BackPackEF"><code class="flex name class">
 <span>class <span class="ident">BackPackEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using Backpack.</p></div>
@@ -531,7 +555,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklInterface"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -605,7 +629,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklGGN"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using asdfghjkl.</p></div>
@@ -632,7 +656,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklEF"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using asdfghjkl.</p></div>
@@ -659,7 +683,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklHessian"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, low_rank=10)</span>
+<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels', low_rank=10)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -694,7 +718,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdlInterface"><code class="flex name class">
 <span>class <span class="ident">AsdlInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -725,9 +749,9 @@ using asdfghjkl's gradient per output dimension.</p>
 using asdfghjkl's gradient per output dimension.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>UserDict</code></dt>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>MutableMapping (e.g. dict, UserDict)</code></dt>
 <dd>input data <code>(batch, input_shape)</code> on compatible device with model if torch.Tensor.
-If UserDict, then at least contains key ['input_ids'] or ['input_ids_0', 'input_ids_1'].
+If MutableMapping, then at least contains <code>self.dict_key_x</code>.
 The latter is specific for reward modeling.</dd>
 <dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default <code>= False</code></dt>
 <dd>whether to enable backprop through the Js and f w.r.t. x</dd>
@@ -777,7 +801,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.AsdlGGN"><code class="flex name class">
 <span>class <span class="ident">AsdlGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using asdfghjkl.</p></div>
@@ -804,7 +828,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.AsdlEF"><code class="flex name class">
 <span>class <span class="ident">AsdlEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using asdfghjkl.</p></div>
@@ -831,7 +855,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.AsdlHessian"><code class="flex name class">
 <span>class <span class="ident">AsdlHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, low_rank=10)</span>
+<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -857,7 +881,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsInterface"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Curvlinops backend. <a href="https://github.com/f-dangel/curvlinops">https://github.com/f-dangel/curvlinops</a></p></div>
@@ -888,7 +912,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsGGN"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using Curvlinops.</p></div>
@@ -915,7 +939,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsEF"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using Curvlinops.</p></div>
@@ -942,7 +966,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsHessian"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the full Hessian using Curvlinops.</p></div>
