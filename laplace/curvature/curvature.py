@@ -465,11 +465,13 @@ class EFInterface(CurvatureInterface):
             EF `(parameters, parameters)`
         """
         Gs, loss = self.gradients(x, y)
+        Gs, loss = Gs.detach(), loss.detach()
         H_ef = torch.einsum("bp,bq->pq", Gs, Gs)
         return self.factor * loss.detach(), self.factor * H_ef
 
     def diag(self, X, y, **kwargs):
         # Gs is (batchsize, n_params)
         Gs, loss = self.gradients(X, y)
+        Gs, loss = Gs.detach(), loss.detach()
         diag_ef = torch.einsum("bp,bp->p", Gs, Gs)
-        return self.factor * loss.detach(), self.factor * diag_ef
+        return self.factor * loss, self.factor * diag_ef
