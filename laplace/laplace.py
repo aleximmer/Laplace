@@ -1,12 +1,12 @@
+from laplace import * # noqa F403
 from laplace.baselaplace import BaseLaplace
-from laplace import *
 
 
 def Laplace(
     model,
     likelihood,
-    subset_of_weights='last_layer',
-    hessian_structure='kron',
+    subset_of_weights="last_layer",
+    hessian_structure="kron",
     *args,
     **kwargs,
 ):
@@ -27,9 +27,9 @@ def Laplace(
     laplace : BaseLaplace
         chosen subclass of BaseLaplace instantiated with additional arguments
     """
-    if subset_of_weights == 'subnetwork' and hessian_structure not in ['full', 'diag']:
+    if subset_of_weights == "subnetwork" and hessian_structure not in ["full", "diag"]:
         raise ValueError(
-            'Subnetwork Laplace requires a full or diagonal Hessian approximation!'
+            "Subnetwork Laplace requires a full or diagonal Hessian approximation!"
         )
     laplace_map = {
         subclass._key: subclass

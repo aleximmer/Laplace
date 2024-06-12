@@ -1,6 +1,5 @@
 import torch
-from torch.nn import MSELoss, CrossEntropyLoss
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
+from torch.nn import CrossEntropyLoss, MSELoss
 
 
 class CurvatureInterface:
@@ -43,10 +42,10 @@ class CurvatureInterface:
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
     ):
-        assert likelihood in ['regression', 'classification']
+        assert likelihood in ["regression", "classification"]
         self.likelihood = likelihood
         self.model = model
         self.last_layer = last_layer
@@ -54,11 +53,11 @@ class CurvatureInterface:
         self.dict_key_x = dict_key_x
         self.dict_key_y = dict_key_y
 
-        if likelihood == 'regression':
-            self.lossfunc = MSELoss(reduction='sum')
+        if likelihood == "regression":
+            self.lossfunc = MSELoss(reduction="sum")
             self.factor = 0.5
         else:
-            self.lossfunc = CrossEntropyLoss(reduction='sum')
+            self.lossfunc = CrossEntropyLoss(reduction="sum")
             self.factor = 1.0
 
         self.params = [p for p in self._model.parameters() if p.requires_grad]
@@ -177,7 +176,7 @@ class CurvatureInterface:
             .tile(bsize, 1, 1)
         )
         # Jacobians are batch x output x params
-        Js = torch.einsum('kp,kij->kijp', phi, identity).reshape(bsize, output_size, -1)
+        Js = torch.einsum("kp,kij->kijp", phi, identity).reshape(bsize, output_size, -1)
         if self.model.last_layer.bias is not None:
             Js = torch.cat([Js, identity], dim=2)
 
@@ -321,8 +320,8 @@ class GGNInterface(CurvatureInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
         stochastic=False,
         num_samples=1,
     ):
@@ -339,7 +338,7 @@ class GGNInterface(CurvatureInterface):
         F = 0
 
         for _ in range(self.num_samples):
-            if self.likelihood == 'regression':
+            if self.likelihood == "regression":
                 y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
                 grad_sample = f - y_sample  # functional MSE grad
             else:  # classification with softmax
@@ -351,18 +350,18 @@ class GGNInterface(CurvatureInterface):
             F += (
                 1
                 / self.num_samples
-                * torch.einsum('bc,bk->bck', grad_sample, grad_sample)
+                * torch.einsum("bc,bk->bck", grad_sample, grad_sample)
             )
 
         return F
 
     def _get_functional_hessian(self, f):
-        if self.likelihood == 'regression':
+        if self.likelihood == "regression":
             return None
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)
-            G = torch.diag_embed(ps) - torch.einsum('mk,mc->mck', ps, ps)
+            G = torch.diag_embed(ps) - torch.einsum("mk,mc->mck", ps, ps)
             return G
 
     def full(self, x, y, **kwargs):
@@ -391,9 +390,9 @@ class GGNInterface(CurvatureInterface):
         )
 
         if H_lik is not None:
-            H = torch.einsum('bcp,bck,bkq->pq', Js, H_lik, Js)
+            H = torch.einsum("bcp,bck,bkq->pq", Js, H_lik, Js)
         else:  # The case of exact GGN for regression
-            H = torch.einsum('bcp,bcq->pq', Js, Js)
+            H = torch.einsum("bcp,bcq->pq", Js, Js)
         loss = self.factor * self.lossfunc(f, y)
 
         return loss.detach(), H.detach()
@@ -409,9 +408,9 @@ class GGNInterface(CurvatureInterface):
         )
 
         if H_lik is not None:
-            H = torch.einsum('bcp,bck,bkp->p', Js, H_lik, Js)
+            H = torch.einsum("bcp,bck,bkp->p", Js, H_lik, Js)
         else:  # The case of exact GGN for regression
-            H = torch.einsum('bcp,bcp->p', Js, Js)
+            H = torch.einsum("bcp,bcp->p", Js, Js)
 
         return loss.detach(), H.detach()
 
@@ -466,11 +465,11 @@ class EFInterface(CurvatureInterface):
             EF `(parameters, parameters)`
         """
         Gs, loss = self.gradients(x, y)
-        H_ef = torch.einsum('bp,bq->pq', Gs, Gs)
+        H_ef = torch.einsum("bp,bq->pq", Gs, Gs)
         return self.factor * loss.detach(), self.factor * H_ef
 
     def diag(self, X, y, **kwargs):
         # Gs is (batchsize, n_params)
         Gs, loss = self.gradients(X, y)
-        diag_ef = torch.einsum('bp,bp->p', Gs, Gs)
+        diag_ef = torch.einsum("bp,bp->p", Gs, Gs)
         return self.factor * loss.detach(), self.factor * diag_ef

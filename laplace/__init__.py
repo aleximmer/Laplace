@@ -6,22 +6,24 @@
 .. include:: ../examples/reward_modeling_example.md
 """
 
-REGRESSION = 'regression'
-CLASSIFICATION = 'classification'
+REGRESSION = "regression"
+CLASSIFICATION = "classification"
 
 from laplace.baselaplace import (
     BaseLaplace,
-    ParametricLaplace,
+    DiagLaplace,
     FullLaplace,
     KronLaplace,
-    DiagLaplace,
     LowRankLaplace,
     FunctionalLaplace
 )
 from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace, FunctionalLLLaplace
 from laplace.subnetlaplace import SubnetLaplace, FullSubnetLaplace, DiagSubnetLaplace
+
 from laplace.laplace import Laplace
+from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace, LLLaplace
 from laplace.marglik_training import marglik_training
+from laplace.subnetlaplace import DiagSubnetLaplace, FullSubnetLaplace, SubnetLaplace
 
 
 __all__ = [
