@@ -370,7 +370,6 @@ def test_laplace_functionality(
         sigma_noise = 0.3
 
     if not multidim:
-        model = model
         last_layer_name = "1"
     else:
         model = model_with_reduction

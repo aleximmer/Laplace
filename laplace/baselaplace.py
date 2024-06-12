@@ -424,7 +424,7 @@ class BaseLaplace:
         loss_with_var=False,
         progress_bar=False,
     ):
-        assert callable(loss) or isinstance(loss, torchmetrics.Metric)
+        assert callable(loss) or isinstance(loss, tm.Metric)
 
         results = list()
         prior_precs = list()

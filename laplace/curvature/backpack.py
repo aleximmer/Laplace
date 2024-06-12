@@ -25,8 +25,8 @@ class BackPackInterface(CurvatureInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
     ):
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
@@ -126,8 +126,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         likelihood,
         last_layer=False,
         subnetwork_indices=None,
-        dict_key_x='input_ids',
-        dict_key_y='labels',
+        dict_key_x="input_ids",
+        dict_key_y="labels",
         stochastic=False,
     ):
         super().__init__(
