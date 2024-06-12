@@ -4,6 +4,7 @@ import torch
 from curvlinops import (
     EFLinearOperator,
     FisherMCLinearOperator,
+    FisherType,
     GGNLinearOperator,
     HessianLinearOperator,
     KFACLinearOperator,
@@ -143,7 +144,7 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
 
     @property
     def _kron_fisher_type(self):
-        return "mc" if self.stochastic else "type-2"
+        return FisherType.MC if self.stochastic else FisherType.TYPE2
 
     @property
     def _linop_context(self):
@@ -155,7 +156,7 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
 
     @property
     def _kron_fisher_type(self):
-        return "empirical"
+        return FisherType.EMPIRICAL
 
     @property
     def _linop_context(self):
