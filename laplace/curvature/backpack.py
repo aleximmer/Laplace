@@ -83,9 +83,14 @@ class BackPackInterface(CurvatureInterface):
         CTX.remove_hooks()
         _cleanup(model)
         if model.output_size > 1:
-            return torch.stack(to_stack, dim=2).transpose(1, 2), f
+            J = torch.stack(to_stack, dim=2).transpose(1, 2)
         else:
-            return Jk.unsqueeze(-1).transpose(1, 2), f
+            J = Jk.unsqueeze(-1).transpose(1, 2)
+
+        if not enable_backprop:
+            f = f.detach()
+            J = J.detach()
+        return J, f
 
     def gradients(self, x, y):
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
