@@ -8,7 +8,8 @@ The laplace package facilitates the application of Laplace approximations for en
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
 The library documentation is available at [https://aleximmer.github.io/Laplace](https://aleximmer.github.io/Laplace).
 
-There is also a corresponding paper, [*Laplace Redux — Effortless Bayesian Deep Learning*](https://arxiv.org/abs/2106.14806), which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:
+There is also a corresponding paper, [_Laplace Redux — Effortless Bayesian Deep Learning_](https://arxiv.org/abs/2106.14806), which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:
+
 ```bibtex
 @inproceedings{laplace2021,
   title={Laplace Redux--Effortless {B}ayesian Deep Learning},
@@ -18,19 +19,22 @@ There is also a corresponding paper, [*Laplace Redux — Effortless Bayesian Dee
   year={2021}
 }
 ```
+
 The [code](https://github.com/runame/laplace-redux) to reproduce the experiments in the paper is also publicly available; it provides examples of how to use our library for predictive uncertainty quantification, model selection, and continual learning.
 
 ## Setup
 
 For full compatibility, install this package in a fresh virtual env.
-We assume Python >= 3.8 (last tested on Python 3.10.12).
+We assume Python >= 3.9 since lower versions are [(soon to be) deprecated](https://devguide.python.org/versions/).
 PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with `pip`, run the following:
+
 ```bash
 pip install laplace-torch
 ```
 
 For development purposes, clone the repository and then install:
+
 ```bash
 # or after cloning the repository for development
 pip install -e .
@@ -41,14 +45,14 @@ pytest tests/
 
 ## Example usage
 
-### *Post-hoc* prior precision tuning of diagonal LA
+### _Post-hoc_ prior precision tuning of diagonal LA
 
 In the following example, a pre-trained model is loaded,
 then the Laplace approximation is fit to the training data
 (using a diagonal Hessian approximation over all parameters),
-and the prior precision is optimized with cross-validation `'gridsearch'`.
+and the prior precision is optimized with cross-validation `"gridsearch"`.
 After that, the resulting LA is used for prediction with
-the `'probit'` predictive for classification.
+the `"probit"` predictive for classification.
 
 ```python
 from laplace import Laplace
@@ -57,14 +61,14 @@ from laplace import Laplace
 model = load_map_model()
 
 # User-specified LA flavor
-la = Laplace(model, 'classification',
-             subset_of_weights='all',
-             hessian_structure='diag')
+la = Laplace(model, "classification",
+             subset_of_weights="all",
+             hessian_structure="diag")
 la.fit(train_loader)
-la.optimize_prior_precision(method='gridsearch', val_loader=val_loader)
+la.optimize_prior_precision(method="gridsearch", val_loader=val_loader)
 
 # User-specified predictive approx.
-pred = la(x, link_approx='probit')
+pred = la(x, link_approx="probit")
 ```
 
 ### Differentiating the log marginal likelihood w.r.t. hyperparameters
@@ -81,7 +85,7 @@ from laplace import Laplace
 model = load_model()
 
 # Default to recommended last-layer KFAC LA:
-la = Laplace(model, likelihood='regression')
+la = Laplace(model, likelihood="regression")
 la.fit(train_loader)
 
 # ML w.r.t. prior precision and observation noise
@@ -92,7 +96,7 @@ ml.backward()
 ### Laplace on foundation models like LLMs
 
 This library also supports Huggingface models and parameter-efficient fine-tuning.
-See `examples/huggingface_examples.py` and `examples/huggingface_examples.md` for the 
+See `examples/huggingface_examples.py` and `examples/huggingface_examples.md` for the
 exposition.
 
 First, we need to wrap the pretrained model so that the `forward` method takes a
@@ -106,23 +110,23 @@ can do your usual preprocessing like moving the tensor inputs into the correct d
 class MyGPT2(nn.Module):
     def __init__(self, tokenizer: PreTrainedTokenizer) -> None:
         super().__init__()
-        config = GPT2Config.from_pretrained('gpt2')
+        config = GPT2Config.from_pretrained("gpt2")
         config.pad_token_id = tokenizer.pad_token_id
         config.num_labels = 2
         self.hf_model = GPT2ForSequenceClassification.from_pretrained(
-            'gpt2', config=config
+            "gpt2", config=config
         )
 
     def forward(self, data: MutableMapping) -> torch.Tensor:
         device = next(self.parameters()).device
-        input_ids = data['input_ids'].to(device)
-        attn_mask = data['attention_mask'].to(device)
+        input_ids = data["input_ids"].to(device)
+        attn_mask = data["attention_mask"].to(device)
         output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
         return output_dict.logits
 ```
 
 Then you can "select" which parameters of the LLM you want to apply the Laplace approximation
-on, by switching off the gradients of the "unneeded" parameters. 
+on, by switching off the gradients of the "unneeded" parameters.
 For example, we can replicate a last-layer Laplace: (in actual practice, use `Laplace(..., subset_of_weights='last_layer', ...)` instead, though!)
 
 ```python
@@ -137,10 +141,10 @@ for p in model.hf_model.score.parameters():
 
 la = Laplace(
     model,
-    likelihood='classification',
+    likelihood="classification",
     # Will only hit the last-layer since it's the only one that is grad-enabled
-    subset_of_weights='all',
-    hessian_structure='diag',
+    subset_of_weights="all",
+    hessian_structure="diag",
 )
 la.fit(dataloader)
 la.optimize_prior_precision()
@@ -160,9 +164,9 @@ def get_lora_model():
     config = LoraConfig(
         r=4,
         lora_alpha=16,
-        target_modules=['c_attn'],  # LoRA on the attention weights
+        target_modules=["c_attn"],  # LoRA on the attention weights
         lora_dropout=0.1,
-        bias='none',
+        bias="none",
     )
     lora_model = get_peft_model(model, config)
     return lora_model
@@ -175,9 +179,9 @@ lora_model.eval()
 
 lora_la = Laplace(
     lora_model,
-    likelihood='classification',
-    subset_of_weights='all',
-    hessian_structure='diag',
+    likelihood="classification",
+    subset_of_weights="all",
+    hessian_structure="diag",
     backend=AsdlGGN,
 )
 
@@ -208,7 +212,7 @@ subnetwork_indices = subnetwork_mask.select()
 
 # Example 2: specify the layers that define the subnetwork
 from laplace.utils import ModuleNameSubnetMask
-subnetwork_mask = ModuleNameSubnetMask(model, module_names=['layer.1', 'layer.3'])
+subnetwork_mask = ModuleNameSubnetMask(model, module_names=["layer.1", "layer.3"])
 subnetwork_mask.select()
 subnetwork_indices = subnetwork_mask.indices
 
@@ -217,9 +221,9 @@ import torch
 subnetwork_indices = torch.tensor([0, 4, 11, 42, 123, 2021])
 
 # Define and fit subnetwork LA using the specified subnetwork indices
-la = Laplace(model, 'classification',
-             subset_of_weights='subnetwork',
-             hessian_structure='full',
+la = Laplace(model, "classification",
+             subset_of_weights="subnetwork",
+             hessian_structure="full",
              subnetwork_indices=subnetwork_indices)
 la.fit(train_loader)
 ```
@@ -229,21 +233,21 @@ la.fit(train_loader)
 As with plain `torch`, we support to ways to serialize data.
 
 One is the familiar `state_dict` approach. Here you need to save and re-create
-both `model` and  `Laplace`. Use this for long-term storage of models and
+both `model` and `Laplace`. Use this for long-term storage of models and
 sharing of a fitted `Laplace` instance.
 
 ```py
 # Save model and Laplace instance
-torch.save(model.state_dict(), 'model_state_dict.bin')
-torch.save(la.state_dict(), 'la_state_dict.bin')
+torch.save(model.state_dict(), "model_state_dict.bin")
+torch.save(la.state_dict(), "la_state_dict.bin")
 
 # Load serialized data
 model2 = MyModel(...)
-model2.load_state_dict(torch.load('model_state_dict.bin'))
-la2 = Laplace(model2, 'classification',
-              subset_of_weights='all',
-              hessian_structure='diag')
-la2.load_state_dict(torch.load('la_state_dict.bin'))
+model2.load_state_dict(torch.load("model_state_dict.bin"))
+la2 = Laplace(model2, "classification",
+              subset_of_weights="all",
+              hessian_structure="diag")
+la2.load_state_dict(torch.load("la_state_dict.bin"))
 ```
 
 The second approach is to save the whole `Laplace` object, including
@@ -255,10 +259,10 @@ Use this for quick save-load cycles during experiments, say.
 
 ```py
 # Save Laplace, including la.model
-torch.save(la, 'la.pt')
+torch.save(la, "la.pt")
 
 # Load both
-torch.load('la.pt')
+torch.load("la.pt")
 ```
 
 Some Laplace variants such as `LLLaplace` might have trouble being serialized
@@ -269,22 +273,23 @@ using the default `pickle` module, which `torch.save()` and `torch.load()` use
 ```py
 import dill
 
-torch.save(la, 'la.pt', pickle_module=dill)
+torch.save(la, "la.pt", pickle_module=dill)
 ```
 
 With both methods, you are free to switch devices, for instance when you
 trained on a GPU but want to run predictions on CPU. In this case, use
 
 ```py
-torch.load(..., map_location='cpu')
+torch.load(..., map_location="cpu")
 ```
 
 ## Structure
+
 The laplace package consists of two main components:
 
-1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'` and `'diag'`). This results in _nine_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`,  and `laplace.DiagLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), [`laplace.SubnetLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py) (which only supports `'full'` and `'diag'` Hessian approximations) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
+1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`"all"`, `"subnetwork"` and `"last_layer"`) and different structures of the Hessian approximation (`"full"`, `"kron"`, `"lowrank"` and `"diag"`). This results in _nine_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`, and `laplace.DiagLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), [`laplace.SubnetLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py) (which only supports `"full"` and `"diag"` Hessian approximations) and `laplace.LowRankLaplace` (which only supports inference over `"all"` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
 2. The backends in [`laplace.curvature`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/) which provide access to Hessian approximations of
-the corresponding sparsity structures, for example, the diagonal GGN.
+   the corresponding sparsity structures, for example, the diagonal GGN.
 
 Additionally, the package provides utilities for
 decomposing a neural network into feature extractor and last layer for `LLLaplace` subclasses ([`laplace.utils.feature_extractor`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/feature_extractor.py))
@@ -296,6 +301,7 @@ Automatic subnetwork selection strategies include: uniformly at random (`laplace
 In addition to that, subnetworks can also be specified manually, by listing the names of either the model parameters (`ParamNameSubnetMask`) or modules (`ModuleNameSubnetMask`) to perform Laplace inference over.
 
 ## Extendability
+
 To extend the laplace package, new `BaseLaplace` subclasses can be designed, for example,
 Laplace with a block-diagonal Hessian structure.
 One can also implement custom subnetwork selection strategies as new subclasses of `SubnetMask`.
@@ -326,14 +332,14 @@ pdoc --http 0.0.0.0:8080 laplace --template-dir template
 
 This package relies on various improvements to the Laplace approximation for neural networks, which was originally due to MacKay [1]. Please consider citing the respective papers if you use any of their proposed methods via our laplace library.
 
-- [1] MacKay, DJC. [*A Practical Bayesian Framework for Backpropagation Networks*](https://authors.library.caltech.edu/13793/). Neural Computation 1992.
-- [2] Gibbs, M. N. [*Bayesian Gaussian Processes for Regression and Classification*](https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.147.1130&rep=rep1&type=pdf). PhD Thesis 1997.
-- [3] Snoek, J., Rippel, O., Swersky, K., Kiros, R., Satish, N., Sundaram, N., Patwary, M., Prabhat, M., Adams, R. [*Scalable Bayesian Optimization Using Deep Neural Networks*](https://arxiv.org/abs/1502.05700). ICML 2015.
-- [4] Ritter, H., Botev, A., Barber, D. [*A Scalable Laplace Approximation for Neural Networks*](https://openreview.net/forum?id=Skdvd2xAZ). ICLR 2018.
-- [5] Foong, A. Y., Li, Y., Hernández-Lobato, J. M., Turner, R. E. [*'In-Between' Uncertainty in Bayesian Neural Networks*](https://arxiv.org/abs/1906.11537). ICML UDL Workshop 2019.
-- [6] Khan, M. E., Immer, A., Abedi, E., Korzepa, M. [*Approximate Inference Turns Deep Networks into Gaussian Processes*](https://arxiv.org/abs/1906.01930). NeurIPS 2019.
-- [7] Kristiadi, A., Hein, M., Hennig, P. [*Being Bayesian, Even Just a Bit, Fixes Overconfidence in ReLU Networks*](https://arxiv.org/abs/2002.10118). ICML 2020.
-- [8] Immer, A., Korzepa, M., Bauer, M. [*Improving predictions of Bayesian neural nets via local linearization*](https://arxiv.org/abs/2008.08400). AISTATS 2021.
-- [9] Sharma, A., Azizan, N., Pavone, M. [*Sketching Curvature for Efficient Out-of-Distribution Detection for Deep Neural Networks*](https://arxiv.org/abs/2102.12567). UAI 2021.
-- [10] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM. [*Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning*](https://arxiv.org/abs/2104.04975). ICML 2021.
-- [11] Daxberger, E., Nalisnick, E., Allingham, JU., Antorán, J., Hernández-Lobato, JM. [*Bayesian Deep Learning via Subnetwork Inference*](https://arxiv.org/abs/2010.14689). ICML 2021.
+- [1] MacKay, DJC. [_A Practical Bayesian Framework for Backpropagation Networks_](https://authors.library.caltech.edu/13793/). Neural Computation 1992.
+- [2] Gibbs, M. N. [_Bayesian Gaussian Processes for Regression and Classification_](https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.147.1130&rep=rep1&type=pdf). PhD Thesis 1997.
+- [3] Snoek, J., Rippel, O., Swersky, K., Kiros, R., Satish, N., Sundaram, N., Patwary, M., Prabhat, M., Adams, R. [_Scalable Bayesian Optimization Using Deep Neural Networks_](https://arxiv.org/abs/1502.05700). ICML 2015.
+- [4] Ritter, H., Botev, A., Barber, D. [_A Scalable Laplace Approximation for Neural Networks_](https://openreview.net/forum?id=Skdvd2xAZ). ICLR 2018.
+- [5] Foong, A. Y., Li, Y., Hernández-Lobato, J. M., Turner, R. E. [_'In-Between' Uncertainty in Bayesian Neural Networks_](https://arxiv.org/abs/1906.11537). ICML UDL Workshop 2019.
+- [6] Khan, M. E., Immer, A., Abedi, E., Korzepa, M. [_Approximate Inference Turns Deep Networks into Gaussian Processes_](https://arxiv.org/abs/1906.01930). NeurIPS 2019.
+- [7] Kristiadi, A., Hein, M., Hennig, P. [_Being Bayesian, Even Just a Bit, Fixes Overconfidence in ReLU Networks_](https://arxiv.org/abs/2002.10118). ICML 2020.
+- [8] Immer, A., Korzepa, M., Bauer, M. [_Improving predictions of Bayesian neural nets via local linearization_](https://arxiv.org/abs/2008.08400). AISTATS 2021.
+- [9] Sharma, A., Azizan, N., Pavone, M. [_Sketching Curvature for Efficient Out-of-Distribution Detection for Deep Neural Networks_](https://arxiv.org/abs/2102.12567). UAI 2021.
+- [10] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM. [_Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning_](https://arxiv.org/abs/2104.04975). ICML 2021.
+- [11] Daxberger, E., Nalisnick, E., Allingham, JU., Antorán, J., Hernández-Lobato, JM. [_Bayesian Deep Learning via Subnetwork Inference_](https://arxiv.org/abs/2010.14689). ICML 2021.
