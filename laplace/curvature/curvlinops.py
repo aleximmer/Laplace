@@ -4,6 +4,7 @@ import torch
 from curvlinops import (
     EFLinearOperator,
     FisherMCLinearOperator,
+    FisherType,
     GGNLinearOperator,
     HessianLinearOperator,
     KFACLinearOperator,
@@ -78,7 +79,6 @@ class CurvlinopsInterface(CurvatureInterface):
             self.params,
             [(X, y)],
             fisher_type=self._kron_fisher_type,
-            loss_average=None,  # Since self.lossfunc is sum
             separate_weight_and_bias=True,
             check_deterministic=False,  # To avoid overhead
             # `kwargs` for `mc_samples` when `stochastic=True` and `kfac_approx` to
@@ -144,7 +144,7 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
 
     @property
     def _kron_fisher_type(self):
-        return "mc" if self.stochastic else "type-2"
+        return FisherType.MC if self.stochastic else FisherType.TYPE2
 
     @property
     def _linop_context(self):
@@ -156,7 +156,7 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
 
     @property
     def _kron_fisher_type(self):
-        return "empirical"
+        return FisherType.EMPIRICAL
 
     @property
     def _linop_context(self):
