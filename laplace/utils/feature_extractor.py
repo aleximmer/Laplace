@@ -4,13 +4,13 @@ from typing import Callable, Optional, Tuple
 import torch
 import torch.nn as nn
 
-__all__ = ['FeatureExtractor']
+__all__ = ["FeatureExtractor"]
 
 
 class FeatureReduction(str, Enum):
-    PICK_FIRST = 'pick_first'
-    PICK_LAST = 'pick_last'
-    AVERAGE = 'average'
+    PICK_FIRST = "pick_first"
+    PICK_LAST = "pick_last"
+    AVERAGE = "average"
 
 
 class FeatureExtractor(nn.Module):
@@ -54,7 +54,7 @@ class FeatureExtractor(nn.Module):
             fr.value for fr in FeatureReduction
         ]:
             raise ValueError(
-                '`feature_reduction` must take value in the `FeatureReduction enum` or '
+                "`feature_reduction` must take value in the `FeatureReduction enum` or "
                 "one of `{'pick_first', 'pick_last', 'average'}`!"
             )
 
@@ -105,9 +105,13 @@ class FeatureExtractor(nn.Module):
             n_intermediate_dims = len(features.shape) - 2
 
             if self.feature_reduction == FeatureReduction.PICK_FIRST:
-                features = features[:, *([0] * n_intermediate_dims), :].squeeze()
+                features = features[
+                    (slice(None), *([0] * n_intermediate_dims), slice(None))
+                ].squeeze()
             elif self.feature_reduction == FeatureReduction.PICK_LAST:
-                features = features[:, *([0] * n_intermediate_dims), :].squeeze()
+                features = features[
+                    (slice(None), *([-1] * n_intermediate_dims), slice(None))
+                ].squeeze()
             else:
                 ndim = features.ndim
                 features = features.mean(
@@ -129,7 +133,7 @@ class FeatureExtractor(nn.Module):
         self._last_layer_name = last_layer_name
         self.last_layer = dict(self.model.named_modules())[last_layer_name]
         if not isinstance(self.last_layer, nn.Linear):
-            raise ValueError('Use model with a linear last layer.')
+            raise ValueError("Use model with a linear last layer.")
 
         # set forward hook to extract features in future forward passes
         self.last_layer.register_forward_hook(self._get_hook(last_layer_name))
@@ -158,7 +162,7 @@ class FeatureExtractor(nn.Module):
             one batch of data to use as input for the forward pass
         """
         if self.last_layer is not None:
-            raise ValueError('Last layer is already known.')
+            raise ValueError("Last layer is already known.")
 
         act_out = dict()
 
@@ -182,7 +186,7 @@ class FeatureExtractor(nn.Module):
         # check if model has more than one module
         # (there might be pathological exceptions)
         if len(handles) <= 2:
-            raise ValueError('The model only has one module.')
+            raise ValueError("The model only has one module.")
 
         # forward pass to find execution order
         out = self.model(x)
@@ -199,4 +203,4 @@ class FeatureExtractor(nn.Module):
 
                 return out
 
-        raise ValueError('Something went wrong (all modules have children).')
+        raise ValueError("Something went wrong (all modules have children).")

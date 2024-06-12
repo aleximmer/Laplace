@@ -1,14 +1,13 @@
-import pytest
 import numpy as np
+import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
+from laplace.curvature import AsdlGGN, BackPackGGN
 from laplace.utils import Kron, block_diag
 from laplace.utils import kron as kron_prod
-from laplace.curvature import BackPackGGN, AsdlGGN
-from tests.utils import get_psd_matrix, get_diag_psd_matrix, jacobians_naive
-
+from tests.utils import get_diag_psd_matrix, get_psd_matrix, jacobians_naive
 
 torch.set_default_tensor_type(torch.DoubleTensor)
 
@@ -16,23 +15,23 @@ torch.set_default_tensor_type(torch.DoubleTensor)
 @pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     model_params = list(model.parameters())
-    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
-    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
     return model
 
 
 @pytest.fixture
 def small_model():
     model = torch.nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     return model
 
 
 def test_init_from_model(model):
-    kron = Kron.init_from_model(model, 'cpu')
-    expected_sizes = [[20*20, 3*3], [20*20], [2*2, 20*20], [2*2]]
+    kron = Kron.init_from_model(model, "cpu")
+    expected_sizes = [[20 * 20, 3 * 3], [20 * 20], [2 * 2, 20 * 20], [2 * 2]]
     for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
             assert torch.all(fi == 0)
@@ -40,8 +39,8 @@ def test_init_from_model(model):
 
 
 def test_init_from_iterable(model):
-    kron = Kron.init_from_model(model.parameters(), 'cpu')
-    expected_sizes = [[20*20, 3*3], [20*20], [2*2, 20*20], [2*2]]
+    kron = Kron.init_from_model(model.parameters(), "cpu")
+    expected_sizes = [[20 * 20, 3 * 3], [20 * 20], [2 * 2, 20 * 20], [2 * 2]]
     for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
             assert torch.all(fi == 0)
@@ -49,7 +48,7 @@ def test_init_from_iterable(model):
 
 
 def test_addition(model):
-    kron = Kron.init_from_model(model.parameters(), 'cpu')
+    kron = Kron.init_from_model(model.parameters(), "cpu")
     expected_sizes = [[20, 3], [20], [2, 20], [2]]
     to_add = Kron([[torch.randn(i, i) for i in sizes] for sizes in expected_sizes])
     kron += to_add
@@ -81,10 +80,12 @@ def test_decompose():
     kfacs = [[get_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
     kron = Kron(kfacs)
     kron_decomp = kron.decompose()
-    for facs, Qs, ls in zip(kron.kfacs, kron_decomp.eigenvectors, kron_decomp.eigenvalues):
+    for facs, Qs, ls in zip(
+        kron.kfacs, kron_decomp.eigenvectors, kron_decomp.eigenvalues
+    ):
         if len(facs) == 1:
-            H, Q, l = facs[0], Qs[0], ls[0]
-            reconstructed = Q @ torch.diag(l) @ Q.T
+            H, Q, eigval = facs[0], Qs[0], ls[0]
+            reconstructed = Q @ torch.diag(eigval) @ Q.T
             assert torch.allclose(H, reconstructed, rtol=1e-3)
         if len(facs) == 2:
             gtruth = kron_prod(facs[0], facs[1])
@@ -100,10 +101,12 @@ def test_decompose():
     diag_kfacs = [[get_diag_psd_matrix(i) for i in sizes] for sizes in expected_sizes]
     kron = Kron(diag_kfacs)
     kron_decomp = kron.decompose()
-    for facs, Qs, ls in zip(kron.kfacs, kron_decomp.eigenvectors, kron_decomp.eigenvalues):
+    for facs, Qs, ls in zip(
+        kron.kfacs, kron_decomp.eigenvectors, kron_decomp.eigenvalues
+    ):
         if len(facs) == 1:
-            H, Q, l = facs[0], Qs[0], ls[0]
-            reconstructed = (Q @ torch.diag(l) @ Q.T).diag()
+            H, Q, eigval = facs[0], Qs[0], ls[0]
+            reconstructed = (Q @ torch.diag(eigval) @ Q.T).diag()
             assert torch.allclose(H, reconstructed, rtol=1e-3)
         if len(facs) == 2:
             gtruth = kron_prod(facs[0].diag(), facs[1].diag())
@@ -137,7 +140,7 @@ def test_bmm_dense(small_model):
     y = torch.randn(5, 2)
 
     # Dense Kronecker factors.
-    backend = BackPackGGN(model, 'regression', stochastic=False)
+    backend = BackPackGGN(model, "regression", stochastic=False)
     _, kron = backend.kron(X, y, N=5)
     kron_decomp = kron.decompose()
     Js, _ = jacobians_naive(model, X)
@@ -154,29 +157,29 @@ def test_bmm_dense(small_model):
     # test J @ Kron_decomp @ Jt (square form)
     JS = kron_decomp.bmm(Js, exponent=1)
     JS_true = Js @ S
-    JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
-    JSJ = torch.bmm(JS, Js.transpose(1,2))
+    JSJ_true = torch.bmm(JS_true, Js.transpose(1, 2))
+    JSJ = torch.bmm(JS, Js.transpose(1, 2))
     assert torch.allclose(JSJ, JSJ_true)
     assert torch.allclose(JS, JS_true)
 
     # test J @ Kron @ Jt (square form)
     JS_nodecomp = kron.bmm(Js)
-    JSJ_nodecomp = torch.bmm(JS_nodecomp, Js.transpose(1,2))
+    JSJ_nodecomp = torch.bmm(JS_nodecomp, Js.transpose(1, 2))
     assert torch.allclose(JSJ_nodecomp, JSJ)
     assert torch.allclose(JS_nodecomp, JS)
 
     # test J @ S_inv @ J (funcitonal variance)
     JSJ = kron_decomp.inv_square_form(Js)
     S_inv = S.inverse()
-    JSJ_true = torch.bmm(Js @ S_inv, Js.transpose(1,2))
+    JSJ_true = torch.bmm(Js @ S_inv, Js.transpose(1, 2))
     assert torch.allclose(JSJ, JSJ_true)
 
     # test J @ S^-1/2  (sampling)
-    JS = kron_decomp.bmm(Js, exponent=-1/2)
-    JSJ = torch.bmm(JS, Js.transpose(1,2))
-    l, Q = torch.linalg.eigh(S_inv, UPLO='U')
-    JS_true = Js @ Q @ torch.diag(torch.sqrt(l)) @ Q.T
-    JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
+    JS = kron_decomp.bmm(Js, exponent=-1 / 2)
+    JSJ = torch.bmm(JS, Js.transpose(1, 2))
+    eigval, Q = torch.linalg.eigh(S_inv, UPLO="U")
+    JS_true = Js @ Q @ torch.diag(torch.sqrt(eigval)) @ Q.T
+    JSJ_true = torch.bmm(JS_true, Js.transpose(1, 2))
     assert torch.allclose(JS, JS_true)
     assert torch.allclose(JSJ, JSJ_true)
 
@@ -195,7 +198,7 @@ def test_bmm_dense(small_model):
     assert torch.allclose(JS, JS_nodecomp)
 
 
-@pytest.mark.skip(reason='For compatibility with ASDL master')
+@pytest.mark.skip(reason="For compatibility with ASDL master")
 def test_bmm_diag(small_model):
     model = small_model
     # model = single_output_model
@@ -203,7 +206,7 @@ def test_bmm_diag(small_model):
     y = torch.randn(5, 2)
 
     # Diagonal Kronecker factors.
-    backend = AsdlGGN(model, 'regression', stochastic=False)
+    backend = AsdlGGN(model, "regression", stochastic=False)
     _, kron = backend.kron(X, y, N=5, diag_A=True, diag_B=True)
     kron_decomp = kron.decompose()
     Js, _ = jacobians_naive(model, X)
@@ -222,29 +225,29 @@ def test_bmm_diag(small_model):
     # test J @ Kron_decomp @ Jt (square form)
     JS = kron_decomp.bmm(Js, exponent=1)
     JS_true = Js @ S
-    JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
-    JSJ = torch.bmm(JS, Js.transpose(1,2))
+    JSJ_true = torch.bmm(JS_true, Js.transpose(1, 2))
+    JSJ = torch.bmm(JS, Js.transpose(1, 2))
     assert torch.allclose(JSJ, JSJ_true)
     assert torch.allclose(JS, JS_true)
 
     # test J @ Kron @ Jt (square form)
     JS_nodecomp = kron.bmm(Js)
-    JSJ_nodecomp = torch.bmm(JS_nodecomp, Js.transpose(1,2))
+    JSJ_nodecomp = torch.bmm(JS_nodecomp, Js.transpose(1, 2))
     assert torch.allclose(JSJ_nodecomp, JSJ)
     assert torch.allclose(JS_nodecomp, JS)
 
     # test J @ S_inv @ J (funcitonal variance)
     JSJ = kron_decomp.inv_square_form(Js)
     S_inv = S.inverse()
-    JSJ_true = torch.bmm(Js @ S_inv, Js.transpose(1,2))
+    JSJ_true = torch.bmm(Js @ S_inv, Js.transpose(1, 2))
     assert torch.allclose(JSJ, JSJ_true)
 
     # test J @ S^-1/2  (sampling)
-    JS = kron_decomp.bmm(Js, exponent=-1/2)
-    JSJ = torch.bmm(JS, Js.transpose(1,2))
-    l, Q = torch.linalg.eigh(S_inv, UPLO='U')
-    JS_true = Js @ Q @ torch.diag(torch.sqrt(l)) @ Q.T
-    JSJ_true = torch.bmm(JS_true, Js.transpose(1,2))
+    JS = kron_decomp.bmm(Js, exponent=-1 / 2)
+    JSJ = torch.bmm(JS, Js.transpose(1, 2))
+    eigval, Q = torch.linalg.eigh(S_inv, UPLO="U")
+    JS_true = Js @ Q @ torch.diag(torch.sqrt(eigval)) @ Q.T
+    JSJ_true = torch.bmm(JS_true, Js.transpose(1, 2))
     assert torch.allclose(JS, JS_true)
     assert torch.allclose(JSJ, JSJ_true)
 
@@ -271,7 +274,9 @@ def test_matrix_consistent():
     kron = Kron(kfacs)
     kron_decomp = kron.decompose()
     assert torch.allclose(kron.to_matrix(), kron_decomp.to_matrix(exponent=1))
-    assert torch.allclose(kron.to_matrix().inverse(), kron_decomp.to_matrix(exponent=-1))
+    assert torch.allclose(
+        kron.to_matrix().inverse(), kron_decomp.to_matrix(exponent=-1)
+    )
     M_true = kron.to_matrix()
     M_true.diagonal().add_(3.4)
     kron_decomp += torch.tensor(3.4)
@@ -281,7 +286,9 @@ def test_matrix_consistent():
     kron = Kron(diag_kfacs)
     kron_decomp = kron.decompose()
     assert torch.allclose(kron.to_matrix(), kron_decomp.to_matrix(exponent=1))
-    assert torch.allclose(kron.to_matrix().inverse(), kron_decomp.to_matrix(exponent=-1))
+    assert torch.allclose(
+        kron.to_matrix().inverse(), kron_decomp.to_matrix(exponent=-1)
+    )
     M_true = kron.to_matrix()
     M_true.diagonal().add_(3.4)
     kron_decomp += torch.tensor(3.4)
