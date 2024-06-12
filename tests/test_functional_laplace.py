@@ -25,7 +25,7 @@ torch.manual_seed(711)
 
 
 @pytest.mark.parametrize(
-    'laplace,diagonal_kernel',
+    "laplace,diagonal_kernel",
     product(
         [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
         [True, False],
@@ -40,11 +40,11 @@ def test_gp_equivalence_regression(laplace, diagonal_kernel):
 
     parametric_laplace, functional_laplace = laplace
     full_la = parametric_laplace(
-        model, 'regression', sigma_noise=true_sigma_noise, prior_precision=2.0
+        model, "regression", sigma_noise=true_sigma_noise, prior_precision=2.0
     )
     functional_gp_la = functional_laplace(
         model,
-        'regression',
+        "regression",
         num_data=M,
         sigma_noise=true_sigma_noise,
         diagonal_kernel=diagonal_kernel,
@@ -55,14 +55,14 @@ def test_gp_equivalence_regression(laplace, diagonal_kernel):
 
     f_mu_full, f_var_full = full_la(X_test)
     f_mu_gp, f_var_gp = functional_gp_la(X_test)
-    
+
     assert torch.allclose(f_mu_full, f_mu_gp)
     # if float64 is used instead of float32, one can use atol=1e-10 in assert below
     assert torch.allclose(f_var_full, f_var_gp, atol=1e-2)
 
 
 @pytest.mark.parametrize(
-    'parametric_laplace,functional_laplace',
+    "parametric_laplace,functional_laplace",
     [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
 )
 def test_gp_equivalence_regression_multivariate(
@@ -74,11 +74,11 @@ def test_gp_equivalence_regression_multivariate(
     model = toy_model(train_loader, in_dim=c, out_dim=c)
 
     full_la = parametric_laplace(
-        model, 'regression', sigma_noise=true_sigma_noise, prior_precision=2.0
+        model, "regression", sigma_noise=true_sigma_noise, prior_precision=2.0
     )
     functional_gp_la = functional_laplace(
         model,
-        'regression',
+        "regression",
         num_data=len(X_train),
         sigma_noise=true_sigma_noise,
         diagonal_kernel=False,
@@ -89,14 +89,14 @@ def test_gp_equivalence_regression_multivariate(
 
     f_mu_full, f_var_full = full_la(X_test)
     f_mu_gp, f_var_gp = functional_gp_la(X_test)
-    
+
     assert torch.allclose(f_mu_full, f_mu_gp)
     # if float64 is used instead of float32, one can use atol=1e-10 in assert below
     assert torch.allclose(f_var_full, f_var_gp, atol=1e-2)
 
 
 @pytest.mark.parametrize(
-    'laplace,diagonal_kernel,gp_backend',
+    "laplace,diagonal_kernel,gp_backend",
     product(
         [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
         [True, False],
@@ -110,10 +110,10 @@ def test_gp_equivalence_classification(laplace, diagonal_kernel, gp_backend, c=2
     model = toy_model(train_loader, in_dim=4, out_dim=c, regression=False)
 
     parametric_laplace, functional_laplace = laplace
-    full_la = parametric_laplace(model, 'classification', prior_precision=1.0)
+    full_la = parametric_laplace(model, "classification", prior_precision=1.0)
     functional_gp_la = functional_laplace(
         model,
-        'classification',
+        "classification",
         num_data=len(X_train),
         diagonal_kernel=diagonal_kernel,
         prior_precision=1.0,

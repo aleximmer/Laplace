@@ -10,13 +10,13 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import (
     DiagLaplace,
-    FunctionalLaplace,
-    FunctionalLLLaplace,
     DiagLLLaplace,
     DiagSubnetLaplace,
     FullLaplace,
     FullLLLaplace,
     FullSubnetLaplace,
+    FunctionalLaplace,
+    FunctionalLLLaplace,
     KronLaplace,
     KronLLLaplace,
     Laplace,
@@ -114,17 +114,17 @@ def test_serialize(laplace, model, reg_loader):
     assert torch.allclose(f_mean, f_mean2)
     assert torch.allclose(f_var, f_var2)
 
-@pytest.mark.parametrize('laplace', flavors_functional)
+
+@pytest.mark.parametrize("laplace", flavors_functional)
 def test_serialize_functional(laplace, model, reg_loader):
-    la = laplace(model, 'regression', num_data = 10)
+    la = laplace(model, "regression", num_data=10)
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
-    torch.save(la.state_dict(), 'state_dict.bin')
+    torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model, 'regression', num_data = 10)
-    la2.load_state_dict(torch.load('state_dict.bin'))
-
+    la2 = laplace(model, "regression", num_data=10)
+    la2.load_state_dict(torch.load("state_dict.bin"))
 
     assert la.sigma_noise == la2.sigma_noise
 
@@ -169,23 +169,24 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
             assert isinstance(val, (list, tuple, int, float, str, bool, torch.Tensor))
 
 
-
-@pytest.mark.parametrize('laplace', flavors_functional)
+@pytest.mark.parametrize("laplace", flavors_functional)
 def test_serialize_no_pickle_functional(laplace, model, reg_loader):
-    la = laplace(model, 'regression', num_data = 10)
+    la = laplace(model, "regression", num_data=10)
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
-    torch.save(la.state_dict(), 'state_dict.bin')
-    state_dict = torch.load('state_dict.bin')
+    torch.save(la.state_dict(), "state_dict.bin")
+    state_dict = torch.load("state_dict.bin")
 
     # Make sure no pickle object
     for val in state_dict.values():
         if val is not None:
-            assert isinstance(val, (DataLoader, list, tuple, int, float, str, bool, torch.Tensor))
+            assert isinstance(
+                val, (DataLoader, list, tuple, int, float, str, bool, torch.Tensor)
+            )
 
 
-@pytest.mark.parametrize('laplace', flavors_subnet)
+@pytest.mark.parametrize("laplace", flavors_subnet)
 def test_serialize_subnetlaplace(laplace, model, reg_loader):
     subnetwork_indices = torch.LongTensor([1, 10, 104, 44])
     la = laplace(model, "regression", subnetwork_indices=subnetwork_indices)

@@ -17,10 +17,10 @@ def reg_loader():
 @pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     model_params = list(model.parameters())
-    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
-    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
     return model
 
 
@@ -34,7 +34,7 @@ def reg_Xy():
 
 def test_sod_data_loader(reg_loader, model):
     M = 5
-    func_la = FunctionalLaplace(model, 'regression', M)
+    func_la = FunctionalLaplace(model, "regression", M)
     sod_data_loader = func_la._get_SoD_data_loader(reg_loader)
 
     first_iter = []
@@ -53,7 +53,7 @@ def test_sod_data_loader(reg_loader, model):
 
 def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     C = model.output_size
-    func_la = FunctionalLaplace(model, 'regression', M, diagonal_kernel=False)
+    func_la = FunctionalLaplace(model, "regression", M, diagonal_kernel=False)
     func_la.n_outputs = C
     func_la.batch_size = batch_size
 
@@ -112,7 +112,7 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
 
 def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=2):
     C = model.output_size
-    func_la = FunctionalLaplace(model, 'regression', M, diagonal_kernel=True)
+    func_la = FunctionalLaplace(model, "regression", M, diagonal_kernel=True)
     func_la.n_outputs = C
     func_la.batch_size = batch_size
 
@@ -163,10 +163,10 @@ def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=
 
 
 @pytest.mark.parametrize(
-    'kernel_type,jacobians,jacobians_2,expected_full_kernel,expected_block_diagonal_kernel',
+    "kernel_type,jacobians,jacobians_2,expected_full_kernel,expected_block_diagonal_kernel",
     [
         (
-            'kernel_batch',
+            "kernel_batch",
             torch.tensor(
                 [[[1.0, 1.0, 1.0], [2.0, 2.0, 2.0]], [[1.0, 1.0, 1.0], [3.0, 3.0, 3.0]]]
             ),
@@ -184,7 +184,7 @@ def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=
             torch.tensor([[[3.0, 12.0], [3.0, 18.0]], [[3.0, 18.0], [3.0, 27.0]]]),
         ),
         (
-            'kernel_star',
+            "kernel_star",
             torch.tensor(
                 [
                     [[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]],
@@ -209,7 +209,7 @@ def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=
             torch.tensor([[3.0, 3.0], [3.0, 12.0], [3.0, 27.0]]),
         ),
         (
-            'kernel_batch_star',
+            "kernel_batch_star",
             torch.tensor(
                 [[[1.0, 1.0, 1.0], [1.0, 1.0, 1.0]], [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5]]]
             ),
@@ -238,15 +238,19 @@ def test_gp_kernel(
 ):
     X, y = reg_Xy
     func_la = FunctionalLaplace(
-        model, 'regression', prior_precision=1.0, diagonal_kernel=False
+        model,
+        "regression",
+        num_data=X.shape[0],
+        prior_precision=1.0,
+        diagonal_kernel=False,
     )
     func_la.prior_factor_sod = 1.0
     func_la.n_outputs = y.shape[-1]
-    if kernel_type == 'kernel_batch':
+    if kernel_type == "kernel_batch":
         kernel = func_la._kernel_batch
-    elif kernel_type == 'kernel_star':
+    elif kernel_type == "kernel_star":
         kernel = func_la._kernel_star
-    elif kernel_type == 'kernel_batch_star':
+    elif kernel_type == "kernel_batch_star":
         kernel = func_la._kernel_batch_star
     else:
         raise ValueError
@@ -255,15 +259,15 @@ def test_gp_kernel(
     def mock_jacobians(self, x):
         return jacobians_2, None
 
-    mocker.patch('laplace.baselaplace.FunctionalLaplace._jacobians', mock_jacobians)
+    mocker.patch("laplace.baselaplace.FunctionalLaplace._jacobians", mock_jacobians)
 
     #  mocking prior precision
     mocker.patch(
-        'laplace.baselaplace.FunctionalLaplace.prior_precision_diag', torch.ones(3)
+        "laplace.baselaplace.FunctionalLaplace.prior_precision_diag", torch.ones(3)
     )
 
     # X does not have an impact since we mock jacobians in mock_jacobians above
-    if kernel_type == 'kernel_star':
+    if kernel_type == "kernel_star":
         full_kernel = kernel(jacobians)
     else:
         full_kernel = kernel(jacobians, X)
@@ -272,7 +276,7 @@ def test_gp_kernel(
 
     func_la.diagonal_kernel = True
 
-    if kernel_type == 'kernel_star':
+    if kernel_type == "kernel_star":
         block_diag_kernel = kernel(jacobians)
     else:
         block_diag_kernel = kernel(jacobians, X)
