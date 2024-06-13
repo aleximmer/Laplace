@@ -1,29 +1,34 @@
+from __future__ import annotations
+
+import logging
+import warnings
+from collections.abc import MutableMapping
 from copy import deepcopy
+from typing import Type
+
 import numpy as np
 import torch
-from torch.optim import Adam, Optimizer
-from torch.optim.lr_scheduler import LRScheduler
+import tqdm
+from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
+from torch.optim import Adam, Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+from torch.types import Number
 from torch.utils.data import DataLoader
-import warnings
-import logging
-from collections import UserDict
-import tqdm
 
 from laplace import Laplace
+from laplace.baselaplace import BaseLaplace
 from laplace.curvature import AsdlGGN
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.utils import (
+    HessianStructure,
+    Likelihood,
+    PriorStructure,
+    SubsetOfWeights,
     expand_prior_precision,
     fix_prior_prec_structure,
-    Likelihood,
-    SubsetOfWeights,
-    HessianStructure,
-    PriorStructure,
 )
-
-from typing import Type
 
 
 def marglik_training(
@@ -48,7 +53,9 @@ def marglik_training(
     fix_sigma_noise: bool = False,
     progress_bar: bool = False,
     enable_backprop: bool = False,
-):
+    dict_key_x: str = "input_ids",
+    dict_key_y: str = "labels",
+) -> tuple[BaseLaplace, nn.Module, list[Number], list[Number]]:
     """Marginal-likelihood based training (Algorithm 1 in [1]).
     Optimize model parameters and hyperparameters jointly.
     Model parameters are optimized to minimize negative log joint (train loss)
@@ -127,6 +134,14 @@ def marglik_training(
         whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
         make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
 
     Returns
     -------
@@ -139,9 +154,9 @@ def marglik_training(
     losses : list
         list of losses (log joints) obtained during training (to monitor convergence)
     """
-    if optimizer_kwargs is not None and 'weight_decay' in optimizer_kwargs:
-        warnings.warn('Weight decay is handled and optimized. Will be set to 0.')
-        optimizer_kwargs['weight_decay'] = 0.0
+    if optimizer_kwargs is not None and "weight_decay" in optimizer_kwargs:
+        warnings.warn("Weight decay is handled and optimized. Will be set to 0.")
+        optimizer_kwargs["weight_decay"] = 0.0
 
     # get device, data set size N, number of layers H, number of parameters P
     device = parameters_to_vector(model.parameters()).device
@@ -162,10 +177,10 @@ def marglik_training(
 
     # set up loss (and observation noise hyperparam)
     if likelihood == Likelihood.CLASSIFICATION:
-        criterion = CrossEntropyLoss(reduction='mean')
+        criterion = CrossEntropyLoss(reduction="mean")
         sigma_noise = 1.0
     elif likelihood == Likelihood.REGRESSION:
-        criterion = MSELoss(reduction='mean')
+        criterion = MSELoss(reduction="mean")
         log_sigma_noise_init = np.log(sigma_noise_init)
         log_sigma_noise = log_sigma_noise_init * torch.ones(1, device=device)
         log_sigma_noise.requires_grad = True
@@ -198,8 +213,8 @@ def marglik_training(
         disable=not progress_bar,
         position=1,
         leave=False,
-        desc='[Training]',
-        colour='blue',
+        desc="[Training]",
+        colour="blue",
     )
 
     for epoch in pbar:
@@ -208,8 +223,8 @@ def marglik_training(
 
         # standard NN training per batch
         for data in train_loader:
-            if isinstance(data, UserDict) or isinstance(data, dict):
-                X, y = data, data['labels']
+            if isinstance(data, MutableMapping):
+                X, y = data, data[dict_key_y]
                 y = y.to(device, non_blocking=True)
             else:
                 X, y = data
@@ -251,8 +266,8 @@ def marglik_training(
 
         # compute validation error to report during training
         logging.info(
-            f'MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}.'
-            + f'Perf={epoch_perf/N:.3f}'
+            f"MARGLIK[epoch={epoch}]: network training. Loss={losses[-1]:.3f}."
+            + f"Perf={epoch_perf/N:.3f}"
         )
 
         # only update hyperparameters every marglik_frequency steps after burnin
@@ -276,7 +291,9 @@ def marglik_training(
             prior_precision=prior_prec,
             temperature=temperature,
             backend=backend,
-            subset_of_weights='all',
+            subset_of_weights="all",
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
         )
         lap.fit(train_loader)
 
@@ -307,16 +324,16 @@ def marglik_training(
                 )
             best_marglik = margliks[-1]
             logging.info(
-                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. '
-                + 'Saving new best model.'
+                f"MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. "
+                + "Saving new best model."
             )
         else:
             logging.info(
-                f'MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}.'
-                + f'No improvement over {best_marglik:.2f}'
+                f"MARGLIK[epoch={epoch}]: marglik optimization. MargLik={margliks[-1]:.2f}."
+                + f"No improvement over {best_marglik:.2f}"
             )
 
-    logging.info('MARGLIK: finished training. Recover best model and fit Laplace.')
+    logging.info("MARGLIK: finished training. Recover best model and fit Laplace.")
 
     if best_model_dict is not None:
         model.load_state_dict(best_model_dict)
@@ -333,6 +350,8 @@ def marglik_training(
         backend=backend,
         subset_of_weights=SubsetOfWeights.ALL,
         enable_backprop=enable_backprop,
+        dict_key_x=dict_key_x,
+        dict_key_y=dict_key_y,
     )
     lap.fit(train_loader)
     return lap, model, margliks, losses

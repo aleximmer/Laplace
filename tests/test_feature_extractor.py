@@ -1,8 +1,10 @@
+import pytest
 import torch
 import torch.nn as nn
 import torchvision.models as models
 
 from laplace.utils import FeatureExtractor
+from laplace.utils.feature_extractor import FeatureReduction
 
 
 class CNN(nn.Module):
@@ -48,37 +50,37 @@ class CNN(nn.Module):
 
 
 def get_model(model_name):
-    if model_name == 'resnet18':
+    if model_name == "resnet18":
         model = models.resnet18()
-    elif model_name == 'alexnet':
+    elif model_name == "alexnet":
         model = models.alexnet()
-    elif model_name == 'vgg16':
+    elif model_name == "vgg16":
         model = models.vgg16()
-    elif model_name == 'squeezenet':
+    elif model_name == "squeezenet":
         model = models.squeezenet1_0()
-    elif model_name == 'densenet':
+    elif model_name == "densenet":
         model = models.densenet161()
-    elif model_name == 'inception':
+    elif model_name == "inception":
         model = models.inception_v3(init_weights=True)
-    elif model_name == 'googlenet':
+    elif model_name == "googlenet":
         model = models.googlenet(init_weights=True)
-    elif model_name == 'shufflenet':
+    elif model_name == "shufflenet":
         model = models.shufflenet_v2_x1_0()
-    elif model_name == 'mobilenet_v2':
+    elif model_name == "mobilenet_v2":
         model = models.mobilenet_v2()
-    elif model_name == 'mobilenet_v3_large':
+    elif model_name == "mobilenet_v3_large":
         model = models.mobilenet_v3_large()
-    elif model_name == 'mobilenet_v3_small':
+    elif model_name == "mobilenet_v3_small":
         model = models.mobilenet_v3_small()
-    elif model_name == 'resnext50_32x4d':
+    elif model_name == "resnext50_32x4d":
         model = models.resnext50_32x4d()
-    elif model_name == 'wide_resnet50_2':
+    elif model_name == "wide_resnet50_2":
         model = models.wide_resnet50_2()
-    elif model_name == 'mnasnet':
+    elif model_name == "mnasnet":
         model = models.mnasnet1_0()
-    elif model_name == 'switchedCNN':
+    elif model_name == "switchedCNN":
         model = CNN(10)
-    elif model_name == 'sequential':
+    elif model_name == "sequential":
         model = nn.Sequential(
             nn.Conv2d(3, 6, 3, 1, 1),
             nn.ReLU(),
@@ -88,7 +90,7 @@ def get_model(model_name):
             nn.Linear(10, 10),
         )
     else:
-        raise ValueError(f'{model_name} is not supported.')
+        raise ValueError(f"{model_name} is not supported.")
     return model
 
 
@@ -97,21 +99,21 @@ def test_feature_extractor():
     # all torchvision classifcation models but 'squeezenet' (no linear last layer)
     # + model where modules are initilaized in wrong order + nn.Sequential model
     model_names = [
-        'resnet18',
-        'alexnet',
-        'vgg16',
-        'densenet',
-        'inception',
-        'googlenet',
-        'shufflenet',
-        'mobilenet_v2',
-        'mobilenet_v3_large',
-        'mobilenet_v3_small',
-        'resnext50_32x4d',
-        'wide_resnet50_2',
-        'mnasnet',
-        'switchedCNN',
-        'sequential',
+        "resnet18",
+        "alexnet",
+        "vgg16",
+        "densenet",
+        "inception",
+        "googlenet",
+        "shufflenet",
+        "mobilenet_v2",
+        "mobilenet_v3_large",
+        "mobilenet_v3_small",
+        "resnext50_32x4d",
+        "wide_resnet50_2",
+        "mnasnet",
+        "switchedCNN",
+        "sequential",
     ]
 
     # to test the last_layer_name argument
@@ -121,7 +123,7 @@ def test_feature_extractor():
 
     for model_name in model_names:
         # generate random test input
-        if model_name == 'inception':
+        if model_name == "inception":
             x = torch.randn(1, 3, 299, 299)
         else:
             x = torch.randn(1, 3, 64, 64)
@@ -137,3 +139,32 @@ def test_feature_extractor():
         last_layer = feature_extractor.last_layer
         out2 = last_layer(features)
         assert (out == out2).all().item()
+
+
+@torch.no_grad()
+@pytest.mark.parametrize("reduction", [r.value for r in FeatureReduction] + [None])
+@pytest.mark.parametrize("additional_dims", [tuple(), (7,), (7, 8, 9)])
+def test_multidim_features(reduction, additional_dims):
+    BATCH_SIZE = 6
+    IN_DIM = 5
+    HIDDEN_DIM = 10
+    OUT_DIM = 2
+    EXPECTED_FEATS_SHAPE = (BATCH_SIZE, HIDDEN_DIM)
+
+    model = nn.Sequential(
+        nn.Linear(IN_DIM, HIDDEN_DIM),
+        nn.ReLU(),
+        nn.Linear(HIDDEN_DIM, OUT_DIM),
+    ).eval()
+
+    X = torch.randn(BATCH_SIZE, *(additional_dims), IN_DIM)
+    out = model(X)
+    assert out.shape == (BATCH_SIZE, *(additional_dims), OUT_DIM)
+
+    feature_extractor = FeatureExtractor(model, feature_reduction=reduction)
+    out, feats = feature_extractor.forward_with_features(X)
+
+    if reduction is None:
+        assert feats.shape == (BATCH_SIZE, *(additional_dims), HIDDEN_DIM)
+    else:
+        assert feats.shape == EXPECTED_FEATS_SHAPE

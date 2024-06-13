@@ -1,20 +1,22 @@
+from __future__ import annotations
+
 from collections.abc import MutableMapping
 from typing import Any
-import torch
-from torch import nn
 
+import torch
 from backpack import backpack, extend, memory_cleanup
+from backpack.context import CTX
 from backpack.extensions import (
-    DiagGGNExact,
-    DiagGGNMC,
     KFAC,
     KFLR,
-    SumGradSquared,
     BatchGrad,
+    DiagGGNExact,
+    DiagGGNMC,
+    SumGradSquared,
 )
-from backpack.context import CTX
+from torch import nn
 
-from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, Likelihood
 
 
@@ -27,8 +29,13 @@ class BackPackInterface(CurvatureInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
     ) -> None:
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
+
         extend(self._model)
         extend(self.lossfunc)
 
@@ -56,7 +63,7 @@ class BackPackInterface(CurvatureInterface):
             output function `(batch, outputs)`
         """
         if isinstance(x, MutableMapping):
-            raise ValueError('BackPACK backend does not support dict-like inputs!')
+            raise ValueError("BackPACK backend does not support dict-like inputs!")
 
         model = extend(self.model)
         to_stack = []
@@ -75,7 +82,7 @@ class BackPackInterface(CurvatureInterface):
                 to_cat = []
                 for param in model.parameters():
                     to_cat.append(param.grad_batch.reshape(x.shape[0], -1))
-                    delattr(param, 'grad_batch')
+                    delattr(param, "grad_batch")
                 Jk = torch.cat(to_cat, dim=1)
                 if self.subnetwork_indices is not None:
                     Jk = Jk[:, self.subnetwork_indices]
@@ -132,10 +139,14 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
         stochastic: bool = False,
     ):
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
-        self.stochastic: bool = stochastic
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
+        self.stochastic = stochastic
 
     def _get_diag_ggn(self) -> torch.Tensor:
         if self.stochastic:
@@ -171,8 +182,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
-        y = y if self.likelihood == 'regression' else y.view(-1)
+        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -192,8 +203,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = KFAC if self.stochastic else KFLR
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
-        y = y if self.likelihood == 'regression' else y.view(-1)
+        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -214,8 +225,8 @@ class BackPackEF(BackPackInterface, EFInterface):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == 'regression' else f.view(-1, f.size(-1))
-        y = y if self.likelihood == 'regression' else y.view(-1)
+        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward()
@@ -234,12 +245,12 @@ class BackPackEF(BackPackInterface, EFInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
-        raise NotImplementedError('Unavailable through Backpack.')
+        raise NotImplementedError("Unavailable through Backpack.")
 
 
 def _cleanup(module: nn.Module) -> None:
     for child in module.children():
         _cleanup(child)
 
-    setattr(module, '_backpack_extend', False)
+    setattr(module, "_backpack_extend", False)
     memory_cleanup(module)

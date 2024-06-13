@@ -45,8 +45,8 @@
 <dd>&nbsp;</dd>
 <dt><strong><code>likelihood</code></strong> :&ensp;<code>{'classification', 'regression', 'reward_modeling'}</code></dt>
 <dd>determines the log likelihood Hessian approximation.
-In the case of 'reward_modeling', it fits Laplace in using the classification likelihood,
-then do prediction as in regression likelihood. The model needs to be defined accordingly:
+In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
+then does prediction as in regression likelihood. The model needs to be defined accordingly:
 The forward pass during training takes <code>x.shape == (batch_size, 2, dim)</code> with
 <code>y.shape = (batch_size,)</code>. Meanwhile, during evaluation <code>x.shape == (batch_size, dim)</code>.
 Note that 'reward_modeling' only supports <code><a title="laplace.baselaplace.KronLaplace" href="#laplace.baselaplace.KronLaplace">KronLaplace</a></code> and <code><a title="laplace.baselaplace.DiagLaplace" href="#laplace.baselaplace.DiagLaplace">DiagLaplace</a></code>.</dd>

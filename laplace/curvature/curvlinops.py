@@ -1,18 +1,21 @@
-from typing import Any
-import torch
-from torch import nn
-from collections.abc import MutableMapping
+from __future__ import annotations
 
-from curvlinops._base import _LinearOperator
+from collections.abc import MutableMapping
+from typing import Any
+
+import torch
 from curvlinops import (
-    HessianLinearOperator,
-    GGNLinearOperator,
-    FisherMCLinearOperator,
     EFLinearOperator,
+    FisherMCLinearOperator,
+    FisherType,
+    GGNLinearOperator,
+    HessianLinearOperator,
     KFACLinearOperator,
 )
+from curvlinops._base import _LinearOperator
+from torch import nn
 
-from laplace.curvature import CurvatureInterface, GGNInterface, EFInterface
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, Likelihood
 
 
@@ -25,8 +28,12 @@ class CurvlinopsInterface(CurvatureInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
     ) -> None:
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
 
     @property
     def _kron_fisher_type(self) -> str:
@@ -54,17 +61,17 @@ class CurvlinopsInterface(CurvatureInterface):
             A = linop._input_covariances[name]
             B = linop._gradient_covariances[name]
 
-            if hasattr(module, 'bias') and module.bias is not None:
+            if hasattr(module, "bias") and module.bias is not None:
                 kfacs.append([B, A])
                 kfacs.append([B])
-            elif hasattr(module, 'weight'):
+            elif hasattr(module, "weight"):
                 p, q = B.numel(), A.numel()
                 if p == q == 1:
                     kfacs.append([B * A])
                 else:
                     kfacs.append([B, A])
             else:
-                raise ValueError(f'Whats happening with {module}?')
+                raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
     def kron(
@@ -74,8 +81,8 @@ class CurvlinopsInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
-        if isinstance(x, MutableMapping):
-            kwargs['batch_size_fn'] = lambda _x: _x['input_ids'].shape[0]
+        if isinstance(x, (dict, MutableMapping)):
+            kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
         linop = KFACLinearOperator(
             self.model,
@@ -83,7 +90,6 @@ class CurvlinopsInterface(CurvatureInterface):
             self.params,
             [(x, y)],
             fisher_type=self._kron_fisher_type,
-            loss_average=None,  # Since self.lossfunc is sum
             separate_weight_and_bias=True,
             check_deterministic=False,  # To avoid overhead
             # `kwargs` for `mc_samples` when `stochastic=True` and `kfac_approx` to
@@ -111,9 +117,9 @@ class CurvlinopsInterface(CurvatureInterface):
         if self.subnetwork_indices is not None:
             return super().full(x, y, **kwargs)
 
-        curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != 'N'}
-        if isinstance(x, MutableMapping):
-            curvlinops_kwargs['batch_size_fn'] = lambda _x: _x['input_ids'].shape[0]
+        curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != "N"}
+        if isinstance(x, (dict, MutableMapping)):
+            curvlinops_kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
         linop = self._linop_context(
             self.model,
@@ -143,14 +149,18 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
         stochastic: bool = False,
     ) -> None:
-        super().__init__(model, likelihood, last_layer, subnetwork_indices)
-        self.stochastic: bool = stochastic
+        super().__init__(
+            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+        )
+        self.stochastic = stochastic
 
     @property
-    def _kron_fisher_type(self) -> str:
-        return 'mc' if self.stochastic else 'type-2'
+    def _kron_fisher_type(self) -> FisherType:
+        return FisherType.MC if self.stochastic else FisherType.TYPE2
 
     @property
     def _linop_context(self) -> type[_LinearOperator]:
@@ -161,8 +171,8 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
     """Implementation of `EFInterface` using Curvlinops."""
 
     @property
-    def _kron_fisher_type(self) -> str:
-        return 'empirical'
+    def _kron_fisher_type(self) -> FisherType:
+        return FisherType.EMPIRICAL
 
     @property
     def _linop_context(self) -> type[_LinearOperator]:

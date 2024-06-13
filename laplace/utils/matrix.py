@@ -1,15 +1,16 @@
 from __future__ import annotations
+
 from math import pow
+from typing import Iterable
+
+import numpy as np
+import opt_einsum as oe
 import torch
 from torch import nn
-import numpy as np
-from typing import Iterable
-import opt_einsum as oe
 
-from laplace.utils import _is_valid_scalar, symeig, kron, block_diag
+from laplace.utils.utils import _is_valid_scalar, block_diag, kron, symeig
 
-
-__all__ = ['Kron', 'KronDecomposed']
+__all__ = ["Kron", "KronDecomposed"]
 
 
 class Kron:
@@ -67,7 +68,7 @@ class Kron:
                     ]
                 )
             else:
-                raise ValueError('Invalid parameter shape in network.')
+                raise ValueError("Invalid parameter shape in network.")
         return cls(kfacs)
 
     def __add__(self, other: Kron) -> Kron:
@@ -82,7 +83,7 @@ class Kron:
         kron : Kron
         """
         if not isinstance(other, Kron):
-            raise ValueError('Can only add Kron to Kron.')
+            raise ValueError("Can only add Kron to Kron.")
 
         kfacs = [
             [Hi.add(Hj) for Hi, Hj in zip(Fi, Fj)]
@@ -105,7 +106,7 @@ class Kron:
         kron : Kron
         """
         if not _is_valid_scalar(scalar):
-            raise ValueError('Input not valid python or torch scalar.')
+            raise ValueError("Input not valid python or torch scalar.")
 
         # distribute factors evenly so that each group is multiplied by factor
         kfacs = [[pow(scalar, 1 / len(F)) * Hi for Hi in F] for F in self.kfacs]
@@ -179,7 +180,7 @@ class Kron:
                 SW.append(QW_pHt.reshape(B * K, p_in * p_out))
                 cur_p += p
             else:
-                raise AttributeError('Shape mismatch')
+                raise AttributeError("Shape mismatch")
         SW = torch.cat(SW, dim=1).reshape(B, K, P)
         return SW
 
@@ -203,7 +204,7 @@ class Kron:
             result `(batch, classes, params)`
         """
         if exponent != 1:
-            raise ValueError('Only supported after decomposition.')
+            raise ValueError("Only supported after decomposition.")
         if W.ndim == 1:
             return self._bmm(W.unsqueeze(0).unsqueeze(0)).squeeze()
         elif W.ndim == 2:
@@ -211,7 +212,7 @@ class Kron:
         elif W.ndim == 3:
             return self._bmm(W)
         else:
-            raise ValueError('Invalid shape for W')
+            raise ValueError("Invalid shape for W")
 
     def logdet(self) -> torch.Tensor:
         """Compute log determinant of the Kronecker factors and sums them up.
@@ -318,7 +319,7 @@ class KronDecomposed:
 
     def _check_deltas(self, deltas: torch.Tensor) -> None:
         if not isinstance(deltas, torch.Tensor):
-            raise ValueError('Can only add torch.Tensor to KronDecomposed.')
+            raise ValueError("Can only add torch.Tensor to KronDecomposed.")
 
         if deltas.ndim == 0 or (  # scalar
             deltas.ndim == 1  # vector of length 1 or len(self)
@@ -326,7 +327,7 @@ class KronDecomposed:
         ):
             return
         else:
-            raise ValueError('Invalid shape of delta added to KronDecomposed.')
+            raise ValueError("Invalid shape of delta added to KronDecomposed.")
 
     def __add__(self, deltas: torch.Tensor) -> KronDecomposed:
         """Add scalar per layer or only scalar to Kronecker factors.
@@ -356,10 +357,11 @@ class KronDecomposed:
         kron : KronDecomposed
         """
         if not _is_valid_scalar(scalar):
-            raise ValueError('Invalid argument, can only multiply Kron with scalar.')
+            raise ValueError("Invalid argument, can only multiply Kron with scalar.")
 
         eigenvalues = [
-            [pow(scalar, 1 / len(ls)) * l for l in ls] for ls in self.eigenvalues
+            [pow(scalar, 1 / len(ls)) * eigval for eigval in ls]
+            for ls in self.eigenvalues
         ]
         return KronDecomposed(self.eigenvectors, eigenvalues, self.deltas)
 
@@ -388,7 +390,7 @@ class KronDecomposed:
                 else:
                     logdet += torch.log(torch.outer(l1, l2) + delta).sum()
             else:
-                raise ValueError('Too many Kronecker factors. Something went wrong.')
+                raise ValueError("Too many Kronecker factors. Something went wrong.")
         return logdet
 
     def _bmm(self, W: torch.Tensor, exponent: float = -1) -> torch.Tensor:
@@ -416,8 +418,8 @@ class KronDecomposed:
             zip(self.eigenvalues, self.eigenvectors, self.deltas)
         ):
             if len(ls) == 1:
-                Q, l, p = Qs[0], ls[0], len(ls[0])
-                ldelta_exp = torch.pow(l + delta, exponent).reshape(-1, 1)
+                Q, eigval, p = Qs[0], ls[0], len(ls[0])
+                ldelta_exp = torch.pow(eigval + delta, exponent).reshape(-1, 1)
                 W_p = W[:, cur_p : cur_p + p].T
                 SW.append((Q @ (ldelta_exp * (Q.T @ W_p))).T)
                 cur_p += p
@@ -439,7 +441,7 @@ class KronDecomposed:
                 SW.append(W_p.reshape(B * K, p_in * p_out))
                 cur_p += p
             else:
-                raise AttributeError('Shape mismatch')
+                raise AttributeError("Shape mismatch")
         SW = torch.cat(SW, dim=1).reshape(B, K, P)
         return SW
 
@@ -473,7 +475,7 @@ class KronDecomposed:
         elif W.ndim == 3:
             return self._bmm(W, exponent)
         else:
-            raise ValueError('Invalid shape for W')
+            raise ValueError("Invalid shape for W")
 
     def diag(self, exponent: float = 1) -> torch.Tensor:
         """Extract diagonal of the entire decomposed Kronecker factorization.
@@ -492,7 +494,7 @@ class KronDecomposed:
             if len(ls) == 1:
                 Ql = Qs[0] * torch.pow(ls[0] + delta, exponent).reshape(1, -1)
                 d = torch.einsum(
-                    'mp,mp->m', Ql, Qs[0]
+                    "mp,mp->m", Ql, Qs[0]
                 )  # only compute inner products for diag
                 diags.append(d)
             else:
@@ -505,7 +507,7 @@ class KronDecomposed:
                     )
                 else:
                     eigval = torch.pow(torch.outer(l1, l2) + delta, exponent)
-                d = oe.contract('mp,nq,pq,mp,nq->mn', Q1, Q2, eigval, Q1, Q2).flatten()
+                d = oe.contract("mp,nq,pq,mp,nq->mn", Q1, Q2, eigval, Q1, Q2).flatten()
                 diags.append(d)
         return torch.cat(diags)
 

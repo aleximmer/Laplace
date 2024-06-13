@@ -1,32 +1,33 @@
 from __future__ import annotations
+
 import logging
-from typing import Callable, Union
+from collections.abc import MutableMapping
+from typing import Callable
+
 import numpy as np
 import torch
-from torch import nn
 import torch.nn.functional as F
-from torch.nn.utils import parameters_to_vector
-from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
+import torchmetrics
+from torch import nn
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
+from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
+from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
 from torchmetrics import Metric
-from collections import UserDict
 
-import torchmetrics
-
-import laplace.baselaplace
+import laplace
 from laplace.utils.enums import LinkApprox, PredType, PriorStructure
 
 __all__ = [
-    'get_nll',
-    'validate',
-    'parameters_per_layer',
-    'invsqrt_precision',
-    'kron',
-    'diagonal_add_scalar',
-    'symeig',
-    'block_diag',
-    'expand_prior_precision',
+    "get_nll",
+    "validate",
+    "parameters_per_layer",
+    "invsqrt_precision",
+    "kron",
+    "diagonal_add_scalar",
+    "symeig",
+    "block_diag",
+    "expand_prior_precision",
 ]
 
 
@@ -45,6 +46,7 @@ def validate(
     link_approx: LinkApprox | str = LinkApprox.PROBIT,
     n_samples: int = 100,
     loss_with_var: int = False,
+    dict_key_y: str = "labels",
 ) -> float:
     laplace.model.eval()
     assert callable(loss) or isinstance(loss, Metric)
@@ -55,9 +57,8 @@ def validate(
         targets = list()
 
     for data in val_loader:
-        # If x is UserDict, then it is a from Huggingface dataset
-        if isinstance(data, UserDict) or isinstance(data, dict):
-            X, y = data, data['labels']
+        if isinstance(data, MutableMapping):
+            X, y = data, data[dict_key_y]
         else:
             X, y = data
             X = X.to(laplace._device)
@@ -121,11 +122,7 @@ def invsqrt_precision(M: torch.Tensor) -> torch.Tensor:
 
 
 def _is_batchnorm(module: nn.Module) -> bool:
-    if (
-        isinstance(module, BatchNorm1d)
-        or isinstance(module, BatchNorm2d)
-        or isinstance(module, BatchNorm3d)
-    ):
+    if isinstance(module, (BatchNorm1d, BatchNorm2d, BatchNorm3d)):
         return True
     return False
 
@@ -201,18 +198,18 @@ def symeig(M: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         eigenvectors
     """
     try:
-        L, W = torch.linalg.eigh(M, UPLO='U')
+        L, W = torch.linalg.eigh(M, UPLO="U")
     except RuntimeError:  # did not converge
-        logging.info('SYMEIG: adding jitter, did not converge.')
+        logging.info("SYMEIG: adding jitter, did not converge.")
         # use W L W^T + I = W (L + I) W^T
         M = M + torch.eye(M.shape[0], device=M.device)
         try:
-            L, W = torch.linalg.eigh(M, UPLO='U')
+            L, W = torch.linalg.eigh(M, UPLO="U")
             L -= 1.0
         except RuntimeError:
-            stats = f'diag: {M.diagonal()}, max: {M.abs().max()}, '
-            stats = stats + f'min: {M.abs().min()}, mean: {M.abs().mean()}'
-            logging.info(f'SYMEIG: adding jitter failed. Stats: {stats}')
+            stats = f"diag: {M.diagonal()}, max: {M.abs().max()}, "
+            stats = stats + f"min: {M.abs().min()}, mean: {M.abs().mean()}"
+            logging.info(f"SYMEIG: adding jitter failed. Stats: {stats}")
             exit()
     # eigenvalues of symeig at least 0
     L = L.clamp(min=0.0)
@@ -305,7 +302,7 @@ def fix_prior_prec_structure(
     elif prior_structure == PriorStructure.DIAG:
         prior_prec_init = torch.full((n_params,), prior_prec_init, device=device)
     else:
-        raise ValueError(f'Invalid prior structure {prior_structure}.')
+        raise ValueError(f"Invalid prior structure {prior_structure}.")
     return prior_prec_init
 
 
@@ -328,7 +325,7 @@ def normal_samples(
     generator : torch.Generator
         random number generator
     """
-    assert mean.ndim == 2, 'Invalid input shape of mean, should be 2-dimensional.'
+    assert mean.ndim == 2, "Invalid input shape of mean, should be 2-dimensional."
     _, output_dim = mean.shape
     randn_samples = torch.randn(
         (output_dim, n_samples),
@@ -349,4 +346,4 @@ def normal_samples(
         )  # expand batch dim
         return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
     else:
-        raise ValueError('Invalid input shapes.')
+        raise ValueError("Invalid input shapes.")

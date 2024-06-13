@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from copy import deepcopy
 
 import torch
@@ -7,20 +8,20 @@ from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
 
-import laplace.baselaplace
-from laplace.utils import FeatureExtractor, fit_diagonal_swag_var
+import laplace
 from laplace.utils.enums import Likelihood
-
+from laplace.utils.feature_extractor import FeatureExtractor
+from laplace.utils.swag import fit_diagonal_swag_var
 
 __all__ = [
-    'SubnetMask',
-    'RandomSubnetMask',
-    'LargestMagnitudeSubnetMask',
-    'LargestVarianceDiagLaplaceSubnetMask',
-    'LargestVarianceSWAGSubnetMask',
-    'ParamNameSubnetMask',
-    'ModuleNameSubnetMask',
-    'LastLayerSubnetMask',
+    "SubnetMask",
+    "RandomSubnetMask",
+    "LargestMagnitudeSubnetMask",
+    "LargestVarianceDiagLaplaceSubnetMask",
+    "LargestVarianceSWAGSubnetMask",
+    "ParamNameSubnetMask",
+    "ModuleNameSubnetMask",
+    "LastLayerSubnetMask",
 ]
 
 
@@ -43,7 +44,7 @@ class SubnetMask:
 
     def _check_select(self) -> None:
         if self._indices is None:
-            raise AttributeError('Subnetwork mask not selected. Run select() first.')
+            raise AttributeError("Subnetwork mask not selected. Run select() first.")
 
     @property
     def _device(self) -> torch.device:
@@ -81,7 +82,7 @@ class SubnetMask:
             that define the subnetwork
         """
         if not isinstance(subnet_mask, torch.Tensor):
-            raise ValueError('Subnetwork mask needs to be torch.Tensor!')
+            raise ValueError("Subnetwork mask needs to be torch.Tensor!")
         elif (
             subnet_mask.dtype
             not in [
@@ -95,7 +96,7 @@ class SubnetMask:
             or len(subnet_mask.shape) != 1
         ):
             raise ValueError(
-                'Subnetwork mask needs to be 1-dimensional integral or boolean tensor!'
+                "Subnetwork mask needs to be 1-dimensional integral or boolean tensor!"
             )
         elif (
             len(subnet_mask) != self._n_params
@@ -103,10 +104,10 @@ class SubnetMask:
             != self._n_params
         ):
             raise ValueError(
-                'Subnetwork mask needs to be a binary vector of'
-                'size (n_params) where 1s locate the subnetwork'
-                'parameters within the vectorized model parameters'
-                '(i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)!'
+                "Subnetwork mask needs to be a binary vector of"
+                "size (n_params) where 1s locate the subnetwork"
+                "parameters within the vectorized model parameters"
+                "(i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)!"
             )
 
         subnet_mask_indices = subnet_mask.nonzero(as_tuple=True)[0]
@@ -129,7 +130,7 @@ class SubnetMask:
             that define the subnetwork
         """
         if self._indices is not None:
-            raise ValueError('Subnetwork mask already selected.')
+            raise ValueError("Subnetwork mask already selected.")
 
         subnet_mask = self.get_subnet_mask(train_loader)
         self._indices = self.convert_subnet_mask_to_indices(subnet_mask)
@@ -170,11 +171,11 @@ class ScoreBasedSubnetMask(SubnetMask):
 
         if n_params_subnet is None:
             raise ValueError(
-                'Need to pass number of subnetwork parameters when using subnetwork Laplace.'
+                "Need to pass number of subnetwork parameters when using subnetwork Laplace."
             )
         if n_params_subnet > self._n_params:
             raise ValueError(
-                f'Subnetwork ({n_params_subnet}) cannot be larger than model ({self._n_params}).'
+                f"Subnetwork ({n_params_subnet}) cannot be larger than model ({self._n_params})."
             )
         self._n_params_subnet = n_params_subnet
         self._param_scores: torch.Tensor | None = None
@@ -186,10 +187,10 @@ class ScoreBasedSubnetMask(SubnetMask):
         assert self._param_scores is not None
         if self._param_scores.shape != self.parameter_vector.shape:
             raise ValueError(
-                'Parameter scores need to be of same shape as parameter vector.'
+                "Parameter scores need to be of same shape as parameter vector."
             )
 
-    def get_subnet_mask(self, train_loader: DataLoader) -> torch.Tensor:
+    def get_subnet_mask(self, train_loader):
         """Get the subnetwork mask by (descendingly) ranking parameters based on their scores."""
         if self._param_scores is None:
             self._param_scores = self.compute_param_scores(train_loader)
@@ -242,7 +243,7 @@ class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
 
     def compute_param_scores(self, train_loader: DataLoader) -> torch.Tensor:
         if train_loader is None:
-            raise ValueError('Need to pass train loader for subnet selection.')
+            raise ValueError("Need to pass train loader for subnet selection.")
 
         self.diag_laplace_model.fit(train_loader)
         return self.diag_laplace_model.posterior_variance
@@ -277,7 +278,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         swag_lr: float = 0.01,
     ):
         if likelihood not in [Likelihood.CLASSIFICATION, Likelihood.REGRESSION]:
-            raise ValueError('Only available for classification and regression!')
+            raise ValueError("Only available for classification and regression!")
 
         super().__init__(model, n_params_subnet)
 
@@ -288,12 +289,12 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
 
     def compute_param_scores(self, train_loader: DataLoader) -> torch.Tensor:
         if train_loader is None:
-            raise ValueError('Need to pass train loader for subnet selection.')
+            raise ValueError("Need to pass train loader for subnet selection.")
 
         if self.likelihood == Likelihood.CLASSIFICATION:
-            criterion = CrossEntropyLoss(reduction='mean')
+            criterion = CrossEntropyLoss(reduction="mean")
         else:
-            criterion = MSELoss(reduction='mean')
+            criterion = MSELoss(reduction="mean")
 
         param_variances = fit_diagonal_swag_var(
             self.model,
@@ -325,13 +326,13 @@ class ParamNameSubnetMask(SubnetMask):
     def _check_param_names(self) -> None:
         param_names = deepcopy(self._parameter_names)
         if len(param_names) == 0:
-            raise ValueError('Parameter name list cannot be empty.')
+            raise ValueError("Parameter name list cannot be empty.")
 
         for name, _ in self.model.named_parameters():
             if name in param_names:
                 param_names.remove(name)
         if len(param_names) > 0:
-            raise ValueError(f'Parameters {param_names} do not exist in model.')
+            raise ValueError(f"Parameters {param_names} do not exist in model.")
 
     def get_subnet_mask(self, train_loader: DataLoader) -> torch.Tensor:
         """Get the subnetwork mask identifying the specified parameters."""
@@ -368,7 +369,7 @@ class ModuleNameSubnetMask(SubnetMask):
     def _check_module_names(self) -> None:
         module_names = deepcopy(self._module_names)
         if len(module_names) == 0:
-            raise ValueError('Module name list cannot be empty.')
+            raise ValueError("Module name list cannot be empty.")
 
         for name, module in self.model.named_modules():
             if name in module_names:
@@ -381,7 +382,7 @@ class ModuleNameSubnetMask(SubnetMask):
                 else:
                     module_names.remove(name)
         if len(module_names) > 0:
-            raise ValueError(f'Modules {module_names} do not exist in model.')
+            raise ValueError(f"Modules {module_names} do not exist in model.")
 
     def get_subnet_mask(self, train_loader: DataLoader) -> torch.Tensor:
         """Get the subnetwork mask identifying the specified modules."""
@@ -422,9 +423,8 @@ class LastLayerSubnetMask(ModuleNameSubnetMask):
 
     def get_subnet_mask(self, train_loader: DataLoader) -> torch.Tensor:
         """Get the subnetwork mask identifying the last layer."""
-
         if train_loader is None:
-            raise ValueError('Need to pass train loader for subnet selection.')
+            raise ValueError("Need to pass train loader for subnet selection.")
 
         self._feature_extractor.eval()
         if self._feature_extractor.last_layer is None:

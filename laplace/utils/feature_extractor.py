@@ -1,10 +1,19 @@
+from __future__ import annotations
+
 from collections.abc import MutableMapping
+from enum import Enum
+from typing import Any, Callable
+
 import torch
 import torch.nn as nn
-from typing import Any, Tuple, Callable, Optional
+
+__all__ = ["FeatureReduction", "FeatureExtractor"]
 
 
-__all__ = ['FeatureExtractor']
+class FeatureReduction(str, Enum):
+    PICK_FIRST = "pick_first"
+    PICK_LAST = "pick_last"
+    AVERAGE = "average"
 
 
 class FeatureExtractor(nn.Module):
@@ -24,18 +33,39 @@ class FeatureExtractor(nn.Module):
     last_layer_name : str, default=None
         if the name of the last layer is already known, otherwise it will
         be determined automatically.
+    enable_backprop: bool, default=False
+        whether to enable backprop through the feature extactor to get the gradients of
+        the inputs. Useful for e.g. Bayesian optimization.
+    feature_reduction: FeatureReduction or str, default=None
+        when the last-layer `features` is a tensor of dim >= 3, this tells how to reduce
+        it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+        the penultultimate output is a tensor of shape `(batch_size, seq_len, embd_dim)`.
+        But the last layer maps `(batch_size, embd_dim)` to `(batch_size, n_classes)`.
+        Note: Make sure that this option faithfully reflects the reduction in the model
+        definition. When inputting a string, available options are
+        `{'pick_first', 'pick_last', 'average'}`.
     """
 
     def __init__(
         self,
         model: nn.Module,
-        last_layer_name: Optional[str] = None,
+        last_layer_name: str | None = None,
         enable_backprop: bool = False,
+        feature_reduction: FeatureReduction | str | None = None,
     ) -> None:
+        if feature_reduction is not None and feature_reduction not in [
+            fr.value for fr in FeatureReduction
+        ]:
+            raise ValueError(
+                "`feature_reduction` must take value in the `FeatureReduction enum` or "
+                "one of `{'pick_first', 'pick_last', 'average'}`!"
+            )
+
         super().__init__()
         self.model: nn.Module = model
         self._features: dict[str, torch.Tensor] = dict()
         self.enable_backprop: bool = enable_backprop
+        self.feature_reduction: FeatureReduction | None = feature_reduction
 
         self.last_layer: nn.Module | None
         if last_layer_name is None:
@@ -64,7 +94,7 @@ class FeatureExtractor(nn.Module):
 
     def forward_with_features(
         self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass which returns the output of the penultimate layer along
         with the output of the last layer. If the last layer is not known yet,
         it will be determined when this function is called for the first time.
@@ -76,6 +106,24 @@ class FeatureExtractor(nn.Module):
         """
         out = self.forward(x)
         features = self._features[self._last_layer_name]
+
+        if features.dim() > 2 and self.feature_reduction is not None:
+            n_intermediate_dims = len(features.shape) - 2
+
+            if self.feature_reduction == FeatureReduction.PICK_FIRST:
+                features = features[
+                    (slice(None), *([0] * n_intermediate_dims), slice(None))
+                ].squeeze()
+            elif self.feature_reduction == FeatureReduction.PICK_LAST:
+                features = features[
+                    (slice(None), *([-1] * n_intermediate_dims), slice(None))
+                ].squeeze()
+            else:
+                ndim = features.ndim
+                features = features.mean(
+                    dim=tuple(d for d in range(ndim) if d not in [0, ndim - 1])
+                ).squeeze()
+
         return out, features
 
     def set_last_layer(self, last_layer_name: str) -> None:
@@ -91,7 +139,7 @@ class FeatureExtractor(nn.Module):
         self._last_layer_name = last_layer_name
         self.last_layer = dict(self.model.named_modules())[last_layer_name]
         if not isinstance(self.last_layer, nn.Linear):
-            raise ValueError('Use model with a linear last layer.')
+            raise ValueError("Use model with a linear last layer.")
 
         # set forward hook to extract features in future forward passes
         self.last_layer.register_forward_hook(self._get_hook(last_layer_name))
@@ -122,7 +170,7 @@ class FeatureExtractor(nn.Module):
             one batch of data to use as input for the forward pass
         """
         if self.last_layer is not None:
-            raise ValueError('Last layer is already known.')
+            raise ValueError("Last layer is already known.")
 
         act_out = dict()
 
@@ -146,7 +194,7 @@ class FeatureExtractor(nn.Module):
         # check if model has more than one module
         # (there might be pathological exceptions)
         if len(handles) <= 2:
-            raise ValueError('The model only has one module.')
+            raise ValueError("The model only has one module.")
 
         # forward pass to find execution order
         out = self.model(x)
@@ -163,4 +211,4 @@ class FeatureExtractor(nn.Module):
 
                 return out
 
-        raise ValueError('Something went wrong (all modules have children).')
+        raise ValueError("Something went wrong (all modules have children).")

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from copy import deepcopy
 
 import torch
@@ -6,8 +8,7 @@ from torch.nn.utils import parameters_to_vector
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
-
-__all__ = ['fit_diagonal_swag_var']
+__all__ = ["fit_diagonal_swag_var"]
 
 
 def _param_vector(model: nn.Module) -> torch.Tensor:
