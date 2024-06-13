@@ -88,44 +88,6 @@ class CurvatureInterface:
         f : torch.Tensor
             output function `(batch, outputs)`
         """
-
-        def model_fn_params_only(params_dict, buffers_dict):
-            out = torch.func.functional_call(self.model, (params_dict, buffers_dict), x)
-            return out, out
-
-        Js, f = torch.func.jacrev(model_fn_params_only, has_aux=True)(
-            self.params_dict, self.buffers_dict
-        )
-
-        # Concatenate over flattened parameters
-        Js = [
-            j.flatten(start_dim=-p.dim())
-            for j, p in zip(Js.values(), self.params_dict.values())
-        ]
-        Js = torch.cat(Js, dim=-1)
-
-        if self.subnetwork_indices is not None:
-            Js = Js[:, :, self.subnetwork_indices]
-
-        return (Js, f) if enable_backprop else (Js.detach(), f.detach())
-
-    def functorch_jacobians(self, x, enable_backprop=False):
-        """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\).
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            input data `(batch, input_shape)` on compatible device with model.
-        enable_backprop : bool, default = False
-            whether to enable backprop through the Js and f w.r.t. x
-
-        Returns
-        -------
-        Js : torch.Tensor
-            Jacobians `(batch, outputs, parameters)`
-        f : torch.Tensor
-            output function `(batch, outputs)`
-        """
         # Compute Js
         # ------------------------
         params = [p for p in self.model.parameters() if p.requires_grad]
