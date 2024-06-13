@@ -807,10 +807,9 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        # For reward modeling, replace the likelihood to regression and override model state
+        # For reward modeling, replace the likelihood to regression
         if self.reward_modeling and self.likelihood == "classification":
             self.likelihood = "regression"
-            self.model.output_size = 1
 
         if pred_type == "glm":
             f_mu, f_var = self._glm_predictive_distribution(
