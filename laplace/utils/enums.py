@@ -2,42 +2,42 @@ from enum import Enum
 
 
 class SubsetOfWeights(str, Enum):
-    ALL = 'all'
-    LAST_LAYER = 'last_layer'
-    SUBNETWORK = 'subnetwork'
+    ALL = "all"
+    LAST_LAYER = "last_layer"
+    SUBNETWORK = "subnetwork"
 
 
 class HessianStructure(str, Enum):
-    FULL = 'full'
-    KRON = 'kron'
-    DIAG = 'diag'
-    LOWRANK = 'lowrank'
+    FULL = "full"
+    KRON = "kron"
+    DIAG = "diag"
+    LOWRANK = "lowrank"
 
 
 class Likelihood(str, Enum):
-    REGRESSION = 'regression'
-    CLASSIFICATION = 'classification'
-    REWARD_MODELING = 'reward_modeling'
+    REGRESSION = "regression"
+    CLASSIFICATION = "classification"
+    REWARD_MODELING = "reward_modeling"
 
 
 class PredType(str, Enum):
-    GLM = 'glm'
-    NN = 'nn'
+    GLM = "glm"
+    NN = "nn"
 
 
 class LinkApprox(str, Enum):
-    MC = 'mc'
-    PROBIT = 'probit'
-    BRIDGE = 'bridge'
-    BRIDGE_NORM = 'bridge_norm'
+    MC = "mc"
+    PROBIT = "probit"
+    BRIDGE = "bridge"
+    BRIDGE_NORM = "bridge_norm"
 
 
 class TuningMethod(str, Enum):
-    MARGLIK = 'marglik'
-    GRIDSEARCH = 'gridsearch'
+    MARGLIK = "marglik"
+    GRIDSEARCH = "gridsearch"
 
 
 class PriorStructure(str, Enum):
-    SCALAR = 'scalar'
-    DIAG = 'diag'
-    LAYERWISE = 'layerwise'
+    SCALAR = "scalar"
+    DIAG = "diag"
+    LAYERWISE = "layerwise"

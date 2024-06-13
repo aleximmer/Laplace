@@ -18,6 +18,7 @@ from asdfghjkl import (
 from asdfghjkl.gradient import batch_gradient
 from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
 from torch import nn
+from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, _is_batchnorm

@@ -24,7 +24,7 @@ from torch import distributions as dists
 from torch import nn, optim
 from torch.nn import functional as F
 
-from laplace import BaseLaplace
+from laplace import BaseLaplace, Laplace
 
 
 class LaplaceBNN(Model):

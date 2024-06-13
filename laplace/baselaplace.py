@@ -451,7 +451,7 @@ class BaseLaplace:
 
             if loss is None:
                 loss = (
-                    tm.MeanSquaredError(num_outputs=self.n_outputs)
+                    torchmetrics.MeanSquaredError(num_outputs=self.n_outputs)
                     if self.likelihood == "regression"
                     else RunningNLLMetric()
                 )
