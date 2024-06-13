@@ -1,20 +1,21 @@
+from copy import deepcopy
+
 import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
-from copy import deepcopy
 
-from laplace.curvature import AsdlGGN, AsdlEF, BackPackGGN, BackPackEF
+from laplace.curvature import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
 
 
 @pytest.fixture
 def model():
     torch.manual_seed(711)
     model = torch.nn.Sequential(nn.Linear(3, 3), nn.Tanh(), nn.Linear(3, 2))
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     model_params = list(model.parameters())
-    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
-    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
     return model
 
 
@@ -45,10 +46,10 @@ def complex_model():
         nn.Tanh(),
         nn.Linear(20, 2),
     )
-    setattr(model, 'output_size', 2)
+    setattr(model, "output_size", 2)
     model_params = list(model.parameters())
-    setattr(model, 'n_layers', len(model_params))  # number of parameter groups
-    setattr(model, 'n_params', len(parameters_to_vector(model_params)))
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
     return model
 
 
@@ -63,7 +64,7 @@ def complex_class_Xy():
 def test_diag_ggn_cls_asdl_against_backpack_full(class_Xy, model):
     X, y = class_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, 'classification', stochastic=False)
+    backend = AsdlGGN(model, "classification", stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -73,7 +74,7 @@ def test_diag_ggn_cls_asdl_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model2, 'classification', stochastic=False)
+    backend = BackPackGGN(model2, "classification", stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -82,7 +83,7 @@ def test_diag_ggn_cls_asdl_against_backpack_full(class_Xy, model):
 def test_diag_ggn_reg_asdl_against_backpack_full(reg_Xy, model):
     X, y = reg_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, 'regression', stochastic=False)
+    backend = AsdlGGN(model, "regression", stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -92,7 +93,7 @@ def test_diag_ggn_reg_asdl_against_backpack_full(reg_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model2, 'regression', stochastic=False)
+    backend = BackPackGGN(model2, "regression", stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -101,7 +102,7 @@ def test_diag_ggn_reg_asdl_against_backpack_full(reg_Xy, model):
 def test_diag_ef_cls_asdl_against_backpack_full(class_Xy, model):
     X, y = class_Xy
     model2 = deepcopy(model)
-    backend = AsdlEF(model, 'classification')
+    backend = AsdlEF(model, "classification")
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -111,7 +112,7 @@ def test_diag_ef_cls_asdl_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model2, 'classification')
+    backend = BackPackEF(model2, "classification")
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -120,7 +121,7 @@ def test_diag_ef_cls_asdl_against_backpack_full(class_Xy, model):
 def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
     X, y = reg_Xy
     model2 = deepcopy(model)
-    backend = AsdlEF(model, 'regression')
+    backend = AsdlEF(model, "regression")
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -130,7 +131,7 @@ def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model2, 'regression')
+    backend = BackPackEF(model2, "regression")
     loss_bp, dggn_bp = backend.diag(X, y)
     assert torch.allclose(loss, loss_bp)
     assert torch.allclose(dggn, dggn_bp)  # H_ggn.diagonal())
@@ -138,13 +139,13 @@ def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
 
 def test_diag_ggn_stoch_cls_asdl(class_Xy, model):
     X, y = class_Xy
-    backend = AsdlGGN(model, 'classification', stochastic=True)
+    backend = AsdlGGN(model, "classification", stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
 
     # same order of magnitude os non-stochastic.
-    backend = AsdlGGN(model, 'classification', stochastic=False)
+    backend = AsdlGGN(model, "classification", stochastic=False)
     loss_ns, dggn_ns = backend.diag(X, y)
     assert loss_ns == loss
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)
@@ -153,12 +154,12 @@ def test_diag_ggn_stoch_cls_asdl(class_Xy, model):
 def test_kron_ggn_cls_asdl_against_backpack(class_Xy, model):
     X, y = class_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, 'classification', stochastic=False)
+    backend = AsdlGGN(model, "classification", stochastic=False)
     loss, kron = backend.kron(X[:5], y[:5], len(y))
     loss2, kron2 = backend.kron(X[5:], y[5:], len(y))
     loss += loss2
     kron += kron2
-    backend_bp = BackPackGGN(model2, 'classification', stochastic=False)
+    backend_bp = BackPackGGN(model2, "classification", stochastic=False)
     loss_bp, kron_bp = backend_bp.kron(X, y, len(y))
 
     # sanity check size of diag ggn
@@ -170,13 +171,13 @@ def test_kron_ggn_cls_asdl_against_backpack(class_Xy, model):
 def test_kron_ggn_reg_asdl_against_backpack(reg_Xy, model):
     X, y = reg_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, 'regression', stochastic=False)
+    backend = AsdlGGN(model, "regression", stochastic=False)
     # loss, kron = backend.kron(X, y, len(y))
     loss, kron = backend.kron(X[:5], y[:5], len(y))
     loss2, kron2 = backend.kron(X[5:], y[5:], len(y))
     loss += loss2
     kron += kron2
-    backend_bp = BackPackGGN(model2, 'regression', stochastic=False)
+    backend_bp = BackPackGGN(model2, "regression", stochastic=False)
     loss_bp, kron_bp = backend_bp.kron(X, y, len(y))
 
     # sanity check size of diag ggn
@@ -185,11 +186,11 @@ def test_kron_ggn_reg_asdl_against_backpack(reg_Xy, model):
     assert torch.allclose(kron.diag(), kron_bp.diag())
 
 
-@pytest.mark.parametrize('Backend', [AsdlEF, AsdlGGN])
+@pytest.mark.parametrize("Backend", [AsdlEF, AsdlGGN])
 def test_kron_asdl_vs_diag_class(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = class_Xy
-    backend = Backend(model, 'classification')
+    backend = Backend(model, "classification")
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
@@ -197,11 +198,11 @@ def test_kron_asdl_vs_diag_class(class_Xy, model, Backend):
     assert torch.allclose(kron.diag(), dggn)
 
 
-@pytest.mark.parametrize('Backend', [AsdlEF, AsdlGGN])
+@pytest.mark.parametrize("Backend", [AsdlEF, AsdlGGN])
 def test_kron_asdl_vs_diag_reg(reg_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = reg_Xy
-    backend = Backend(model, 'regression')
+    backend = Backend(model, "regression")
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
@@ -209,10 +210,10 @@ def test_kron_asdl_vs_diag_reg(reg_Xy, model, Backend):
     assert torch.allclose(kron.diag(), dggn)
 
 
-@pytest.mark.parametrize('Backend', [AsdlEF, AsdlGGN])
+@pytest.mark.parametrize("Backend", [AsdlEF, AsdlGGN])
 def test_kron_batching_correction_asdl(class_Xy, model, Backend):
     X, y = class_Xy
-    backend = Backend(model, 'classification')
+    backend = Backend(model, "classification")
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == model.n_params
 
@@ -226,11 +227,11 @@ def test_kron_batching_correction_asdl(class_Xy, model, Backend):
     assert torch.allclose(loss, loss_two)
 
 
-@pytest.mark.parametrize('Backend', [AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
 def test_kron_summing_up_vs_diag_asdl(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = class_Xy
-    backend = Backend(model, 'classification')
+    backend = Backend(model, "classification")
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
@@ -238,7 +239,7 @@ def test_kron_summing_up_vs_diag_asdl(class_Xy, model, Backend):
 
 def test_complex_diag_ggn_stoch_cls_asdl(complex_class_Xy, complex_model):
     X, y = complex_class_Xy
-    backend = AsdlGGN(complex_model, 'classification', stochastic=True)
+    backend = AsdlGGN(complex_model, "classification", stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -249,11 +250,11 @@ def test_complex_diag_ggn_stoch_cls_asdl(complex_class_Xy, complex_model):
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1)
 
 
-@pytest.mark.parametrize('Backend', [AsdlEF, AsdlGGN])
+@pytest.mark.parametrize("Backend", [AsdlEF, AsdlGGN])
 def test_complex_kron_asdl_vs_diag_asdl(complex_class_Xy, complex_model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = complex_class_Xy
-    backend = Backend(complex_model, 'classification')
+    backend = Backend(complex_model, "classification")
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -261,12 +262,12 @@ def test_complex_kron_asdl_vs_diag_asdl(complex_class_Xy, complex_model, Backend
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
 
 
-@pytest.mark.parametrize('Backend', [AsdlEF, AsdlGGN])
+@pytest.mark.parametrize("Backend", [AsdlEF, AsdlGGN])
 def test_complex_kron_batching_correction_asdl(
     complex_class_Xy, complex_model, Backend
 ):
     X, y = complex_class_Xy
-    backend = Backend(complex_model, 'classification')
+    backend = Backend(complex_model, "classification")
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == complex_model.n_params
 
@@ -280,13 +281,13 @@ def test_complex_kron_batching_correction_asdl(
     assert torch.allclose(loss, loss_two)
 
 
-@pytest.mark.parametrize('Backend', [AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
 def test_complex_kron_summing_up_vs_diag_class_asdl(
     complex_class_Xy, complex_model, Backend
 ):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = complex_class_Xy
-    backend = Backend(complex_model, 'classification')
+    backend = Backend(complex_model, "classification")
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
@@ -296,7 +297,7 @@ def test_kron_summation_ggn_class(class_Xy, model):
     X, y = class_Xy
     X = torch.repeat_interleave(X[:1], 7, 0)
     y = torch.repeat_interleave(y[:1], 7, 0)
-    backend = AsdlGGN(model, 'classification', stochastic=False)
+    backend = AsdlGGN(model, "classification", stochastic=False)
     loss_dg, diag = backend.diag(X, y)
     loss, kron = backend.kron(X, y, N=7)
     assert torch.allclose(loss_dg, loss)
@@ -307,7 +308,7 @@ def test_kron_summation_ggn_reg(reg_Xy, model):
     X, y = reg_Xy
     X = torch.repeat_interleave(X[:1], 7, 0)
     y = torch.repeat_interleave(y[:1], 7, 0)
-    backend = AsdlGGN(model, 'regression', stochastic=False)
+    backend = AsdlGGN(model, "regression", stochastic=False)
     loss_dg, diag = backend.diag(X, y)
     loss, kron = backend.kron(X, y, N=7)
     assert torch.allclose(loss_dg, loss)
@@ -317,7 +318,7 @@ def test_kron_summation_ggn_reg(reg_Xy, model):
 def test_kron_normalization_ggn_class(class_Xy, model):
     X, y = class_Xy
     xi, yi = X[:1], y[:1]
-    backend = AsdlGGN(model, 'classification', stochastic=False)
+    backend = AsdlGGN(model, "classification", stochastic=False)
     loss, kron = backend.kron(xi, yi, N=1)
     kron_true = 7 * kron
     loss_true = 7 * loss
@@ -331,7 +332,7 @@ def test_kron_normalization_ggn_class(class_Xy, model):
 def test_kron_normalization_ef_class(class_Xy, model):
     X, y = class_Xy
     xi, yi = X[:1], y[:1]
-    backend = AsdlEF(model, 'classification')
+    backend = AsdlEF(model, "classification")
     loss, kron = backend.kron(xi, yi, N=1)
     kron_true = 7 * kron
     loss_true = 7 * loss
@@ -345,7 +346,7 @@ def test_kron_normalization_ef_class(class_Xy, model):
 def test_kron_normalization_ggn_reg(reg_Xy, model):
     X, y = reg_Xy
     xi, yi = X[:1], y[:1]
-    backend = AsdlGGN(model, 'regression', stochastic=False)
+    backend = AsdlGGN(model, "regression", stochastic=False)
     loss, kron = backend.kron(xi, yi, N=1)
     kron_true = 7 * kron
     loss_true = 7 * loss
