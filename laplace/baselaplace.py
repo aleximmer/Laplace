@@ -148,6 +148,11 @@ class BaseLaplace:
         self.n_outputs = None
         self.n_data = 0
 
+        # Useful for reward modeling where it behaves like classification during Hessian
+        # computation and prior-prec optimization, and behaves like regression during
+        # prediction
+        self._fitting: bool = True
+
     @property
     def _device(self):
         return next(self.model.parameters()).device
@@ -356,6 +361,9 @@ class BaseLaplace:
             whether to show a progress bar; updated at every batch-Hessian computation.
             Useful for very large model and large amount of data, esp. when `subset_of_weights='all'`.
         """
+        if self.reward_modeling:
+            self.likelihood = "classification"
+
         if method == "marglik":
             self.prior_precision = init_prior_prec
             if len(self.prior_precision) == 1 and prior_structure != "scalar":
@@ -393,9 +401,9 @@ class BaseLaplace:
 
             if loss is None:
                 loss = (
-                    tm.MeanSquaredError(num_outputs=self.n_outputs)
+                    tm.MeanSquaredError(num_outputs=self.n_outputs).to(self._device)
                     if self.likelihood == "regression"
-                    else RunningNLLMetric()
+                    else RunningNLLMetric().to(self._device)
                 )
 
             self.prior_precision = self._gridsearch(
@@ -410,6 +418,7 @@ class BaseLaplace:
             )
         else:
             raise ValueError("For now only marglik and gridsearch is implemented.")
+
         if verbose:
             print(f"Optimized prior precision is {self.prior_precision}.")
 
@@ -429,21 +438,20 @@ class BaseLaplace:
         results = list()
         prior_precs = list()
         pbar = tqdm.tqdm(interval) if progress_bar else interval
+
         for prior_prec in pbar:
             self.prior_precision = prior_prec
-            try:
-                result = validate(
-                    self,
-                    val_loader,
-                    loss,
-                    pred_type=pred_type,
-                    link_approx=link_approx,
-                    n_samples=n_samples,
-                    loss_with_var=loss_with_var,
-                    dict_key_y=self.dict_key_y,
-                )
-            except RuntimeError:
-                result = np.inf
+
+            result = validate(
+                self,
+                val_loader,
+                loss,
+                pred_type=pred_type,
+                link_approx=link_approx,
+                n_samples=n_samples,
+                loss_with_var=loss_with_var,
+                dict_key_y=self.dict_key_y,
+            )
 
             if progress_bar:
                 pbar.set_description(
@@ -568,6 +576,9 @@ class ParametricLaplace(BaseLaplace):
             self.loss = 0
             self.n_data = 0
 
+        if self.reward_modeling:
+            self.likelihood = "classification"
+
         self.model.eval()
 
         self.mean = parameters_to_vector(self.params)
@@ -617,6 +628,7 @@ class ParametricLaplace(BaseLaplace):
             self.H += H_batch
 
         self.n_data += N
+        self._fitting = False
 
     @property
     def scatter(self):
@@ -741,6 +753,7 @@ class ParametricLaplace(BaseLaplace):
         n_samples=100,
         diagonal_output=False,
         generator=None,
+        fitting=False,
         **model_kwargs,
     ):
         """Compute the posterior predictive on input data `x`.
@@ -779,6 +792,11 @@ class ParametricLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used).
 
+        fitting : bool, default=False
+            whether or not this predictive call is done during fitting. Only useful for
+            reward modeling: the likelihood is set to `"regression"` when `False` and
+            `"classification"` when `True`.
+
         Returns
         -------
         predictive: torch.Tensor or Tuple[torch.Tensor]
@@ -807,9 +825,8 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        # For reward modeling, replace the likelihood to regression
-        if self.reward_modeling and self.likelihood == "classification":
-            self.likelihood = "regression"
+        if self.reward_modeling:
+            self.likelihood = "classification" if fitting else "regression"
 
         if pred_type == "glm":
             f_mu, f_var = self._glm_predictive_distribution(
@@ -1462,6 +1479,9 @@ class LowRankLaplace(ParametricLaplace):
         if not override:
             # LowRankLA cannot be updated since eigenvalue representation not additive
             raise ValueError("LowRank LA does not support updating.")
+
+        if self.reward_modeling:
+            self.likelihood = "classification"
 
         self.model.eval()
         self.mean = parameters_to_vector(self.model.parameters())

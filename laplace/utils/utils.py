@@ -54,7 +54,11 @@ def validate(
             X = X.to(laplace._device)
         y = y.to(laplace._device)
         out = laplace(
-            X, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples
+            X,
+            pred_type=pred_type,
+            link_approx=link_approx,
+            n_samples=n_samples,
+            fitting=True,
         )
 
         if type(out) == tuple:
@@ -63,7 +67,10 @@ def validate(
                 output_vars.append(out[1])
                 targets.append(y)
             else:
-                loss.update(*out, y)
+                try:
+                    loss.update(*out, y)
+                except TypeError:  # If the online loss only accepts 2 args
+                    loss.update(out[0], y)
         else:
             if is_offline:
                 output_means.append(out)
@@ -80,7 +87,8 @@ def validate(
         targets = torch.cat(targets, dim=0)
         return loss(means, variances, targets).item()
     else:
-        return loss.compute().item()
+        # Aggregate since torchmetrics output n_classes values for the MSE metric
+        return loss.compute().sum().item()
 
 
 def parameters_per_layer(model):
