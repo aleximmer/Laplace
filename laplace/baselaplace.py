@@ -90,7 +90,7 @@ class BaseLaplace:
     ):
         if likelihood not in ["classification", "regression", "reward_modeling"]:
             raise ValueError(f"Invalid likelihood type {likelihood}")
-
+        self.likelihood = likelihood
         self.model = model
 
         # Only do Laplace on params that require grad
@@ -108,13 +108,6 @@ class BaseLaplace:
         self.prior_mean = prior_mean
         if sigma_noise != 1 and likelihood != "regression":
             raise ValueError("Sigma noise != 1 only available for regression.")
-
-        self.reward_modeling = likelihood == "reward_modeling"
-        if self.reward_modeling:
-            # For fitting only. After it's done, self.likelihood = 'regression', see self.fit()
-            self.likelihood = "classification"
-        else:
-            self.likelihood = likelihood
 
         self.sigma_noise = sigma_noise
         self.temperature = temperature
@@ -148,11 +141,6 @@ class BaseLaplace:
         self.n_outputs = None
         self.n_data = 0
 
-        # Useful for reward modeling where it behaves like classification during Hessian
-        # computation and prior-prec optimization, and behaves like regression during
-        # prediction
-        self._fitting: bool = True
-
     @property
     def _device(self):
         return next(self.model.parameters()).device
@@ -160,9 +148,14 @@ class BaseLaplace:
     @property
     def backend(self):
         if self._backend is None:
+            likelihood = (
+                "classification"
+                if self.likelihood == "reward_modeling"
+                else self.likelihood
+            )
             self._backend = self._backend_cls(
                 self.model,
-                self.likelihood,
+                likelihood,
                 dict_key_x=self.dict_key_x,
                 dict_key_y=self.dict_key_y,
                 **self._backend_kwargs,
@@ -310,7 +303,6 @@ class BaseLaplace:
         link_approx="probit",
         n_samples=100,
         verbose=False,
-        cv_loss_with_var=False,
         progress_bar=False,
     ):
         """Optimize the prior precision post-hoc using the `method`
@@ -340,9 +332,6 @@ class BaseLaplace:
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
             reward modeling, running `MeanSquaredError()` for regression.
-        cv_loss_with_var: bool, default=False
-            if true, `loss` takes three arguments `loss(output_mean, output_var, target)`,
-            otherwise, `loss` takes two arguments `loss(output_mean, target)`
         log_prior_prec_min : float, default=-4
             lower bound of gridsearch interval.
         log_prior_prec_max : float, default=4
@@ -361,8 +350,11 @@ class BaseLaplace:
             whether to show a progress bar; updated at every batch-Hessian computation.
             Useful for very large model and large amount of data, esp. when `subset_of_weights='all'`.
         """
-        if self.reward_modeling:
-            self.likelihood = "classification"
+        likelihood = (
+            "classification"
+            if self.likelihood == "reward_modeling"
+            else self.likelihood
+        )
 
         if method == "marglik":
             self.prior_precision = init_prior_prec
@@ -402,7 +394,7 @@ class BaseLaplace:
             if loss is None:
                 loss = (
                     tm.MeanSquaredError(num_outputs=self.n_outputs).to(self._device)
-                    if self.likelihood == "regression"
+                    if likelihood == "regression"
                     else RunningNLLMetric().to(self._device)
                 )
 
@@ -413,7 +405,6 @@ class BaseLaplace:
                 pred_type=pred_type,
                 link_approx=link_approx,
                 n_samples=n_samples,
-                loss_with_var=cv_loss_with_var,
                 progress_bar=progress_bar,
             )
         else:
@@ -430,7 +421,6 @@ class BaseLaplace:
         pred_type,
         link_approx="probit",
         n_samples=100,
-        loss_with_var=False,
         progress_bar=False,
     ):
         assert callable(loss) or isinstance(loss, tm.Metric)
@@ -449,7 +439,6 @@ class BaseLaplace:
                 pred_type=pred_type,
                 link_approx=link_approx,
                 n_samples=n_samples,
-                loss_with_var=loss_with_var,
                 dict_key_y=self.dict_key_y,
             )
 
@@ -576,9 +565,6 @@ class ParametricLaplace(BaseLaplace):
             self.loss = 0
             self.n_data = 0
 
-        if self.reward_modeling:
-            self.likelihood = "classification"
-
         self.model.eval()
 
         self.mean = parameters_to_vector(self.params)
@@ -628,7 +614,6 @@ class ParametricLaplace(BaseLaplace):
             self.H += H_batch
 
         self.n_data += N
-        self._fitting = False
 
     @property
     def scatter(self):
@@ -825,15 +810,16 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        if self.reward_modeling:
-            self.likelihood = "classification" if fitting else "regression"
+        likelihood = self.likelihood
+        if likelihood == "reward_modeling":
+            likelihood = "classification" if fitting else "regression"
 
         if pred_type == "glm":
             f_mu, f_var = self._glm_predictive_distribution(
-                x, joint=joint and self.likelihood == "regression"
+                x, joint=joint and likelihood == "regression"
             )
             # regression
-            if self.likelihood == "regression":
+            if likelihood == "regression":
                 return f_mu, f_var
             # classification
             if link_approx == "mc":
@@ -871,7 +857,7 @@ class ParametricLaplace(BaseLaplace):
                 alpha = (1 - 2 / K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
                 return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
         else:
-            if self.likelihood == "regression":
+            if likelihood == "regression":
                 samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
                 return samples.mean(dim=0), samples.var(dim=0)
             else:  # classification; the average is computed online
@@ -1050,7 +1036,6 @@ class ParametricLaplace(BaseLaplace):
         link_approx="probit",
         n_samples=100,
         verbose=False,
-        cv_loss_with_var=False,
         progress_bar=False,
     ):
         assert pred_type in ["glm", "nn"]
@@ -1069,7 +1054,6 @@ class ParametricLaplace(BaseLaplace):
             link_approx,
             n_samples,
             verbose,
-            cv_loss_with_var,
             progress_bar,
         )
 
@@ -1479,9 +1463,6 @@ class LowRankLaplace(ParametricLaplace):
         if not override:
             # LowRankLA cannot be updated since eigenvalue representation not additive
             raise ValueError("LowRank LA does not support updating.")
-
-        if self.reward_modeling:
-            self.likelihood = "classification"
 
         self.model.eval()
         self.mean = parameters_to_vector(self.model.parameters())
