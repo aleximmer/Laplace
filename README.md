@@ -328,6 +328,18 @@ bash update_docs.sh
 pdoc --http 0.0.0.0:8080 laplace --template-dir template
 ```
 
+## Contributing
+
+Pull requests are very welcome. Please follow these guidelines:
+
+1. Install Laplace via `pip install -e ".[dev]"` which will install `ruff` and all requirements necessary to run the tests and build the docs.
+2. Use [ruff](https://github.com/astral-sh/ruff) as autoformatter. Please refer to the following [makefile](https://github.com/aleximmer/Laplace/blob/main/makefile) and run it via `make ruff`. Please note that the order of `ruff check --fix` and `ruff format` is important!
+3. Also use [ruff](https://github.com/astral-sh/ruff) as linter. Please manually fix all linting errors/warnings before opening a pull request.
+4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
+5. Provide as many test cases as possible. Make sure all test cases pass.
+
+Issues, bug reports, and ideas are also very welcome!
+
 ## References
 
 This package relies on various improvements to the Laplace approximation for neural networks, which was originally due to MacKay [1]. Please consider citing the respective papers if you use any of their proposed methods via our laplace library.
