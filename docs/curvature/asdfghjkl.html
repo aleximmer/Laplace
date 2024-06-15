@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklInterface"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -109,7 +109,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklHessian"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, low_rank=10)</span>
+<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels', low_rank=10)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -144,7 +144,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklGGN"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>GGNInterface</code> using asdfghjkl.</p></div>
@@ -171,7 +171,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklEF"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>EFInterface</code> using asdfghjkl.</p></div>

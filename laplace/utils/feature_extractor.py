@@ -4,10 +4,12 @@ from typing import Callable, Optional, Tuple
 import torch
 import torch.nn as nn
 
-__all__ = ["FeatureExtractor"]
+__all__ = ["FeatureReduction", "FeatureExtractor"]
 
 
 class FeatureReduction(str, Enum):
+    """Possible choices of feature reduction before applying last-layer Laplace."""
+
     PICK_FIRST = "pick_first"
     PICK_LAST = "pick_last"
     AVERAGE = "average"
