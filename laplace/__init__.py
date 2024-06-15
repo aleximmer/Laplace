@@ -7,9 +7,6 @@
 .. include:: ../examples/reward_modeling_example.md
 """
 
-REGRESSION = "regression"
-CLASSIFICATION = "classification"
-
 from laplace.baselaplace import (
     BaseLaplace,
     DiagLaplace,
@@ -22,6 +19,15 @@ from laplace.laplace import Laplace
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace, LLLaplace
 from laplace.marglik_training import marglik_training
 from laplace.subnetlaplace import DiagSubnetLaplace, FullSubnetLaplace, SubnetLaplace
+from laplace.utils.enums import (
+    HessianStructure,
+    Likelihood,
+    LinkApprox,
+    PredType,
+    PriorStructure,
+    SubsetOfWeights,
+    TuningMethod,
+)
 
 __all__ = [
     "Laplace",  # direct access to all Laplace classes via unified interface
@@ -39,4 +45,12 @@ __all__ = [
     "FullSubnetLaplace",
     "DiagSubnetLaplace",  # subnetwork
     "marglik_training",
-]  # methods
+    # Enums
+    "SubsetOfWeights",
+    "HessianStructure",
+    "Likelihood",
+    "PredType",
+    "LinkApprox",
+    "TuningMethod",
+    "PriorStructure",
+]

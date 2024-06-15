@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -22,7 +24,7 @@ from torch import distributions as dists
 from torch import nn, optim
 from torch.nn import functional as F
 
-from laplace import Laplace
+from laplace import BaseLaplace, Laplace
 
 
 class LaplaceBNN(Model):
@@ -35,7 +37,7 @@ class LaplaceBNN(Model):
         self,
         train_X: torch.Tensor,
         train_Y: torch.Tensor,
-        bnn: Laplace = None,
+        bnn: BaseLaplace | None = None,
         likelihood: str = "regression",
         batch_size: int = 1024,
     ):

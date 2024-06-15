@@ -139,6 +139,7 @@ def test_laplace_invalid_likelihood(laplace, model):
 def test_laplace_init_noise(laplace, model):
     # float
     sigma_noise = 1.2
+
     laplace(
         model, likelihood="regression", sigma_noise=sigma_noise, last_layer_name="1"
     )
