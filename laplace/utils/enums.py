@@ -12,6 +12,7 @@ class HessianStructure(str, Enum):
     KRON = "kron"
     DIAG = "diag"
     LOWRANK = "lowrank"
+    GP = "gp"
 
 
 class Likelihood(str, Enum):

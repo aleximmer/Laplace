@@ -1,13 +1,18 @@
+from __future__ import annotations
+
+from collections.abc import MutableMapping
 from enum import Enum
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable
 
 import torch
 import torch.nn as nn
 
-__all__ = ["FeatureExtractor"]
+__all__ = ["FeatureReduction", "FeatureExtractor"]
 
 
 class FeatureReduction(str, Enum):
+    """Possible choices of feature reduction before applying last-layer Laplace."""
+
     PICK_FIRST = "pick_first"
     PICK_LAST = "pick_last"
     AVERAGE = "average"
@@ -46,9 +51,9 @@ class FeatureExtractor(nn.Module):
     def __init__(
         self,
         model: nn.Module,
-        last_layer_name: Optional[str] = None,
+        last_layer_name: str | None = None,
         enable_backprop: bool = False,
-        feature_reduction: Optional[FeatureReduction] = None,
+        feature_reduction: FeatureReduction | str | None = None,
     ) -> None:
         if feature_reduction is not None and feature_reduction not in [
             fr.value for fr in FeatureReduction
@@ -59,23 +64,26 @@ class FeatureExtractor(nn.Module):
             )
 
         super().__init__()
-        self.model = model
-        self._features = dict()
-        self.enable_backprop = enable_backprop
-        self.feature_reduction = feature_reduction
+        self.model: nn.Module = model
+        self._features: dict[str, torch.Tensor] = dict()
+        self.enable_backprop: bool = enable_backprop
+        self.feature_reduction: FeatureReduction | None = feature_reduction
 
+        self.last_layer: nn.Module | None
         if last_layer_name is None:
             self.last_layer = None
         else:
             self.set_last_layer(last_layer_name)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]
+    ) -> torch.Tensor:
         """Forward pass. If the last layer is not known yet, it will be
         determined when this function is called for the first time.
 
         Parameters
         ----------
-        x : torch.Tensor
+        x : torch.Tensor or a dict-like object containing the input tensors
             one batch of data to use as input for the forward pass
         """
         if self.last_layer is None:
@@ -87,15 +95,15 @@ class FeatureExtractor(nn.Module):
         return out
 
     def forward_with_features(
-        self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass which returns the output of the penultimate layer along
         with the output of the last layer. If the last layer is not known yet,
         it will be determined when this function is called for the first time.
 
         Parameters
         ----------
-        x : torch.Tensor
+        x : torch.Tensor or a dict-like object containing the input tensors
             one batch of data to use as input for the forward pass
         """
         out = self.forward(x)
@@ -148,7 +156,9 @@ class FeatureExtractor(nn.Module):
 
         return hook
 
-    def find_last_layer(self, x: torch.Tensor) -> torch.Tensor:
+    def find_last_layer(
+        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]
+    ) -> torch.Tensor:
         """Automatically determines the last layer of the model with one
         forward pass. It assumes that the last layer is the same for every
         forward pass and that it is an instance of `torch.nn.Linear`.
@@ -158,7 +168,7 @@ class FeatureExtractor(nn.Module):
 
         Parameters
         ----------
-        x : torch.Tensor
+        x : torch.Tensor or dict-like object containing the input tensors
             one batch of data to use as input for the forward pass
         """
         if self.last_layer is not None:

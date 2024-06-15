@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.baselaplace.BaseLaplace"><code class="flex name class">
 <span>class <span class="ident">BaseLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='input_ids', dict_key_y='labels', backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all Laplace approximations in this library.</p>
@@ -63,6 +63,14 @@ concentrated posterior and vice versa.</dd>
 <dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>whether to enable backprop to the input <code>x</code> through the Laplace predictive.
 Useful for e.g. Bayesian optimization.</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 <dt><strong><code>backend</code></strong> :&ensp;<code>subclasses</code> of <code><a title="laplace.curvature.CurvatureInterface" href="curvature/index.html#laplace.curvature.CurvatureInterface">CurvatureInterface</a></code></dt>
 <dd>backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.</dd>
 <dt><strong><code>backend_kwargs</code></strong> :&ensp;<code>dict</code>, default=<code>None</code></dt>
@@ -193,7 +201,7 @@ Useful for very large model and large amount of data, esp. when <code>subset_of_
 </dd>
 <dt id="laplace.baselaplace.ParametricLaplace"><code class="flex name class">
 <span>class <span class="ident">ParametricLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Parametric Laplace class.</p>
@@ -484,7 +492,7 @@ Useful for joint predictions, such as in batched Bayesian optimization.</p>
 </dd>
 <dt id="laplace.baselaplace.FullLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='input_ids', dict_key_y='labels', backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -558,7 +566,7 @@ See <code><a title="laplace.baselaplace.BaseLaplace" href="#laplace.baselaplace.
 </dd>
 <dt id="laplace.baselaplace.KronLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, damping=False, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=None, damping=False, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -636,7 +644,7 @@ Damping can be enabled by setting <code>damping=True</code>.</p></div>
 </dd>
 <dt id="laplace.baselaplace.DiagLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with diagonal log likelihood Hessian approximation
@@ -708,7 +716,7 @@ See <code><a title="laplace.baselaplace.BaseLaplace" href="#laplace.baselaplace.
 </dd>
 <dt id="laplace.baselaplace.LowRankLaplace"><code class="flex name class">
 <span>class <span class="ident">LowRankLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, temperature=1, enable_backprop=False, backend=laplace.curvature.asdfghjkl.AsdfghjklHessian, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, temperature=1, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=laplace.curvature.asdfghjkl.AsdfghjklHessian, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with low-rank log likelihood Hessian (approximation).

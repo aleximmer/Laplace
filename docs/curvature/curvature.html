@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.curvature.curvature.CurvatureInterface"><code class="flex name class">
 <span>class <span class="ident">CurvatureInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface to access curvature for a model and corresponding likelihood.
@@ -54,6 +54,14 @@ structures, for example, a block-diagonal one.</p>
 <dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.Tensor</code>, default=<code>None</code></dt>
 <dd>indices of the vectorized model parameters that define the subnetwork
 to apply the Laplace approximation over</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 </dl>
 <h2 id="attributes">Attributes</h2>
 <dl>
@@ -228,7 +236,7 @@ vector of the dimensionality of parameters <span><span class="MathJax_Preview">\
 </dd>
 <dt id="laplace.curvature.curvature.GGNInterface"><code class="flex name class">
 <span>class <span class="ident">GGNInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False, num_samples=1)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False, num_samples=1)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generalized Gauss-Newton or Fisher Curvature Interface.
@@ -245,9 +253,17 @@ In addition to <code><a title="laplace.curvature.curvature.CurvatureInterface" h
 <dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.Tensor</code>, default=<code>None</code></dt>
 <dd>indices of the vectorized model parameters that define the subnetwork
 to apply the Laplace approximation over</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 <dt><strong><code>stochastic</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>Fisher if stochastic else GGN</dd>
-<dt><strong><code>num_samples</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
+<dt><strong><code>num_samples</code></strong> :&ensp;<code>int</code>, default=<code>1</code></dt>
 <dd>Number of samples used to approximate the stochastic Fisher</dd>
 </dl></div>
 <h3>Ancestors</h3>
@@ -302,7 +318,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 </dd>
 <dt id="laplace.curvature.curvature.EFInterface"><code class="flex name class">
 <span>class <span class="ident">EFInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Empirical Fisher as Hessian approximation.
@@ -318,6 +334,14 @@ In addition to <code><a title="laplace.curvature.curvature.CurvatureInterface" h
 <dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.Tensor</code>, default=<code>None</code></dt>
 <dd>indices of the vectorized model parameters that define the subnetwork
 to apply the Laplace approximation over</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 </dl>
 <h2 id="attributes">Attributes</h2>
 <dl>

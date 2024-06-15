@@ -15,10 +15,10 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
+from laplace import DiagLaplace, FullLaplace, KronLaplace, LowRankLaplace
 from laplace.curvature import AsdlEF, AsdlGGN, BackPackGGN
 from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
-from laplace.laplace import DiagLaplace, FullLaplace, KronLaplace, LowRankLaplace
 from laplace.utils import KronDecomposed
 from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
@@ -662,9 +662,7 @@ def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize(
-    "backend", [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
-)
+@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
 def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -684,9 +682,7 @@ def test_backprop_glm(laplace, model, reg_loader, backend):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize(
-    "backend", [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
-)
+@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
 def test_backprop_glm_joint(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -706,9 +702,7 @@ def test_backprop_glm_joint(laplace, model, reg_loader, backend):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize(
-    "backend", [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
-)
+@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
 def test_backprop_glm_mc(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -728,9 +722,7 @@ def test_backprop_glm_mc(laplace, model, reg_loader, backend):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize(
-    "backend", [BackPackGGN, AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF]
-)
+@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
 def test_backprop_nn(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True

@@ -6,13 +6,15 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
+from laplace import DiagLaplace, FullLaplace, KronLaplace
 from laplace.curvature import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPackGGN
+from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
-from laplace.laplace import DiagLaplace, FullLaplace, KronLaplace
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
 flavors = [KronLaplace, DiagLaplace, FullLaplace]
+valid_backends = [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
 
 
 @pytest.fixture
@@ -67,54 +69,70 @@ def test_incompatible_backend(laplace, lh, model):
     with pytest.raises(ValueError):
         laplace(model, lh, backend=BackPackEF)
 
+    with pytest.raises(ValueError):
+        laplace(model, lh, backend=AsdfghjklGGN)
+
+    with pytest.raises(ValueError):
+        laplace(model, lh, backend=AsdfghjklEF)
+
+    with pytest.raises(ValueError):
+        laplace(model, lh, backend=AsdfghjklHessian)
+
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_mean_clf(laplace, model, class_loader):
+@pytest.mark.parametrize("backend", valid_backends)
+def test_mean_clf(laplace, backend, model, class_loader):
     n_params = model[0].weight.numel()
-    lap = laplace(model, "classification")
+    lap = laplace(model, "classification", backend=backend)
     lap.fit(class_loader)
     assert lap.mean.shape == (n_params,)
 
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_mean_reg(laplace, model, reg_loader):
+@pytest.mark.parametrize("backend", valid_backends)
+def test_mean_reg(laplace, backend, model, reg_loader):
     n_params = model[0].weight.numel()
-    lap = laplace(model, "regression")
+    lap = laplace(model, "regression", backend=backend)
     lap.fit(reg_loader)
     assert lap.mean.shape == (n_params,)
 
 
-def test_post_precision_diag(model, class_loader):
+@pytest.mark.parametrize("backend", valid_backends)
+def test_post_precision_diag(model, backend, class_loader):
     n_params = model[0].weight.numel()
-    lap = DiagLaplace(model, "classification")
+    lap = DiagLaplace(model, "classification", backend=backend)
     lap.fit(class_loader)
     assert lap.posterior_precision.shape == (n_params,)
 
 
-def test_post_precision_kron(model, class_loader):
+@pytest.mark.parametrize("backend", valid_backends)
+def test_post_precision_kron(model, backend, class_loader):
     n_params = model[0].weight.numel()
-    lap = KronLaplace(model, "classification")
+    lap = KronLaplace(model, "classification", backend=backend)
     lap.fit(class_loader)
     assert lap.posterior_precision.to_matrix().shape == (n_params, n_params)
 
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_predictive(laplace, model, class_loader):
-    lap = laplace(model, "classification")
+@pytest.mark.parametrize("backend", valid_backends)
+def test_predictive(laplace, backend, model, class_loader):
+    lap = laplace(model, "classification", backend=backend)
     lap.fit(class_loader)
     lap(torch.randn(5, 3), pred_type="nn", link_approx="mc")
 
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_marglik_glm(laplace, model, class_loader):
-    lap = laplace(model, "classification")
+@pytest.mark.parametrize("backend", valid_backends)
+def test_marglik_glm(laplace, backend, model, class_loader):
+    lap = laplace(model, "classification", backend=backend)
     lap.fit(class_loader)
     lap.optimize_prior_precision(method="marglik")
 
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_marglik_nn(laplace, model, class_loader):
-    lap = laplace(model, "classification")
+@pytest.mark.parametrize("backend", valid_backends)
+def test_marglik_nn(laplace, backend, model, class_loader):
+    lap = laplace(model, "classification", backend=backend)
     lap.fit(class_loader)
     lap.optimize_prior_precision(
         method="gridsearch", val_loader=class_loader, pred_type="nn", link_approx="mc"

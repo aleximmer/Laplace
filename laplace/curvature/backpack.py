@@ -1,4 +1,7 @@
-from typing import Tuple
+from __future__ import annotations
+
+from collections.abc import MutableMapping
+from typing import Any
 
 import torch
 from backpack import backpack, extend, memory_cleanup
@@ -11,9 +14,10 @@ from backpack.extensions import (
     DiagGGNMC,
     SumGradSquared,
 )
+from torch import nn
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
-from laplace.utils import Kron
+from laplace.utils import Kron, Likelihood
 
 
 class BackPackInterface(CurvatureInterface):
@@ -21,13 +25,13 @@ class BackPackInterface(CurvatureInterface):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        last_layer=False,
-        subnetwork_indices=None,
-        dict_key_x="input_ids",
-        dict_key_y="labels",
-    ):
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        last_layer: bool = False,
+        subnetwork_indices: torch.LongTensor | None = None,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
+    ) -> None:
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
@@ -35,7 +39,11 @@ class BackPackInterface(CurvatureInterface):
         extend(self._model)
         extend(self.lossfunc)
 
-    def jacobians(self, x, enable_backprop=False):
+    def jacobians(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        enable_backprop: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_{\\theta} f(x;\\theta)\\) at current parameter \\(\\theta\\)
         using backpack's BatchGrad per output dimension. Note that BackPACK doesn't play well
         with torch.func, so this method has to be overridden.
@@ -54,6 +62,9 @@ class BackPackInterface(CurvatureInterface):
         f : torch.Tensor
             output function `(batch, outputs)`
         """
+        if isinstance(x, MutableMapping):
+            raise ValueError("BackPACK backend does not support dict-like inputs!")
+
         model = extend(self.model)
         to_stack = []
         for i in range(model.output_size):
@@ -92,7 +103,9 @@ class BackPackInterface(CurvatureInterface):
             J = J.detach()
         return J, f
 
-    def gradients(self, x, y):
+    def gradients(
+        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
         \\(\\theta\\) using Backpack's BatchGrad. Note that BackPACK doesn't play well
         with torch.func, so this method has to be overridden.
@@ -127,20 +140,20 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        last_layer=False,
-        subnetwork_indices=None,
-        dict_key_x="input_ids",
-        dict_key_y="labels",
-        stochastic=False,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        last_layer: bool = False,
+        subnetwork_indices: torch.LongTensor | None = None,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
+        stochastic: bool = False,
     ):
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
         self.stochastic = stochastic
 
-    def _get_diag_ggn(self):
+    def _get_diag_ggn(self) -> torch.Tensor:
         if self.stochastic:
             return torch.cat(
                 [p.diag_ggn_mc.data.flatten() for p in self._model.parameters()]
@@ -150,14 +163,14 @@ class BackPackGGN(BackPackInterface, GGNInterface):
                 [p.diag_ggn_exact.data.flatten() for p in self._model.parameters()]
             )
 
-    def _get_kron_factors(self):
+    def _get_kron_factors(self) -> Kron:
         if self.stochastic:
             return Kron([p.kfac for p in self._model.parameters()])
         else:
             return Kron([p.kflr for p in self._model.parameters()])
 
     @staticmethod
-    def _rescale_kron_factors(kron, M, N):
+    def _rescale_kron_factors(kron: Kron, M: int, N: int) -> Kron:
         # Renormalize Kronecker factor to sum up correctly over N data points with batches of M
         # for M=N (full-batch) just M/N=1
         for F in kron.kfacs:
@@ -165,9 +178,14 @@ class BackPackGGN(BackPackInterface, GGNInterface):
                 F[1] *= M / N
         return kron
 
-    def diag(self, X, y, **kwargs):
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         context = DiagGGNMC if self.stochastic else DiagGGNExact
-        f = self.model(X)
+        f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
         y = y if self.likelihood == "regression" else y.view(-1)
@@ -180,9 +198,15 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 
         return self.factor * loss.detach(), self.factor * dggn
 
-    def kron(self, X, y, N, **kwargs) -> Tuple[torch.Tensor, Kron]:
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
         context = KFAC if self.stochastic else KFLR
-        f = self.model(X)
+        f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
         y = y if self.likelihood == "regression" else y.view(-1)
@@ -198,8 +222,13 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 class BackPackEF(BackPackInterface, EFInterface):
     """Implementation of `EFInterface` using Backpack."""
 
-    def diag(self, X, y, **kwargs):
-        f = self.model(X)
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
         y = y if self.likelihood == "regression" else y.view(-1)
@@ -214,11 +243,17 @@ class BackPackEF(BackPackInterface, EFInterface):
 
         return self.factor * loss.detach(), self.factor * diag_EF
 
-    def kron(self, X, y, **kwargs):
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
         raise NotImplementedError("Unavailable through Backpack.")
 
 
-def _cleanup(module):
+def _cleanup(module: nn.Module) -> None:
     for child in module.children():
         _cleanup(child)
 
