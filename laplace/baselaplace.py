@@ -457,7 +457,7 @@ class BaseLaplace:
             except LinAlgError:
                 result = np.inf
             except RuntimeError as err:
-                if "not positive-definite" in str(err):
+                if "not positive definite" in str(err):
                     result = np.inf
                 else:
                     raise err
