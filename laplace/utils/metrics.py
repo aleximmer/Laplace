@@ -12,11 +12,14 @@ class RunningNLLMetric(Metric):
     ignore_index: int, default = -100
         which class label to ignore when computing the NLL loss
     """
-    def __init__(self, ignore_index=-100):
+
+    def __init__(self, ignore_index: int = -100) -> None:
         super().__init__()
-        self.add_state('nll_sum', default=torch.tensor(0.), dist_reduce_fx='sum')
-        self.add_state('n_valid_labels', default=torch.tensor(0.), dist_reduce_fx='sum')
-        self.ignore_index = ignore_index
+        self.add_state("nll_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state(
+            "n_valid_labels", default=torch.tensor(0.0), dist_reduce_fx="sum"
+        )
+        self.ignore_index: int = ignore_index
 
     def update(self, probs: torch.Tensor, targets: torch.Tensor) -> None:
         """
@@ -32,9 +35,9 @@ class RunningNLLMetric(Metric):
         targets = targets.view(-1)
 
         self.nll_sum += F.nll_loss(
-            probs.log(), targets, ignore_index=self.ignore_index, reduction='sum'
+            probs.log(), targets, ignore_index=self.ignore_index, reduction="sum"
         )
         self.n_valid_labels += (targets != self.ignore_index).sum()
 
-    def compute(self):
+    def compute(self) -> torch.Tensor:
         return self.nll_sum / self.n_valid_labels

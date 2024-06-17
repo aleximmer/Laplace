@@ -35,14 +35,17 @@ The library documentation is available at <a href="https://aleximmer.github.io/L
 <p>There is also a corresponding paper, <a href="https://arxiv.org/abs/2106.14806"><em>Laplace Redux — Effortless Bayesian Deep Learning</em></a>, which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:</p>
 <pre><code class="language-bibtex">@inproceedings{laplace2021,
   title={Laplace Redux--Effortless {B}ayesian Deep Learning},
-  author={Erik Daxberger and Agustinus Kristiadi and Alexander Immer 
+  author={Erik Daxberger and Agustinus Kristiadi and Alexander Immer
           and Runa Eschenhagen and Matthias Bauer and Philipp Hennig},
   booktitle={{N}eur{IPS}},
   year={2021}
 }
 </code></pre>
+<p>The <a href="https://github.com/runame/laplace-redux">code</a> to reproduce the experiments in the paper is also publicly available; it provides examples of how to use our library for predictive uncertainty quantification, model selection, and continual learning.</p>
 <h2 id="setup">Setup</h2>
-<p>We assume <code>python3.8</code> since the package was developed with that version.
+<p>For full compatibility, install this package in a fresh virtual env.
+We assume Python &gt;= 3.9 since lower versions are <a href="https://devguide.python.org/versions/">(soon to be) deprecated</a>.
+PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with <code>pip</code>, run the following:</p>
 <pre><code class="language-bash">pip install laplace-torch
 </code></pre>
@@ -53,53 +56,28 @@ pip install -e .
 pip install -e .[tests]
 pytest tests/
 </code></pre>
-<h2 id="structure">Structure</h2>
-<p>The laplace package consists of two main components:</p>
-<ol>
-<li>The subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py"><code>laplace.BaseLaplace</code></a> that implement different sparsity structures: different subsets of weights (<code>'all'</code>, <code>'subnetwork'</code> and <code>'last_layer'</code>) and different structures of the Hessian approximation (<code>'full'</code>, <code>'kron'</code>, <code>'lowrank'</code> and <code>'diag'</code>). This results in <em>nine</em> currently available options: <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace</a></code>, <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code>, <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>, the corresponding last-layer variations <code><a title="laplace.FullLLLaplace" href="#laplace.FullLLLaplace">FullLLLaplace</a></code>, <code><a title="laplace.KronLLLaplace" href="#laplace.KronLLLaplace">KronLLLaplace</a></code>,
-and <code><a title="laplace.DiagLLLaplace" href="#laplace.DiagLLLaplace">DiagLLLaplace</a></code> (which are all subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py"><code>laplace.LLLaplace</code></a>), <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py"><code>laplace.SubnetLaplace</code></a> (which only supports <code>'full'</code> and <code>'diag'</code> Hessian approximations) and <code><a title="laplace.LowRankLaplace" href="#laplace.LowRankLaplace">LowRankLaplace</a></code> (which only supports inference over <code>'all'</code> weights). All of these can be conveniently accessed via the <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py"><code>laplace.Laplace</code></a> function.</li>
-<li>The backends in <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/"><code>laplace.curvature</code></a> which provide access to Hessian approximations of
-the corresponding sparsity structures, for example, the diagonal GGN.</li>
-</ol>
-<p>Additionally, the package provides utilities for
-decomposing a neural network into feature extractor and last layer for <code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code> subclasses (<a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/feature_extractor.py"><code>laplace.utils.feature_extractor</code></a>)
-and
-effectively dealing with Kronecker factors (<a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/matrix.py"><code>laplace.utils.matrix</code></a>).</p>
-<p>Finally, the package implements several options to select/specify a subnetwork for <code><a title="laplace.SubnetLaplace" href="#laplace.SubnetLaplace">SubnetLaplace</a></code> (as subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/subnetmask.py"><code>laplace.utils.subnetmask.SubnetMask</code></a>).
-Automatic subnetwork selection strategies include: uniformly at random (<code><a title="laplace.utils.subnetmask.RandomSubnetMask" href="utils/subnetmask.html#laplace.utils.subnetmask.RandomSubnetMask">RandomSubnetMask</a></code>), by largest parameter magnitudes (<code>LargestMagnitudeSubnetMask</code>), and by largest marginal parameter variances (<code>LargestVarianceDiagLaplaceSubnetMask</code> and <code>LargestVarianceSWAGSubnetMask</code>).
-In addition to that, subnetworks can also be specified manually, by listing the names of either the model parameters (<code>ParamNameSubnetMask</code>) or modules (<code>ModuleNameSubnetMask</code>) to perform Laplace inference over.</p>
-<h2 id="extendability">Extendability</h2>
-<p>To extend the laplace package, new <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> subclasses can be designed, for example,
-Laplace with a block-diagonal Hessian structure.
-One can also implement custom subnetwork selection strategies as new subclasses of <code>SubnetMask</code>.</p>
-<p>Alternatively, extending or integrating backends (subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/curvature.py"><code>curvature.curvature</code></a>) allows to provide different Hessian
-approximations to the Laplace approximations.
-For example, currently the <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/backpack.py"><code>curvature.BackPackInterface</code></a> based on <a href="https://github.com/f-dangel/backpack/">BackPACK</a> and <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/asdl.py"><code>curvature.AsdlInterface</code></a> based on <a href="https://github.com/kazukiosawa/asdfghjkl">ASDL</a> are available.
-The <code><a title="laplace.curvature.AsdlInterface" href="curvature/index.html#laplace.curvature.AsdlInterface">AsdlInterface</a></code> provides a Kronecker factored empirical Fisher while the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code>
-does not, and only the <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> provides access to Hessian approximations
-for a regression (MSELoss) loss function.</p>
 <h2 id="example-usage">Example usage</h2>
 <h3 id="post-hoc-prior-precision-tuning-of-diagonal-la"><em>Post-hoc</em> prior precision tuning of diagonal LA</h3>
 <p>In the following example, a pre-trained model is loaded,
 then the Laplace approximation is fit to the training data
 (using a diagonal Hessian approximation over all parameters),
-and the prior precision is optimized with cross-validation <code>'CV'</code>.
+and the prior precision is optimized with cross-validation <code>"gridsearch"</code>.
 After that, the resulting LA is used for prediction with
-the <code>'probit'</code> predictive for classification.</p>
+the <code>"probit"</code> predictive for classification.</p>
 <pre><code class="language-python">from laplace import Laplace
 
 # Pre-trained model
-model = load_map_model()  
+model = load_map_model()
 
 # User-specified LA flavor
-la = Laplace(model, 'classification',
-             subset_of_weights='all',
-             hessian_structure='diag')
+la = Laplace(model, &quot;classification&quot;,
+             subset_of_weights=&quot;all&quot;,
+             hessian_structure=&quot;diag&quot;)
 la.fit(train_loader)
-la.optimize_prior_precision(method='CV', val_loader=val_loader)
+la.optimize_prior_precision(method=&quot;gridsearch&quot;, val_loader=val_loader)
 
 # User-specified predictive approx.
-pred = la(x, link_approx='probit')
+pred = la(x, link_approx=&quot;probit&quot;)
 </code></pre>
 <h3 id="differentiating-the-log-marginal-likelihood-wrt-hyperparameters">Differentiating the log marginal likelihood w.r.t. hyperparameters</h3>
 <p>The marginal likelihood can be used for model selection [10] and is differentiable
@@ -109,17 +87,102 @@ the log marginal likelihood.</p>
 <pre><code class="language-python">from laplace import Laplace
 
 # Un- or pre-trained model
-model = load_model()  
+model = load_model()
 
 # Default to recommended last-layer KFAC LA:
-la = Laplace(model, likelihood='regression')
+la = Laplace(model, likelihood=&quot;regression&quot;)
 la.fit(train_loader)
 
 # ML w.r.t. prior precision and observation noise
 ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
 </code></pre>
-<h3 id="applying-the-la-over-only-a-subset-of-the-model-parameters">Applying the LA over only a subset of the model parameters</h3>
+<h3 id="laplace-on-foundation-models-like-llms">Laplace on foundation models like LLMs</h3>
+<p>This library also supports Huggingface models and parameter-efficient fine-tuning.
+See <code>examples/huggingface_examples.py</code> and <code>examples/huggingface_examples.md</code> for the
+exposition.</p>
+<p>First, we need to wrap the pretrained model so that the <code>forward</code> method takes a
+dict-like input. Note that when you iterate over a Huggingface dataloader,
+this is what you get by default. Having a dict-like input is nice since different models
+have different number of inputs (e.g. GPT-like LLMs only take <code>input_ids</code>, while BERT-like
+ones take both <code>input_ids</code> and <code>attention_mask</code>, etc.). Inside this <code>forward</code> method you
+can do your usual preprocessing like moving the tensor inputs into the correct device.</p>
+<pre><code class="language-python">class MyGPT2(nn.Module):
+    def __init__(self, tokenizer: PreTrainedTokenizer) -&gt; None:
+        super().__init__()
+        config = GPT2Config.from_pretrained(&quot;gpt2&quot;)
+        config.pad_token_id = tokenizer.pad_token_id
+        config.num_labels = 2
+        self.hf_model = GPT2ForSequenceClassification.from_pretrained(
+            &quot;gpt2&quot;, config=config
+        )
+
+    def forward(self, data: MutableMapping) -&gt; torch.Tensor:
+        device = next(self.parameters()).device
+        input_ids = data[&quot;input_ids&quot;].to(device)
+        attn_mask = data[&quot;attention_mask&quot;].to(device)
+        output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
+        return output_dict.logits
+</code></pre>
+<p>Then you can "select" which parameters of the LLM you want to apply the Laplace approximation
+on, by switching off the gradients of the "unneeded" parameters.
+For example, we can replicate a last-layer Laplace: (in actual practice, use <code>Laplace(..., subset_of_weights='last_layer', ...)</code> instead, though!)</p>
+<pre><code class="language-python">model = MyGPT2(tokenizer)
+model.eval()
+
+# Enable grad only for the last layer
+for p in model.hf_model.parameters():
+    p.requires_grad = False
+for p in model.hf_model.score.parameters():
+    p.requires_grad = True
+
+la = Laplace(
+    model,
+    likelihood=&quot;classification&quot;,
+    # Will only hit the last-layer since it's the only one that is grad-enabled
+    subset_of_weights=&quot;all&quot;,
+    hessian_structure=&quot;diag&quot;,
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+test_data = next(iter(dataloader))
+pred = la(test_data)
+</code></pre>
+<p>This is useful because we can apply the LA only on the parameter-efficient finetuning
+weights. E.g., we can fix the LLM itself, and apply the Laplace approximation only
+on the LoRA weights. Huggingface will automatically switch off the non-LoRA weights'
+gradients.</p>
+<pre><code class="language-python">def get_lora_model():
+    model = MyGPT2(tokenizer)  # Note we don't disable grad
+    config = LoraConfig(
+        r=4,
+        lora_alpha=16,
+        target_modules=[&quot;c_attn&quot;],  # LoRA on the attention weights
+        lora_dropout=0.1,
+        bias=&quot;none&quot;,
+    )
+    lora_model = get_peft_model(model, config)
+    return lora_model
+
+lora_model = get_lora_model()
+
+# Train it as usual here...
+
+lora_model.eval()
+
+lora_la = Laplace(
+    lora_model,
+    likelihood=&quot;classification&quot;,
+    subset_of_weights=&quot;all&quot;,
+    hessian_structure=&quot;diag&quot;,
+    backend=AsdlGGN,
+)
+
+test_data = next(iter(dataloader))
+lora_pred = lora_la(test_data)
+</code></pre>
+<h3 id="applying-the-la-over-only-a-subset-of-the-model-parameters-via-the-subnetwork-laplace">Applying the LA over only a subset of the model parameters via the Subnetwork Laplace</h3>
 <p>This example shows how to fit the Laplace approximation over only
 a subnetwork within a neural network (while keeping all other parameters
 fixed at their MAP estimates), as proposed in [11]. It also exemplifies
@@ -139,7 +202,7 @@ subnetwork_indices = subnetwork_mask.select()
 
 # Example 2: specify the layers that define the subnetwork
 from laplace.utils import ModuleNameSubnetMask
-subnetwork_mask = ModuleNameSubnetMask(model, module_names=['layer.1', 'layer.3'])
+subnetwork_mask = ModuleNameSubnetMask(model, module_names=[&quot;layer.1&quot;, &quot;layer.3&quot;])
 subnetwork_mask.select()
 subnetwork_indices = subnetwork_mask.indices
 
@@ -148,12 +211,78 @@ import torch
 subnetwork_indices = torch.tensor([0, 4, 11, 42, 123, 2021])
 
 # Define and fit subnetwork LA using the specified subnetwork indices
-la = Laplace(model, 'classification',
-             subset_of_weights='subnetwork',
-             hessian_structure='full',
+la = Laplace(model, &quot;classification&quot;,
+             subset_of_weights=&quot;subnetwork&quot;,
+             hessian_structure=&quot;full&quot;,
              subnetwork_indices=subnetwork_indices)
 la.fit(train_loader)
 </code></pre>
+<h3 id="serialization">Serialization</h3>
+<p>As with plain <code>torch</code>, we support to ways to serialize data.</p>
+<p>One is the familiar <code>state_dict</code> approach. Here you need to save and re-create
+both <code>model</code> and <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code>. Use this for long-term storage of models and
+sharing of a fitted <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> instance.</p>
+<pre><code class="language-py"># Save model and Laplace instance
+torch.save(model.state_dict(), &quot;model_state_dict.bin&quot;)
+torch.save(la.state_dict(), &quot;la_state_dict.bin&quot;)
+
+# Load serialized data
+model2 = MyModel(...)
+model2.load_state_dict(torch.load(&quot;model_state_dict.bin&quot;))
+la2 = Laplace(model2, &quot;classification&quot;,
+              subset_of_weights=&quot;all&quot;,
+              hessian_structure=&quot;diag&quot;)
+la2.load_state_dict(torch.load(&quot;la_state_dict.bin&quot;))
+</code></pre>
+<p>The second approach is to save the whole <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> object, including
+<code>self.model</code>. This is less verbose and more convenient since you have the
+trained model and the fitted <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> data stored in one place, but <a href="https://pytorch.org/tutorials/beginner/saving_loading_models.html#saving-loading-model-for-inference">also comes with
+some
+drawbacks</a>.
+Use this for quick save-load cycles during experiments, say.</p>
+<pre><code class="language-py"># Save Laplace, including la.model
+torch.save(la, &quot;la.pt&quot;)
+
+# Load both
+torch.load(&quot;la.pt&quot;)
+</code></pre>
+<p>Some Laplace variants such as <code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code> might have trouble being serialized
+using the default <code>pickle</code> module, which <code>torch.save()</code> and <code>torch.load()</code> use
+(<code>AttributeError: Can't pickle local object ...</code>). In this case, the
+<a href="https://github.com/uqfoundation/dill"><code>dill</code></a> package will come in handy.</p>
+<pre><code class="language-py">import dill
+
+torch.save(la, &quot;la.pt&quot;, pickle_module=dill)
+</code></pre>
+<p>With both methods, you are free to switch devices, for instance when you
+trained on a GPU but want to run predictions on CPU. In this case, use</p>
+<pre><code class="language-py">torch.load(..., map_location=&quot;cpu&quot;)
+</code></pre>
+<h2 id="structure">Structure</h2>
+<p>The laplace package consists of two main components:</p>
+<ol>
+<li>The subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py"><code>laplace.BaseLaplace</code></a> that implement different sparsity structures: different subsets of weights (<code>"all"</code>, <code>"subnetwork"</code> and <code>"last_layer"</code>) and different structures of the Hessian approximation (<code>"full"</code>, <code>"kron"</code>, <code>"lowrank"</code> and <code>"diag"</code>). This results in <em>nine</em> currently available options: <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace</a></code>, <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code>, <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>, the corresponding last-layer variations <code><a title="laplace.FullLLLaplace" href="#laplace.FullLLLaplace">FullLLLaplace</a></code>, <code><a title="laplace.KronLLLaplace" href="#laplace.KronLLLaplace">KronLLLaplace</a></code>, and <code><a title="laplace.DiagLLLaplace" href="#laplace.DiagLLLaplace">DiagLLLaplace</a></code> (which are all subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py"><code>laplace.LLLaplace</code></a>), <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py"><code>laplace.SubnetLaplace</code></a> (which only supports <code>"full"</code> and <code>"diag"</code> Hessian approximations) and <code><a title="laplace.LowRankLaplace" href="#laplace.LowRankLaplace">LowRankLaplace</a></code> (which only supports inference over <code>"all"</code> weights). All of these can be conveniently accessed via the <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py"><code>laplace.Laplace</code></a> function.</li>
+<li>The backends in <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/"><code>laplace.curvature</code></a> which provide access to Hessian approximations of
+the corresponding sparsity structures, for example, the diagonal GGN.</li>
+</ol>
+<p>Additionally, the package provides utilities for
+decomposing a neural network into feature extractor and last layer for <code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code> subclasses (<a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/feature_extractor.py"><code>laplace.utils.feature_extractor</code></a>)
+and
+effectively dealing with Kronecker factors (<a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/matrix.py"><code>laplace.utils.matrix</code></a>).</p>
+<p>Finally, the package implements several options to select/specify a subnetwork for <code><a title="laplace.SubnetLaplace" href="#laplace.SubnetLaplace">SubnetLaplace</a></code> (as subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/subnetmask.py"><code>laplace.utils.subnetmask.SubnetMask</code></a>).
+Automatic subnetwork selection strategies include: uniformly at random (<code><a title="laplace.utils.subnetmask.RandomSubnetMask" href="utils/subnetmask.html#laplace.utils.subnetmask.RandomSubnetMask">RandomSubnetMask</a></code>), by largest parameter magnitudes (<code>LargestMagnitudeSubnetMask</code>), and by largest marginal parameter variances (<code>LargestVarianceDiagLaplaceSubnetMask</code> and <code>LargestVarianceSWAGSubnetMask</code>).
+In addition to that, subnetworks can also be specified manually, by listing the names of either the model parameters (<code>ParamNameSubnetMask</code>) or modules (<code>ModuleNameSubnetMask</code>) to perform Laplace inference over.</p>
+<h2 id="extendability">Extendability</h2>
+<p>To extend the laplace package, new <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace</a></code> subclasses can be designed, for example,
+Laplace with a block-diagonal Hessian structure.
+One can also implement custom subnetwork selection strategies as new subclasses of <code>SubnetMask</code>.</p>
+<p>Alternatively, extending or integrating backends (subclasses of <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/curvature.py"><code>curvature.curvature</code></a>) allows to provide different Hessian
+approximations to the Laplace approximations.
+For example, currently the <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/curvlinops.py"><code>curvature.CurvlinopsInterface</code></a> based on <a href="https://github.com/f-dangel/curvlinops">Curvlinops</a> and the native <code>torch.func</code> (previously known as <code>functorch</code>), <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/backpack.py"><code>curvature.BackPackInterface</code></a> based on <a href="https://github.com/f-dangel/backpack/">BackPACK</a> and <a href="https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/asdl.py"><code>curvature.AsdlInterface</code></a> based on <a href="https://github.com/kazukiosawa/asdfghjkl">ASDL</a> are available.</p>
+<p>The <code><a title="laplace.curvature.CurvlinopsInterface" href="curvature/index.html#laplace.curvature.CurvlinopsInterface">CurvlinopsInterface</a></code> backend is the default and provides all Hessian approximation variants except the low-rank Hessian.
+For the latter, <code><a title="laplace.curvature.AsdlInterface" href="curvature/index.html#laplace.curvature.AsdlInterface">AsdlInterface</a></code> can be used.
+Note that <code><a title="laplace.curvature.AsdlInterface" href="curvature/index.html#laplace.curvature.AsdlInterface">AsdlInterface</a></code> and <code><a title="laplace.curvature.BackPackInterface" href="curvature/index.html#laplace.curvature.BackPackInterface">BackPackInterface</a></code> are less complete and less compatible than <code><a title="laplace.curvature.CurvlinopsInterface" href="curvature/index.html#laplace.curvature.CurvlinopsInterface">CurvlinopsInterface</a></code>.
+So, we recommend to stick with <code><a title="laplace.curvature.CurvlinopsInterface" href="curvature/index.html#laplace.curvature.CurvlinopsInterface">CurvlinopsInterface</a></code> unless you have a specific need of ASDL or BackPACK.</p>
 <h2 id="documentation">Documentation</h2>
 <p>The documentation is available <a href="https://aleximmer.github.io/Laplace">here</a> or can be generated and/or viewed locally:</p>
 <pre><code class="language-bash"># assuming the repository was cloned
@@ -223,11 +352,11 @@ for i in range(n_epochs):
 <h3 id="fitting-and-optimizing-the-laplace-approximation-using-empirical-bayes">Fitting and optimizing the Laplace approximation using empirical Bayes</h3>
 <p>With the MAP-trained model at hand, we can estimate the prior precision and observation noise
 using empirical Bayes after training.
-The <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> method is called to construct a LA for <code>'regression'</code> with <code>'all'</code> weights.
-As default <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> returns a Kronecker factored LA, we use <code>'full'</code> instead on this small example.
+The <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> method is called to construct a LA for <code>"regression"</code> with <code>"all"</code> weights.
+As default <code><a title="laplace.Laplace" href="#laplace.Laplace">Laplace()</a></code> returns a Kronecker factored LA, we use <code>"full"</code> instead on this small example.
 We fit the LA to the training data and initialize <code>log_prior</code> and <code>log_sigma</code>.
 Using Adam, we minimize the negative log marginal likelihood for <code>n_epochs</code>.</p>
-<pre><code class="language-python">la = Laplace(model, 'regression', subset_of_weights='all', hessian_structure='full')
+<pre><code class="language-python">la = Laplace(model, &quot;regression&quot;, subset_of_weights=&quot;all&quot;, hessian_structure=&quot;full&quot;)
 la.fit(train_loader)
 log_prior, log_sigma = torch.ones(1, requires_grad=True), torch.ones(1, requires_grad=True)
 hyper_optimizer = torch.optim.Adam([log_prior, log_sigma], lr=1e-1)
@@ -252,7 +381,8 @@ pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 
 plot_regression(X_train, y_train, x, f_mu, pred_std)
 </code></pre>
-<p><img alt=":align: center" src="regression_example.png"></p>
+<p><img alt="" src="regression_example.png"></p>
+<p>:align: center</p>
 <p>In comparison to the MAP, the predictive shows useful uncertainties.
 When our MAP is over or underfit, the Laplace approximation cannot fix this anymore.
 In this case, joint optimization of MAP and marginal likelihood can be useful.</p>
@@ -263,9 +393,9 @@ and returns an optimally regularized LA.
 Below, we use this method and plot the corresponding predictive uncertainties again:</p>
 <pre><code class="language-python">model = get_model()
 la, model, margliks, losses = marglik_training(
-    model=model, train_loader=train_loader, likelihood='regression',
-    hessian_structure='full', backend=BackPackGGN, n_epochs=n_epochs, 
-    optimizer_kwargs={'lr': 1e-2}, prior_structure='scalar'
+    model=model, train_loader=train_loader, likelihood=&quot;regression&quot;,
+    hessian_structure=&quot;full&quot;, backend=BackPackGGN, n_epochs=n_epochs,
+    optimizer_kwargs={&quot;lr&quot;: 1e-2}, prior_structure=&quot;scalar&quot;
 )
 
 f_mu, f_var = la(X_test)
@@ -275,7 +405,8 @@ pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 
 plot_regression(X_train, y_train, x, f_mu, pred_std)
 </code></pre>
-<p><img alt=":align: center" src="regression_example_online.png"></p>
+<p><img alt="" src="regression_example_online.png"></p>
+<p>:align: center</p>
 <h2 id="full-example-post-hoc-laplace-on-a-large-image-classifier">Full example: <em>post-hoc</em> Laplace on a large image classifier</h2>
 <p>An advantage of the Laplace approximation over variational Bayes and Markov Chain Monte Carlo methods is its <em>post-hoc</em> nature. That means we can apply LA on (almost) any <em>pre-trained</em> neural network. In this example, we will see how we can apply the last-layer LA on a deep WideResNet model, trained on CIFAR-10.</p>
 <h4 id="data-loading">Data loading</h4>
@@ -307,7 +438,7 @@ targets = torch.cat([y for x, y in test_loader], dim=0).numpy()
 model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
 
 util.download_pretrained_model()
-model.load_state_dict(torch.load('./temp/CIFAR10_plain.pt'))
+model.load_state_dict(torch.load(&quot;./temp/CIFAR10_plain.pt&quot;))
 </code></pre>
 <p>To simplify the downstream tasks, we will use the following helper function to make predictions. It simply iterates through all minibatches and obtains the predictive probabilities of the CIFAR-10 classes.</p>
 <pre><code class="language-python">@torch.no_grad()
@@ -330,7 +461,7 @@ acc_map = (probs_map.argmax(-1) == targets).float().mean()
 ece_map = ECE(bins=15).measure(probs_map.numpy(), targets.numpy())
 nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
-print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
+print(f&quot;[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}&quot;)
 </code></pre>
 <p>Running this snippet, we would get:</p>
 <pre><code>[MAP] Acc.: 94.8%; ECE: 2.0%; NLL: 0.172
@@ -338,11 +469,11 @@ print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 <h3 id="the-calibration-of-laplace">The calibration of Laplace</h3>
 <p>Now we inspect the benefit of the LA. Let us apply the simple last-layer LA model, and optimize the prior precision hyperparameter using a <em>post-hoc</em> marginal likelihood maximization.</p>
 <pre><code class="language-python"># Laplace
-la = Laplace(model, 'classification',
-             subset_of_weights='last_layer',
-             hessian_structure='kron')
+la = Laplace(model, &quot;classification&quot;,
+             subset_of_weights=&quot;last_layer&quot;,
+             hessian_structure=&quot;kron&quot;)
 la.fit(train_loader)
-la.optimize_prior_precision(method='marglik')
+la.optimize_prior_precision(method=&quot;marglik&quot;)
 </code></pre>
 <p>Then, we are ready to see how well does LA improves the calibration of the MAP model:</p>
 <pre><code class="language-python">probs_laplace = predict(test_loader, la, laplace=True)
@@ -350,12 +481,377 @@ acc_laplace = (probs_laplace.argmax(-1) == targets).float().mean()
 ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
 nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
-print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
+print(f&quot;[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}&quot;)
 </code></pre>
 <p>Running this snippet, we obtain:</p>
 <pre><code>[Laplace] Acc.: 94.8%; ECE: 0.8%; NLL: 0.157
 </code></pre>
 <p>Notice that the last-layer LA does not do any harm to the accuracy, yet it improves the calibration of the MAP model substantially.</p>
+<h2 id="full-example-applying-laplace-on-a-huggingface-llm-model">Full Example: Applying Laplace on a Huggingface LLM model</h2>
+<p>In this example, we will see how to apply Laplace on a GPT2 Huggingface (HF) model.
+Laplace only has lightweight requirements for this; namely that the model's <code>forward</code>
+method must only take a single dict-like object (<code>dict</code>, <code>UserDict</code>, or in general,
+<code>collections.abc.MutableMapping</code>). This is entirely compatible with HF since HF's
+data loaders are assumed to emit an object derived from <code>UserDict</code>. However, you
+need to ensure this yourself &mdash; you need to wrap the standard HF model to conform
+to that requirement. Also, you need to e.g. do <code>torch.to(device)</code> <em>inside</em> the
+said <code>forward</code> method.</p>
+<p>Let's start with as usual with importing stuff.</p>
+<pre><code class="language-python">from collections.abc import MutableMapping
+from collections import UserDict
+import numpy
+import torch
+from torch import nn
+import torch.utils.data as data_utils
+
+from laplace import Laplace
+
+import logging
+import warnings
+
+logging.basicConfig(level=&quot;ERROR&quot;)
+warnings.filterwarnings(&quot;ignore&quot;)
+
+from transformers import ( # noqa: E402
+    GPT2Config,
+    GPT2ForSequenceClassification,
+    GPT2Tokenizer,
+    DataCollatorWithPadding,
+    PreTrainedTokenizer,
+)
+from peft import LoraConfig, get_peft_model # noqa: E402
+from datasets import Dataset # noqa: E402
+
+# make deterministic
+
+torch.manual_seed(0)
+numpy.random.seed(0)
+</code></pre>
+<p>Next, we create a toy dataset. You can use any HF datasets or your own, of course.</p>
+<pre><code class="language-python">tokenizer = GPT2Tokenizer.from_pretrained(&quot;gpt2&quot;)
+tokenizer.pad_token_id = tokenizer.eos_token_id
+
+data = [
+    {&quot;text&quot;: &quot;Today is hot, but I will manage!!!!&quot;, &quot;label&quot;: 1},
+    {&quot;text&quot;: &quot;Tomorrow is cold&quot;, &quot;label&quot;: 0},
+    {&quot;text&quot;: &quot;Carpe diem&quot;, &quot;label&quot;: 1},
+    {&quot;text&quot;: &quot;Tempus fugit&quot;, &quot;label&quot;: 1},
+]
+dataset = Dataset.from_list(data)
+
+def tokenize(row):
+    return tokenizer(row[&quot;text&quot;])
+
+dataset = dataset.map(tokenize, remove_columns=[&quot;text&quot;])
+dataset.set_format(type=&quot;torch&quot;, columns=[&quot;input_ids&quot;, &quot;attention_mask&quot;, &quot;label&quot;])
+dataloader = data_utils.DataLoader(
+    dataset, batch_size=100, collate_fn=DataCollatorWithPadding(tokenizer)
+)
+
+data = next(iter(dataloader))
+print(
+    f&quot;Huggingface data defaults to UserDict, which is a MutableMapping? {isinstance(data, UserDict)}&quot;
+)
+for k, v in data.items():
+    print(k, v.shape)
+</code></pre>
+<p>This is the output:</p>
+<pre><code>Huggingface data defaults to UserDict, which is a MutableMapping? True
+input_ids torch.Size([4, 9])
+attention_mask torch.Size([4, 9])
+labels torch.Size([4])
+</code></pre>
+<h3 id="laplace-on-a-subset-of-an-llms-weights">Laplace on a subset of an LLM's weights</h3>
+<p>Now, let's do the main "meat" of this example: Wrapping the HF model into a model that is
+compatible with Laplace. Notice that this wrapper just wraps the HF model and nothing else.
+Notice also we do <code>inputs.to(device)</code> inside <code>self.forward()</code>.</p>
+<pre><code class="language-python">class MyGPT2(nn.Module):
+    &quot;&quot;&quot;
+    Huggingface LLM wrapper.
+
+    Args:
+        tokenizer: The tokenizer used for preprocessing the text data. Needed
+            since the model needs to know the padding token id.
+    &quot;&quot;&quot;
+
+    def __init__(self, tokenizer: PreTrainedTokenizer) -&gt; None:
+        super().__init__()
+        config = GPT2Config.from_pretrained(&quot;gpt2&quot;)
+        config.pad_token_id = tokenizer.pad_token_id
+        config.num_labels = 2
+        self.hf_model = GPT2ForSequenceClassification.from_pretrained(
+            &quot;gpt2&quot;, config=config
+        )
+
+    def forward(self, data: MutableMapping) -&gt; torch.Tensor:
+        &quot;&quot;&quot;
+        Custom forward function. Handles things like moving the
+        input tensor to the correct device inside.
+
+        Args:
+            data: A dict-like data structure with `input_ids` inside.
+                This is the default data structure assumed by Huggingface
+                dataloaders.
+
+        Returns:
+            logits: An `(batch_size, n_classes)`-sized tensor of logits.
+        &quot;&quot;&quot;
+        device = next(self.parameters()).device
+        input_ids = data[&quot;input_ids&quot;].to(device)
+        attn_mask = data[&quot;attention_mask&quot;].to(device)
+        output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
+        return output_dict.logits
+
+model = MyGPT2(tokenizer)
+</code></pre>
+<p>Now, let's apply Laplace. Let's do a last-layer Laplace first. (don't do this in practice, though, use
+<code>Laplace(..., subset_of_weights='last_layer', ...)</code> instead!). We do so by switching off the
+gradients of all layers except the top layer. Laplace will automatically only compute the
+Hessian (and Jacobians) of the parameters in which <code>requires_grad</code> is <code>True</code>.</p>
+<p>Notice that we add
+an argument <code>feature_reduction</code> there. This is because Huggingface models reduce the
+logits and <a href="https://github.com/huggingface/transformers/blob/a98c41798cf6ed99e1ff17e3792d6e06a2ff2ff3/src/transformers/models/gpt2/modeling_gpt2.py#L1678-L1704">not the features</a>.</p>
+<pre><code class="language-python">model = MyGPT2(tokenizer)
+model.eval()
+
+la = Laplace(
+    model,
+    likelihood=&quot;classification&quot;,
+    subset_of_weights=&quot;last_layer&quot;,
+    hessian_structure=&quot;full&quot;,
+    # This must reflect faithfully the reduction technique used in the model
+    # Otherwise, correctness is not guaranteed
+    feature_reduction=&quot;pick_last&quot;,
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+X_test = next(iter(dataloader))
+print(f&quot;[Last-layer Laplace] The predictive tensor is of shape: {la(X_test).shape}.&quot;)
+</code></pre>
+<p>Here's the output:</p>
+<pre><code>[Last-layer Laplace] The predictive tensor is of shape: torch.Size([4, 2]).
+</code></pre>
+<h2 id="subnetwork-laplace">Subnetwork Laplace</h2>
+<p>Also, we can do the same thing by switching off the gradients of all layers except the
+top layer. Laplace will automatically only compute the Hessian (and Jacobians) of the
+parameters in which <code>requires_grad</code> is <code>True</code>.</p>
+<p>Notice that you can "mix-and-match" this gradient switching. You can do a subnetwork Laplace
+easily by doing so!</p>
+<pre><code class="language-python">model.eval()
+
+# Enable grad only for the last layer
+
+for p in model.hf_model.parameters():
+    p.requires_grad = False
+
+for p in model.hf_model.score.parameters():
+    p.requires_grad = True
+
+la = Laplace(
+    model,
+    # Will only hit the last-layer since it's the only one that is grad-enabled
+    likelihood=&quot;classification&quot;,
+    subset_of_weights=&quot;all&quot;,
+    hessian_structure=&quot;diag&quot;,
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+X_test = next(iter(dataloader))
+print(f&quot;[Subnetwork Laplace] The predictive tensor is of shape: {la(X_test).shape}.&quot;)
+</code></pre>
+<p>Here are the outputs to validate that Laplace works:</p>
+<pre><code>[Subnetwork Laplace] The predictive tensor is of shape: torch.Size([4, 2]).
+</code></pre>
+<h2 id="full-laplace-on-lora-parameters-only">Full Laplace on LoRA parameters only</h2>
+<p>Of course, you can also apply Laplace on the parameter-efficient fine tuning weights (like LoRA).
+To do this, simply extend your LLM with LoRA, using HF's <code>peft</code> library, and apply Laplace as
+usual. Note that <code>peft</code> automatically switches off the non-LoRA weights.</p>
+<pre><code class="language-python">def get_lora_model():
+    model = MyGPT2(tokenizer) # Note we don't disable grad
+        config = LoraConfig(
+        r=4,
+        lora_alpha=16,
+        target_modules=[&quot;c_attn&quot;], # LoRA on the attention weights
+        lora_dropout=0.1,
+        bias=&quot;none&quot;,
+    )
+    lora_model = get_peft_model(model, config)
+    return lora_model
+
+lora_model = get_lora_model()
+
+# Train it as usual
+
+lora_model.eval()
+
+lora_la = Laplace(
+    lora_model,
+    likelihood=&quot;classification&quot;,
+    subset_of_weights=&quot;all&quot;,
+    hessian_structure=&quot;kron&quot;,
+)
+lora_la.fit(dataloader)
+
+X_test = next(iter(dataloader))
+print(f&quot;[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.&quot;)
+</code></pre>
+<p>Here is the output, as expected:</p>
+<pre><code>[LoRA-LLM] The predictive tensor is of shape: torch.Size([4, 2]).
+</code></pre>
+<p>As a final note, the dict-like input requirement of Laplace is very flexible. It can essentially
+be applicable to any tasks and any models. You just need to wrap the said model and make sure
+that your data loaders emit dict-like objects, where the input tensors are the dicts' values.</p>
+<h3 id="caveats">Caveats</h3>
+<p>Currently, diagonal EF with the Curvlinops backend is unsupported for dict-based inputs.
+This is because we use <code>torch.func</code>'s <code>vmap</code> to compute the diag-EF, and it only accepts
+tensor input in the model's <code>forward</code>.
+See <a href="https://github.com/pytorch/functorch/issues/159">this issue</a>.
+So, if you can write down your Huggingface model's <code>forward</code> to accept only a single tensor,
+this is much preferable.</p>
+<p>For instance, in the case of causal LLM like GPTs, only <code>input_ids</code>
+tensor is necessary.
+Then, any backend and any hessian factorization can be used in this case.</p>
+<p>Otherwise, if you must use dict-based inputs, choose the following backends:</p>
+<ul>
+<li><code>CurvlinopsGGN</code> for <code>hessian_factorization = {"kron", "diag"}</code></li>
+<li><code>CurvlinopsEF</code> for <code>hessian_factorization = {"kron"}</code></li>
+<li><code>AsdlGGN</code> for <code>hessian_factorization = {"kron", "diag"}</code></li>
+<li><code>AsdlEF</code> for <code>hessian_factorization = {"kron", "diag"}</code></li>
+</ul>
+<h2 id="full-example-bayesian-bradley-terry-reward-modeling">Full Example: Bayesian Bradley-Terry Reward Modeling</h2>
+<p>The <code>laplace-torch</code> library can also be used to "Bayesianize" a pretrained Bradley-Terry
+reward model, popular in large language models. See <a href="http://arxiv.org/abs/2009.01325">http://arxiv.org/abs/2009.01325</a>
+for a primer in reward modeling.</p>
+<p>First order of business, let's define our comparison dataset. We will use the <code>datasets</code>
+library from Huggingface to handle the data.</p>
+<pre><code class="language-python">import numpy as np
+import torch
+from torch import nn, optim
+from torch.nn import functional as F
+import torch.utils.data as data_utils
+
+from datasets import Dataset
+
+from laplace import Laplace
+
+import logging
+import warnings
+
+logging.basicConfig(level=&quot;ERROR&quot;)
+warnings.filterwarnings(&quot;ignore&quot;)
+
+# make deterministic
+torch.manual_seed(0)
+np.random.seed(0)
+
+
+# Pairwise comparison dataset. The label indicates which `x0` or `x1` is preferred.
+data_dict = [
+    {
+        &quot;x0&quot;: torch.randn(3),
+        &quot;x1&quot;: torch.randn(3),
+        &quot;label&quot;: torch.randint(2, size=(1,)).item(),
+    }
+    for _ in range(10)
+]
+dataset = Dataset.from_list(data_dict)
+</code></pre>
+<p>Now, let's define the reward model. During training, it assumes that <code>x</code> is a tensor
+of shape <code>(batch_size, 2, dim)</code>, which is a concatenation of <code>x0</code> and <code>x1</code> above.
+The second dimension of size 2 is preserved through the forward pass, resulting in
+a logit tensor of shape <code>(batch_size, 2)</code> (the network itself is single-output).
+Then, the standard cross-entropy loss is applied.</p>
+<p>Note that this requirement is quite weak and can covers general cases. However, if you
+prefer to use the dict-like inputs as in Huggingface LLM models, this can also be done.
+Simply combine what you have learned from this example with the Huggingface LLM example
+provided in this library.</p>
+<p>During testing, this model behaves like a standard single-output regression
+model.</p>
+<pre><code class="language-python">class SimpleRewardModel(nn.Module):
+    &quot;&quot;&quot;A simple reward model, compatible with the Bradley-Terry likelihood.
+    &quot;&quot;&quot;
+
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(3, 100), nn.ReLU(), nn.Linear(100, 1))
+
+    def forward(self, x):
+        &quot;&quot;&quot;Args:
+            x: torch.Tensor
+                If training == True then shape (batch_size, 2, dim)
+                Else shape (batch_size, dim)
+
+        Returns:
+            logits: torch.Tensor
+                If training then shape (batch_size, 2)
+                Else shape (batch_size, 1)
+        &quot;&quot;&quot;
+        if len(x.shape) == 3:
+            batch_size, _, dim = x.shape
+
+            # Flatten to (batch_size*2, dim)
+            flat_x = x.reshape(-1, dim)
+
+            # Forward
+            flat_logits = self.net(flat_x)  # (batch_size*2, 1)
+
+            # Reshape back to (batch_size, 2)
+            return flat_logits.reshape(batch_size, 2)
+        else:
+            logits = self.net(x)  # (batch_size, 1)
+            return logits
+</code></pre>
+<p>To fulfill the 3D tensor requirement, we need to preprocess the dict-based dataset.</p>
+<pre><code class="language-python"># Preprocess to coalesce x0 and x1 into a single array/tensor
+def append_x0_x1(row):
+    # The tensor values above are automatically casted as lists by `Dataset`
+    row[&quot;x&quot;] = np.stack([row[&quot;x0&quot;], row[&quot;x1&quot;]])  # (2, dim)
+    return row
+
+
+tensor_dataset = dataset.map(append_x0_x1, remove_columns=[&quot;x0&quot;, &quot;x1&quot;])
+tensor_dataset.set_format(type=&quot;torch&quot;, columns=[&quot;x&quot;, &quot;label&quot;])
+tensor_dataloader = data_utils.DataLoader(
+    data_utils.TensorDataset(tensor_dataset[&quot;x&quot;], tensor_dataset[&quot;label&quot;]), batch_size=3
+)
+</code></pre>
+<p>Then, we can train as usual using the cross entropy loss.</p>
+<pre><code class="language-python">reward_model = SimpleRewardModel()
+opt = optim.AdamW(reward_model.parameters(), weight_decay=1e-3)
+
+# Train as usual
+for epoch in range(10):
+    for x, y in tensor_dataloader:
+        opt.zero_grad()
+        out = reward_model(x)
+        loss = F.cross_entropy(out, y)
+        loss.backward()
+        opt.step()
+</code></pre>
+<p>Applying Laplace to this model is a breeze. Simply state that the likelihood is <code>reward_modeling</code>.</p>
+<pre><code class="language-python"># Laplace !!! Notice the likelihood !!!
+reward_model.eval()
+la = Laplace(reward_model, likelihood=&quot;reward_modeling&quot;, subset_of_weights=&quot;all&quot;)
+la.fit(tensor_dataloader)
+la.optimize_prior_precision()
+</code></pre>
+<p>As we can see, during prediction, even though we train &amp; fit Laplace using the cross entropy
+loss (i.e. classification), in test time, the model behaves like a regression model.
+So, you don't get probability vectors as outputs. Instead, you get two tensors
+containing the predictive means and predictive variance.</p>
+<pre><code class="language-python">x_test = torch.randn(5, 3)
+pred_mean, pred_var = la(x_test)
+print(
+    f&quot;Input shape {tuple(x_test.shape)}, predictive mean of shape &quot;
+    + f&quot;{tuple(pred_mean.shape)}, predictive covariance of shape &quot;
+    + f&quot;{tuple(pred_var.shape)}&quot;
+)
+</code></pre>
+<p>Here's the output:</p>
+<pre><code>Input shape (5, 3), predictive mean of shape (5, 1), predictive covariance of shape (5, 1, 1)
+</code></pre>
 </section>
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
@@ -414,7 +910,7 @@ print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_lap
 </dl></div>
 </dd>
 <dt id="laplace.marglik_training"><code class="name flex">
-<span>def <span class="ident">marglik_training</span></span>(<span>model, train_loader, likelihood='classification', hessian_structure='kron', backend=laplace.curvature.asdl.AsdlGGN, optimizer_cls=torch.optim.adam.Adam, optimizer_kwargs=None, scheduler_cls=None, scheduler_kwargs=None, n_epochs=300, lr_hyp=0.1, prior_structure='layerwise', n_epochs_burnin=0, n_hypersteps=10, marglik_frequency=1, prior_prec_init=1.0, sigma_noise_init=1.0, temperature=1.0)</span>
+<span>def <span class="ident">marglik_training</span></span>(<span>model, train_loader, likelihood='classification', hessian_structure='kron', backend=laplace.curvature.asdl.AsdlGGN, optimizer_cls=torch.optim.adam.Adam, optimizer_kwargs=None, scheduler_cls=None, scheduler_kwargs=None, n_epochs=300, lr_hyp=0.1, prior_structure='layerwise', n_epochs_burnin=0, n_hypersteps=10, marglik_frequency=1, prior_prec_init=1.0, sigma_noise_init=1.0, temperature=1.0, fix_sigma_noise=False, progress_bar=False, enable_backprop=False, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Marginal-likelihood based training (Algorithm 1 in [1]).
@@ -422,7 +918,7 @@ Optimize model parameters and hyperparameters jointly.
 Model parameters are optimized to minimize negative log joint (train loss)
 while hyperparameters minimize negative log marginal likelihood.</p>
 <p>This method replaces standard neural network training and adds hyperparameter
-optimization to the procedure. </p>
+optimization to the procedure.</p>
 <p>The settings of standard training can be controlled by passing <code>train_loader</code>,
 <code>optimizer_cls</code>, <code>optimizer_kwargs</code>, <code>scheduler_cls</code>, <code>scheduler_kwargs</code>, and <code>n_epochs</code>.
 The <code>model</code> should return logits, i.e., no softmax should be applied.
@@ -467,7 +963,7 @@ ICML 2021.</p>
 <dt><strong><code>lr_hyp</code></strong> :&ensp;<code>float</code>, default=<code>0.1</code></dt>
 <dd>Adam learning rate for hyperparameters</dd>
 <dt><strong><code>prior_structure</code></strong> :&ensp;<code>str</code>, default=<code>'layerwise'</code></dt>
-<dd>structure of the prior. one of <code>['scalar', 'layerwise', 'diagonal']</code></dd>
+<dd>structure of the prior. one of <code>['scalar', 'layerwise', 'diag']</code></dd>
 <dt><strong><code>n_epochs_burnin</code></strong> :&ensp;<code>int default=0</code></dt>
 <dd>how many epochs to train without estimating and differentiating marglik</dd>
 <dt><strong><code>n_hypersteps</code></strong> :&ensp;<code>int</code>, default=<code>10</code></dt>
@@ -482,6 +978,21 @@ ICML 2021.</p>
 <dd>initial observation noise (for regression only)</dd>
 <dt><strong><code>temperature</code></strong> :&ensp;<code>float</code>, default=<code>1.0</code></dt>
 <dd>factor for the likelihood for 'overcounting' data. Might be required for data augmentation.</dd>
+<dt><strong><code>fix_sigma_noise</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>if False, optimize observation noise via marglik otherwise use <code>sigma_noise_init</code> throughout.
+Only works for regression.</dd>
+<dt><strong><code>progress_bar</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>whether to show a progress bar (updated per epoch) or not</dd>
+<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>make the returned Laplace instance backpropable&mdash;useful for e.g. Bayesian optimization.</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
@@ -502,7 +1013,7 @@ ICML 2021.</p>
 <dl>
 <dt id="laplace.BaseLaplace"><code class="flex name class">
 <span>class <span class="ident">BaseLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='input_ids', dict_key_y='labels', backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all Laplace approximations in this library.</p>
@@ -510,8 +1021,13 @@ ICML 2021.</p>
 <dl>
 <dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
 <dd>&nbsp;</dd>
-<dt><strong><code>likelihood</code></strong> :&ensp;<code>{'classification', 'regression'}</code></dt>
-<dd>determines the log likelihood Hessian approximation</dd>
+<dt><strong><code>likelihood</code></strong> :&ensp;<code>{'classification', 'regression', 'reward_modeling'}</code></dt>
+<dd>determines the log likelihood Hessian approximation.
+In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
+then does prediction as in regression likelihood. The model needs to be defined accordingly:
+The forward pass during training takes <code>x.shape == (batch_size, 2, dim)</code> with
+<code>y.shape = (batch_size,)</code>. Meanwhile, during evaluation <code>x.shape == (batch_size, dim)</code>.
+Note that 'reward_modeling' only supports <code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code> and <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code>.</dd>
 <dt><strong><code>sigma_noise</code></strong> :&ensp;<code>torch.Tensor</code> or <code>float</code>, default=<code>1</code></dt>
 <dd>observation noise for the regression setting; must be 1 for classification</dd>
 <dt><strong><code>prior_precision</code></strong> :&ensp;<code>torch.Tensor</code> or <code>float</code>, default=<code>1</code></dt>
@@ -522,11 +1038,24 @@ can be scalar, per-layer, or diagonal in the most general case</dd>
 <dt><strong><code>temperature</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
 <dd>temperature of the likelihood; lower temperature leads to more
 concentrated posterior and vice versa.</dd>
+<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>whether to enable backprop to the input <code>x</code> through the Laplace predictive.
+Useful for e.g. Bayesian optimization.</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 <dt><strong><code>backend</code></strong> :&ensp;<code>subclasses</code> of <code><a title="laplace.curvature.CurvatureInterface" href="curvature/index.html#laplace.curvature.CurvatureInterface">CurvatureInterface</a></code></dt>
-<dd>backend for access to curvature/Hessian approximations</dd>
+<dd>backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.</dd>
 <dt><strong><code>backend_kwargs</code></strong> :&ensp;<code>dict</code>, default=<code>None</code></dt>
 <dd>arguments passed to the backend on initialization, for example to
 set the number of MC samples for stochastic approximations.</dd>
+<dt><strong><code>asdl_fisher_kwargs</code></strong> :&ensp;<code>dict</code>, default=<code>None</code></dt>
+<dd>arguments passed to the ASDL backend specifically on initialization.</dd>
 </dl></div>
 <h3>Subclasses</h3>
 <ul class="hlist">
@@ -595,7 +1124,7 @@ a scalar, layer-wise, or diagonal prior precision.</p>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.BaseLaplace.optimize_prior_precision_base"><code class="name flex">
-<span>def <span class="ident">optimize_prior_precision_base</span></span>(<span>self, pred_type, method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False, cv_loss_with_var=False)</span>
+<span>def <span class="ident">optimize_prior_precision_base</span></span>(<span>self, pred_type, method='marglik', n_steps=100, lr=0.1, init_prior_prec=1.0, prior_structure='scalar', val_loader=None, loss=None, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False, cv_loss_with_var=False, progress_bar=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Optimize the prior precision post-hoc using the <code>method</code>
@@ -606,27 +1135,33 @@ specified by the user.</p>
 <dd>type of posterior predictive, linearized GLM predictive or neural
 network sampling predictive or Gaussian Process (GP) inference.
 The GLM predictive is consistent with the curvature approximations used here.</dd>
-<dt><strong><code>method</code></strong> :&ensp;<code>{'marglik', 'CV'}</code>, default=<code>'marglik'</code></dt>
+<dt><strong><code>method</code></strong> :&ensp;<code>{'marglik', 'gridsearch'}</code>, default=<code>'marglik'</code></dt>
 <dd>specifies how the prior precision should be optimized.</dd>
 <dt><strong><code>n_steps</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
 <dd>the number of gradient descent steps to take.</dd>
 <dt><strong><code>lr</code></strong> :&ensp;<code>float</code>, default=<code>1e-1</code></dt>
 <dd>the learning rate to use for gradient descent.</dd>
-<dt><strong><code>init_prior_prec</code></strong> :&ensp;<code>float</code>, default=<code>1.0</code></dt>
+<dt><strong><code>init_prior_prec</code></strong> :&ensp;<code>float</code> or <code>tensor</code>, default=<code>1.0</code></dt>
 <dd>initial prior precision before the first optimization step.</dd>
+<dt><strong><code>prior_structure</code></strong> :&ensp;<code>{'scalar', 'layerwise', 'diag'}</code>, default=<code>'scalar'</code></dt>
+<dd>if init_prior_prec is scalar, the prior precision is optimized with this structure.
+otherwise, the structure of init_prior_prec is maintained.</dd>
 <dt><strong><code>val_loader</code></strong> :&ensp;<code>torch.data.utils.DataLoader</code>, default=<code>None</code></dt>
 <dd>DataLoader for the validation set; each iterate is a training batch (X, y).</dd>
-<dt><strong><code>loss</code></strong> :&ensp;<code>callable</code>, default=<code>get_nll</code></dt>
-<dd>loss function to use for CV.</dd>
+<dt><strong><code>loss</code></strong> :&ensp;<code>callable</code> or <code>torchmetrics.Metric</code>, default=<code>None</code></dt>
+<dd>loss function to use for CV. If callable, the loss is computed offline (memory intensive).
+If torchmetrics.Metric, running loss is computed (efficient). The default
+depends on the likelihood: <code>RunningNLLMetric()</code> for classification and
+reward modeling, running <code>MeanSquaredError()</code> for regression.</dd>
 <dt><strong><code>cv_loss_with_var</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>if true, <code>loss</code> takes three arguments <code>loss(output_mean, output_var, target)</code>,
 otherwise, <code>loss</code> takes two arguments <code>loss(output_mean, target)</code></dd>
 <dt><strong><code>log_prior_prec_min</code></strong> :&ensp;<code>float</code>, default=<code>-4</code></dt>
-<dd>lower bound of gridsearch interval for CV.</dd>
+<dd>lower bound of gridsearch interval.</dd>
 <dt><strong><code>log_prior_prec_max</code></strong> :&ensp;<code>float</code>, default=<code>4</code></dt>
-<dd>upper bound of gridsearch interval for CV.</dd>
+<dd>upper bound of gridsearch interval.</dd>
 <dt><strong><code>grid_size</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
-<dd>number of values to consider inside the gridsearch interval for CV.</dd>
+<dd>number of values to consider inside the gridsearch interval.</dd>
 <dt><strong><code>link_approx</code></strong> :&ensp;<code>{'mc', 'probit', 'bridge'}</code>, default=<code>'probit'</code></dt>
 <dd>how to approximate the classification link function for the <code>'glm'</code>.
 For <code>pred_type='nn'</code>, only <code>'mc'</code> is possible.</dd>
@@ -635,13 +1170,16 @@ For <code>pred_type='nn'</code>, only <code>'mc'</code> is possible.</dd>
 <dt><strong><code>verbose</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>if true, the optimized prior precision will be printed
 (can be a large tensor if the prior has a diagonal covariance).</dd>
+<dt><strong><code>progress_bar</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>whether to show a progress bar; updated at every batch-Hessian computation.
+Useful for very large model and large amount of data, esp. when <code>subset_of_weights='all'</code>.</dd>
 </dl></div>
 </dd>
 </dl>
 </dd>
 <dt id="laplace.ParametricLaplace"><code class="flex name class">
 <span>class <span class="ident">ParametricLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Parametric Laplace class.</p>
@@ -737,7 +1275,7 @@ used for the Hessian approximation.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.ParametricLaplace.fit"><code class="name flex">
-<span>def <span class="ident">fit</span></span>(<span>self, train_loader, override=True)</span>
+<span>def <span class="ident">fit</span></span>(<span>self, train_loader, override=True, progress_bar=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Fit the local Laplace approximation at the parameters of the model.</p>
@@ -749,6 +1287,9 @@ used for the Hessian approximation.</p>
 <dt><strong><code>override</code></strong> :&ensp;<code>bool</code>, default=<code>True</code></dt>
 <dd>whether to initialize H, loss, and n_data again; setting to False is useful for
 online learning settings to accumulate a sequential posterior approximation.</dd>
+<dt><strong><code>progress_bar</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>whether to show a progress bar; updated at every batch-Hessian computation.
+Useful for very large model and large amount of data, esp. when <code>subset_of_weights='all'</code>.</dd>
 </dl></div>
 </dd>
 <dt id="laplace.ParametricLaplace.square_norm"><code class="name flex">
@@ -862,8 +1403,29 @@ the output covariance matrix
 <dd>output covariance <code>(batch, outputs, outputs)</code></dd>
 </dl></div>
 </dd>
+<dt id="laplace.ParametricLaplace.functional_covariance"><code class="name flex">
+<span>def <span class="ident">functional_covariance</span></span>(<span>self, Jacs)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compute functional covariance for the <code>'glm'</code> predictive:
+<code>f_cov = Jacs @ P.inv() @ Jacs.T</code>, which is a batch<em>output x batch</em>output
+predictive covariance matrix.</p>
+<p>This emulates the GP posterior covariance N([f(x1), &hellip;,f(xm)], Cov[f(x1), &hellip;, f(xm)]).
+Useful for joint predictions, such as in batched Bayesian optimization.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>Jacs</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Jacobians of model output wrt parameters
+<code>(batch*outputs, parameters)</code></dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>f_cov</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>output covariance <code>(batch*outputs, batch*outputs)</code></dd>
+</dl></div>
+</dd>
 <dt id="laplace.ParametricLaplace.sample"><code class="name flex">
-<span>def <span class="ident">sample</span></span>(<span>self, n_samples=100)</span>
+<span>def <span class="ident">sample</span></span>(<span>self, n_samples=100, generator=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Sample from the Laplace posterior approximation, i.e.,
@@ -872,10 +1434,24 @@ the output covariance matrix
 <dl>
 <dt><strong><code>n_samples</code></strong> :&ensp;<code>int</code>, default=<code>100</code></dt>
 <dd>number of samples</dd>
+<dt><strong><code>generator</code></strong> :&ensp;<code>torch.Generator</code>, optional</dt>
+<dd>random number generator to control the samples</dd>
 </dl></div>
 </dd>
 <dt id="laplace.ParametricLaplace.optimize_prior_precision"><code class="name flex">
-<span>def <span class="ident">optimize_prior_precision</span></span>(<span>self, method='marglik', pred_type='glm', n_steps=100, lr=0.1, init_prior_prec=1.0, val_loader=None, loss=&lt;function get_nll&gt;, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False, cv_loss_with_var=False)</span>
+<span>def <span class="ident">optimize_prior_precision</span></span>(<span>self, method='marglik', pred_type='glm', n_steps=100, lr=0.1, init_prior_prec=1.0, prior_structure='scalar', val_loader=None, loss=None, log_prior_prec_min=-4, log_prior_prec_max=4, grid_size=100, link_approx='probit', n_samples=100, verbose=False, cv_loss_with_var=False, progress_bar=False)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.ParametricLaplace.state_dict"><code class="name flex">
+<span>def <span class="ident">state_dict</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.ParametricLaplace.load_state_dict"><code class="name flex">
+<span>def <span class="ident">load_state_dict</span></span>(<span>self, state_dict: dict)</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -894,7 +1470,7 @@ the output covariance matrix
 </dd>
 <dt id="laplace.FullLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='input_ids', dict_key_y='labels', backend=None, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -948,6 +1524,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 <li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -967,7 +1544,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 </dd>
 <dt id="laplace.KronLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, damping=False, **backend_kwargs)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=None, damping=False, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -1005,11 +1582,27 @@ Damping can be enabled by setting <code>damping=True</code>.</p></div>
 <div class="desc"></div>
 </dd>
 </dl>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.KronLaplace.state_dict"><code class="name flex">
+<span>def <span class="ident">state_dict</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.KronLaplace.load_state_dict"><code class="name flex">
+<span>def <span class="ident">load_state_dict</span></span>(<span>self, state_dict: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1029,7 +1622,7 @@ Damping can be enabled by setting <code>damping=True</code>.</p></div>
 </dd>
 <dt id="laplace.DiagLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with diagonal log likelihood Hessian approximation
@@ -1081,6 +1674,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 <li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1100,7 +1694,7 @@ See <code><a title="laplace.BaseLaplace" href="#laplace.BaseLaplace">BaseLaplace
 </dd>
 <dt id="laplace.LowRankLaplace"><code class="flex name class">
 <span>class <span class="ident">LowRankLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, temperature=1, backend=laplace.curvature.asdl.AsdlHessian, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1, prior_precision=1, prior_mean=0, temperature=1, enable_backprop=False, dict_key_x='inputs_id', dict_key_y='labels', backend=laplace.curvature.asdfghjkl.AsdfghjklHessian, backend_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Laplace approximation with low-rank log likelihood Hessian (approximation).
@@ -1148,6 +1742,7 @@ as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.</p>
 <li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1167,7 +1762,7 @@ as H[0] @ diag(H[1]) @ H[0].T + self.prior_precision_diag.</p>
 </dd>
 <dt id="laplace.LLLaplace"><code class="flex name class">
 <span>class <span class="ident">LLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all last-layer Laplace approximations in this library.
@@ -1208,6 +1803,25 @@ can be scalar, per-layer, or diagonal in the most general case</dd>
 <dt><strong><code>temperature</code></strong> :&ensp;<code>float</code>, default=<code>1</code></dt>
 <dd>temperature of the likelihood; lower temperature leads to more
 concentrated posterior and vice versa.</dd>
+<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>whether to enable backprop to the input <code>x</code> through the Laplace predictive.
+Useful for e.g. Bayesian optimization.</dd>
+<dt><strong><code>feature_reduction</code></strong> :&ensp;<code>FeatureReduction</code> or <code>str</code>, optional, default=<code>None</code></dt>
+<dd>when the last-layer <code>features</code> is a tensor of dim &gt;= 3, this tells how to reduce
+it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+the penultultimate output is a tensor of shape <code>(batch_size, seq_len, embd_dim)</code>.
+But the last layer maps <code>(batch_size, embd_dim)</code> to <code>(batch_size, n_classes)</code>.
+Note: Make sure that this option faithfully reflects the reduction in the model
+definition. When inputting a string, available options are
+<code>{'pick_first', 'pick_last', 'average'}</code>.</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 <dt><strong><code>backend</code></strong> :&ensp;<code>subclasses</code> of <code><a title="laplace.curvature.CurvatureInterface" href="curvature/index.html#laplace.curvature.CurvatureInterface">CurvatureInterface</a></code></dt>
 <dd>backend for access to curvature/Hessian approximations</dd>
 <dt><strong><code>last_layer_name</code></strong> :&ensp;<code>str</code>, default=<code>None</code></dt>
@@ -1240,11 +1854,41 @@ a scalar or diagonal prior precision.</p>
 </dl></div>
 </dd>
 </dl>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.LLLaplace.fit"><code class="name flex">
+<span>def <span class="ident">fit</span></span>(<span>self, train_loader, override=True)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Fit the local Laplace approximation at the parameters of the model.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>train_loader</code></strong> :&ensp;<code>torch.data.utils.DataLoader</code></dt>
+<dd>each iterate is a training batch (X, y);
+<code>train_loader.dataset</code> needs to be set to access <span><span class="MathJax_Preview">N</span><script type="math/tex">N</script></span>, size of the data set</dd>
+<dt><strong><code>override</code></strong> :&ensp;<code>bool</code>, default=<code>True</code></dt>
+<dd>whether to initialize H, loss, and n_data again; setting to False is useful for
+online learning settings to accumulate a sequential posterior approximation.</dd>
+</dl></div>
+</dd>
+<dt id="laplace.LLLaplace.state_dict"><code class="name flex">
+<span>def <span class="ident">state_dict</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.LLLaplace.load_state_dict"><code class="name flex">
+<span>def <span class="ident">load_state_dict</span></span>(<span>self, state_dict: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Inherited members</h3>
 <ul class="hlist">
 <li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1264,7 +1908,7 @@ a scalar or diagonal prior precision.</p>
 </dd>
 <dt id="laplace.FullLLLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -1283,7 +1927,8 @@ See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace
 <ul class="hlist">
 <li><code><b><a title="laplace.lllaplace.LLLaplace" href="lllaplace.html#laplace.lllaplace.LLLaplace">LLLaplace</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="lllaplace.html#laplace.lllaplace.LLLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1310,7 +1955,7 @@ See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace
 </dd>
 <dt id="laplace.KronLLLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, damping=False, **backend_kwargs)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -1334,7 +1979,8 @@ Use of <code>damping</code> is possible by initializing or setting <code>damping
 <ul class="hlist">
 <li><code><b><a title="laplace.lllaplace.LLLaplace" href="lllaplace.html#laplace.lllaplace.LLLaplace">LLLaplace</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="lllaplace.html#laplace.lllaplace.LLLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1355,7 +2001,7 @@ Use of <code>damping</code> is possible by initializing or setting <code>damping
 </dd>
 <dt id="laplace.DiagLLLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, last_layer_name=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with diagonal log likelihood Hessian approximation
@@ -1373,7 +2019,8 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <ul class="hlist">
 <li><code><b><a title="laplace.lllaplace.LLLaplace" href="lllaplace.html#laplace.lllaplace.LLLaplace">LLLaplace</a></b></code>:
 <ul class="hlist">
-<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.fit" href="lllaplace.html#laplace.lllaplace.LLLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.LLLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.lllaplace.LLLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1400,7 +2047,7 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 </dd>
 <dt id="laplace.SubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">SubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Class for subnetwork Laplace, which computes the Laplace approximation over just a subset
@@ -1502,6 +2149,7 @@ a scalar or diagonal prior precision.</p>
 <li><code><b><a title="laplace.baselaplace.ParametricLaplace" href="baselaplace.html#laplace.baselaplace.ParametricLaplace">ParametricLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.baselaplace.ParametricLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1521,7 +2169,7 @@ a scalar or diagonal prior precision.</p>
 </dd>
 <dt id="laplace.FullSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">FullSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with full, i.e., dense, log likelihood Hessian
@@ -1541,6 +2189,7 @@ See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace
 <li><code><b><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1567,7 +2216,7 @@ See <code><a title="laplace.FullLaplace" href="#laplace.FullLaplace">FullLaplace
 </dd>
 <dt id="laplace.DiagSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None)</span>
+<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with diagonal log likelihood Hessian approximation
@@ -1586,6 +2235,7 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><code><b><a title="laplace.subnetlaplace.SubnetLaplace" href="subnetlaplace.html#laplace.subnetlaplace.SubnetLaplace">SubnetLaplace</a></b></code>:
 <ul class="hlist">
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.fit" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_posterior_precision">log_det_posterior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_det_prior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_det_prior_precision">log_det_prior_precision</a></code></li>
@@ -1618,14 +2268,16 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <div class="toc">
 <ul>
 <li><a href="#setup">Setup</a></li>
-<li><a href="#structure">Structure</a></li>
-<li><a href="#extendability">Extendability</a></li>
 <li><a href="#example-usage">Example usage</a><ul>
 <li><a href="#post-hoc-prior-precision-tuning-of-diagonal-la">Post-hoc prior precision tuning of diagonal LA</a></li>
 <li><a href="#differentiating-the-log-marginal-likelihood-wrt-hyperparameters">Differentiating the log marginal likelihood w.r.t. hyperparameters</a></li>
-<li><a href="#applying-the-la-over-only-a-subset-of-the-model-parameters">Applying the LA over only a subset of the model parameters</a></li>
+<li><a href="#laplace-on-foundation-models-like-llms">Laplace on foundation models like LLMs</a></li>
+<li><a href="#applying-the-la-over-only-a-subset-of-the-model-parameters-via-the-subnetwork-laplace">Applying the LA over only a subset of the model parameters via the Subnetwork Laplace</a></li>
+<li><a href="#serialization">Serialization</a></li>
 </ul>
 </li>
+<li><a href="#structure">Structure</a></li>
+<li><a href="#extendability">Extendability</a></li>
 <li><a href="#documentation">Documentation</a></li>
 <li><a href="#references">References</a></li>
 <li><a href="#full-example-optimization-of-the-marginal-likelihood-and-prediction">Full example: Optimization of the marginal likelihood and prediction</a><ul>
@@ -1643,6 +2295,16 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><a href="#the-calibration-of-laplace">The calibration of Laplace</a></li>
 </ul>
 </li>
+<li><a href="#full-example-applying-laplace-on-a-huggingface-llm-model">Full Example: Applying Laplace on a Huggingface LLM model</a><ul>
+<li><a href="#laplace-on-a-subset-of-an-llms-weights">Laplace on a subset of an LLM's weights</a></li>
+</ul>
+</li>
+<li><a href="#subnetwork-laplace">Subnetwork Laplace</a></li>
+<li><a href="#full-laplace-on-lora-parameters-only">Full Laplace on LoRA parameters only</a><ul>
+<li><a href="#caveats">Caveats</a></li>
+</ul>
+</li>
+<li><a href="#full-example-bayesian-bradley-terry-reward-modeling">Full Example: Bayesian Bradley-Terry Reward Modeling</a></li>
 </ul>
 </div>
 <ul id="index">
@@ -1682,8 +2344,11 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 <li><code><a title="laplace.ParametricLaplace.log_marginal_likelihood" href="#laplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.predictive_samples" href="#laplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.functional_variance" href="#laplace.ParametricLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.ParametricLaplace.functional_covariance" href="#laplace.ParametricLaplace.functional_covariance">functional_covariance</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.sample" href="#laplace.ParametricLaplace.sample">sample</a></code></li>
 <li><code><a title="laplace.ParametricLaplace.optimize_prior_precision" href="#laplace.ParametricLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.ParametricLaplace.state_dict" href="#laplace.ParametricLaplace.state_dict">state_dict</a></code></li>
+<li><code><a title="laplace.ParametricLaplace.load_state_dict" href="#laplace.ParametricLaplace.load_state_dict">load_state_dict</a></code></li>
 </ul>
 </li>
 <li>
@@ -1691,6 +2356,10 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 </li>
 <li>
 <h4><code><a title="laplace.KronLaplace" href="#laplace.KronLaplace">KronLaplace</a></code></h4>
+<ul class="">
+<li><code><a title="laplace.KronLaplace.state_dict" href="#laplace.KronLaplace.state_dict">state_dict</a></code></li>
+<li><code><a title="laplace.KronLaplace.load_state_dict" href="#laplace.KronLaplace.load_state_dict">load_state_dict</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace</a></code></h4>
@@ -1700,6 +2369,11 @@ See <code><a title="laplace.DiagLaplace" href="#laplace.DiagLaplace">DiagLaplace
 </li>
 <li>
 <h4><code><a title="laplace.LLLaplace" href="#laplace.LLLaplace">LLLaplace</a></code></h4>
+<ul class="">
+<li><code><a title="laplace.LLLaplace.fit" href="#laplace.LLLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.LLLaplace.state_dict" href="#laplace.LLLaplace.state_dict">state_dict</a></code></li>
+<li><code><a title="laplace.LLLaplace.load_state_dict" href="#laplace.LLLaplace.load_state_dict">load_state_dict</a></code></li>
+</ul>
 </li>
 <li>
 <h4><code><a title="laplace.FullLLLaplace" href="#laplace.FullLLLaplace">FullLLLaplace</a></code></h4>

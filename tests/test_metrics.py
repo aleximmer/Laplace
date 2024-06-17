@@ -1,7 +1,9 @@
+import math
+
 import torch
 from torch.nn import functional as F
+
 from laplace.utils import RunningNLLMetric
-import math
 
 
 def test_running_nll_metric():
@@ -18,7 +20,9 @@ def test_running_nll_metric():
     all_probs, all_targets = torch.cat(all_probs, 0), torch.cat(all_targets, 0)
 
     nll_running = metric.compute().item()
-    nll_offline = F.nll_loss(all_probs.log().flatten(end_dim=-2), all_targets.flatten()).item()
+    nll_offline = F.nll_loss(
+        all_probs.log().flatten(end_dim=-2), all_targets.flatten()
+    ).item()
 
     assert math.isclose(nll_running, nll_offline, rel_tol=1e-7)
 
@@ -40,7 +44,11 @@ def test_running_nll_metric_ignore_idx():
     all_probs, all_targets = torch.cat(all_probs, 0), torch.cat(all_targets, 0)
 
     nll_running = metric.compute().item()
-    nll_offline = F.nll_loss(all_probs.log().flatten(end_dim=-2), all_targets.flatten(), ignore_index=ignore_idx).item()
+    nll_offline = F.nll_loss(
+        all_probs.log().flatten(end_dim=-2),
+        all_targets.flatten(),
+        ignore_index=ignore_idx,
+    ).item()
 
     print(nll_running, nll_offline)
 

@@ -1,8 +1,18 @@
-import torch
-from torch.utils.data import TensorDataset, DataLoader
-from laplace import Laplace
-from laplace.utils import invsqrt_precision, diagonal_add_scalar, symeig, normal_samples, validate, get_nll, RunningNLLMetric
 import math
+
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+
+from laplace import Laplace
+from laplace.utils import (
+    RunningNLLMetric,
+    diagonal_add_scalar,
+    get_nll,
+    invsqrt_precision,
+    normal_samples,
+    symeig,
+    validate,
+)
 
 
 def test_sqrt_precision():
@@ -22,7 +32,7 @@ def test_diagonal_add_scalar():
 def test_symeig_custom():
     X = torch.randn(20, 100)
     M = X @ X.T
-    l1, W1 = torch.linalg.eigh(M, UPLO='U')
+    l1, W1 = torch.linalg.eigh(M, UPLO="U")
     l2, W2 = symeig(M)
     assert torch.allclose(l1, l2)
     assert torch.allclose(W1, W2)
@@ -31,7 +41,7 @@ def test_symeig_custom():
 def test_symeig_custom_low_rank():
     X = torch.randn(1000, 10)
     M = X @ X.T
-    l1, W1 = torch.linalg.eigh(M, UPLO='U')
+    l1, W1 = torch.linalg.eigh(M, UPLO="U")
     l2, W2 = symeig(M)
     # symeig should fail for low-rank
     assert not torch.all(l1 >= 0.0)
@@ -71,21 +81,27 @@ def test_validate():
     y = torch.randint(3, size=(50,))
     dataloader = DataLoader(TensorDataset(X, y), batch_size=10)
 
-    model = torch.nn.Sequential(torch.nn.Linear(10, 20), torch.nn.ReLU(), torch.nn.Linear(20, 3))
-    la = Laplace(model, 'classification', 'all')
+    model = torch.nn.Sequential(
+        torch.nn.Linear(10, 20), torch.nn.ReLU(), torch.nn.Linear(20, 3)
+    )
+    la = Laplace(model, "classification", "all")
     la.fit(dataloader)
 
     res = validate(
-        la, dataloader, get_nll, pred_type='nn', link_approx='mc', n_samples=10
+        la, dataloader, get_nll, pred_type="nn", link_approx="mc", n_samples=10
     )
     assert res != math.nan
     assert isinstance(res, float)
     assert res > 0
 
     res = validate(
-        la, dataloader, RunningNLLMetric(), pred_type='nn', link_approx='mc', n_samples=10
+        la,
+        dataloader,
+        RunningNLLMetric(),
+        pred_type="nn",
+        link_approx="mc",
+        n_samples=10,
     )
     assert res != math.nan
     assert isinstance(res, float)
     assert res > 0
-

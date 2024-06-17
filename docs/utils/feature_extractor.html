@@ -33,9 +33,36 @@
 <section>
 <h2 class="section-title" id="header-classes">Classes</h2>
 <dl>
+<dt id="laplace.utils.feature_extractor.FeatureReduction"><code class="flex name class">
+<span>class <span class="ident">FeatureReduction</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Possible choices of feature reduction before applying last-layer Laplace.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.feature_extractor.FeatureReduction.PICK_FIRST"><code class="name">var <span class="ident">PICK_FIRST</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.feature_extractor.FeatureReduction.PICK_LAST"><code class="name">var <span class="ident">PICK_LAST</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.feature_extractor.FeatureReduction.AVERAGE"><code class="name">var <span class="ident">AVERAGE</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
 <dt id="laplace.utils.feature_extractor.FeatureExtractor"><code class="flex name class">
 <span>class <span class="ident">FeatureExtractor</span></span>
-<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None)</span>
+<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None, enable_backprop: bool = False, feature_reduction: Optional[<a title="laplace.utils.feature_extractor.FeatureReduction" href="#laplace.utils.feature_extractor.FeatureReduction">FeatureReduction</a>] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Feature extractor for a PyTorch neural network.
@@ -53,8 +80,19 @@ Based on <a href="https://gist.github.com/fkodom/27ed045c9051a39102e8bcf4ce31df7
 <dt><strong><code>last_layer_name</code></strong> :&ensp;<code>str</code>, default=<code>None</code></dt>
 <dd>if the name of the last layer is already known, otherwise it will
 be determined automatically.</dd>
+<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>whether to enable backprop through the feature extactor to get the gradients of
+the inputs. Useful for e.g. Bayesian optimization.</dd>
+<dt><strong><code>feature_reduction</code></strong> :&ensp;<code><a title="laplace.utils.feature_extractor.FeatureReduction" href="#laplace.utils.feature_extractor.FeatureReduction">FeatureReduction</a></code> or <code>str</code>, default=<code>None</code></dt>
+<dd>when the last-layer <code>features</code> is a tensor of dim &gt;= 3, this tells how to reduce
+it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+the penultultimate output is a tensor of shape <code>(batch_size, seq_len, embd_dim)</code>.
+But the last layer maps <code>(batch_size, embd_dim)</code> to <code>(batch_size, n_classes)</code>.
+Note: Make sure that this option faithfully reflects the reduction in the model
+definition. When inputting a string, available options are
+<code>{'pick_first', 'pick_last', 'average'}</code>.</dd>
 </dl>
-<p>Initializes internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li>torch.nn.modules.module.Module</li>
@@ -66,6 +104,10 @@ be determined automatically.</dd>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.feature_extractor.FeatureExtractor.training"><code class="name">var <span class="ident">training</span> : bool</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.feature_extractor.FeatureExtractor.call_super_init"><code class="name">var <span class="ident">call_super_init</span> : bool</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -143,6 +185,9 @@ linear last layer).</p>
 </li>
 <li><h3><a href="#header-classes">Classes</a></h3>
 <ul>
+<li>
+<h4><code><a title="laplace.utils.feature_extractor.FeatureReduction" href="#laplace.utils.feature_extractor.FeatureReduction">FeatureReduction</a></code></h4>
+</li>
 <li>
 <h4><code><a title="laplace.utils.feature_extractor.FeatureExtractor" href="#laplace.utils.feature_extractor.FeatureExtractor">FeatureExtractor</a></code></h4>
 <ul class="">
