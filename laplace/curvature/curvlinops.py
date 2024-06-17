@@ -26,18 +26,18 @@ class CurvlinopsInterface(CurvatureInterface):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ) -> None:
         super().__init__(
             model,
             likelihood,
-            logit_class_dim,
             last_layer,
             subnetwork_indices,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
         )
@@ -154,9 +154,9 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         stochastic: bool = False,
@@ -164,9 +164,9 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
         super().__init__(
             model,
             likelihood,
-            logit_class_dim,
             last_layer,
             subnetwork_indices,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
         )

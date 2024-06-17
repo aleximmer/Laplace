@@ -434,7 +434,9 @@ def test_logit_class_dim_class(backend_cls, method, logit_class_dim, model, clas
 
     try:
         # Classification should be sensitive to `logit_class_dim`
-        backend = backend_cls(model, "classification", logit_class_dim=logit_class_dim)
+        backend = backend_cls(
+            model, likelihood="classification", logit_class_dim=logit_class_dim
+        )
 
         # Skip this due to https://github.com/aleximmer/Laplace/issues/178
         if (
@@ -479,9 +481,6 @@ def test_logit_class_dim_class(backend_cls, method, logit_class_dim, model, clas
         AsdlGGN,
         AsdlEF,
         AsdlHessian,
-        AsdfghjklGGN,
-        AsdfghjklEF,
-        AsdfghjklHessian,
         BackPackGGN,
         BackPackEF,
     ],

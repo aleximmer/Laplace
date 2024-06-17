@@ -32,18 +32,18 @@ class AsdlInterface(CurvatureInterface):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
         super().__init__(
             model,
             likelihood,
-            logit_class_dim,
             last_layer,
             subnetwork_indices,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
         )
@@ -288,17 +288,17 @@ class AsdlHessian(AsdlInterface):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ) -> None:
         super().__init__(
             model,
             likelihood,
-            logit_class_dim,
             last_layer,
             subnetwork_indices=None,
+            logit_class_dim=logit_class_dim,
             dict_key_x=dict_key_x,
             dict_key_y=dict_key_y,
         )
@@ -350,9 +350,9 @@ class AsdlGGN(AsdlInterface, GGNInterface):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         stochastic: bool = False,
@@ -360,9 +360,9 @@ class AsdlGGN(AsdlInterface, GGNInterface):
         super().__init__(
             model,
             likelihood,
-            logit_class_dim,
             last_layer,
             subnetwork_indices,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
         )
@@ -380,13 +380,13 @@ class AsdlEF(AsdlInterface, EFInterface):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
         super().__init__(
-            model, likelihood, logit_class_dim, last_layer, None, dict_key_x, dict_key_y
+            model, likelihood, last_layer, None, logit_class_dim, dict_key_x, dict_key_y
         )
 
     @property

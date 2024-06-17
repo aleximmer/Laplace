@@ -21,13 +21,13 @@ class CurvatureInterface:
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
-    logit_class_dim: int, default=-1
-        the dim of the model's logit tensor that corresponds to the class/output
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.LongTensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
@@ -49,9 +49,9 @@ class CurvatureInterface:
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
@@ -60,6 +60,7 @@ class CurvatureInterface:
         self.model: nn.Module = model
         self.last_layer: bool = last_layer
         self.subnetwork_indices: torch.LongTensor | None = subnetwork_indices
+        self.logit_class_dim = logit_class_dim
         self.dict_key_x = dict_key_x
         self.dict_key_y = dict_key_y
 
@@ -301,13 +302,13 @@ class GGNInterface(CurvatureInterface):
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
-    logit_class_dim: int, default=-1
-        the dim of the model's logit tensor that corresponds to the class/output
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
@@ -326,9 +327,9 @@ class GGNInterface(CurvatureInterface):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        logit_class_dim: int = -1,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         stochastic: bool = False,
@@ -340,9 +341,9 @@ class GGNInterface(CurvatureInterface):
         super().__init__(
             model,
             likelihood,
-            logit_class_dim,
             last_layer,
             subnetwork_indices,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
         )
@@ -451,13 +452,13 @@ class EFInterface(CurvatureInterface):
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'}
-    logit_class_dim: int, default=-1
-        the dim of the model's logit tensor that corresponds to the class/output
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
