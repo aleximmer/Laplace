@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import torchmetrics as tm
 import tqdm
+from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 
 from laplace.curvature import CurvlinopsGGN
@@ -442,16 +443,24 @@ class BaseLaplace:
         for prior_prec in pbar:
             self.prior_precision = prior_prec
 
-            result = validate(
-                self,
-                val_loader,
-                loss,
-                pred_type=pred_type,
-                link_approx=link_approx,
-                n_samples=n_samples,
-                loss_with_var=loss_with_var,
-                dict_key_y=self.dict_key_y,
-            )
+            try:
+                result = validate(
+                    self,
+                    val_loader,
+                    loss,
+                    pred_type=pred_type,
+                    link_approx=link_approx,
+                    n_samples=n_samples,
+                    loss_with_var=loss_with_var,
+                    dict_key_y=self.dict_key_y,
+                )
+            except LinAlgError:
+                result = np.inf
+            except RuntimeError as err:
+                if "not positive-definite" in str(err):
+                    result = np.inf
+                else:
+                    raise err
 
             if progress_bar:
                 pbar.set_description(
