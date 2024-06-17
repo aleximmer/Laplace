@@ -1,11 +1,16 @@
+from __future__ import annotations
+
+from typing import Type
+
 import torch
+from torch import nn
 from torch.distributions import MultivariateNormal
 
-from laplace.baselaplace import ParametricLaplace, FullLaplace, DiagLaplace
-from laplace.curvature import GGNInterface, EFInterface
+from laplace.baselaplace import DiagLaplace, FullLaplace, Likelihood, ParametricLaplace
+from laplace.curvature import EFInterface, GGNInterface
+from laplace.curvature.curvature import CurvatureInterface
 
-
-__all__ = ['SubnetLaplace', 'FullSubnetLaplace', 'DiagSubnetLaplace']
+__all__ = ["SubnetLaplace", "FullSubnetLaplace", "DiagSubnetLaplace"]
 
 
 class SubnetLaplace(ParametricLaplace):
@@ -71,20 +76,21 @@ class SubnetLaplace(ParametricLaplace):
 
     def __init__(
         self,
-        model,
-        likelihood,
-        subnetwork_indices,
-        sigma_noise=1.0,
-        prior_precision=1.0,
-        prior_mean=0.0,
-        temperature=1.0,
-        logit_class_dim=-1,
-        backend=None,
-        backend_kwargs=None,
-        asdl_fisher_kwargs=None,
-    ):
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        subnetwork_indices: torch.LongTensor,
+        sigma_noise: float | torch.Tensor = 1.0,
+        prior_precision: float | torch.Tensor = 1.0,
+        prior_mean: float | torch.Tensor = 0.0,
+        temperature: float = 1.0,
+        logit_class_dim: int = -1,
+        backend: Type[CurvatureInterface] | None = None,
+        backend_kwargs: dict | None = None,
+        asdl_fisher_kwargs: dict | None = None,
+    ) -> None:
         if asdl_fisher_kwargs is not None:
-            raise ValueError('Subnetwork Laplace does not support asdl_fisher_kwargs.')
+            raise ValueError("Subnetwork Laplace does not support asdl_fisher_kwargs.")
+
         self.H = None
         super().__init__(
             model,
@@ -97,46 +103,47 @@ class SubnetLaplace(ParametricLaplace):
             backend=backend,
             backend_kwargs=backend_kwargs,
         )
+
         if backend is not None:
             if not isinstance(backend, GGNInterface) and not isinstance(
                 backend, EFInterface
             ):
-                raise ValueError('SubnetLaplace can only be used with GGN and EF.')
+                raise ValueError("SubnetLaplace can only be used with GGN and EF.")
+
         # check validity of subnetwork indices and pass them to backend
         self._check_subnetwork_indices(subnetwork_indices)
         self.backend.subnetwork_indices = subnetwork_indices
         self.n_params_subnet = len(subnetwork_indices)
         self._init_H()
 
-    def _check_subnetwork_indices(self, subnetwork_indices):
+    def _check_subnetwork_indices(
+        self, subnetwork_indices: torch.LongTensor | None
+    ) -> None:
         """Check that subnetwork indices are valid indices of the vectorized model parameters
         (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`).
         """
         if subnetwork_indices is None:
-            raise ValueError('Subnetwork indices cannot be None.')
+            raise ValueError("Subnetwork indices cannot be None.")
         elif not (
-            (
-                isinstance(subnetwork_indices, torch.LongTensor)
-                or isinstance(subnetwork_indices, torch.cuda.LongTensor)
-            )
+            isinstance(subnetwork_indices, torch.LongTensor)
             and subnetwork_indices.numel() > 0
             and len(subnetwork_indices.shape) == 1
         ):
             raise ValueError(
-                'Subnetwork indices must be non-empty 1-dimensional torch.LongTensor.'
+                "Subnetwork indices must be non-empty 1-dimensional torch.LongTensor."
             )
         elif not (
             len(subnetwork_indices[subnetwork_indices < 0]) == 0
             and len(subnetwork_indices[subnetwork_indices >= self.n_params]) == 0
         ):
             raise ValueError(
-                f'Subnetwork indices must lie between 0 and n_params={self.n_params}.'
+                f"Subnetwork indices must lie between 0 and n_params={self.n_params}."
             )
         elif not (len(subnetwork_indices.unique()) == len(subnetwork_indices)):
-            raise ValueError('Subnetwork indices must not contain duplicate entries.')
+            raise ValueError("Subnetwork indices must not contain duplicate entries.")
 
     @property
-    def prior_precision_diag(self):
+    def prior_precision_diag(self) -> torch.Tensor:
         """Obtain the diagonal prior precision \\(p_0\\) constructed from either
         a scalar or diagonal prior precision.
 
@@ -144,27 +151,27 @@ class SubnetLaplace(ParametricLaplace):
         -------
         prior_precision_diag : torch.Tensor
         """
-        if len(self.prior_precision) == 1:  # scalar
+        # scalar
+        if isinstance(self.prior_precision, float) or len(self.prior_precision) == 1:
             return self.prior_precision * torch.ones(
                 self.n_params_subnet, device=self._device
             )
 
         elif len(self.prior_precision) == self.n_params_subnet:  # diagonal
             return self.prior_precision
-
         else:
-            raise ValueError('Mismatch of prior and model. Diagonal or scalar prior.')
+            raise ValueError("Mismatch of prior and model. Diagonal or scalar prior.")
 
     @property
-    def mean_subnet(self):
+    def mean_subnet(self) -> torch.Tensor:
         return self.mean[self.backend.subnetwork_indices]
 
     @property
-    def scatter(self):
+    def scatter(self) -> torch.Tensor:
         delta = self.mean_subnet - self.prior_mean
         return (delta * self.prior_precision_diag) @ delta
 
-    def assemble_full_samples(self, subnet_samples):
+    def assemble_full_samples(self, subnet_samples) -> torch.Tensor:
         full_samples = self.mean.repeat(subnet_samples.shape[0], 1)
         full_samples[:, self.backend.subnetwork_indices] = subnet_samples
         return full_samples
@@ -179,14 +186,16 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('subnetwork', 'full')
+    _key = ("subnetwork", "full")
 
-    def _init_H(self):
+    def _init_H(self) -> None:
         self.H = torch.zeros(
             self.n_params_subnet, self.n_params_subnet, device=self._device
         )
 
-    def sample(self, n_samples=100, generator=None):
+    def sample(
+        self, n_samples: int = 100, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
         # sample only subnetwork parameters and set all other parameters to their MAP estimates
         dist = MultivariateNormal(loc=self.mean_subnet, scale_tril=self.posterior_scale)
         subnet_samples = dist.sample((n_samples,))
@@ -201,21 +210,24 @@ class DiagSubnetLaplace(SubnetLaplace, DiagLaplace):
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
-    _key = ('subnetwork', 'diag')
+    _key = ("subnetwork", "diag")
 
     def _init_H(self):
         self.H = torch.zeros(self.n_params_subnet, device=self._device)
 
-    def _check_jacobians(self, Js):
+    def _check_jacobians(self, Js: torch.Tensor) -> None:
         if not isinstance(Js, torch.Tensor):
-            raise ValueError('Jacobians have to be torch.Tensor.')
+            raise ValueError("Jacobians have to be torch.Tensor.")
         if not Js.device == self._device:
-            raise ValueError('Jacobians need to be on the same device as Laplace.')
+            raise ValueError("Jacobians need to be on the same device as Laplace.")
+
         m, k, p = Js.size()
         if p != self.n_params_subnet:
-            raise ValueError('Invalid Jacobians shape for Laplace posterior approx.')
+            raise ValueError("Invalid Jacobians shape for Laplace posterior approx.")
 
-    def sample(self, n_samples=100, generator=None):
+    def sample(
+        self, n_samples: int = 100, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
         # sample only subnetwork parameters and set all other parameters to their MAP estimates
         samples = torch.randn(
             n_samples, self.n_params_subnet, device=self._device, generator=generator

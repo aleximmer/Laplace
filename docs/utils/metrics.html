@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
 <meta name="generator" content="pdoc 0.10.0" />
-<title>laplace.utils.utils API documentation</title>
+<title>laplace.utils.metrics API documentation</title>
 <meta name="description" content="" />
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/sanitize.min.css" integrity="sha256-PK9q560IAAa6WVRRh76LtCaI8pjTJ2z11v0miyNNjrs=" crossorigin>
 <link rel="preload stylesheet" as="style" href="https://cdnjs.cloudflare.com/ajax/libs/10up-sanitize.css/11.0.1/typography.min.css" integrity="sha256-7l/o7C8jubJiy74VsKTidCy1yBkRtiUGbVkYBylBqUg=" crossorigin>
@@ -20,7 +20,7 @@
 <main>
 <article id="content">
 <header>
-<h1 class="title">Module <code>laplace.utils.utils</code></h1>
+<h1 class="title">Module <code>laplace.utils.metrics</code></h1>
 </header>
 <section id="section-intro">
 </section>
@@ -29,144 +29,79 @@
 <section>
 </section>
 <section>
-<h2 class="section-title" id="header-functions">Functions</h2>
-<dl>
-<dt id="laplace.utils.utils.get_nll"><code class="name flex">
-<span>def <span class="ident">get_nll</span></span>(<span>out_dist, targets)</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="laplace.utils.utils.validate"><code class="name flex">
-<span>def <span class="ident">validate</span></span>(<span>laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False, dict_key_y='labels') ‑> float</span>
-</code></dt>
-<dd>
-<div class="desc"></div>
-</dd>
-<dt id="laplace.utils.utils.parameters_per_layer"><code class="name flex">
-<span>def <span class="ident">parameters_per_layer</span></span>(<span>model)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Get number of parameters per layer.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
-<dd>&nbsp;</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>params_per_layer</code></strong> :&ensp;<code>list[int]</code></dt>
-<dd>&nbsp;</dd>
-</dl></div>
-</dd>
-<dt id="laplace.utils.utils.invsqrt_precision"><code class="name flex">
-<span>def <span class="ident">invsqrt_precision</span></span>(<span>M)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Compute <code>M^{-0.5}</code> as a tridiagonal matrix.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>M</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>M_invsqrt</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl></div>
-</dd>
-<dt id="laplace.utils.utils.kron"><code class="name flex">
-<span>def <span class="ident">kron</span></span>(<span>t1, t2)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Computes the Kronecker product between two tensors.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>t1</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-<dt><strong><code>t2</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>kron_product</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl></div>
-</dd>
-<dt id="laplace.utils.utils.diagonal_add_scalar"><code class="name flex">
-<span>def <span class="ident">diagonal_add_scalar</span></span>(<span>X, value)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Add scalar value <code>value</code> to diagonal of <code>X</code>.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>X</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-<dt><strong><code>value</code></strong> :&ensp;<code>torch.Tensor</code> or <code>float</code></dt>
-<dd>&nbsp;</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>X_add_scalar</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl></div>
-</dd>
-<dt id="laplace.utils.utils.symeig"><code class="name flex">
-<span>def <span class="ident">symeig</span></span>(<span>M)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Symetric eigendecomposition avoiding failure cases by
-adding and removing jitter to the diagonal.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>M</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>L</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>eigenvalues</dd>
-<dt><strong><code>W</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>eigenvectors</dd>
-</dl></div>
-</dd>
-<dt id="laplace.utils.utils.block_diag"><code class="name flex">
-<span>def <span class="ident">block_diag</span></span>(<span>blocks)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Compose block-diagonal matrix of individual blocks.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>blocks</code></strong> :&ensp;<code>list[torch.Tensor]</code></dt>
-<dd>&nbsp;</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>M</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>&nbsp;</dd>
-</dl></div>
-</dd>
-<dt id="laplace.utils.utils.expand_prior_precision"><code class="name flex">
-<span>def <span class="ident">expand_prior_precision</span></span>(<span>prior_prec, model)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Expand prior precision to match the shape of the model parameters.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>prior_prec</code></strong> :&ensp;<code>torch.Tensor 1-dimensional</code></dt>
-<dd>prior precision</dd>
-<dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
-<dd>torch model with parameters that are regularized by prior_prec</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>expanded_prior_prec</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>expanded prior precision has the same shape as model parameters</dd>
-</dl></div>
-</dd>
-</dl>
 </section>
 <section>
+<h2 class="section-title" id="header-classes">Classes</h2>
+<dl>
+<dt id="laplace.utils.metrics.RunningNLLMetric"><code class="flex name class">
+<span>class <span class="ident">RunningNLLMetric</span></span>
+<span>(</span><span>ignore_index=-100)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>NLL metrics that</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>ignore_index</code></strong> :&ensp;<code>int</code>, default <code>= -100</code></dt>
+<dd>which class label to ignore when computing the NLL loss</dd>
+</dl>
+<p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>torchmetrics.metric.Metric</li>
+<li>torch.nn.modules.module.Module</li>
+<li>abc.ABC</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.metrics.RunningNLLMetric.is_differentiable"><code class="name">var <span class="ident">is_differentiable</span> : Optional[bool]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.metrics.RunningNLLMetric.higher_is_better"><code class="name">var <span class="ident">higher_is_better</span> : Optional[bool]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.metrics.RunningNLLMetric.full_state_update"><code class="name">var <span class="ident">full_state_update</span> : Optional[bool]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.metrics.RunningNLLMetric.plot_lower_bound"><code class="name">var <span class="ident">plot_lower_bound</span> : Optional[float]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.metrics.RunningNLLMetric.plot_upper_bound"><code class="name">var <span class="ident">plot_upper_bound</span> : Optional[float]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.metrics.RunningNLLMetric.plot_legend_name"><code class="name">var <span class="ident">plot_legend_name</span> : Optional[str]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.utils.metrics.RunningNLLMetric.update"><code class="name flex">
+<span>def <span class="ident">update</span></span>(<span>self, probs: torch.Tensor, targets: torch.Tensor) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>probs</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>probability tensor of shape (&hellip;, n_classes)</dd>
+<dt><strong><code>targets</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>integer tensor of shape (&hellip;)</dd>
+</dl></div>
+</dd>
+<dt id="laplace.utils.metrics.RunningNLLMetric.compute"><code class="name flex">
+<span>def <span class="ident">compute</span></span>(<span>self)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Override this method to compute the final metric value.</p>
+<p>This method will automatically synchronize state variables when running in distributed backend.</p></div>
+</dd>
+</dl>
+</dd>
+</dl>
 </section>
 </article>
 <nav id="sidebar">
@@ -180,17 +115,15 @@ adding and removing jitter to the diagonal.</p>
 <li><code><a title="laplace.utils" href="index.html">laplace.utils</a></code></li>
 </ul>
 </li>
-<li><h3><a href="#header-functions">Functions</a></h3>
+<li><h3><a href="#header-classes">Classes</a></h3>
+<ul>
+<li>
+<h4><code><a title="laplace.utils.metrics.RunningNLLMetric" href="#laplace.utils.metrics.RunningNLLMetric">RunningNLLMetric</a></code></h4>
 <ul class="">
-<li><code><a title="laplace.utils.utils.get_nll" href="#laplace.utils.utils.get_nll">get_nll</a></code></li>
-<li><code><a title="laplace.utils.utils.validate" href="#laplace.utils.utils.validate">validate</a></code></li>
-<li><code><a title="laplace.utils.utils.parameters_per_layer" href="#laplace.utils.utils.parameters_per_layer">parameters_per_layer</a></code></li>
-<li><code><a title="laplace.utils.utils.invsqrt_precision" href="#laplace.utils.utils.invsqrt_precision">invsqrt_precision</a></code></li>
-<li><code><a title="laplace.utils.utils.kron" href="#laplace.utils.utils.kron">kron</a></code></li>
-<li><code><a title="laplace.utils.utils.diagonal_add_scalar" href="#laplace.utils.utils.diagonal_add_scalar">diagonal_add_scalar</a></code></li>
-<li><code><a title="laplace.utils.utils.symeig" href="#laplace.utils.utils.symeig">symeig</a></code></li>
-<li><code><a title="laplace.utils.utils.block_diag" href="#laplace.utils.utils.block_diag">block_diag</a></code></li>
-<li><code><a title="laplace.utils.utils.expand_prior_precision" href="#laplace.utils.utils.expand_prior_precision">expand_prior_precision</a></code></li>
+<li><code><a title="laplace.utils.metrics.RunningNLLMetric.update" href="#laplace.utils.metrics.RunningNLLMetric.update">update</a></code></li>
+<li><code><a title="laplace.utils.metrics.RunningNLLMetric.compute" href="#laplace.utils.metrics.RunningNLLMetric.compute">compute</a></code></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>

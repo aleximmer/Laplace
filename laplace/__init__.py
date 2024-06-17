@@ -3,21 +3,54 @@
 
 .. include:: ../examples/regression_example.md
 .. include:: ../examples/calibration_example.md
+.. include:: ../examples/huggingface_example.md
+.. include:: ../examples/reward_modeling_example.md
 """
-REGRESSION = 'regression'
-CLASSIFICATION = 'classification'
 
-from laplace.baselaplace import BaseLaplace, ParametricLaplace, FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace
-from laplace.lllaplace import LLLaplace, FullLLLaplace, KronLLLaplace, DiagLLLaplace
-from laplace.subnetlaplace import SubnetLaplace, FullSubnetLaplace, DiagSubnetLaplace
+from laplace.baselaplace import (
+    BaseLaplace,
+    DiagLaplace,
+    FullLaplace,
+    KronLaplace,
+    LowRankLaplace,
+    ParametricLaplace,
+)
 from laplace.laplace import Laplace
+from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace, LLLaplace
 from laplace.marglik_training import marglik_training
+from laplace.subnetlaplace import DiagSubnetLaplace, FullSubnetLaplace, SubnetLaplace
+from laplace.utils.enums import (
+    HessianStructure,
+    Likelihood,
+    LinkApprox,
+    PredType,
+    PriorStructure,
+    SubsetOfWeights,
+    TuningMethod,
+)
 
-__all__ = ['Laplace',  # direct access to all Laplace classes via unified interface
-           'BaseLaplace', 'ParametricLaplace',  # base-class and its (first-level) subclasses
-           'FullLaplace', 'KronLaplace', 'DiagLaplace', 'LowRankLaplace',  # all-weights
-           'LLLaplace',  # base-class last-layer
-           'FullLLLaplace', 'KronLLLaplace', 'DiagLLLaplace',  # last-layer
-           'SubnetLaplace',  # base-class subnetwork
-           'FullSubnetLaplace', 'DiagSubnetLaplace',  # subnetwork
-           'marglik_training']  # methods
+__all__ = [
+    "Laplace",  # direct access to all Laplace classes via unified interface
+    "BaseLaplace",
+    "ParametricLaplace",  # base-class and its (first-level) subclasses
+    "FullLaplace",
+    "KronLaplace",
+    "DiagLaplace",
+    "LowRankLaplace",  # all-weights
+    "LLLaplace",  # base-class last-layer
+    "FullLLLaplace",
+    "KronLLLaplace",
+    "DiagLLLaplace",  # last-layer
+    "SubnetLaplace",  # base-class subnetwork
+    "FullSubnetLaplace",
+    "DiagSubnetLaplace",  # subnetwork
+    "marglik_training",
+    # Enums
+    "SubsetOfWeights",
+    "HessianStructure",
+    "Likelihood",
+    "PredType",
+    "LinkApprox",
+    "TuningMethod",
+    "PriorStructure",
+]
