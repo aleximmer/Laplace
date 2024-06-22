@@ -272,7 +272,9 @@ def test_gp_kernel(
     else:
         full_kernel = kernel(jacobians, X)
 
-    assert torch.all(torch.isclose(expected_full_kernel, full_kernel))
+    assert torch.allclose(
+        expected_full_kernel, full_kernel.to(expected_full_kernel.dtype)
+    )
 
     func_la.diagonal_kernel = True
 
@@ -280,4 +282,7 @@ def test_gp_kernel(
         block_diag_kernel = kernel(jacobians)
     else:
         block_diag_kernel = kernel(jacobians, X)
-    assert torch.all(torch.isclose(expected_block_diagonal_kernel, block_diag_kernel))
+    assert torch.allclose(
+        expected_block_diagonal_kernel,
+        block_diag_kernel.to(expected_block_diagonal_kernel.dtype),
+    )
