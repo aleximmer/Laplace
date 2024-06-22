@@ -17,7 +17,7 @@ def Laplace(
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
     *args,
     **kwargs,
-) -> ParametricLaplace:
+) -> BaseLaplace:
     """Simplified Laplace access using strings instead of different classes.
 
     Parameters

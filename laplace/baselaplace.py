@@ -10,13 +10,16 @@ import torch
 import torchmetrics
 import tqdm
 from torch import nn
-
+from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
 
 from laplace.curvature.asdfghjkl import AsdfghjklHessian
+from laplace.curvature.asdl import AsdlGGN
+from laplace.curvature.backpack import BackPackGGN
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
+from laplace.utils import SoDSampler
 from laplace.utils.enums import (
     Likelihood,
     LinkApprox,
@@ -26,20 +29,11 @@ from laplace.utils.enums import (
 )
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.metrics import RunningNLLMetric
-from laplace.utils import SoDSampler
 from laplace.utils.utils import (
-
     fix_prior_prec_structure,
     invsqrt_precision,
     normal_samples,
     validate,
-)
-from laplace.utils.enums import (
-    Likelihood,
-    LinkApprox,
-    PredType,
-    PriorStructure,
-    TuningMethod,
 )
 
 __all__ = [
@@ -2527,14 +2521,16 @@ class FunctionalLaplace(BaseLaplace):
 
     def optimize_prior_precision(
         self,
-        method: TuningMethod | str = TuningMethod.MARGLIK,
         pred_type: PredType | str = PredType.GP,
+        method: TuningMethod | str = TuningMethod.MARGLIK,
         n_steps: int = 100,
         lr: float = 1e-1,
         init_prior_prec: float | torch.Tensor = 1.0,
         prior_structure: PriorStructure | str = PriorStructure.SCALAR,
         val_loader: DataLoader | None = None,
-        loss: tm.Metric | Callable[[torch.Tensor], torch.Tensor | float] | None = None,
+        loss: torchmetrics.Metric
+        | Callable[[torch.Tensor], torch.Tensor | float]
+        | None = None,
         log_prior_prec_min: float = -4,
         log_prior_prec_max: float = 4,
         grid_size: int = 100,
@@ -2551,7 +2547,7 @@ class FunctionalLaplace(BaseLaplace):
             warnings.warn(
                 "Use of method='marglik' in case of FunctionalLaplace is discouraged, rather use method='CV'."
             )
-        self.optimize_prior_precision_base(
+        super().optimize_prior_precision(
             pred_type,
             method,
             n_steps,

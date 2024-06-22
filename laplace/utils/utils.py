@@ -12,7 +12,7 @@ from torch import nn
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.nn.utils import parameters_to_vector
-from torch.utils.data import Sampler, DataLoader
+from torch.utils.data import DataLoader, Sampler
 from torchmetrics import Metric
 
 import laplace
@@ -238,7 +238,7 @@ def block_diag(blocks: list[torch.Tensor]) -> torch.Tensor:
         p_cur += p_block
     return M
 
-  
+
 class SoDSampler(Sampler):
     def __init__(self, N, M, seed: int = 0):
         np.random.seed(seed)
