@@ -2731,8 +2731,6 @@ class FunctionalLaplace(BaseLaplace):
                 raise ValueError("Can only change sigma_noise for regression.")
             self.sigma_noise = sigma_noise
 
-        print(self.prior_precision)
-        print(self.log_likelihood, self.log_det_ratio, self.scatter)
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
     @property
