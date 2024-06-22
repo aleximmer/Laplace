@@ -208,7 +208,7 @@ class LLLaplace(ParametricLaplace):
     def _glm_predictive_distribution(
         self, X: torch.Tensor | MutableMapping, joint: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        Js, f_mu = self.backend.last_layer_jacobians(X)
+        Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
