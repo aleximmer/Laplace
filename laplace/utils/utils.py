@@ -35,7 +35,6 @@ def validate(
     pred_type="glm",
     link_approx="probit",
     n_samples=100,
-    loss_with_var=False,
     dict_key_y="labels",
 ) -> float:
     laplace.model.eval()
