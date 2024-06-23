@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.lllaplace.LLLaplace"><code class="flex name class">
 <span>class <span class="ident">LLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all last-layer Laplace approximations in this library.
@@ -79,6 +79,22 @@ concentrated posterior and vice versa.</dd>
 <dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>whether to enable backprop to the input <code>x</code> through the Laplace predictive.
 Useful for e.g. Bayesian optimization.</dd>
+<dt><strong><code>feature_reduction</code></strong> :&ensp;<code>FeatureReduction</code> or <code>str</code>, optional, default=<code>None</code></dt>
+<dd>when the last-layer <code>features</code> is a tensor of dim &gt;= 3, this tells how to reduce
+it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+the penultultimate output is a tensor of shape <code>(batch_size, seq_len, embd_dim)</code>.
+But the last layer maps <code>(batch_size, embd_dim)</code> to <code>(batch_size, n_classes)</code>.
+Note: Make sure that this option faithfully reflects the reduction in the model
+definition. When inputting a string, available options are
+<code>{'pick_first', 'pick_last', 'average'}</code>.</dd>
+<dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
+<dd>The dictionary key under which the input tensor <code>x</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
+<dt><strong><code>dict_key_y</code></strong> :&ensp;<code>str</code>, default=<code>'labels'</code></dt>
+<dd>The dictionary key under which the target tensor <code>y</code> is stored. Only has effect
+when the model takes a <code>MutableMapping</code> as the input. Useful for Huggingface
+LLM models.</dd>
 <dt><strong><code>backend</code></strong> :&ensp;<code>subclasses</code> of <code><a title="laplace.curvature.CurvatureInterface" href="curvature/index.html#laplace.curvature.CurvatureInterface">CurvatureInterface</a></code></dt>
 <dd>backend for access to curvature/Hessian approximations</dd>
 <dt><strong><code>last_layer_name</code></strong> :&ensp;<code>str</code>, default=<code>None</code></dt>
@@ -165,7 +181,7 @@ online learning settings to accumulate a sequential posterior approximation.</dd
 </dd>
 <dt id="laplace.lllaplace.FullLLLaplace"><code class="flex name class">
 <span>class <span class="ident">FullLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with full, i.e., dense, log likelihood Hessian approximation
@@ -212,7 +228,7 @@ See <code>FullLaplace</code>, <code><a title="laplace.lllaplace.LLLaplace" href=
 </dd>
 <dt id="laplace.lllaplace.KronLLLaplace"><code class="flex name class">
 <span>class <span class="ident">KronLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, last_layer_name=None, damping=False, **backend_kwargs)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, damping=False, **backend_kwargs)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with Kronecker factored log likelihood Hessian approximation
@@ -258,7 +274,7 @@ Use of <code>damping</code> is possible by initializing or setting <code>damping
 </dd>
 <dt id="laplace.lllaplace.DiagLLLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagLLLaplace</span></span>
-<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model, likelihood, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, enable_backprop=False, feature_reduction=None, dict_key_x='inputs_id', dict_key_y='labels', backend=None, last_layer_name=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Last-layer Laplace approximation with diagonal log likelihood Hessian approximation

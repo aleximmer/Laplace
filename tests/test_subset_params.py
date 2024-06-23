@@ -6,10 +6,10 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
+from laplace import DiagLaplace, FullLaplace, KronLaplace
 from laplace.curvature import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPackGGN
 from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
-from laplace.laplace import DiagLaplace, FullLaplace, KronLaplace
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)

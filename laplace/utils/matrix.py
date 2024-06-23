@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from math import pow
-from typing import Union
+from typing import Iterable
 
 import numpy as np
 import opt_einsum as oe
 import torch
+from torch import nn
 
 from laplace.utils.utils import _is_valid_scalar, block_diag, kron, symeig
 
@@ -19,16 +22,18 @@ class Kron:
 
     Parameters
     ----------
-    kfacs : list[Tuple]
-        each element in the list is a Tuple of two Kronecker factors Q, H
+    kfacs : list[Iterable[torch.Tensor] | torch.Tensor]
+        each element in the list is a tuple of two Kronecker factors Q, H
         or a single matrix approximating the Hessian (in case of bias, for example)
     """
 
-    def __init__(self, kfacs):
-        self.kfacs = kfacs
+    def __init__(self, kfacs: list[tuple[torch.Tensor] | torch.Tensor]) -> None:
+        self.kfacs: list[tuple[torch.Tensor] | torch.Tensor] = kfacs
 
     @classmethod
-    def init_from_model(cls, model, device):
+    def init_from_model(
+        cls, model: nn.Module | Iterable[nn.Parameter], device: torch.device
+    ) -> Kron:
         """Initialize Kronecker factors based on a models architecture.
 
         Parameters
@@ -53,7 +58,7 @@ class Kron:
             elif 4 >= p.ndim >= 2:  # fully connected or conv
                 if p.ndim == 2:  # fully connected
                     P_in, P_out = p.size()
-                elif p.ndim > 2:
+                else:
                     P_in, P_out = p.shape[0], np.prod(p.shape[1:])
 
                 kfacs.append(
@@ -66,7 +71,7 @@ class Kron:
                 raise ValueError("Invalid parameter shape in network.")
         return cls(kfacs)
 
-    def __add__(self, other):
+    def __add__(self, other: Kron) -> Kron:
         """Add up Kronecker factors `self` and `other`.
 
         Parameters
@@ -87,7 +92,7 @@ class Kron:
 
         return Kron(kfacs)
 
-    def __mul__(self, scalar: Union[float, torch.Tensor]):
+    def __mul__(self, scalar: float | torch.Tensor) -> Kron:
         """Multiply all Kronecker factors by scalar.
         The multiplication is distributed across the number of factors
         using `pow(scalar, 1 / len(F))`. `len(F)` is either `1` or `2`.
@@ -107,10 +112,10 @@ class Kron:
         kfacs = [[pow(scalar, 1 / len(F)) * Hi for Hi in F] for F in self.kfacs]
         return Kron(kfacs)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.kfacs)
 
-    def decompose(self, damping=False):
+    def decompose(self, damping: bool = False) -> KronDecomposed:
         """Eigendecompose Kronecker factors and turn into `KronDecomposed`.
         Parameters
         ----------
@@ -291,22 +296,28 @@ class KronDecomposed:
         use dampen approximation mixing prior and Kron partially multiplicatively
     """
 
-    def __init__(self, eigenvectors, eigenvalues, deltas=None, damping=False):
-        self.eigenvectors = eigenvectors
-        self.eigenvalues = eigenvalues
-        device = eigenvectors[0][0].device
+    def __init__(
+        self,
+        eigenvectors: list[tuple[torch.Tensor]],
+        eigenvalues: list[tuple[torch.Tensor]],
+        deltas: torch.Tensor | None = None,
+        damping: bool = False,
+    ):
+        self.eigenvectors: list[tuple[torch.Tensor]] = eigenvectors
+        self.eigenvalues: list[tuple[torch.Tensor]] = eigenvalues
+        device: torch.device = eigenvectors[0][0].device
         if deltas is None:
-            self.deltas = torch.zeros(len(self), device=device)
+            self.deltas: torch.Tensor = torch.zeros(len(self), device=device)
         else:
             self._check_deltas(deltas)
-            self.deltas = deltas
-        self.damping = damping
+            self.deltas: torch.Tensor = deltas
+        self.damping: bool = damping
 
-    def detach(self):
+    def detach(self) -> KronDecomposed:
         self.deltas = self.deltas.detach()
         return self
 
-    def _check_deltas(self, deltas: torch.Tensor):
+    def _check_deltas(self, deltas: torch.Tensor) -> None:
         if not isinstance(deltas, torch.Tensor):
             raise ValueError("Can only add torch.Tensor to KronDecomposed.")
 
@@ -318,7 +329,7 @@ class KronDecomposed:
         else:
             raise ValueError("Invalid shape of delta added to KronDecomposed.")
 
-    def __add__(self, deltas: torch.Tensor):
+    def __add__(self, deltas: torch.Tensor) -> KronDecomposed:
         """Add scalar per layer or only scalar to Kronecker factors.
 
         Parameters
@@ -333,7 +344,7 @@ class KronDecomposed:
         self._check_deltas(deltas)
         return KronDecomposed(self.eigenvectors, self.eigenvalues, self.deltas + deltas)
 
-    def __mul__(self, scalar):
+    def __mul__(self, scalar: torch.Tensor | float) -> KronDecomposed:
         """Multiply by a scalar by changing the eigenvalues.
         Same as for the case of `Kron`.
 

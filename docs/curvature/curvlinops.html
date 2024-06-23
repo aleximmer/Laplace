@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.curvature.curvlinops.CurvlinopsInterface"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Curvlinops backend. <a href="https://github.com/f-dangel/curvlinops">https://github.com/f-dangel/curvlinops</a></p></div>
@@ -66,7 +66,7 @@
 </dd>
 <dt id="laplace.curvature.curvlinops.CurvlinopsGGN"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>GGNInterface</code> using Curvlinops.</p></div>
@@ -93,7 +93,7 @@
 </dd>
 <dt id="laplace.curvature.curvlinops.CurvlinopsEF"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of <code>EFInterface</code> using Curvlinops.</p></div>
@@ -120,7 +120,7 @@
 </dd>
 <dt id="laplace.curvature.curvlinops.CurvlinopsHessian"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the full Hessian using Curvlinops.</p></div>

@@ -15,10 +15,10 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
+from laplace import DiagLaplace, FullLaplace, KronLaplace, LowRankLaplace
 from laplace.curvature import AsdlEF, AsdlGGN, BackPackGGN
 from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
-from laplace.laplace import DiagLaplace, FullLaplace, KronLaplace, LowRankLaplace
 from laplace.utils import KronDecomposed
 from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
