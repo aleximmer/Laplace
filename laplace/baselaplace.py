@@ -10,6 +10,7 @@ import torch
 import torchmetrics
 import tqdm
 from torch import nn
+from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
 
@@ -107,6 +108,7 @@ class BaseLaplace:
             raise ValueError(f"Invalid likelihood type {likelihood}")
 
         self.model: nn.Module = model
+        self.likelihood: Likelihood | str = likelihood
 
         # Only do Laplace on params that require grad
         self.params: list[torch.Tensor] = []
@@ -123,14 +125,6 @@ class BaseLaplace:
         self.prior_mean: float | torch.Tensor = prior_mean
         if sigma_noise != 1 and likelihood != Likelihood.REGRESSION:
             raise ValueError("Sigma noise != 1 only available for regression.")
-
-        self.reward_modeling: bool = likelihood == Likelihood.REWARD_MODELING
-
-        if self.reward_modeling:
-            # For fitting only. After it's done, self.likelihood = 'regression', see self.fit()
-            self.likelihood = Likelihood.CLASSIFICATION
-        else:
-            self.likelihood = likelihood
 
         self.sigma_noise: float | torch.Tensor = sigma_noise
         self.temperature: float = temperature
@@ -180,9 +174,14 @@ class BaseLaplace:
     @property
     def backend(self) -> CurvatureInterface:
         if self._backend is None:
+            likelihood = (
+                "classification"
+                if self.likelihood == "reward_modeling"
+                else self.likelihood
+            )
             self._backend = self._backend_cls(
                 self.model,
-                self.likelihood,
+                likelihood,
                 logit_class_dim=self.logit_class_dim,
                 dict_key_x=self.dict_key_x,
                 dict_key_y=self.dict_key_y,
@@ -358,7 +357,6 @@ class BaseLaplace:
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
         verbose: bool = False,
-        cv_loss_with_var: bool = False,
         progress_bar: bool = False,
     ) -> None:
         """Optimize the prior precision post-hoc using the `method`
@@ -388,9 +386,6 @@ class BaseLaplace:
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
             reward modeling, running `MeanSquaredError()` for regression.
-        cv_loss_with_var: bool, default=False
-            if true, `loss` takes three arguments `loss(output_mean, output_var, target)`,
-            otherwise, `loss` takes two arguments `loss(output_mean, target)`
         log_prior_prec_min : float, default=-4
             lower bound of gridsearch interval.
         log_prior_prec_max : float, default=4
@@ -409,6 +404,12 @@ class BaseLaplace:
             whether to show a progress bar; updated at every batch-Hessian computation.
             Useful for very large model and large amount of data, esp. when `subset_of_weights='all'`.
         """
+        likelihood = (
+            Likelihood.CLASSIFICATION
+            if self.likelihood == Likelihood.REWARD_MODELING
+            else self.likelihood
+        )
+
         if method == TuningMethod.MARGLIK:
             self.prior_precision = (
                 init_prior_prec
@@ -456,9 +457,11 @@ class BaseLaplace:
 
             if loss is None:
                 loss = (
-                    torchmetrics.MeanSquaredError(num_outputs=self.n_outputs)
-                    if self.likelihood == "regression"
-                    else RunningNLLMetric()
+                    torchmetrics.MeanSquaredError(num_outputs=self.n_outputs).to(
+                        self._device
+                    )
+                    if likelihood == Likelihood.REGRESSION
+                    else RunningNLLMetric().to(self._device)
                 )
 
             self.prior_precision = self._gridsearch(
@@ -468,11 +471,11 @@ class BaseLaplace:
                 pred_type=pred_type,
                 link_approx=link_approx,
                 n_samples=n_samples,
-                loss_with_var=cv_loss_with_var,
                 progress_bar=progress_bar,
             )
         else:
             raise ValueError("For now only marglik and gridsearch is implemented.")
+
         if verbose:
             print(f"Optimized prior precision is {self.prior_precision}.")
 
@@ -484,7 +487,6 @@ class BaseLaplace:
         pred_type: PredType | str,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
-        loss_with_var: bool = False,
         progress_bar: bool = False,
     ) -> torch.Tensor:
         assert callable(loss) or isinstance(loss, torchmetrics.Metric)
@@ -495,6 +497,7 @@ class BaseLaplace:
 
         for prior_prec in pbar:
             self.prior_precision = prior_prec
+
             try:
                 result = validate(
                     self,
@@ -503,11 +506,15 @@ class BaseLaplace:
                     pred_type=pred_type,
                     link_approx=link_approx,
                     n_samples=n_samples,
-                    loss_with_var=loss_with_var,
                     dict_key_y=self.dict_key_y,
                 )
-            except RuntimeError:
+            except LinAlgError:
                 result = np.inf
+            except RuntimeError as err:
+                if "not positive definite" in str(err):
+                    result = np.inf
+                else:
+                    raise err
 
             if progress_bar:
                 pbar.set_description(
@@ -820,6 +827,7 @@ class ParametricLaplace(BaseLaplace):
         n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
+        fitting: bool = False,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute the posterior predictive on input data `x`.
@@ -858,6 +866,11 @@ class ParametricLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used).
 
+        fitting : bool, default=False
+            whether or not this predictive call is done during fitting. Only useful for
+            reward modeling: the likelihood is set to `"regression"` when `False` and
+            `"classification"` when `True`.
+
         Returns
         -------
         predictive: torch.Tensor or tuple[torch.Tensor]
@@ -886,16 +899,16 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        # For reward modeling, replace the likelihood to regression and override model state
-        if self.reward_modeling and self.likelihood == Likelihood.CLASSIFICATION:
-            self.likelihood = Likelihood.REGRESSION
+        likelihood = self.likelihood
+        if likelihood == Likelihood.REWARD_MODELING:
+            likelihood = Likelihood.CLASSIFICATION if fitting else Likelihood.REGRESSION
 
         if pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(
-                x, joint=joint and self.likelihood == "regression"
+                x, joint=joint and likelihood == Likelihood.REGRESSION
             )
 
-            if self.likelihood == Likelihood.REGRESSION:
+            if likelihood == Likelihood.REGRESSION:
                 return f_mu, f_var
 
             if link_approx == LinkApprox.MC:
@@ -941,7 +954,7 @@ class ParametricLaplace(BaseLaplace):
                     "Prediction path invalid. Check the likelihood, pred_type, link_approx combination!"
                 )
         else:
-            if self.likelihood == Likelihood.REGRESSION:
+            if likelihood == Likelihood.REGRESSION:
                 samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
                 return samples.mean(dim=0), samples.var(dim=0)
             else:  # classification; the average is computed online
@@ -1156,7 +1169,6 @@ class ParametricLaplace(BaseLaplace):
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
         verbose: bool = False,
-        cv_loss_with_var: bool = False,
         progress_bar: bool = False,
     ) -> None:
         assert pred_type in PredType.__members__.values()
@@ -1176,7 +1188,6 @@ class ParametricLaplace(BaseLaplace):
             link_approx,
             n_samples,
             verbose,
-            cv_loss_with_var,
             progress_bar,
         )
 
