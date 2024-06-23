@@ -1,3 +1,12 @@
+from laplace.utils.enums import (
+    HessianStructure,
+    Likelihood,
+    LinkApprox,
+    PredType,
+    PriorStructure,
+    SubsetOfWeights,
+    TuningMethod,
+)
 from laplace.utils.feature_extractor import FeatureExtractor
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.metrics import RunningNLLMetric
@@ -55,4 +64,11 @@ __all__ = [
     "ModuleNameSubnetMask",
     "LastLayerSubnetMask",
     "RunningNLLMetric",
+    "SubsetOfWeights",
+    "HessianStructure",
+    "Likelihood",
+    "PredType",
+    "LinkApprox",
+    "TuningMethod",
+    "PriorStructure",
 ]

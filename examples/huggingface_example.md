@@ -1,4 +1,4 @@
-# Applying Laplace on a Huggingface LLM model
+## Full Example: Applying Laplace on a Huggingface LLM model
 
 In this example, we will see how to apply Laplace on a GPT2 Huggingface (HF) model.
 Laplace only has lightweight requirements for this; namely that the model's `forward`
@@ -63,7 +63,7 @@ def tokenize(row):
 dataset = dataset.map(tokenize, remove_columns=["text"])
 dataset.set_format(type="torch", columns=["input_ids", "attention_mask", "label"])
 dataloader = data_utils.DataLoader(
-dataset, batch_size=100, collate_fn=DataCollatorWithPadding(tokenizer)
+    dataset, batch_size=100, collate_fn=DataCollatorWithPadding(tokenizer)
 )
 
 data = next(iter(dataloader))
@@ -83,7 +83,7 @@ attention_mask torch.Size([4, 9])
 labels torch.Size([4])
 ```
 
-## Last-layer Laplace on a LLM
+### Laplace on a subset of an LLM's weights
 
 Now, let's do the main "meat" of this example: Wrapping the HF model into a model that is
 compatible with Laplace. Notice that this wrapper just wraps the HF model and nothing else.
@@ -130,7 +130,12 @@ class MyGPT2(nn.Module):
 model = MyGPT2(tokenizer)
 ```
 
-Now, let's apply Laplace. Let's do a last-layer Laplace first. Notice that we add
+Now, let's apply Laplace. Let's do a last-layer Laplace first. (don't do this in practice, though, use
+`Laplace(..., subset_of_weights='last_layer', ...)` instead!). We do so by switching off the
+gradients of all layers except the top layer. Laplace will automatically only compute the
+Hessian (and Jacobians) of the parameters in which `requires_grad` is `True`.
+
+Notice that we add
 an argument `feature_reduction` there. This is because Huggingface models reduce the
 logits and [not the features](https://github.com/huggingface/transformers/blob/a98c41798cf6ed99e1ff17e3792d6e06a2ff2ff3/src/transformers/models/gpt2/modeling_gpt2.py#L1678-L1704).
 
@@ -247,7 +252,7 @@ As a final note, the dict-like input requirement of Laplace is very flexible. It
 be applicable to any tasks and any models. You just need to wrap the said model and make sure
 that your data loaders emit dict-like objects, where the input tensors are the dicts' values.
 
-## Caveats
+### Caveats
 
 Currently, diagonal EF with the Curvlinops backend is unsupported for dict-based inputs.
 This is because we use `torch.func`'s `vmap` to compute the diag-EF, and it only accepts

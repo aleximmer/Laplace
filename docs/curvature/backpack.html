@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.curvature.backpack.BackPackInterface"><code class="flex name class">
 <span>class <span class="ident">BackPackInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Backpack backend.</p></div>
@@ -110,7 +110,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.backpack.BackPackGGN"><code class="flex name class">
 <span>class <span class="ident">BackPackGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, stochastic=False)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>GGNInterface</code> using Backpack.</p></div>
@@ -137,7 +137,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.backpack.BackPackEF"><code class="flex name class">
 <span>class <span class="ident">BackPackEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None)</span>
+<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of <code>EFInterface</code> using Backpack.</p></div>

@@ -65,7 +65,7 @@
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.validate"><code class="name flex">
-<span>def <span class="ident">validate</span></span>(<span>laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False) ‑> float</span>
+<span>def <span class="ident">validate</span></span>(<span>laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False, dict_key_y='labels') ‑> float</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -273,7 +273,7 @@ NeurIPS 2019.</p>
 <dl>
 <dt id="laplace.utils.FeatureExtractor"><code class="flex name class">
 <span>class <span class="ident">FeatureExtractor</span></span>
-<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None, enable_backprop: bool = False)</span>
+<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None, enable_backprop: bool = False, feature_reduction: Optional[<a title="laplace.utils.feature_extractor.FeatureReduction" href="feature_extractor.html#laplace.utils.feature_extractor.FeatureReduction">FeatureReduction</a>] = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Feature extractor for a PyTorch neural network.
@@ -291,12 +291,38 @@ Based on <a href="https://gist.github.com/fkodom/27ed045c9051a39102e8bcf4ce31df7
 <dt><strong><code>last_layer_name</code></strong> :&ensp;<code>str</code>, default=<code>None</code></dt>
 <dd>if the name of the last layer is already known, otherwise it will
 be determined automatically.</dd>
+<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
+<dd>whether to enable backprop through the feature extactor to get the gradients of
+the inputs. Useful for e.g. Bayesian optimization.</dd>
+<dt><strong><code>feature_reduction</code></strong> :&ensp;<code>FeatureReduction</code> or <code>str</code>, default=<code>None</code></dt>
+<dd>when the last-layer <code>features</code> is a tensor of dim &gt;= 3, this tells how to reduce
+it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
+the penultultimate output is a tensor of shape <code>(batch_size, seq_len, embd_dim)</code>.
+But the last layer maps <code>(batch_size, embd_dim)</code> to <code>(batch_size, n_classes)</code>.
+Note: Make sure that this option faithfully reflects the reduction in the model
+definition. When inputting a string, available options are
+<code>{'pick_first', 'pick_last', 'average'}</code>.</dd>
 </dl>
 <p>Initialize internal Module state, shared by both nn.Module and ScriptModule.</p></div>
 <h3>Ancestors</h3>
 <ul class="hlist">
 <li>torch.nn.modules.module.Module</li>
 </ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.FeatureExtractor.dump_patches"><code class="name">var <span class="ident">dump_patches</span> : bool</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.FeatureExtractor.training"><code class="name">var <span class="ident">training</span> : bool</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.FeatureExtractor.call_super_init"><code class="name">var <span class="ident">call_super_init</span> : bool</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.FeatureExtractor.forward"><code class="name flex">
@@ -953,6 +979,33 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <li>torch.nn.modules.module.Module</li>
 <li>abc.ABC</li>
 </ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.RunningNLLMetric.is_differentiable"><code class="name">var <span class="ident">is_differentiable</span> : Optional[bool]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.RunningNLLMetric.higher_is_better"><code class="name">var <span class="ident">higher_is_better</span> : Optional[bool]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.RunningNLLMetric.full_state_update"><code class="name">var <span class="ident">full_state_update</span> : Optional[bool]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.RunningNLLMetric.plot_lower_bound"><code class="name">var <span class="ident">plot_lower_bound</span> : Optional[float]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.RunningNLLMetric.plot_upper_bound"><code class="name">var <span class="ident">plot_upper_bound</span> : Optional[float]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.RunningNLLMetric.plot_legend_name"><code class="name">var <span class="ident">plot_legend_name</span> : Optional[str]</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.RunningNLLMetric.update"><code class="name flex">
