@@ -10,7 +10,6 @@ import torch
 import torchmetrics
 import tqdm
 from torch import nn
-from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
@@ -555,6 +554,146 @@ class BaseLaplace:
         sigma2 = self.sigma_noise.square()
         return 1 / sigma2 / self.temperature
 
+    def _glm_forward_call(
+        self,
+        x: torch.Tensor | MutableMapping,
+        likelihood: Likelihood | str,
+        joint: bool = False,
+        link_approx: LinkApprox | str = LinkApprox.PROBIT,
+        n_samples: int = 100,
+        diagonal_output: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Compute the posterior predictive on input data `x` for "glm" pred type.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            `(batch_size, input_shape)` if tensor. If MutableMapping, must contain
+            the said tensor.
+
+        likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+            determines the log likelihood Hessian approximation.
+
+        link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only 'mc' is possible.
+
+        joint : bool
+            Whether to output a joint predictive distribution in regression with
+            `pred_type='glm'`. If set to `True`, the predictive distribution
+            has the same form as GP posterior, i.e. N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
+            If `False`, then only outputs the marginal predictive distribution.
+            Only available for regression and GLM predictive.
+
+        n_samples : int
+            number of samples for `link_approx='mc'`.
+
+        diagonal_output : bool
+            whether to use a diagonalized posterior predictive on the outputs.
+            Only works for `pred_type='glm'` and `link_approx='mc'`.
+
+        Returns
+        -------
+        predictive: torch.Tensor or tuple[torch.Tensor]
+            For `likelihood='classification'`, a torch.Tensor is returned with
+            a distribution over classes (similar to a Softmax).
+            For `likelihood='regression'`, a tuple of torch.Tensor is returned
+            with the mean and the predictive variance.
+            For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
+            is returned with the mean and the predictive covariance.
+        """
+        f_mu, f_var = self._glm_predictive_distribution(
+            x, joint=joint and likelihood == Likelihood.REGRESSION
+        )
+
+        if likelihood == Likelihood.REGRESSION:
+            return f_mu, f_var
+
+        if link_approx == LinkApprox.MC:
+            return self._glm_predictive_samples(
+                f_mu,
+                f_var,
+                n_samples=n_samples,
+                diagonal_output=diagonal_output,
+            ).mean(dim=0)
+        elif link_approx == LinkApprox.PROBIT:
+            kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
+            return torch.softmax(kappa * f_mu, dim=-1)
+        elif "bridge" in link_approx:
+            # zero mean correction
+            f_mu -= (
+                f_var.sum(-1)
+                * f_mu.sum(-1).reshape(-1, 1)
+                / f_var.sum(dim=(1, 2)).reshape(-1, 1)
+            )
+            f_var -= torch.einsum(
+                "bi,bj->bij", f_var.sum(-1), f_var.sum(-2)
+            ) / f_var.sum(dim=(1, 2)).reshape(-1, 1, 1)
+
+            # Laplace Bridge
+            _, K = f_mu.size(0), f_mu.size(-1)
+            f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
+
+            # optional: variance correction
+            if link_approx == LinkApprox.BRIDGE_NORM:
+                f_var_diag_mean = f_var_diag.mean(dim=1)
+                f_var_diag_mean /= torch.as_tensor([K / 2], device=self._device).sqrt()
+                f_mu /= f_var_diag_mean.sqrt().unsqueeze(-1)
+                f_var_diag /= f_var_diag_mean.unsqueeze(-1)
+
+            sum_exp = torch.exp(-f_mu).sum(dim=1).unsqueeze(-1)
+            alpha = (1 - 2 / K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
+            return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
+        else:
+            raise ValueError(
+                "Prediction path invalid. Check the likelihood, pred_type, link_approx combination!"
+            )
+
+    def _glm_predictive_samples(
+        self,
+        f_mu: torch.Tensor,
+        f_var: torch.Tensor,
+        n_samples: int,
+        diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """Sample from the posterior predictive on input data `x` using "glm" prediction
+        type.
+
+        Parameters
+        ----------
+        f_mu : torch.Tensor or MutableMapping
+            glm predictive mean `(batch_size, output_shape)`
+
+        f_var : torch.Tensor or MutableMapping
+            glm predictive covariances `(batch_size, output_shape, output_shape)`
+
+        n_samples : int
+            number of samples
+
+        diagonal_output : bool
+            whether to use a diagonalized glm posterior predictive on the outputs.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
+
+        Returns
+        -------
+        samples : torch.Tensor
+            samples `(n_samples, batch_size, output_shape)`
+        """
+        assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
+
+        if diagonal_output:
+            f_var = torch.diagonal(f_var, dim1=1, dim2=2)
+
+        f_samples = normal_samples(f_mu, f_var, n_samples, generator)
+
+        if self.likelihood == Likelihood.REGRESSION:
+            return f_samples
+        else:
+            return torch.softmax(f_samples, dim=-1)
+
 
 class ParametricLaplace(BaseLaplace):
     """
@@ -902,54 +1041,9 @@ class ParametricLaplace(BaseLaplace):
             likelihood = Likelihood.CLASSIFICATION if fitting else Likelihood.REGRESSION
 
         if pred_type == PredType.GLM:
-            f_mu, f_var = self._glm_predictive_distribution(
-                x, joint=joint and likelihood == Likelihood.REGRESSION
+            return self._glm_forward_call(
+                x, likelihood, joint, link_approx, n_samples, diagonal_output
             )
-
-            if likelihood == Likelihood.REGRESSION:
-                return f_mu, f_var
-
-            if link_approx == LinkApprox.MC:
-                return self.predictive_samples(
-                    x,
-                    pred_type="glm",
-                    n_samples=n_samples,
-                    diagonal_output=diagonal_output,
-                ).mean(dim=0)
-            elif link_approx == LinkApprox.PROBIT:
-                kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
-                return torch.softmax(kappa * f_mu, dim=-1)
-            elif "bridge" in link_approx:
-                # zero mean correction
-                f_mu -= (
-                    f_var.sum(-1)
-                    * f_mu.sum(-1).reshape(-1, 1)
-                    / f_var.sum(dim=(1, 2)).reshape(-1, 1)
-                )
-                f_var -= torch.einsum(
-                    "bi,bj->bij", f_var.sum(-1), f_var.sum(-2)
-                ) / f_var.sum(dim=(1, 2)).reshape(-1, 1, 1)
-
-                # Laplace Bridge
-                _, K = f_mu.size(0), f_mu.size(-1)
-                f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
-
-                # optional: variance correction
-                if link_approx == LinkApprox.BRIDGE_NORM:
-                    f_var_diag_mean = f_var_diag.mean(dim=1)
-                    f_var_diag_mean /= torch.as_tensor(
-                        [K / 2], device=self._device
-                    ).sqrt()
-                    f_mu /= f_var_diag_mean.sqrt().unsqueeze(-1)
-                    f_var_diag /= f_var_diag_mean.unsqueeze(-1)
-
-                sum_exp = torch.exp(-f_mu).sum(dim=1).unsqueeze(-1)
-                alpha = (1 - 2 / K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
-                return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
-            else:
-                raise ValueError(
-                    "Prediction path invalid. Check the likelihood, pred_type, link_approx combination!"
-                )
         else:
             if likelihood == Likelihood.REGRESSION:
                 samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
@@ -998,19 +1092,9 @@ class ParametricLaplace(BaseLaplace):
 
         if pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(x)
-            assert f_var.shape == torch.Size(
-                [f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]]
+            return self._glm_predictive_samples(
+                f_mu, f_var, n_samples, diagonal_output, generator
             )
-
-            if diagonal_output:
-                f_var = torch.diagonal(f_var, dim1=1, dim2=2)
-
-            f_samples = normal_samples(f_mu, f_var, n_samples, generator)
-
-            if self.likelihood == Likelihood.REGRESSION:
-                return f_samples
-            else:
-                return torch.softmax(f_samples, dim=-1)
 
         else:  # 'nn'
             return self._nn_predictive_samples(x, n_samples, generator)
@@ -2163,6 +2247,7 @@ class FunctionalLaplace(BaseLaplace):
         n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
+        fitting: bool = False,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute the posterior predictive on input data `x`.
@@ -2198,6 +2283,11 @@ class FunctionalLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used).
 
+        fitting : bool, default=False
+            whether or not this predictive call is done during fitting. Only useful for
+            reward modeling: the likelihood is set to `"regression"` when `False` and
+            `"classification"` when `True`.
+
         Returns
         -------
         predictive: torch.Tensor or Tuple[torch.Tensor]
@@ -2208,7 +2298,6 @@ class FunctionalLaplace(BaseLaplace):
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
         """
-
         if self._fitted is False:
             raise RuntimeError(
                 "Functional Laplace has not been fitted to any "
@@ -2235,78 +2324,55 @@ class FunctionalLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        # For reward modeling, replace the likelihood to regression and override model state
-        if self.reward_modeling and self.likelihood == Likelihood.CLASSIFICATION:
-            self.likelihood = Likelihood.REGRESSION
-            self.model.output_size = 1
+        likelihood = self.likelihood
+        if likelihood == Likelihood.REWARD_MODELING:
+            likelihood = Likelihood.CLASSIFICATION if fitting else Likelihood.REGRESSION
 
-        f_mu, f_var = self._glm_predictive_distribution(
-            x, joint=joint and self.likelihood == Likelihood.REGRESSION
+        return self._glm_forward_call(
+            x, likelihood, joint, link_approx, n_samples, diagonal_output
         )
-        # regression
-        if self.likelihood == Likelihood.REGRESSION:
-            return f_mu, f_var
-        # classification
-        if link_approx == LinkApprox.MC:
-            if diagonal_output:
-                f_var = torch.diagonal(f_var, dim1=1, dim2=2)
-            return self.predictive_samples(
-                f_mu,
-                f_var,
-                n_samples=n_samples,
-            ).mean(dim=0)
-        elif link_approx == LinkApprox.PROBIT:
-            kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
-            return torch.softmax(kappa * f_mu, dim=-1)
-        elif "bridge" in link_approx:
-            # zero mean correction
-            f_mu -= (
-                f_var.sum(-1)
-                * f_mu.sum(-1).reshape(-1, 1)
-                / f_var.sum(dim=(1, 2)).reshape(-1, 1)
-            )
-            f_var -= torch.einsum(
-                "bi,bj->bij", f_var.sum(-1), f_var.sum(-2)
-            ) / f_var.sum(dim=(1, 2)).reshape(-1, 1, 1)
-            # Laplace Bridge
-            _, K = f_mu.size(0), f_mu.size(-1)
-            f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
-            # optional: variance correction
-            if link_approx == LinkApprox.BRIDGE_NORM:
-                f_var_diag_mean = f_var_diag.mean(dim=1)
-                f_var_diag_mean /= torch.as_tensor([K / 2], device=self._device).sqrt()
-                f_mu /= f_var_diag_mean.sqrt().unsqueeze(-1)
-                f_var_diag /= f_var_diag_mean.unsqueeze(-1)
-            sum_exp = torch.exp(-f_mu).sum(dim=1).unsqueeze(-1)
-            alpha = (1 - 2 / K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
-            return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
 
     def predictive_samples(
-        self, f_mu: torch.Tensor, f_var: torch.Tensor, n_samples: int = 100
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        pred_type: PredType | str = PredType.GLM,
+        n_samples: int = 100,
+        diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Sample from the posterior predictive on input data `x`.
+        Can be used, for example, for Thompson sampling.
 
         Parameters
         ----------
-        f_mu : torch.Tensor
-               posterior gp mean `(batch_size, output_shape)`
-        f_var : torch.Tensor
-                posterior gp var `(batch_size, output_shape, output_shape)`
+        x : torch.Tensor or MutableMapping
+            input data `(batch_size, input_shape)`
+
+        pred_type : {'glm'}, default='glm'
+            type of posterior predictive, linearized GLM predictive.
+
         n_samples : int
             number of samples
+
+        diagonal_output : bool
+            whether to use a diagonalized glm posterior predictive on the outputs.
+            Only applies when `pred_type='glm'`.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
 
         Returns
         -------
         samples : torch.Tensor
             samples `(n_samples, batch_size, output_shape)`
         """
+        if pred_type not in PredType.__members__.values():
+            raise ValueError("Only glm  supported as prediction type.")
 
-        assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
-        dist = MultivariateNormal(f_mu, f_var)
-        samples = dist.sample((n_samples,))
-        if self.likelihood == "regression":
-            return samples
-        return torch.softmax(samples, dim=-1)
+        f_mu, f_var = self._glm_predictive_distribution(x)
+        return self._glm_predictive_samples(
+            f_mu, f_var, n_samples, diagonal_output, generator
+        )
 
     @property
     def gp_kernel_prior_variance(self):
@@ -2548,7 +2614,6 @@ class FunctionalLaplace(BaseLaplace):
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
         verbose: bool = False,
-        cv_loss_with_var: bool = False,
         progress_bar: bool = False,
     ) -> None:
         """`optimize_prior_precision_base` from `BaseLaplace` with `pred_type='gp'`"""
@@ -2573,7 +2638,6 @@ class FunctionalLaplace(BaseLaplace):
             link_approx,
             n_samples,
             verbose,
-            cv_loss_with_var,
             progress_bar,
         )
         self._build_Sigma_inv()
@@ -2703,7 +2767,6 @@ class FunctionalLaplace(BaseLaplace):
         mu : torch.tensor
             K_batch_star with shape (batch, output_shape)
         """
-
         if self.likelihood == Likelihood.REGRESSION:
             return y - (f + torch.einsum("bcp,p->bc", Js, self.prior_mean - self.mean))
         elif self.likelihood == Likelihood.CLASSIFICATION:
