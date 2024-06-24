@@ -739,3 +739,27 @@ def test_backprop_nn(laplace, model, reg_loader, backend):
         assert grad_X_var.shape == X.shape
     except ValueError:
         assert False
+
+
+@pytest.mark.parametrize(
+    "likelihood", ["classification", "regression", "reward_modeling"]
+)
+@pytest.mark.parametrize("prior_prec_type", ["scalar", "layerwise", "diag"])
+def test_gridsearch(model, likelihood, prior_prec_type, reg_loader, class_loader):
+    if likelihood == "regression":
+        dataloader = reg_loader
+    else:
+        dataloader = class_loader
+
+    if prior_prec_type == "scalar":
+        prior_prec = 1.0
+    elif prior_prec_type == "layerwise":
+        prior_prec = torch.ones(model.n_layers)
+    else:
+        prior_prec = torch.ones(model.n_params)
+
+    lap = DiagLaplace(model, likelihood, prior_precision=prior_prec)
+    lap.fit(dataloader)
+
+    # Should not raise an error
+    lap.optimize_prior_precision(method="gridsearch", val_loader=dataloader, n_steps=10)
