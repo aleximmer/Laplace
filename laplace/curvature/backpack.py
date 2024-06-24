@@ -98,10 +98,7 @@ class BackPackInterface(CurvatureInterface):
         else:
             J = Jk.unsqueeze(-1).transpose(1, 2)
 
-        if not enable_backprop:
-            f = f.detach()
-            J = J.detach()
-        return J, f
+        return (J, f) if enable_backprop else (J.detach(), f.detach())
 
     def gradients(
         self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor

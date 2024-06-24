@@ -4,7 +4,6 @@ Integration test checking the correctness of the GP implementation in Functional
 
 from itertools import product
 
-import numpy as np
 import pytest
 import torch
 
@@ -125,8 +124,5 @@ def test_gp_equivalence_classification(laplace, diagonal_kernel, gp_backend, c=2
     p_full = full_la(X_test)
     p_gp = functional_gp_la(X_test)
 
-    p_full = p_full.squeeze().detach().cpu().numpy()
-    p_gp = p_gp.squeeze().detach().cpu().numpy()
-
     assert p_full.shape == p_gp.shape
-    assert np.array_equal(np.argmax(p_full, axis=1), np.argmax(p_gp, axis=1))
+    assert torch.allclose(torch.argmax(p_full, -1), torch.argmax(p_gp, -1))

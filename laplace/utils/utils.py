@@ -248,8 +248,8 @@ def block_diag(blocks: list[torch.Tensor]) -> torch.Tensor:
 
 class SoDSampler(Sampler):
     def __init__(self, N, M, seed: int = 0):
-        np.random.seed(seed)
-        self.indices = torch.tensor(np.random.choice(list(range(N)), M, replace=False))
+        rng = np.random.default_rng(seed)
+        self.indices = torch.tensor(rng.choice(list(range(N)), M, replace=False))
 
     def __iter__(self):
         return (i for i in self.indices)
