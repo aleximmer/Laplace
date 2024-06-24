@@ -12,6 +12,7 @@ class HessianStructure(str, Enum):
     KRON = "kron"
     DIAG = "diag"
     LOWRANK = "lowrank"
+    GP = "gp"
 
 
 class Likelihood(str, Enum):
@@ -23,6 +24,7 @@ class Likelihood(str, Enum):
 class PredType(str, Enum):
     GLM = "glm"
     NN = "nn"
+    GP = "gp"
 
 
 class LinkApprox(str, Enum):
