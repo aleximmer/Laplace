@@ -208,7 +208,12 @@ class LLLaplace(ParametricLaplace):
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
         elif diagonal_output:
-            f_mu, f_var = self.functional_variance_fast(X)
+            try:
+                f_mu, f_var = self.functional_variance_fast(X)
+            except NotImplementedError:
+                # WARN: Fallback if not implemented
+                Js, f_mu = self.backend.last_layer_jacobians(X)
+                f_var = self.functional_variance(Js).diagonal(dim1=-2, dim2=-1)
         else:
             Js, f_mu = self.backend.last_layer_jacobians(X)
             f_var = self.functional_variance(Js)
@@ -419,6 +424,9 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         self.H = Kron.init_from_model(self.model.last_layer, self._device)
 
     def functional_variance_fast(self, X):
+        raise NotImplementedError
+
+        # TODO: @Alex wants to revise this implementation
         f_mu, phi = self.model.forward_with_features(X)
         num_classes = f_mu.shape[-1]
 
