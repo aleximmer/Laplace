@@ -34,11 +34,18 @@ class AsdlInterface(CurvatureInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
         super().__init__(
-            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+            model,
+            likelihood,
+            last_layer,
+            subnetwork_indices,
+            logit_class_dim,
+            dict_key_x,
+            dict_key_y,
         )
 
     @property
@@ -187,14 +194,19 @@ class AsdlInterface(CurvatureInterface):
         if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, x)
             dummy = (
-                dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+                dummy
+                if self.loss_type == LOSS_MSE
+                else dummy.view(-1, dummy.size(self.logit_class_dim))
             )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, x)
         f, _ = fisher_maker.forward_and_backward()
-        # Assumes that the last dimension of f is of size outputs.
-        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.loss_type == LOSS_MSE
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         loss = self.lossfunc(f.detach(), y)
         vec = list()
         for module in self.model.modules():
@@ -232,14 +244,20 @@ class AsdlInterface(CurvatureInterface):
         if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, x)
             dummy = (
-                dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+                dummy
+                if self.loss_type == LOSS_MSE
+                else dummy.view(-1, dummy.size(self.logit_class_dim))
             )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             fisher_maker.setup_model_call(self._model, x)
         f, _ = fisher_maker.forward_and_backward()
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.loss_type == LOSS_MSE
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
@@ -271,6 +289,7 @@ class AsdlHessian(AsdlInterface):
         model: nn.Module,
         likelihood: Likelihood | str,
         last_layer: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ) -> None:
@@ -279,6 +298,7 @@ class AsdlHessian(AsdlInterface):
             likelihood,
             last_layer,
             subnetwork_indices=None,
+            logit_class_dim=logit_class_dim,
             dict_key_x=dict_key_x,
             dict_key_y=dict_key_y,
         )
@@ -300,7 +320,11 @@ class AsdlHessian(AsdlInterface):
         hess_maker = HessianMaker(self.model, cfg)
 
         dummy = hess_maker.setup_model_call(self._model, x)
-        dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+        dummy = (
+            dummy
+            if self.loss_type == LOSS_MSE
+            else dummy.view(-1, dummy.size(self.logit_class_dim))
+        )
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
 
         hess_maker.setup_loss_call(self.lossfunc, dummy, y)
@@ -309,7 +333,11 @@ class AsdlHessian(AsdlInterface):
         H = self._model.hessian.data
         f = self.model(x).detach()
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.loss_type == LOSS_MSE
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         loss = self.lossfunc(f, y)
 
         return self.factor * loss, self.factor * H
@@ -324,12 +352,19 @@ class AsdlGGN(AsdlInterface, GGNInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         stochastic: bool = False,
     ):
         super().__init__(
-            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+            model,
+            likelihood,
+            last_layer,
+            subnetwork_indices,
+            logit_class_dim,
+            dict_key_x,
+            dict_key_y,
         )
         self.stochastic = stochastic
 
@@ -346,10 +381,13 @@ class AsdlEF(AsdlInterface, EFInterface):
         model: nn.Module,
         likelihood: Likelihood | str,
         last_layer: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
-        super().__init__(model, likelihood, last_layer, None, dict_key_x, dict_key_y)
+        super().__init__(
+            model, likelihood, last_layer, None, logit_class_dim, dict_key_x, dict_key_y
+        )
 
     @property
     def _ggn_type(self) -> str:

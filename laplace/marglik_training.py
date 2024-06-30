@@ -53,6 +53,7 @@ def marglik_training(
     fix_sigma_noise: bool = False,
     progress_bar: bool = False,
     enable_backprop: bool = False,
+    logit_class_dim: int = -1,
     dict_key_x: str = "input_ids",
     dict_key_y: str = "labels",
 ) -> tuple[BaseLaplace, nn.Module, list[Number], list[Number]]:
@@ -134,6 +135,8 @@ def marglik_training(
         whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
         make the returned Laplace instance backpropable---useful for e.g. Bayesian optimization.
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
@@ -257,7 +260,9 @@ def marglik_training(
             if likelihood == Likelihood.REGRESSION:
                 epoch_perf += (f.detach() - y).square().sum()
             else:
-                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
+                epoch_perf += torch.sum(
+                    torch.argmax(f.detach(), dim=logit_class_dim) == y
+                ).item()
 
             if scheduler is not None:
                 scheduler.step()
@@ -292,6 +297,7 @@ def marglik_training(
             temperature=temperature,
             backend=backend,
             subset_of_weights="all",
+            logit_class_dim=logit_class_dim,
             dict_key_x=dict_key_x,
             dict_key_y=dict_key_y,
         )
@@ -350,6 +356,7 @@ def marglik_training(
         backend=backend,
         subset_of_weights=SubsetOfWeights.ALL,
         enable_backprop=enable_backprop,
+        logit_class_dim=logit_class_dim,
         dict_key_x=dict_key_x,
         dict_key_y=dict_key_y,
     )
