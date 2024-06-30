@@ -741,6 +741,48 @@ def test_backprop_nn(laplace, model, reg_loader, backend):
         assert False
 
 
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    n_batch = X.shape[0]
+    n_outputs = y.shape[-1]
+
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+
+    # Joint predictive ignores diagonal_output
+    f_mean, f_var = lap(X, pred_type="glm", joint=True, diagonal_output=True)
+    assert f_var.shape == (n_batch * n_outputs, n_batch * n_outputs)
+
+    f_mean, f_var = lap(X, pred_type="glm", joint=True, diagonal_output=False)
+    assert f_var.shape == (n_batch * n_outputs, n_batch * n_outputs)
+
+    # diagonal_output affects non-joint
+    f_mean, f_var = lap(X, pred_type="glm", joint=False, diagonal_output=True)
+    assert f_var.shape == (n_batch, n_outputs)
+
+    f_mean, f_var = lap(X, pred_type="glm", joint=False, diagonal_output=False)
+    assert f_var.shape == (n_batch, n_outputs, n_outputs)
+
+
+@pytest.mark.parametrize(
+    "likelihood,custom_loader",
+    [
+        ("classification", "custom_loader_clf"),
+        ("regression", "custom_loader_reg"),
+        ("reward_modeling", "custom_loader_clf"),
+    ],
+)
+def test_dict_data_diagEF_curvlinops_fails(
+    custom_model, custom_loader, likelihood, request
+):
+    custom_loader = request.getfixturevalue(custom_loader)
+    lap = DiagLaplace(custom_model, likelihood=likelihood, backend=CurvlinopsEF)
+
+    with pytest.raises(ValueError):
+        lap.fit(custom_loader)
+
+
 @pytest.mark.parametrize(
     "likelihood", ["classification", "regression", "reward_modeling"]
 )

@@ -854,7 +854,10 @@ class ParametricLaplace(BaseLaplace):
 
         diagonal_output : bool
             whether to use a diagonalized posterior predictive on the outputs.
-            Only works for `pred_type='glm'` and `link_approx='mc'`.
+            Only works for `pred_type='glm'` when `joint=False` in regression.
+            In the case of last-layer Laplace with a diagonal or Kron Hessian,
+            setting this to `True` makes computation much(!) faster for large
+            number of outputs.
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used).
@@ -898,7 +901,10 @@ class ParametricLaplace(BaseLaplace):
 
         if pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(
-                x, joint=joint and likelihood == Likelihood.REGRESSION
+                x,
+                joint=joint and likelihood == Likelihood.REGRESSION,
+                diagonal_output=diagonal_output
+                and self.likelihood == Likelihood.REGRESSION,
             )
 
             if likelihood == Likelihood.REGRESSION:
@@ -1015,6 +1021,7 @@ class ParametricLaplace(BaseLaplace):
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         joint: bool = False,
+        diagonal_output=False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         backend_name = self._backend_cls.__name__.lower()
         if self.enable_backprop and (
@@ -1031,7 +1038,10 @@ class ParametricLaplace(BaseLaplace):
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
         else:
-            f_var = self.functional_variance(Js)
+            f_var = self.functional_variance(Js)  # (batch, out, out)
+
+            if diagonal_output:
+                f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
 
         return (
             (f_mu.detach(), f_var.detach())
