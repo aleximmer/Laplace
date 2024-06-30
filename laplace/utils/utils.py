@@ -70,7 +70,7 @@ def validate(
             fitting=True,
         )
 
-        if type(out) == tuple:
+        if type(out) is tuple:
             if is_offline:
                 output_means.append(out[0])
                 output_vars.append(out[1])
