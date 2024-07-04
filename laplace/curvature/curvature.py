@@ -287,6 +287,8 @@ class CurvatureInterface:
         """
         raise NotImplementedError
 
+    functorch_jacobians = jacobians
+
 
 class GGNInterface(CurvatureInterface):
     """Generalized Gauss-Newton or Fisher Curvature Interface.

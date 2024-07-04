@@ -662,7 +662,9 @@ def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
+@pytest.mark.parametrize(
+    "backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
+)
 def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -682,7 +684,9 @@ def test_backprop_glm(laplace, model, reg_loader, backend):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
+@pytest.mark.parametrize(
+    "backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
+)
 def test_backprop_glm_joint(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -702,7 +706,9 @@ def test_backprop_glm_joint(laplace, model, reg_loader, backend):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
+@pytest.mark.parametrize(
+    "backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
+)
 def test_backprop_glm_mc(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -722,7 +728,9 @@ def test_backprop_glm_mc(laplace, model, reg_loader, backend):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize("backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF])
+@pytest.mark.parametrize(
+    "backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
+)
 def test_backprop_nn(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
