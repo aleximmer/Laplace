@@ -378,6 +378,9 @@ For example, currently the [`curvature.CurvlinopsInterface`](https://github.com/
 > The `curvlinops` backends are inefficient for full and diagonal factorizations.
 > Moreover, they're also inefficient for computing the Jacobians of large models
 > since they rely on `torch.func.jacrev` along `torch.func.vmap`!
+> Finally, `curvlinops` only computes K-FAC (`hessian_factorization = 'kron'`)
+> for `nn.Linear` and `nn.Conv2d` modules (including those inside larger modules
+> like Attention).
 
 > [!CAUTION]
 > The `BackPack` backends are limited to models expressed as `nn.Sequential`.
