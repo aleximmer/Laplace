@@ -66,8 +66,7 @@ the `"probit"` predictive for classification.
 
 > [!IMPORTANT]
 > In `optimize_prior_precision`, make sure to match the arguments with
-> the ones you want to pass in `la(x, ...)`. What's good during
-> prior precision tuning might not be good during the prediction itself.
+> the ones you want to pass in `la(x, ...)` during prediction.
 
 ```python
 from laplace import Laplace
