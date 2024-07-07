@@ -86,9 +86,13 @@ the `"probit"` predictive for classification.
 > or a dict-like object containing at least the keys specified in
 > `dict_key_x` and `dict_key_y` in Laplace's constructor.
 
-> !IMPORTANT
+> [!IMPORTANT]
 > The total number of data points in all data loaders must be accessible via
 > `len(train_loader.dataset)`.
+
+> [!IMPORTANT]
+> In `optimize_prior_precision`, make sure to match the arguments with
+> the ones you want to pass in `la(x, ...)` during prediction.
 
 ```python
 from laplace import Laplace
@@ -101,10 +105,15 @@ la = Laplace(model, "classification",
              subset_of_weights="all",
              hessian_structure="diag")
 la.fit(train_loader)
-la.optimize_prior_precision(method="gridsearch", val_loader=val_loader)
+la.optimize_prior_precision(
+    method="gridsearch", 
+    pred_type="glm", 
+    link_approx="probit", 
+    val_loader=val_loader
+)
 
 # User-specified predictive approx.
-pred = la(x, link_approx="probit")
+pred = la(x, pred_type="glm", link_approx="probit")
 ```
 
 ### Marginal likelihood
@@ -131,9 +140,10 @@ ml.backward()
 
 ### Laplace on LLM
 
-This library also supports Huggingface models and parameter-efficient fine-tuning.
-See `examples/huggingface_examples.py` and `examples/huggingface_examples.md` for the
-exposition.
+> [!TIP]
+> This library also supports Huggingface models and parameter-efficient fine-tuning.
+> See `examples/huggingface_examples.py` and `examples/huggingface_examples.md`
+> for the full exposition.
 
 First, we need to wrap the pretrained model so that the `forward` method takes a
 dict-like input. Note that when you iterate over a Huggingface dataloader,
