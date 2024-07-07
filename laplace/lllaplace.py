@@ -160,8 +160,10 @@ class LLLaplace(ParametricLaplace):
         Parameters
         ----------
         train_loader : torch.data.utils.DataLoader
-            each iterate is a training batch (X, y);
-            `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+            each iterate is a training batch, either `(X, y)` tensors or a dict-like
+            object containing keys as expressed by `self.dict_key_x` and
+            `self.dict_key_y`. `train_loader.dataset` needs to be set to access
+            \\(N\\), size of the data set.
         override : bool, default=True
             whether to initialize H, loss, and n_data again; setting to False is useful for
             online learning settings to accumulate a sequential posterior approximation.
