@@ -60,11 +60,11 @@ pip install laplace-torch
 For development purposes, clone the repository and then install:
 
 ```bash
-# or after cloning the repository for development
-pip install -e .
-# run tests
-pip install -e .[tests]
-pytest tests/
+# first install the build system:
+pip install --upgrade pip wheel packaging
+
+# then install the develop 
+pip install -e ".[all]"
 ```
 
 ## Example usage
@@ -392,7 +392,7 @@ The documentation is available [here](https://aleximmer.github.io/Laplace) or ca
 
 ```bash
 # assuming the repository was cloned
-pip install -e .[docs]
+pip install -e ".[docs]"
 # create docs and write to html
 bash update_docs.sh
 # .. or serve the docs directly
