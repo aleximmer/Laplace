@@ -24,6 +24,13 @@ There is also a corresponding paper, [_Laplace Redux — Effortless Bayesian Dee
 
 The [code](https://github.com/runame/laplace-redux) to reproduce the experiments in the paper is also publicly available; it provides examples of how to use our library for predictive uncertainty quantification, model selection, and continual learning.
 
+> [!IMPORTANT]
+> As a user, one should not expect Laplace to work automatically.
+> That is, one should experiment with different Laplace's options
+> (hessian_factorization, prior precision tuning method, predictive method, backend,
+> etc!). Try looking at various papers that use Laplace for references on how to
+> set all those options depending on the applications/problems at hand.
+
 ## Table of contents
 
 1. [Setup](#setup)
@@ -63,13 +70,6 @@ pytest tests/
 ## Example usage
 
 ### Simple usage
-
-> [!IMPORTANT]
-> As a user, one should not expect Laplace to work automatically.
-> That is, one should experiment with different Laplace's options
-> (hessian_factorization, prior precision tuning method, predictive method, backend,
-> etc!). Try looking at various papers that use Laplace for references on how to
-> set all those options depending on the applications/problems at hand.
 
 In the following example, a pre-trained model is loaded,
 then the Laplace approximation is fit to the training data
