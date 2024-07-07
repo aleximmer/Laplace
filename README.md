@@ -1,6 +1,5 @@
 <div align="center">
  <img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
-</div>
 
 ![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest.yml/badge.svg)
 ![lint](https://github.com/aleximmer/laplace/actions/workflows/lint-ruff.yml/badge.svg)
