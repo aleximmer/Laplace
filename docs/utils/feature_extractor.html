@@ -62,7 +62,7 @@
 </dd>
 <dt id="laplace.utils.feature_extractor.FeatureExtractor"><code class="flex name class">
 <span>class <span class="ident">FeatureExtractor</span></span>
-<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None, enable_backprop: bool = False, feature_reduction: Optional[<a title="laplace.utils.feature_extractor.FeatureReduction" href="#laplace.utils.feature_extractor.FeatureReduction">FeatureReduction</a>] = None)</span>
+<span>(</span><span>model: nn.Module, last_layer_name: str | None = None, enable_backprop: bool = False, feature_reduction: <a title="laplace.utils.feature_extractor.FeatureReduction" href="#laplace.utils.feature_extractor.FeatureReduction">FeatureReduction</a> | str | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Feature extractor for a PyTorch neural network.
@@ -115,19 +115,19 @@ definition. When inputting a string, available options are
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.feature_extractor.FeatureExtractor.forward"><code class="name flex">
-<span>def <span class="ident">forward</span></span>(<span>self, x: torch.Tensor) ‑> torch.Tensor</span>
+<span>def <span class="ident">forward</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]) ‑> Callable[..., Any]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Forward pass. If the last layer is not known yet, it will be
 determined when this function is called for the first time.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>a dict-like object containing the input tensors</code></dt>
 <dd>one batch of data to use as input for the forward pass</dd>
 </dl></div>
 </dd>
 <dt id="laplace.utils.feature_extractor.FeatureExtractor.forward_with_features"><code class="name flex">
-<span>def <span class="ident">forward_with_features</span></span>(<span>self, x: torch.Tensor) ‑> Tuple[torch.Tensor, torch.Tensor]</span>
+<span>def <span class="ident">forward_with_features</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Forward pass which returns the output of the penultimate layer along
@@ -135,7 +135,7 @@ with the output of the last layer. If the last layer is not known yet,
 it will be determined when this function is called for the first time.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>a dict-like object containing the input tensors</code></dt>
 <dd>one batch of data to use as input for the forward pass</dd>
 </dl></div>
 </dd>
@@ -152,7 +152,7 @@ hook to get the output of the penultimate layer.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils.feature_extractor.FeatureExtractor.find_last_layer"><code class="name flex">
-<span>def <span class="ident">find_last_layer</span></span>(<span>self, x: torch.Tensor) ‑> torch.Tensor</span>
+<span>def <span class="ident">find_last_layer</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Automatically determines the last layer of the model with one
@@ -163,7 +163,7 @@ torchvision classification models (besides SqueezeNet, which has no
 linear last layer).</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>dict-like object containing the input tensors</code></dt>
 <dd>one batch of data to use as input for the forward pass</dd>
 </dl></div>
 </dd>

@@ -27,6 +27,10 @@
 <section>
 <h2 class="section-title" id="header-submodules">Sub-modules</h2>
 <dl>
+<dt><code class="name"><a title="laplace.utils.enums" href="enums.html">laplace.utils.enums</a></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
 <dt><code class="name"><a title="laplace.utils.feature_extractor" href="feature_extractor.html">laplace.utils.feature_extractor</a></code></dt>
 <dd>
 <div class="desc"></div>
@@ -59,19 +63,19 @@
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="laplace.utils.get_nll"><code class="name flex">
-<span>def <span class="ident">get_nll</span></span>(<span>out_dist, targets)</span>
+<span>def <span class="ident">get_nll</span></span>(<span>out_dist: torch.Tensor, targets: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.validate"><code class="name flex">
-<span>def <span class="ident">validate</span></span>(<span>laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False, dict_key_y='labels') ‑> float</span>
+<span>def <span class="ident">validate</span></span>(<span>laplace: <a title="laplace.baselaplace.BaseLaplace" href="../baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a>, val_loader: DataLoader, loss: torchmetrics.Metric | Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor], pred_type: <a title="laplace.utils.PredType" href="#laplace.utils.PredType">PredType</a> | str = PredType.GLM, link_approx: <a title="laplace.utils.LinkApprox" href="#laplace.utils.LinkApprox">LinkApprox</a> | str = LinkApprox.PROBIT, n_samples: int = 100, dict_key_y: str = 'labels') ‑> float</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.parameters_per_layer"><code class="name flex">
-<span>def <span class="ident">parameters_per_layer</span></span>(<span>model)</span>
+<span>def <span class="ident">parameters_per_layer</span></span>(<span>model: nn.Module) ‑> list[int]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get number of parameters per layer.</p>
@@ -87,7 +91,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.invsqrt_precision"><code class="name flex">
-<span>def <span class="ident">invsqrt_precision</span></span>(<span>M)</span>
+<span>def <span class="ident">invsqrt_precision</span></span>(<span>M: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute <code>M^{-0.5}</code> as a tridiagonal matrix.</p>
@@ -103,7 +107,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.kron"><code class="name flex">
-<span>def <span class="ident">kron</span></span>(<span>t1, t2)</span>
+<span>def <span class="ident">kron</span></span>(<span>t1: torch.Tensor, t2: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Computes the Kronecker product between two tensors.</p>
@@ -121,7 +125,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.diagonal_add_scalar"><code class="name flex">
-<span>def <span class="ident">diagonal_add_scalar</span></span>(<span>X, value)</span>
+<span>def <span class="ident">diagonal_add_scalar</span></span>(<span>X: torch.Tensor, value: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Add scalar value <code>value</code> to diagonal of <code>X</code>.</p>
@@ -139,7 +143,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.symeig"><code class="name flex">
-<span>def <span class="ident">symeig</span></span>(<span>M)</span>
+<span>def <span class="ident">symeig</span></span>(<span>M: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Symetric eigendecomposition avoiding failure cases by
@@ -158,7 +162,7 @@ adding and removing jitter to the diagonal.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils.block_diag"><code class="name flex">
-<span>def <span class="ident">block_diag</span></span>(<span>blocks)</span>
+<span>def <span class="ident">block_diag</span></span>(<span>blocks: list[torch.Tensor]) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compose block-diagonal matrix of individual blocks.</p>
@@ -174,7 +178,7 @@ adding and removing jitter to the diagonal.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils.normal_samples"><code class="name flex">
-<span>def <span class="ident">normal_samples</span></span>(<span>mean, var, n_samples, generator=None)</span>
+<span>def <span class="ident">normal_samples</span></span>(<span>mean: torch.Tensor, var: torch.Tensor, n_samples: int, generator: torch.Generator | None = None) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Produce samples from a batch of Normal distributions either parameterized
@@ -191,19 +195,19 @@ by a diagonal or full covariance given by <code>var</code>.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils._is_batchnorm"><code class="name flex">
-<span>def <span class="ident">_is_batchnorm</span></span>(<span>module)</span>
+<span>def <span class="ident">_is_batchnorm</span></span>(<span>module: nn.Module) ‑> bool</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils._is_valid_scalar"><code class="name flex">
-<span>def <span class="ident">_is_valid_scalar</span></span>(<span>scalar: Union[float, int, torch.Tensor]) ‑> bool</span>
+<span>def <span class="ident">_is_valid_scalar</span></span>(<span>scalar: float | int | torch.Tensor) ‑> bool</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.expand_prior_precision"><code class="name flex">
-<span>def <span class="ident">expand_prior_precision</span></span>(<span>prior_prec, model)</span>
+<span>def <span class="ident">expand_prior_precision</span></span>(<span>prior_prec: torch.Tensor, model: nn.Module) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Expand prior precision to match the shape of the model parameters.</p>
@@ -221,13 +225,32 @@ by a diagonal or full covariance given by <code>var</code>.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils.fix_prior_prec_structure"><code class="name flex">
-<span>def <span class="ident">fix_prior_prec_structure</span></span>(<span>prior_prec_init, prior_structure, n_layers, n_params, device)</span>
+<span>def <span class="ident">fix_prior_prec_structure</span></span>(<span>prior_prec_init: torch.Tensor, prior_structure: <a title="laplace.utils.PriorStructure" href="#laplace.utils.PriorStructure">PriorStructure</a> | str, n_layers: int, n_params: int, device: torch.device) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
-<div class="desc"></div>
+<div class="desc"><p>Create a tensor of prior precision with the correct shape, depending on the
+choice of the prior structure type.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>prior_prec_init</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>the initial prior precision tensor (could be scalar)</dd>
+<dt><strong><code>prior_structure</code></strong> :&ensp;<code>PriorStructure | str</code></dt>
+<dd>the choice of the prior structure type</dd>
+<dt><strong><code>n_layers</code></strong> :&ensp;<code>int</code></dt>
+<dd>&nbsp;</dd>
+<dt><strong><code>n_params</code></strong> :&ensp;<code>int</code></dt>
+<dd>&nbsp;</dd>
+<dt><strong><code>device</code></strong> :&ensp;<code>torch.device</code></dt>
+<dd>&nbsp;</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>correct_prior_precision</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>&nbsp;</dd>
+</dl></div>
 </dd>
 <dt id="laplace.utils.fit_diagonal_swag_var"><code class="name flex">
-<span>def <span class="ident">fit_diagonal_swag_var</span></span>(<span>model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1, lr=0.01, momentum=0.9, weight_decay=0.0003, min_var=1e-30)</span>
+<span>def <span class="ident">fit_diagonal_swag_var</span></span>(<span>model: nn.Module, train_loader: DataLoader, criterion: nn.CrossEntropyLoss | nn.MSELoss, n_snapshots_total: int = 40, snapshot_freq: int = 1, lr: float = 0.01, momentum: float = 0.9, weight_decay: float = 0.0003, min_var: float = 1e-30) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Fit diagonal SWAG [1], which estimates marginal variances of model parameters by
@@ -273,7 +296,7 @@ NeurIPS 2019.</p>
 <dl>
 <dt id="laplace.utils.FeatureExtractor"><code class="flex name class">
 <span>class <span class="ident">FeatureExtractor</span></span>
-<span>(</span><span>model: torch.nn.modules.module.Module, last_layer_name: Optional[str] = None, enable_backprop: bool = False, feature_reduction: Optional[<a title="laplace.utils.feature_extractor.FeatureReduction" href="feature_extractor.html#laplace.utils.feature_extractor.FeatureReduction">FeatureReduction</a>] = None)</span>
+<span>(</span><span>model: nn.Module, last_layer_name: str | None = None, enable_backprop: bool = False, feature_reduction: FeatureReduction | str | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Feature extractor for a PyTorch neural network.
@@ -326,19 +349,19 @@ definition. When inputting a string, available options are
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.FeatureExtractor.forward"><code class="name flex">
-<span>def <span class="ident">forward</span></span>(<span>self, x: torch.Tensor) ‑> torch.Tensor</span>
+<span>def <span class="ident">forward</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]) ‑> Callable[..., Any]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Forward pass. If the last layer is not known yet, it will be
 determined when this function is called for the first time.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>a dict-like object containing the input tensors</code></dt>
 <dd>one batch of data to use as input for the forward pass</dd>
 </dl></div>
 </dd>
 <dt id="laplace.utils.FeatureExtractor.forward_with_features"><code class="name flex">
-<span>def <span class="ident">forward_with_features</span></span>(<span>self, x: torch.Tensor) ‑> Tuple[torch.Tensor, torch.Tensor]</span>
+<span>def <span class="ident">forward_with_features</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Forward pass which returns the output of the penultimate layer along
@@ -346,7 +369,7 @@ with the output of the last layer. If the last layer is not known yet,
 it will be determined when this function is called for the first time.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>a dict-like object containing the input tensors</code></dt>
 <dd>one batch of data to use as input for the forward pass</dd>
 </dl></div>
 </dd>
@@ -363,7 +386,7 @@ hook to get the output of the penultimate layer.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils.FeatureExtractor.find_last_layer"><code class="name flex">
-<span>def <span class="ident">find_last_layer</span></span>(<span>self, x: torch.Tensor) ‑> torch.Tensor</span>
+<span>def <span class="ident">find_last_layer</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Automatically determines the last layer of the model with one
@@ -374,7 +397,7 @@ torchvision classification models (besides SqueezeNet, which has no
 linear last layer).</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code> or <code>dict-like object containing the input tensors</code></dt>
 <dd>one batch of data to use as input for the forward pass</dd>
 </dl></div>
 </dd>
@@ -382,7 +405,7 @@ linear last layer).</p>
 </dd>
 <dt id="laplace.utils.Kron"><code class="flex name class">
 <span>class <span class="ident">Kron</span></span>
-<span>(</span><span>kfacs)</span>
+<span>(</span><span>kfacs: list[tuple[torch.Tensor] | torch.Tensor])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Kronecker factored approximate curvature representation for a corresponding
@@ -392,14 +415,14 @@ A tuple represents two Kronecker factors <span><span class="MathJax_Preview">Q</
 is just a full block Hessian approximation.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>kfacs</code></strong> :&ensp;<code>list[Tuple]</code></dt>
-<dd>each element in the list is a Tuple of two Kronecker factors Q, H
+<dt><strong><code>kfacs</code></strong> :&ensp;<code>list[Iterable[torch.Tensor] | torch.Tensor]</code></dt>
+<dd>each element in the list is a tuple of two Kronecker factors Q, H
 or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 </dl></div>
 <h3>Static methods</h3>
 <dl>
 <dt id="laplace.utils.Kron.init_from_model"><code class="name flex">
-<span>def <span class="ident">init_from_model</span></span>(<span>model, device)</span>
+<span>def <span class="ident">init_from_model</span></span>(<span>model: nn.Module | Iterable[nn.Parameter], device: torch.device) ‑> <a title="laplace.utils.Kron" href="#laplace.utils.Kron">Kron</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Initialize Kronecker factors based on a models architecture.</p>
@@ -420,7 +443,7 @@ or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.Kron.decompose"><code class="name flex">
-<span>def <span class="ident">decompose</span></span>(<span>self, damping=False)</span>
+<span>def <span class="ident">decompose</span></span>(<span>self, damping: bool = False) ‑> <a title="laplace.utils.matrix.KronDecomposed" href="matrix.html#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Eigendecompose Kronecker factors and turn into <code><a title="laplace.utils.KronDecomposed" href="#laplace.utils.KronDecomposed">KronDecomposed</a></code>.
@@ -498,7 +521,7 @@ large amounts of memory for big architectures.</p>
 </dd>
 <dt id="laplace.utils.KronDecomposed"><code class="flex name class">
 <span>class <span class="ident">KronDecomposed</span></span>
-<span>(</span><span>eigenvectors, eigenvalues, deltas=None, damping=False)</span>
+<span>(</span><span>eigenvectors: list[tuple[torch.Tensor]], eigenvalues: list[tuple[torch.Tensor]], deltas: torch.Tensor | None = None, damping: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Decomposed Kronecker factored approximate curvature representation
@@ -523,7 +546,7 @@ a prior precision</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.KronDecomposed.detach"><code class="name flex">
-<span>def <span class="ident">detach</span></span>(<span>self)</span>
+<span>def <span class="ident">detach</span></span>(<span>self) ‑> <a title="laplace.utils.matrix.KronDecomposed" href="matrix.html#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -608,7 +631,7 @@ large amounts of memory for big architectures.</p>
 </dd>
 <dt id="laplace.utils.SubnetMask"><code class="flex name class">
 <span>class <span class="ident">SubnetMask</span></span>
-<span>(</span><span>model)</span>
+<span>(</span><span>model: nn.Module)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all subnetwork masks in this library (for subnetwork Laplace).</p>
@@ -625,11 +648,11 @@ large amounts of memory for big architectures.</p>
 </ul>
 <h3>Instance variables</h3>
 <dl>
-<dt id="laplace.utils.SubnetMask.indices"><code class="name">var <span class="ident">indices</span></code></dt>
+<dt id="laplace.utils.SubnetMask.indices"><code class="name">var <span class="ident">indices</span> : torch.LongTensor</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt id="laplace.utils.SubnetMask.n_params_subnet"><code class="name">var <span class="ident">n_params_subnet</span></code></dt>
+<dt id="laplace.utils.SubnetMask.n_params_subnet"><code class="name">var <span class="ident">n_params_subnet</span> : int</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -637,7 +660,7 @@ large amounts of memory for big architectures.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.SubnetMask.convert_subnet_mask_to_indices"><code class="name flex">
-<span>def <span class="ident">convert_subnet_mask_to_indices</span></span>(<span>self, subnet_mask)</span>
+<span>def <span class="ident">convert_subnet_mask_to_indices</span></span>(<span>self, subnet_mask: torch.Tensor) ‑> torch.LongTensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Converts a subnetwork mask into subnetwork indices.</p>
@@ -657,7 +680,7 @@ that define the subnetwork</dd>
 </dl></div>
 </dd>
 <dt id="laplace.utils.SubnetMask.select"><code class="name flex">
-<span>def <span class="ident">select</span></span>(<span>self, train_loader=None)</span>
+<span>def <span class="ident">select</span></span>(<span>self, train_loader: DataLoader | None = None) ‑> torch.LongTensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Select the subnetwork mask.</p>
@@ -676,7 +699,7 @@ that define the subnetwork</dd>
 </dl></div>
 </dd>
 <dt id="laplace.utils.SubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask.</p>
@@ -698,7 +721,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.RandomSubnetMask"><code class="flex name class">
 <span>class <span class="ident">RandomSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask of parameters sampled uniformly at random.</p></div>
@@ -710,7 +733,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.RandomSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -729,7 +752,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.LargestMagnitudeSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LargestMagnitudeSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask identifying the parameters with the largest magnitude.</p></div>
@@ -741,7 +764,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.LargestMagnitudeSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -760,7 +783,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.LargestVarianceDiagLaplaceSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LargestVarianceDiagLaplaceSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet, diag_laplace_model)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int, diag_laplace_model: <a title="laplace.baselaplace.DiagLaplace" href="../baselaplace.html#laplace.baselaplace.DiagLaplace">DiagLaplace</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask identifying the parameters with the largest marginal variances
@@ -782,7 +805,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.LargestVarianceDiagLaplaceSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -801,7 +824,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.LargestVarianceSWAGSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LargestVarianceSWAGSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet, likelihood='classification', swag_n_snapshots=40, swag_snapshot_freq=1, swag_lr=0.01)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int, likelihood: <a title="laplace.utils.Likelihood" href="#laplace.utils.Likelihood">Likelihood</a> | str = Likelihood.CLASSIFICATION, swag_n_snapshots: int = 40, swag_snapshot_freq: int = 1, swag_lr: float = 0.01)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask identifying the parameters with the largest marginal variances
@@ -829,7 +852,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.LargestVarianceSWAGSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -848,7 +871,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.ParamNameSubnetMask"><code class="flex name class">
 <span>class <span class="ident">ParamNameSubnetMask</span></span>
-<span>(</span><span>model, parameter_names)</span>
+<span>(</span><span>model: nn.Module, parameter_names: list[str])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask corresponding to the specified parameters of the neural network.</p>
@@ -867,7 +890,7 @@ that define the subnetwork</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.ParamNameSubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask identifying the specified parameters.</p></div>
@@ -885,7 +908,7 @@ that define the subnetwork</dd>
 </dd>
 <dt id="laplace.utils.ModuleNameSubnetMask"><code class="flex name class">
 <span>class <span class="ident">ModuleNameSubnetMask</span></span>
-<span>(</span><span>model, module_names)</span>
+<span>(</span><span>model: nn.Module, module_names: list[str])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask corresponding to the specified modules of the neural network.</p>
@@ -908,7 +931,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.ModuleNameSubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask identifying the specified modules.</p></div>
@@ -926,7 +949,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </dd>
 <dt id="laplace.utils.LastLayerSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LastLayerSubnetMask</span></span>
-<span>(</span><span>model, last_layer_name=None)</span>
+<span>(</span><span>model: nn.Module, last_layer_name: str | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask corresponding to the last layer of the neural network.</p>
@@ -945,7 +968,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.LastLayerSubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask identifying the last layer.</p></div>
@@ -963,7 +986,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </dd>
 <dt id="laplace.utils.RunningNLLMetric"><code class="flex name class">
 <span>class <span class="ident">RunningNLLMetric</span></span>
-<span>(</span><span>ignore_index=-100)</span>
+<span>(</span><span>ignore_index: int = -100)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>NLL metrics that</p>
@@ -1021,11 +1044,200 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </dl></div>
 </dd>
 <dt id="laplace.utils.RunningNLLMetric.compute"><code class="name flex">
-<span>def <span class="ident">compute</span></span>(<span>self)</span>
+<span>def <span class="ident">compute</span></span>(<span>self) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Override this method to compute the final metric value.</p>
 <p>This method will automatically synchronize state variables when running in distributed backend.</p></div>
+</dd>
+</dl>
+</dd>
+<dt id="laplace.utils.SubsetOfWeights"><code class="flex name class">
+<span>class <span class="ident">SubsetOfWeights</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.SubsetOfWeights.ALL"><code class="name">var <span class="ident">ALL</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.SubsetOfWeights.LAST_LAYER"><code class="name">var <span class="ident">LAST_LAYER</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.SubsetOfWeights.SUBNETWORK"><code class="name">var <span class="ident">SUBNETWORK</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="laplace.utils.HessianStructure"><code class="flex name class">
+<span>class <span class="ident">HessianStructure</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.HessianStructure.FULL"><code class="name">var <span class="ident">FULL</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.HessianStructure.KRON"><code class="name">var <span class="ident">KRON</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.HessianStructure.DIAG"><code class="name">var <span class="ident">DIAG</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.HessianStructure.LOWRANK"><code class="name">var <span class="ident">LOWRANK</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="laplace.utils.Likelihood"><code class="flex name class">
+<span>class <span class="ident">Likelihood</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.Likelihood.REGRESSION"><code class="name">var <span class="ident">REGRESSION</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.Likelihood.CLASSIFICATION"><code class="name">var <span class="ident">CLASSIFICATION</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.Likelihood.REWARD_MODELING"><code class="name">var <span class="ident">REWARD_MODELING</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="laplace.utils.PredType"><code class="flex name class">
+<span>class <span class="ident">PredType</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.PredType.GLM"><code class="name">var <span class="ident">GLM</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.PredType.NN"><code class="name">var <span class="ident">NN</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="laplace.utils.LinkApprox"><code class="flex name class">
+<span>class <span class="ident">LinkApprox</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.LinkApprox.MC"><code class="name">var <span class="ident">MC</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.LinkApprox.PROBIT"><code class="name">var <span class="ident">PROBIT</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.LinkApprox.BRIDGE"><code class="name">var <span class="ident">BRIDGE</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.LinkApprox.BRIDGE_NORM"><code class="name">var <span class="ident">BRIDGE_NORM</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="laplace.utils.TuningMethod"><code class="flex name class">
+<span>class <span class="ident">TuningMethod</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.TuningMethod.MARGLIK"><code class="name">var <span class="ident">MARGLIK</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.TuningMethod.GRIDSEARCH"><code class="name">var <span class="ident">GRIDSEARCH</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+</dd>
+<dt id="laplace.utils.PriorStructure"><code class="flex name class">
+<span>class <span class="ident">PriorStructure</span></span>
+<span>(</span><span>value, names=None, *, module=None, qualname=None, type=None, start=1)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>An enumeration.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li>builtins.str</li>
+<li>enum.Enum</li>
+</ul>
+<h3>Class variables</h3>
+<dl>
+<dt id="laplace.utils.PriorStructure.SCALAR"><code class="name">var <span class="ident">SCALAR</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.PriorStructure.DIAG"><code class="name">var <span class="ident">DIAG</span></code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.utils.PriorStructure.LAYERWISE"><code class="name">var <span class="ident">LAYERWISE</span></code></dt>
+<dd>
+<div class="desc"></div>
 </dd>
 </dl>
 </dd>
@@ -1045,6 +1257,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </li>
 <li><h3><a href="#header-submodules">Sub-modules</a></h3>
 <ul>
+<li><code><a title="laplace.utils.enums" href="enums.html">laplace.utils.enums</a></code></li>
 <li><code><a title="laplace.utils.feature_extractor" href="feature_extractor.html">laplace.utils.feature_extractor</a></code></li>
 <li><code><a title="laplace.utils.matrix" href="matrix.html">laplace.utils.matrix</a></code></li>
 <li><code><a title="laplace.utils.metrics" href="metrics.html">laplace.utils.metrics</a></code></li>
@@ -1160,6 +1373,27 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <li><code><a title="laplace.utils.RunningNLLMetric.update" href="#laplace.utils.RunningNLLMetric.update">update</a></code></li>
 <li><code><a title="laplace.utils.RunningNLLMetric.compute" href="#laplace.utils.RunningNLLMetric.compute">compute</a></code></li>
 </ul>
+</li>
+<li>
+<h4><code><a title="laplace.utils.SubsetOfWeights" href="#laplace.utils.SubsetOfWeights">SubsetOfWeights</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.utils.HessianStructure" href="#laplace.utils.HessianStructure">HessianStructure</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.utils.Likelihood" href="#laplace.utils.Likelihood">Likelihood</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.utils.PredType" href="#laplace.utils.PredType">PredType</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.utils.LinkApprox" href="#laplace.utils.LinkApprox">LinkApprox</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.utils.TuningMethod" href="#laplace.utils.TuningMethod">TuningMethod</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.utils.PriorStructure" href="#laplace.utils.PriorStructure">PriorStructure</a></code></h4>
 </li>
 </ul>
 </li>

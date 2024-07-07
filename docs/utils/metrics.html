@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.utils.metrics.RunningNLLMetric"><code class="flex name class">
 <span>class <span class="ident">RunningNLLMetric</span></span>
-<span>(</span><span>ignore_index=-100)</span>
+<span>(</span><span>ignore_index: int = -100)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>NLL metrics that</p>
@@ -93,7 +93,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.metrics.RunningNLLMetric.compute"><code class="name flex">
-<span>def <span class="ident">compute</span></span>(<span>self)</span>
+<span>def <span class="ident">compute</span></span>(<span>self) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Override this method to compute the final metric value.</p>

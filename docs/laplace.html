@@ -32,7 +32,7 @@
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="laplace.laplace.Laplace"><code class="name flex">
-<span>def <span class="ident">Laplace</span></span>(<span>model, likelihood, subset_of_weights='last_layer', hessian_structure='kron', *args, **kwargs)</span>
+<span>def <span class="ident">Laplace</span></span>(<span>model: torch.nn.Module, likelihood: Likelihood | str, subset_of_weights: SubsetOfWeights | str = SubsetOfWeights.LAST_LAYER, hessian_structure: HessianStructure | str = HessianStructure.KRON, *args, **kwargs) ‑> ParametricLaplace</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Simplified Laplace access using strings instead of different classes.</p>
@@ -40,11 +40,11 @@
 <dl>
 <dt><strong><code>model</code></strong> :&ensp;<code>torch.nn.Module</code></dt>
 <dd>&nbsp;</dd>
-<dt><strong><code>likelihood</code></strong> :&ensp;<code>{'classification', 'regression'}</code></dt>
+<dt><strong><code>likelihood</code></strong> :&ensp;<code>Likelihood</code> or <code>str in {'classification', 'regression'}</code></dt>
 <dd>&nbsp;</dd>
-<dt><strong><code>subset_of_weights</code></strong> :&ensp;<code>{'last_layer', 'subnetwork', 'all'}</code>, default=<code>'last_layer'</code></dt>
+<dt><strong><code>subset_of_weights</code></strong> :&ensp;<code>SubsetofWeights</code> or <code>{'last_layer', 'subnetwork', 'all'}</code>, default=<code>SubsetOfWeights.LAST_LAYER</code></dt>
 <dd>subset of weights to consider for inference</dd>
-<dt><strong><code>hessian_structure</code></strong> :&ensp;<code>{'diag', 'kron', 'full', 'lowrank'}</code>, default=<code>'kron'</code></dt>
+<dt><strong><code>hessian_structure</code></strong> :&ensp;<code>HessianStructure</code> or <code>str in {'diag', 'kron', 'full', 'lowrank'}</code>, default=<code>HessianStructure.KRON</code></dt>
 <dd>structure of the Hessian approximation</dd>
 </dl>
 <h2 id="returns">Returns</h2>

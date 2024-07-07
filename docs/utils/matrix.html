@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.utils.matrix.Kron"><code class="flex name class">
 <span>class <span class="ident">Kron</span></span>
-<span>(</span><span>kfacs)</span>
+<span>(</span><span>kfacs: list[tuple[torch.Tensor] | torch.Tensor])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Kronecker factored approximate curvature representation for a corresponding
@@ -45,14 +45,14 @@ A tuple represents two Kronecker factors <span><span class="MathJax_Preview">Q</
 is just a full block Hessian approximation.</p>
 <h2 id="parameters">Parameters</h2>
 <dl>
-<dt><strong><code>kfacs</code></strong> :&ensp;<code>list[Tuple]</code></dt>
-<dd>each element in the list is a Tuple of two Kronecker factors Q, H
+<dt><strong><code>kfacs</code></strong> :&ensp;<code>list[Iterable[torch.Tensor] | torch.Tensor]</code></dt>
+<dd>each element in the list is a tuple of two Kronecker factors Q, H
 or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 </dl></div>
 <h3>Static methods</h3>
 <dl>
 <dt id="laplace.utils.matrix.Kron.init_from_model"><code class="name flex">
-<span>def <span class="ident">init_from_model</span></span>(<span>model, device)</span>
+<span>def <span class="ident">init_from_model</span></span>(<span>model: nn.Module | Iterable[nn.Parameter], device: torch.device) ‑> <a title="laplace.utils.matrix.Kron" href="#laplace.utils.matrix.Kron">Kron</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Initialize Kronecker factors based on a models architecture.</p>
@@ -73,7 +73,7 @@ or a single matrix approximating the Hessian (in case of bias, for example)</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.matrix.Kron.decompose"><code class="name flex">
-<span>def <span class="ident">decompose</span></span>(<span>self, damping=False)</span>
+<span>def <span class="ident">decompose</span></span>(<span>self, damping: bool = False) ‑> <a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></span>
 </code></dt>
 <dd>
 <div class="desc"><p>Eigendecompose Kronecker factors and turn into <code><a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></code>.
@@ -151,7 +151,7 @@ large amounts of memory for big architectures.</p>
 </dd>
 <dt id="laplace.utils.matrix.KronDecomposed"><code class="flex name class">
 <span>class <span class="ident">KronDecomposed</span></span>
-<span>(</span><span>eigenvectors, eigenvalues, deltas=None, damping=False)</span>
+<span>(</span><span>eigenvectors: list[tuple[torch.Tensor]], eigenvalues: list[tuple[torch.Tensor]], deltas: torch.Tensor | None = None, damping: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Decomposed Kronecker factored approximate curvature representation
@@ -176,7 +176,7 @@ a prior precision</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.matrix.KronDecomposed.detach"><code class="name flex">
-<span>def <span class="ident">detach</span></span>(<span>self)</span>
+<span>def <span class="ident">detach</span></span>(<span>self) ‑> <a title="laplace.utils.matrix.KronDecomposed" href="#laplace.utils.matrix.KronDecomposed">KronDecomposed</a></span>
 </code></dt>
 <dd>
 <div class="desc"></div>
