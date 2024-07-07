@@ -1,5 +1,5 @@
 <div align="center">
-	<img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
+ <img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
 </div>
 
 [![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
@@ -54,6 +54,11 @@ and the prior precision is optimized with cross-validation `"gridsearch"`.
 After that, the resulting LA is used for prediction with
 the `"probit"` predictive for classification.
 
+> [!IMPORTANT]
+> In `optimize_prior_precision`, make sure to match the arguments with
+> the ones you want to pass in `la(x, ...)`. What's good during
+> prior precision tuning might not be good during the prediction itself.
+
 ```python
 from laplace import Laplace
 
@@ -65,10 +70,15 @@ la = Laplace(model, "classification",
              subset_of_weights="all",
              hessian_structure="diag")
 la.fit(train_loader)
-la.optimize_prior_precision(method="gridsearch", val_loader=val_loader)
+la.optimize_prior_precision(
+    method="gridsearch", 
+    pred_type="glm", 
+    link_approx="probit", 
+    val_loader=val_loader
+)
 
 # User-specified predictive approx.
-pred = la(x, link_approx="probit")
+pred = la(x, pred_type="glm", link_approx="probit")
 ```
 
 ### Differentiating the log marginal likelihood w.r.t. hyperparameters
@@ -95,9 +105,10 @@ ml.backward()
 
 ### Laplace on foundation models like LLMs
 
-This library also supports Huggingface models and parameter-efficient fine-tuning.
-See `examples/huggingface_examples.py` and `examples/huggingface_examples.md` for the
-exposition.
+> [!TIP]
+> This library also supports Huggingface models and parameter-efficient fine-tuning.
+> See `examples/huggingface_examples.py` and `examples/huggingface_examples.md`
+> for the full exposition.
 
 First, we need to wrap the pretrained model so that the `forward` method takes a
 dict-like input. Note that when you iterate over a Huggingface dataloader,

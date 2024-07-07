@@ -130,7 +130,7 @@ class MyGPT2(nn.Module):
 model = MyGPT2(tokenizer)
 ```
 
-Now, let's apply Laplace. Let's do a last-layer Laplace first. 
+Now, let's apply Laplace. Let's do a last-layer Laplace first.
 Notice that we add
 an argument `feature_reduction` there. This is because Huggingface models reduce the
 logits and [not the features](https://github.com/huggingface/transformers/blob/a98c41798cf6ed99e1ff17e3792d6e06a2ff2ff3/src/transformers/models/gpt2/modeling_gpt2.py#L1678-L1704).
@@ -210,7 +210,7 @@ usual. Note that `peft` automatically switches off the non-LoRA weights.
 ```python
 def get_lora_model():
     model = MyGPT2(tokenizer) # Note we don't disable grad
-        config = LoraConfig(
+    config = LoraConfig(
         r=4,
         lora_alpha=16,
         target_modules=["c_attn"], # LoRA on the attention weights

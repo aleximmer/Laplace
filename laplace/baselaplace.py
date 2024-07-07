@@ -341,7 +341,7 @@ class BaseLaplace:
         n_steps: int = 100,
         lr: float = 1e-1,
         init_prior_prec: float | torch.Tensor = 1.0,
-        prior_structure: PriorStructure | str = PriorStructure.SCALAR,
+        prior_structure: PriorStructure | str = PriorStructure.DIAG,
         val_loader: DataLoader | None = None,
         loss: torchmetrics.Metric
         | Callable[[torch.Tensor], torch.Tensor | float]
@@ -405,7 +405,19 @@ class BaseLaplace:
             else self.likelihood
         )
 
+        if likelihood == Likelihood.CLASSIFICATION:
+            warnings.warn(
+                "By default `link_approx` is `probit`. Make sure to set it equals to "
+                "the way you want to call `la(test_data, pred_type=..., link_approx=...)`."
+            )
+
         if method == TuningMethod.MARGLIK:
+            if val_loader is not None:
+                warnings.warn(
+                    "`val_loader` will be ignored when `method` == 'marglik'. "
+                    "Do you mean to set `method = 'gridsearch'`?"
+                )
+
             self.prior_precision = (
                 init_prior_prec
                 if isinstance(init_prior_prec, torch.Tensor)
