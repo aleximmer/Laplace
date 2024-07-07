@@ -1021,18 +1021,23 @@ class ParametricLaplace(BaseLaplace):
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         joint: bool = False,
-        diagonal_output=False,
+        diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        backend_name = self._backend_cls.__name__.lower()
-        if self.enable_backprop and (
-            "curvlinops" not in backend_name and "backpack" not in backend_name
-        ):
-            raise ValueError(
-                "Backprop through the GLM predictive is only available for the "
-                "Curvlinops and BackPACK backends."
+        if "asdl" in self._backend_cls.__name__.lower():
+            # Asdl's doesn't support backprop over Jacobians
+            # falling back to functorch
+            warnings.warn(
+                "ASDL backend is used which does not support backprop through "
+                "the functional variance, but `self.enable_backprop = True`. "
+                "Falling back to using `self.backend.functorch_jacobians` "
+                "which can be memory intensive for large models."
             )
 
-        Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
+            Js, f_mu = self.backend.functorch_jacobians(
+                X, enable_backprop=self.enable_backprop
+            )
+        else:
+            Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)

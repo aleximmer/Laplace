@@ -2,7 +2,10 @@
  <img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
 </div>
 
-[![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
+![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest.yml/badge.svg)
+![lint](https://github.com/aleximmer/laplace/actions/workflows/lint-ruff.yml/badge.svg)
+![format](https://github.com/aleximmer/laplace/actions/workflows/format-ruff.yml/badge.svg)
+</div>
 
 The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
@@ -60,7 +63,21 @@ pytest tests/
 
 ## Example usage
 
+<<<<<<< HEAD
+
 ### Simple usage
+
+=======
+> [!IMPORTANT]
+> As a user, one should not expect Laplace to work automatically.
+> That is, one should experiment with different Laplace's options
+> (hessian_factorization, prior precision tuning method, predictive method, backend,
+> etc!). Try looking at various papers that use Laplace for references on how to
+> set all those options depending on the applications/problems at hand.
+
+### _Post-hoc_ prior precision tuning of diagonal LA
+>>>>>>>
+>>>>>>> main
 
 In the following example, a pre-trained model is loaded,
 then the Laplace approximation is fit to the training data
@@ -297,6 +314,11 @@ trained on a GPU but want to run predictions on CPU. In this case, use
 ```py
 torch.load(..., map_location="cpu")
 ```
+
+> [!WARNING]
+> Currently, this library always assumes that the model has an
+> output tensor of shape `(batch_size, ..., n_classes)`, so in
+> the case of image outputs, you need to rearrange from NCHW to NHWC.
 
 ## Structure
 
