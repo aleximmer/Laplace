@@ -81,7 +81,7 @@ the `"probit"` predictive for classification.
 > [!IMPORTANT]
 > Laplace expects all data loaders, e.g. `train_loader` and `val_loader` below,
 > to be instances of PyTorch
-> `[DataLoader](https://pytorch.org/tutorials/beginner/basics/data_tutorial.html)`.
+> [`DataLoader`](https://pytorch.org/tutorials/beginner/basics/data_tutorial.html).
 > Each batch, `next(iter(data_loader))` must either be the standard `(X, y)` tensors
 > or a dict-like object containing at least the keys specified in
 > `dict_key_x` and `dict_key_y` in Laplace's constructor.
