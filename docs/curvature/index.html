@@ -58,7 +58,7 @@
 <dl>
 <dt id="laplace.curvature.CurvatureInterface"><code class="flex name class">
 <span>class <span class="ident">CurvatureInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface to access curvature for a model and corresponding likelihood.
@@ -74,7 +74,7 @@ structures, for example, a block-diagonal one.</p>
 <dd>&nbsp;</dd>
 <dt><strong><code>last_layer</code></strong> :&ensp;<code>bool</code>, default=<code>False</code></dt>
 <dd>only consider curvature of last layer</dd>
-<dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.Tensor</code>, default=<code>None</code></dt>
+<dt><strong><code>subnetwork_indices</code></strong> :&ensp;<code>torch.LongTensor</code>, default=<code>None</code></dt>
 <dd>indices of the vectorized model parameters that define the subnetwork
 to apply the Laplace approximation over</dd>
 <dt><strong><code>dict_key_x</code></strong> :&ensp;<code>str</code>, default=<code>'input_ids'</code></dt>
@@ -106,7 +106,7 @@ For example, <span><span class="MathJax_Preview">\frac{1}{2}</span><script type=
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.CurvatureInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_{\theta} f(x;\theta)</span><script type="math/tex">\nabla_{\theta} f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>,
@@ -121,33 +121,13 @@ via torch.func.</p>
 <h2 id="returns">Returns</h2>
 <dl>
 <dt><strong><code>Js</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>Jacobians <code>(batch, outputs, parameters)</code></dd>
-<dt><strong><code>f</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>output function <code>(batch, outputs)</code></dd>
-</dl></div>
-</dd>
-<dt id="laplace.curvature.CurvatureInterface.functorch_jacobians"><code class="name flex">
-<span>def <span class="ident">functorch_jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
-</code></dt>
-<dd>
-<div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>.</p>
-<h2 id="parameters">Parameters</h2>
-<dl>
-<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>input data <code>(batch, input_shape)</code> on compatible device with model.</dd>
-<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default <code>= False</code></dt>
-<dd>whether to enable backprop through the Js and f w.r.t. x</dd>
-</dl>
-<h2 id="returns">Returns</h2>
-<dl>
-<dt><strong><code>Js</code></strong> :&ensp;<code>torch.Tensor</code></dt>
-<dd>Jacobians <code>(batch, outputs, parameters)</code></dd>
+<dd>Jacobians <code>(batch, parameters, outputs)</code></dd>
 <dt><strong><code>f</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>output function <code>(batch, outputs)</code></dd>
 </dl></div>
 </dd>
 <dt id="laplace.curvature.CurvatureInterface.last_layer_jacobians"><code class="name flex">
-<span>def <span class="ident">last_layer_jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
+<span>def <span class="ident">last_layer_jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_{\theta_\textrm{last}} f(x;\theta_\textrm{last})</span><script type="math/tex">\nabla_{\theta_\textrm{last}} f(x;\theta_\textrm{last})</script></span>
@@ -168,7 +148,7 @@ only at current last-layer parameter <span><span class="MathJax_Preview">\theta_
 </dl></div>
 </dd>
 <dt id="laplace.curvature.CurvatureInterface.gradients"><code class="name flex">
-<span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
+<span>def <span class="ident">gradients</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute batch gradients <span><span class="MathJax_Preview">\nabla_\theta \ell(f(x;\theta, y)</span><script type="math/tex">\nabla_\theta \ell(f(x;\theta, y)</script></span> at
@@ -189,7 +169,7 @@ current parameter <span><span class="MathJax_Preview">\theta</span><script type=
 </dl></div>
 </dd>
 <dt id="laplace.curvature.CurvatureInterface.full"><code class="name flex">
-<span>def <span class="ident">full</span></span>(<span>self, x, y, **kwargs)</span>
+<span>def <span class="ident">full</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor, **kwargs: dict[str, Any])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute a dense curvature (approximation) in the form of a <span><span class="MathJax_Preview">P \times P</span><script type="math/tex">P \times P</script></span> matrix
@@ -210,7 +190,7 @@ current parameter <span><span class="MathJax_Preview">\theta</span><script type=
 </dl></div>
 </dd>
 <dt id="laplace.curvature.CurvatureInterface.kron"><code class="name flex">
-<span>def <span class="ident">kron</span></span>(<span>self, x, y, **kwargs)</span>
+<span>def <span class="ident">kron</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor, N: int, **kwargs: dict[str, Any]) ‑> tuple[torch.Tensor, Kron]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute a Kronecker factored curvature approximation (such as KFAC).
@@ -225,6 +205,8 @@ and <span><span class="MathJax_Preview">H</span><script type="math/tex">H</scrip
 <dd>input data <code>(batch, input_shape)</code></dd>
 <dt><strong><code>y</code></strong> :&ensp;<code>torch.Tensor</code></dt>
 <dd>labels <code>(batch, label_shape)</code></dd>
+<dt><strong><code>N</code></strong> :&ensp;<code>int</code></dt>
+<dd>total number of data points</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
@@ -235,7 +217,7 @@ and <span><span class="MathJax_Preview">H</span><script type="math/tex">H</scrip
 </dl></div>
 </dd>
 <dt id="laplace.curvature.CurvatureInterface.diag"><code class="name flex">
-<span>def <span class="ident">diag</span></span>(<span>self, x, y, **kwargs)</span>
+<span>def <span class="ident">diag</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor, **kwargs: dict[str, Any])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute a diagonal Hessian approximation to <span><span class="MathJax_Preview">H</span><script type="math/tex">H</script></span> and is represented as a
@@ -255,11 +237,32 @@ vector of the dimensionality of parameters <span><span class="MathJax_Preview">\
 <dd>vector representing the diagonal of H</dd>
 </dl></div>
 </dd>
+<dt id="laplace.curvature.CurvatureInterface.functorch_jacobians"><code class="name flex">
+<span>def <span class="ident">functorch_jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_{\theta} f(x;\theta)</span><script type="math/tex">\nabla_{\theta} f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>,
+via torch.func.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>x</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>input data <code>(batch, input_shape)</code> on compatible device with model.</dd>
+<dt><strong><code>enable_backprop</code></strong> :&ensp;<code>bool</code>, default <code>= False</code></dt>
+<dd>whether to enable backprop through the Js and f w.r.t. x</dd>
+</dl>
+<h2 id="returns">Returns</h2>
+<dl>
+<dt><strong><code>Js</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>Jacobians <code>(batch, parameters, outputs)</code></dd>
+<dt><strong><code>f</code></strong> :&ensp;<code>torch.Tensor</code></dt>
+<dd>output function <code>(batch, outputs)</code></dd>
+</dl></div>
+</dd>
 </dl>
 </dd>
 <dt id="laplace.curvature.GGNInterface"><code class="flex name class">
 <span>class <span class="ident">GGNInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False, num_samples=1)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', stochastic: bool = False, num_samples: int = 1)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Generalized Gauss-Newton or Fisher Curvature Interface.
@@ -303,7 +306,7 @@ LLM models.</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.GGNInterface.full"><code class="name flex">
-<span>def <span class="ident">full</span></span>(<span>self, x, y, **kwargs)</span>
+<span>def <span class="ident">full</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor, **kwargs: dict[str, Any]) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute the full GGN <span><span class="MathJax_Preview">P \times P</span><script type="math/tex">P \times P</script></span> matrix as Hessian approximation
@@ -341,7 +344,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 </dd>
 <dt id="laplace.curvature.EFInterface"><code class="flex name class">
 <span>class <span class="ident">EFInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Empirical Fisher as Hessian approximation.
@@ -388,7 +391,7 @@ For example, <span><span class="MathJax_Preview">\frac{1}{2}</span><script type=
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.EFInterface.full"><code class="name flex">
-<span>def <span class="ident">full</span></span>(<span>self, x, y, **kwargs)</span>
+<span>def <span class="ident">full</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor, **kwargs: dict[str, Any]) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute the full EF <span><span class="MathJax_Preview">P \times P</span><script type="math/tex">P \times P</script></span> matrix as Hessian approximation
@@ -426,7 +429,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 </dd>
 <dt id="laplace.curvature.BackPackInterface"><code class="flex name class">
 <span>class <span class="ident">BackPackInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Backpack backend.</p></div>
@@ -442,7 +445,7 @@ For last-layer, reduced to <span><span class="MathJax_Preview">\theta_{last}</sp
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.BackPackInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_{\theta} f(x;\theta)</span><script type="math/tex">\nabla_{\theta} f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
@@ -464,7 +467,7 @@ with torch.func, so this method has to be overridden.</p>
 </dl></div>
 </dd>
 <dt id="laplace.curvature.BackPackInterface.gradients"><code class="name flex">
-<span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
+<span>def <span class="ident">gradients</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute gradients <span><span class="MathJax_Preview">\nabla_\theta \ell(f(x;\theta, y)</span><script type="math/tex">\nabla_\theta \ell(f(x;\theta, y)</script></span> at current parameter
@@ -501,7 +504,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.BackPackGGN"><code class="flex name class">
 <span>class <span class="ident">BackPackGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', stochastic: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using Backpack.</p></div>
@@ -528,7 +531,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.BackPackEF"><code class="flex name class">
 <span>class <span class="ident">BackPackEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using Backpack.</p></div>
@@ -555,7 +558,7 @@ with torch.func, so this method has to be overridden.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklInterface"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -572,7 +575,7 @@ with torch.func, so this method has to be overridden.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.AsdfghjklInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
@@ -593,7 +596,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dl></div>
 </dd>
 <dt id="laplace.curvature.AsdfghjklInterface.gradients"><code class="name flex">
-<span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
+<span>def <span class="ident">gradients</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute gradients <span><span class="MathJax_Preview">\nabla_\theta \ell(f(x;\theta, y)</span><script type="math/tex">\nabla_\theta \ell(f(x;\theta, y)</script></span> at current parameter
@@ -629,7 +632,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklGGN"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', stochastic: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using asdfghjkl.</p></div>
@@ -656,7 +659,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklEF"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | None, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using asdfghjkl.</p></div>
@@ -683,7 +686,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdfghjklHessian"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels', low_rank=10)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', low_rank: int = 10)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -695,7 +698,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.AsdfghjklHessian.eig_lowrank"><code class="name flex">
-<span>def <span class="ident">eig_lowrank</span></span>(<span>self, data_loader)</span>
+<span>def <span class="ident">eig_lowrank</span></span>(<span>self, data_loader: DataLoader) ‑> tuple[torch.Tensor, torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -718,7 +721,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.AsdlInterface"><code class="flex name class">
 <span>class <span class="ident">AsdlInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -734,7 +737,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </ul>
 <h3>Instance variables</h3>
 <dl>
-<dt id="laplace.curvature.AsdlInterface.loss_type"><code class="name">var <span class="ident">loss_type</span></code></dt>
+<dt id="laplace.curvature.AsdlInterface.loss_type"><code class="name">var <span class="ident">loss_type</span> : str</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -742,7 +745,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.AsdlInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
@@ -765,7 +768,7 @@ The latter is specific for reward modeling.</dd>
 </dl></div>
 </dd>
 <dt id="laplace.curvature.AsdlInterface.gradients"><code class="name flex">
-<span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
+<span>def <span class="ident">gradients</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute gradients <span><span class="MathJax_Preview">\nabla_\theta \ell(f(x;\theta, y)</span><script type="math/tex">\nabla_\theta \ell(f(x;\theta, y)</script></span> at current parameter
@@ -801,7 +804,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.AsdlGGN"><code class="flex name class">
 <span>class <span class="ident">AsdlGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', stochastic: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using asdfghjkl.</p></div>
@@ -828,7 +831,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.AsdlEF"><code class="flex name class">
 <span>class <span class="ident">AsdlEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using asdfghjkl.</p></div>
@@ -855,7 +858,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.AsdlHessian"><code class="flex name class">
 <span>class <span class="ident">AsdlHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -881,7 +884,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsInterface"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for Curvlinops backend. <a href="https://github.com/f-dangel/curvlinops">https://github.com/f-dangel/curvlinops</a></p></div>
@@ -912,7 +915,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsGGN"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', stochastic: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code><a title="laplace.curvature.GGNInterface" href="#laplace.curvature.GGNInterface">GGNInterface</a></code> using Curvlinops.</p></div>
@@ -939,7 +942,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsEF"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of <code><a title="laplace.curvature.EFInterface" href="#laplace.curvature.EFInterface">EFInterface</a></code> using Curvlinops.</p></div>
@@ -966,7 +969,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.CurvlinopsHessian"><code class="flex name class">
 <span>class <span class="ident">CurvlinopsHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the full Hessian using Curvlinops.</p></div>
@@ -1019,12 +1022,12 @@ The latter is specific for reward modeling.</dd>
 <h4><code><a title="laplace.curvature.CurvatureInterface" href="#laplace.curvature.CurvatureInterface">CurvatureInterface</a></code></h4>
 <ul class="">
 <li><code><a title="laplace.curvature.CurvatureInterface.jacobians" href="#laplace.curvature.CurvatureInterface.jacobians">jacobians</a></code></li>
-<li><code><a title="laplace.curvature.CurvatureInterface.functorch_jacobians" href="#laplace.curvature.CurvatureInterface.functorch_jacobians">functorch_jacobians</a></code></li>
 <li><code><a title="laplace.curvature.CurvatureInterface.last_layer_jacobians" href="#laplace.curvature.CurvatureInterface.last_layer_jacobians">last_layer_jacobians</a></code></li>
 <li><code><a title="laplace.curvature.CurvatureInterface.gradients" href="#laplace.curvature.CurvatureInterface.gradients">gradients</a></code></li>
 <li><code><a title="laplace.curvature.CurvatureInterface.full" href="#laplace.curvature.CurvatureInterface.full">full</a></code></li>
 <li><code><a title="laplace.curvature.CurvatureInterface.kron" href="#laplace.curvature.CurvatureInterface.kron">kron</a></code></li>
 <li><code><a title="laplace.curvature.CurvatureInterface.diag" href="#laplace.curvature.CurvatureInterface.diag">diag</a></code></li>
+<li><code><a title="laplace.curvature.CurvatureInterface.functorch_jacobians" href="#laplace.curvature.CurvatureInterface.functorch_jacobians">functorch_jacobians</a></code></li>
 </ul>
 </li>
 <li>

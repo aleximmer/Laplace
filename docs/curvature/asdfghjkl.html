@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklInterface"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -52,7 +52,7 @@
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
@@ -73,7 +73,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dl></div>
 </dd>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklInterface.gradients"><code class="name flex">
-<span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
+<span>def <span class="ident">gradients</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute gradients <span><span class="MathJax_Preview">\nabla_\theta \ell(f(x;\theta, y)</span><script type="math/tex">\nabla_\theta \ell(f(x;\theta, y)</script></span> at current parameter
@@ -109,7 +109,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklHessian"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels', low_rank=10)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', low_rank: int = 10)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -121,7 +121,7 @@ using asdfghjkl's gradient per output dimension.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklHessian.eig_lowrank"><code class="name flex">
-<span>def <span class="ident">eig_lowrank</span></span>(<span>self, data_loader)</span>
+<span>def <span class="ident">eig_lowrank</span></span>(<span>self, data_loader: DataLoader) ‑> tuple[torch.Tensor, torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -144,7 +144,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklGGN"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', stochastic: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>GGNInterface</code> using asdfghjkl.</p></div>
@@ -171,7 +171,7 @@ using asdfghjkl's gradient per output dimension.</p>
 </dd>
 <dt id="laplace.curvature.asdfghjkl.AsdfghjklEF"><code class="flex name class">
 <span>class <span class="ident">AsdfghjklEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | None, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>EFInterface</code> using asdfghjkl.</p></div>

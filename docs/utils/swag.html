@@ -32,7 +32,7 @@
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="laplace.utils.swag.fit_diagonal_swag_var"><code class="name flex">
-<span>def <span class="ident">fit_diagonal_swag_var</span></span>(<span>model, train_loader, criterion, n_snapshots_total=40, snapshot_freq=1, lr=0.01, momentum=0.9, weight_decay=0.0003, min_var=1e-30)</span>
+<span>def <span class="ident">fit_diagonal_swag_var</span></span>(<span>model: nn.Module, train_loader: DataLoader, criterion: nn.CrossEntropyLoss | nn.MSELoss, n_snapshots_total: int = 40, snapshot_freq: int = 1, lr: float = 0.01, momentum: float = 0.9, weight_decay: float = 0.0003, min_var: float = 1e-30) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Fit diagonal SWAG [1], which estimates marginal variances of model parameters by
