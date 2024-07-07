@@ -62,21 +62,14 @@ pytest tests/
 
 ## Example usage
 
-<<<<<<< HEAD
-
 ### Simple usage
 
-=======
 > [!IMPORTANT]
 > As a user, one should not expect Laplace to work automatically.
 > That is, one should experiment with different Laplace's options
 > (hessian_factorization, prior precision tuning method, predictive method, backend,
 > etc!). Try looking at various papers that use Laplace for references on how to
 > set all those options depending on the applications/problems at hand.
-
-### _Post-hoc_ prior precision tuning of diagonal LA
->>>>>>>
->>>>>>> main
 
 In the following example, a pre-trained model is loaded,
 then the Laplace approximation is fit to the training data
