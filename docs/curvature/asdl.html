@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.curvature.asdl.AsdlInterface"><code class="flex name class">
 <span>class <span class="ident">AsdlInterface</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -51,7 +51,7 @@
 </ul>
 <h3>Instance variables</h3>
 <dl>
-<dt id="laplace.curvature.asdl.AsdlInterface.loss_type"><code class="name">var <span class="ident">loss_type</span></code></dt>
+<dt id="laplace.curvature.asdl.AsdlInterface.loss_type"><code class="name">var <span class="ident">loss_type</span> : str</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -59,7 +59,7 @@
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.curvature.asdl.AsdlInterface.jacobians"><code class="name flex">
-<span>def <span class="ident">jacobians</span></span>(<span>self, x, enable_backprop=False)</span>
+<span>def <span class="ident">jacobians</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], enable_backprop: bool = False) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute Jacobians <span><span class="MathJax_Preview">\nabla_\theta f(x;\theta)</span><script type="math/tex">\nabla_\theta f(x;\theta)</script></span> at current parameter <span><span class="MathJax_Preview">\theta</span><script type="math/tex">\theta</script></span>
@@ -82,7 +82,7 @@ The latter is specific for reward modeling.</dd>
 </dl></div>
 </dd>
 <dt id="laplace.curvature.asdl.AsdlInterface.gradients"><code class="name flex">
-<span>def <span class="ident">gradients</span></span>(<span>self, x, y)</span>
+<span>def <span class="ident">gradients</span></span>(<span>self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute gradients <span><span class="MathJax_Preview">\nabla_\theta \ell(f(x;\theta, y)</span><script type="math/tex">\nabla_\theta \ell(f(x;\theta, y)</script></span> at current parameter
@@ -118,7 +118,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.asdl.AsdlHessian"><code class="flex name class">
 <span>class <span class="ident">AsdlHessian</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Interface for asdfghjkl backend.</p></div>
@@ -144,7 +144,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.asdl.AsdlGGN"><code class="flex name class">
 <span>class <span class="ident">AsdlGGN</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, subnetwork_indices=None, dict_key_x='input_ids', dict_key_y='labels', stochastic=False)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, subnetwork_indices: torch.LongTensor | None = None, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels', stochastic: bool = False)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>GGNInterface</code> using asdfghjkl.</p></div>
@@ -171,7 +171,7 @@ The latter is specific for reward modeling.</dd>
 </dd>
 <dt id="laplace.curvature.asdl.AsdlEF"><code class="flex name class">
 <span>class <span class="ident">AsdlEF</span></span>
-<span>(</span><span>model, likelihood, last_layer=False, dict_key_x='input_ids', dict_key_y='labels')</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, last_layer: bool = False, dict_key_x: str = 'input_ids', dict_key_y: str = 'labels')</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Implementation of the <code>EFInterface</code> using asdfghjkl.</p></div>

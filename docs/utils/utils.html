@@ -32,19 +32,19 @@
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="laplace.utils.utils.get_nll"><code class="name flex">
-<span>def <span class="ident">get_nll</span></span>(<span>out_dist, targets)</span>
+<span>def <span class="ident">get_nll</span></span>(<span>out_dist: torch.Tensor, targets: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.utils.validate"><code class="name flex">
-<span>def <span class="ident">validate</span></span>(<span>laplace, val_loader, loss, pred_type='glm', link_approx='probit', n_samples=100, loss_with_var=False, dict_key_y='labels') ‑> float</span>
+<span>def <span class="ident">validate</span></span>(<span>laplace: <a title="laplace.baselaplace.BaseLaplace" href="../baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a>, val_loader: DataLoader, loss: torchmetrics.Metric | Callable[[torch.Tensor, torch.Tensor], torch.Tensor] | Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor], pred_type: PredType | str = PredType.GLM, link_approx: LinkApprox | str = LinkApprox.PROBIT, n_samples: int = 100, dict_key_y: str = 'labels') ‑> float</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
 <dt id="laplace.utils.utils.parameters_per_layer"><code class="name flex">
-<span>def <span class="ident">parameters_per_layer</span></span>(<span>model)</span>
+<span>def <span class="ident">parameters_per_layer</span></span>(<span>model: nn.Module) ‑> list[int]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get number of parameters per layer.</p>
@@ -60,7 +60,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.utils.invsqrt_precision"><code class="name flex">
-<span>def <span class="ident">invsqrt_precision</span></span>(<span>M)</span>
+<span>def <span class="ident">invsqrt_precision</span></span>(<span>M: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compute <code>M^{-0.5}</code> as a tridiagonal matrix.</p>
@@ -76,7 +76,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.utils.kron"><code class="name flex">
-<span>def <span class="ident">kron</span></span>(<span>t1, t2)</span>
+<span>def <span class="ident">kron</span></span>(<span>t1: torch.Tensor, t2: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Computes the Kronecker product between two tensors.</p>
@@ -94,7 +94,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.utils.diagonal_add_scalar"><code class="name flex">
-<span>def <span class="ident">diagonal_add_scalar</span></span>(<span>X, value)</span>
+<span>def <span class="ident">diagonal_add_scalar</span></span>(<span>X: torch.Tensor, value: torch.Tensor) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Add scalar value <code>value</code> to diagonal of <code>X</code>.</p>
@@ -112,7 +112,7 @@
 </dl></div>
 </dd>
 <dt id="laplace.utils.utils.symeig"><code class="name flex">
-<span>def <span class="ident">symeig</span></span>(<span>M)</span>
+<span>def <span class="ident">symeig</span></span>(<span>M: torch.Tensor) ‑> tuple[torch.Tensor, torch.Tensor]</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Symetric eigendecomposition avoiding failure cases by
@@ -131,7 +131,7 @@ adding and removing jitter to the diagonal.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils.utils.block_diag"><code class="name flex">
-<span>def <span class="ident">block_diag</span></span>(<span>blocks)</span>
+<span>def <span class="ident">block_diag</span></span>(<span>blocks: list[torch.Tensor]) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Compose block-diagonal matrix of individual blocks.</p>
@@ -147,7 +147,7 @@ adding and removing jitter to the diagonal.</p>
 </dl></div>
 </dd>
 <dt id="laplace.utils.utils.expand_prior_precision"><code class="name flex">
-<span>def <span class="ident">expand_prior_precision</span></span>(<span>prior_prec, model)</span>
+<span>def <span class="ident">expand_prior_precision</span></span>(<span>prior_prec: torch.Tensor, model: nn.Module) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Expand prior precision to match the shape of the model parameters.</p>

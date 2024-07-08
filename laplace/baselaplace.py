@@ -345,7 +345,7 @@ class BaseLaplace:
         n_steps: int = 100,
         lr: float = 1e-1,
         init_prior_prec: float | torch.Tensor = 1.0,
-        prior_structure: PriorStructure | str = PriorStructure.SCALAR,
+        prior_structure: PriorStructure | str = PriorStructure.DIAG,
         val_loader: DataLoader | None = None,
         loss: torchmetrics.Metric
         | Callable[[torch.Tensor], torch.Tensor | float]
@@ -409,7 +409,19 @@ class BaseLaplace:
             else self.likelihood
         )
 
+        if likelihood == Likelihood.CLASSIFICATION:
+            warnings.warn(
+                "By default `link_approx` is `probit`. Make sure to set it equals to "
+                "the way you want to call `la(test_data, pred_type=..., link_approx=...)`."
+            )
+
         if method == TuningMethod.MARGLIK:
+            if val_loader is not None:
+                warnings.warn(
+                    "`val_loader` will be ignored when `method` == 'marglik'. "
+                    "Do you mean to set `method = 'gridsearch'`?"
+                )
+
             self.prior_precision = (
                 init_prior_prec
                 if isinstance(init_prior_prec, torch.Tensor)
@@ -771,8 +783,10 @@ class ParametricLaplace(BaseLaplace):
         Parameters
         ----------
         train_loader : torch.data.utils.DataLoader
-            each iterate is a training batch (X, y);
-            `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+            each iterate is a training batch, either `(X, y)` tensors or a dict-like
+            object containing keys as expressed by `self.dict_key_x` and
+            `self.dict_key_y`. `train_loader.dataset` needs to be set to access
+            \\(N\\), size of the data set.
         override : bool, default=True
             whether to initialize H, loss, and n_data again; setting to False is useful for
             online learning settings to accumulate a sequential posterior approximation.
@@ -998,7 +1012,10 @@ class ParametricLaplace(BaseLaplace):
 
         diagonal_output : bool
             whether to use a diagonalized posterior predictive on the outputs.
-            Only works for `pred_type='glm'` and `link_approx='mc'`.
+            Only works for `pred_type='glm'` when `joint=False` in regression.
+            In the case of last-layer Laplace with a diagonal or Kron Hessian,
+            setting this to `True` makes computation much(!) faster for large
+            number of outputs.
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used).
@@ -1104,23 +1121,32 @@ class ParametricLaplace(BaseLaplace):
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         joint: bool = False,
+        diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        backend_name = self._backend_cls.__name__.lower()
-        if self.enable_backprop and (
-            "curvlinops" not in backend_name and "backpack" not in backend_name
-        ):
-            raise ValueError(
-                "Backprop through the GLM predictive is only available for the "
-                "Curvlinops and BackPACK backends."
+        if "asdl" in self._backend_cls.__name__.lower():
+            # Asdl's doesn't support backprop over Jacobians
+            # falling back to functorch
+            warnings.warn(
+                "ASDL backend is used which does not support backprop through "
+                "the functional variance, but `self.enable_backprop = True`. "
+                "Falling back to using `self.backend.functorch_jacobians` "
+                "which can be memory intensive for large models."
             )
 
-        Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
+            Js, f_mu = self.backend.functorch_jacobians(
+                X, enable_backprop=self.enable_backprop
+            )
+        else:
+            Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
         else:
-            f_var = self.functional_variance(Js)
+            f_var = self.functional_variance(Js)  # (batch, out, out)
+
+            if diagonal_output:
+                f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
 
         return (
             (f_mu.detach(), f_var.detach())

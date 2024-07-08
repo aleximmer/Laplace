@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.subnetlaplace.SubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">SubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, subnetwork_indices: torch.LongTensor, sigma_noise: float | torch.Tensor = 1.0, prior_precision: float | torch.Tensor = 1.0, prior_mean: float | torch.Tensor = 0.0, temperature: float = 1.0, backend: Type[CurvatureInterface] | None = None, backend_kwargs: dict | None = None, asdl_fisher_kwargs: dict | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Class for subnetwork Laplace, which computes the Laplace approximation over just a subset
@@ -108,7 +108,7 @@ set the number of MC samples for stochastic approximations.</dd>
 </ul>
 <h3>Instance variables</h3>
 <dl>
-<dt id="laplace.subnetlaplace.SubnetLaplace.prior_precision_diag"><code class="name">var <span class="ident">prior_precision_diag</span></code></dt>
+<dt id="laplace.subnetlaplace.SubnetLaplace.prior_precision_diag"><code class="name">var <span class="ident">prior_precision_diag</span> : torch.Tensor</code></dt>
 <dd>
 <div class="desc"><p>Obtain the diagonal prior precision <span><span class="MathJax_Preview">p_0</span><script type="math/tex">p_0</script></span> constructed from either
 a scalar or diagonal prior precision.</p>
@@ -118,7 +118,7 @@ a scalar or diagonal prior precision.</p>
 <dd>&nbsp;</dd>
 </dl></div>
 </dd>
-<dt id="laplace.subnetlaplace.SubnetLaplace.mean_subnet"><code class="name">var <span class="ident">mean_subnet</span></code></dt>
+<dt id="laplace.subnetlaplace.SubnetLaplace.mean_subnet"><code class="name">var <span class="ident">mean_subnet</span> : torch.Tensor</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -126,7 +126,7 @@ a scalar or diagonal prior precision.</p>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.subnetlaplace.SubnetLaplace.assemble_full_samples"><code class="name flex">
-<span>def <span class="ident">assemble_full_samples</span></span>(<span>self, subnet_samples)</span>
+<span>def <span class="ident">assemble_full_samples</span></span>(<span>self, subnet_samples) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -145,7 +145,7 @@ a scalar or diagonal prior precision.</p>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
-<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.baselaplace.ParametricLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.baselaplace.ParametricLaplace.sample" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.sample">sample</a></code></li>
@@ -157,7 +157,7 @@ a scalar or diagonal prior precision.</p>
 </dd>
 <dt id="laplace.subnetlaplace.FullSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">FullSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, subnetwork_indices: torch.LongTensor, sigma_noise: float | torch.Tensor = 1.0, prior_precision: float | torch.Tensor = 1.0, prior_mean: float | torch.Tensor = 0.0, temperature: float = 1.0, backend: Type[CurvatureInterface] | None = None, backend_kwargs: dict | None = None, asdl_fisher_kwargs: dict | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with full, i.e., dense, log likelihood Hessian
@@ -185,7 +185,7 @@ See <code>FullLaplace</code>, <code><a title="laplace.subnetlaplace.SubnetLaplac
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
-<li><code><a title="laplace.subnetlaplace.SubnetLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.prior_precision_diag" href="#laplace.subnetlaplace.SubnetLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
@@ -204,7 +204,7 @@ See <code>FullLaplace</code>, <code><a title="laplace.subnetlaplace.SubnetLaplac
 </dd>
 <dt id="laplace.subnetlaplace.DiagSubnetLaplace"><code class="flex name class">
 <span>class <span class="ident">DiagSubnetLaplace</span></span>
-<span>(</span><span>model, likelihood, subnetwork_indices, sigma_noise=1.0, prior_precision=1.0, prior_mean=0.0, temperature=1.0, backend=None, backend_kwargs=None, asdl_fisher_kwargs=None)</span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, subnetwork_indices: torch.LongTensor, sigma_noise: float | torch.Tensor = 1.0, prior_precision: float | torch.Tensor = 1.0, prior_mean: float | torch.Tensor = 0.0, temperature: float = 1.0, backend: Type[CurvatureInterface] | None = None, backend_kwargs: dict | None = None, asdl_fisher_kwargs: dict | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork Laplace approximation with diagonal log likelihood Hessian approximation
@@ -231,7 +231,7 @@ See <code>DiagLaplace</code>, <code><a title="laplace.subnetlaplace.SubnetLaplac
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.log_prob" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.log_prob">log_prob</a></code></li>
-<li><code><a title="laplace.subnetlaplace.SubnetLaplace.optimize_prior_precision_base" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision_base">optimize_prior_precision_base</a></code></li>
+<li><code><a title="laplace.subnetlaplace.SubnetLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.BaseLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.posterior_precision" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.posterior_precision">posterior_precision</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.ParametricLaplace.predictive_samples">predictive_samples</a></code></li>
 <li><code><a title="laplace.subnetlaplace.SubnetLaplace.prior_precision_diag" href="#laplace.subnetlaplace.SubnetLaplace.prior_precision_diag">prior_precision_diag</a></code></li>

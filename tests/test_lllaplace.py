@@ -32,6 +32,13 @@ def model():
 
 
 @pytest.fixture
+def model_no_output_bias():
+    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2, bias=False))
+    setattr(model, "output_size", 2)
+    return model
+
+
+@pytest.fixture
 def model_with_reduction():
     class Model(nn.Module):
         def __init__(self):
@@ -187,6 +194,7 @@ def test_laplace_init_precision(laplace, model):
     setattr(model, "n_params", len(parameters_to_vector(model_params)))
     # float
     precision = 10.6
+
     laplace(
         model, likelihood="regression", prior_precision=precision, last_layer_name="1"
     )
@@ -563,6 +571,36 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
 
+@pytest.mark.parametrize("laplace", [FullLLLaplace, DiagLLLaplace, KronLLLaplace])
+def test_functional_variance_fast(laplace, model, reg_loader):
+    if laplace == KronLLLaplace:
+        # TODO still!
+        return
+
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, "regression", enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap.functional_variance_fast(X)
+
+    assert f_mu.shape == (X.shape[0], y.shape[-1])
+    assert f_var.shape == (X.shape[0], y.shape[-1])
+
+    Js, f_naive = lap.backend.last_layer_jacobians(X)
+
+    if laplace == DiagLLLaplace:
+        f_var_naive = torch.einsum("ncp,p,ncp->nc", Js, lap.posterior_variance, Js)
+    elif laplace == KronLLLaplace:
+        f_var_naive = lap.posterior_precision.inv_square_form(Js)
+        f_var_naive = torch.diagonal(f_var_naive, dim1=-2, dim2=-1)
+    else:  # FullLLaplace
+        f_var_naive = torch.einsum("ncp,pq,ncq->nc", Js, lap.posterior_covariance, Js)
+
+    assert torch.allclose(f_mu, f_naive)
+    assert torch.allclose(f_var, f_var_naive)
+
+
 @pytest.mark.parametrize("laplace", flavors)
 def test_backprop_glm(laplace, model, reg_loader):
     X, y = reg_loader.dataset.tensors
@@ -637,3 +675,27 @@ def test_backprop_nn(laplace, model, reg_loader):
         assert grad_X_var.shape == X.shape
     except ValueError:
         assert False
+
+
+@pytest.mark.parametrize("laplace", [FullLLLaplace, KronLLLaplace, DiagLLLaplace])
+def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    n_batch = X.shape[0]
+    n_outputs = y.shape[-1]
+
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+
+    # Joint predictive ignores diagonal_output
+    f_mean, f_var = lap(X, pred_type="glm", joint=True, diagonal_output=True)
+    assert f_var.shape == (n_batch * n_outputs, n_batch * n_outputs)
+
+    f_mean, f_var = lap(X, pred_type="glm", joint=True, diagonal_output=False)
+    assert f_var.shape == (n_batch * n_outputs, n_batch * n_outputs)
+
+    # diagonal_output affects non-joint
+    f_mean, f_var = lap(X, pred_type="glm", joint=False, diagonal_output=True)
+    assert f_var.shape == (n_batch, n_outputs)
+
+    f_mean, f_var = lap(X, pred_type="glm", joint=False, diagonal_output=False)
+    assert f_var.shape == (n_batch, n_outputs, n_outputs)

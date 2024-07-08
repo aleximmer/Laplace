@@ -35,7 +35,7 @@
 <dl>
 <dt id="laplace.utils.subnetmask.SubnetMask"><code class="flex name class">
 <span>class <span class="ident">SubnetMask</span></span>
-<span>(</span><span>model)</span>
+<span>(</span><span>model: nn.Module)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Baseclass for all subnetwork masks in this library (for subnetwork Laplace).</p>
@@ -52,11 +52,11 @@
 </ul>
 <h3>Instance variables</h3>
 <dl>
-<dt id="laplace.utils.subnetmask.SubnetMask.indices"><code class="name">var <span class="ident">indices</span></code></dt>
+<dt id="laplace.utils.subnetmask.SubnetMask.indices"><code class="name">var <span class="ident">indices</span> : torch.LongTensor</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
-<dt id="laplace.utils.subnetmask.SubnetMask.n_params_subnet"><code class="name">var <span class="ident">n_params_subnet</span></code></dt>
+<dt id="laplace.utils.subnetmask.SubnetMask.n_params_subnet"><code class="name">var <span class="ident">n_params_subnet</span> : int</code></dt>
 <dd>
 <div class="desc"></div>
 </dd>
@@ -64,7 +64,7 @@
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.SubnetMask.convert_subnet_mask_to_indices"><code class="name flex">
-<span>def <span class="ident">convert_subnet_mask_to_indices</span></span>(<span>self, subnet_mask)</span>
+<span>def <span class="ident">convert_subnet_mask_to_indices</span></span>(<span>self, subnet_mask: torch.Tensor) ‑> torch.LongTensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Converts a subnetwork mask into subnetwork indices.</p>
@@ -84,7 +84,7 @@ that define the subnetwork</dd>
 </dl></div>
 </dd>
 <dt id="laplace.utils.subnetmask.SubnetMask.select"><code class="name flex">
-<span>def <span class="ident">select</span></span>(<span>self, train_loader=None)</span>
+<span>def <span class="ident">select</span></span>(<span>self, train_loader: DataLoader | None = None) ‑> torch.LongTensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Select the subnetwork mask.</p>
@@ -103,7 +103,7 @@ that define the subnetwork</dd>
 </dl></div>
 </dd>
 <dt id="laplace.utils.subnetmask.SubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask.</p>
@@ -125,7 +125,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.subnetmask.RandomSubnetMask"><code class="flex name class">
 <span>class <span class="ident">RandomSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask of parameters sampled uniformly at random.</p></div>
@@ -137,7 +137,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.RandomSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -156,7 +156,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.subnetmask.LargestMagnitudeSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LargestMagnitudeSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask identifying the parameters with the largest magnitude.</p></div>
@@ -168,7 +168,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.LargestMagnitudeSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -187,7 +187,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.subnetmask.LargestVarianceDiagLaplaceSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LargestVarianceDiagLaplaceSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet, diag_laplace_model)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int, diag_laplace_model: <a title="laplace.baselaplace.DiagLaplace" href="../baselaplace.html#laplace.baselaplace.DiagLaplace">DiagLaplace</a>)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask identifying the parameters with the largest marginal variances
@@ -209,7 +209,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.LargestVarianceDiagLaplaceSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -228,7 +228,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.subnetmask.LargestVarianceSWAGSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LargestVarianceSWAGSubnetMask</span></span>
-<span>(</span><span>model, n_params_subnet, likelihood='classification', swag_n_snapshots=40, swag_snapshot_freq=1, swag_lr=0.01)</span>
+<span>(</span><span>model: nn.Module, n_params_subnet: int, likelihood: Likelihood | str = Likelihood.CLASSIFICATION, swag_n_snapshots: int = 40, swag_snapshot_freq: int = 1, swag_lr: float = 0.01)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask identifying the parameters with the largest marginal variances
@@ -256,7 +256,7 @@ within the vectorized model parameters
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.LargestVarianceSWAGSubnetMask.compute_param_scores"><code class="name flex">
-<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">compute_param_scores</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"></div>
@@ -275,7 +275,7 @@ within the vectorized model parameters
 </dd>
 <dt id="laplace.utils.subnetmask.ParamNameSubnetMask"><code class="flex name class">
 <span>class <span class="ident">ParamNameSubnetMask</span></span>
-<span>(</span><span>model, parameter_names)</span>
+<span>(</span><span>model: nn.Module, parameter_names: list[str])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask corresponding to the specified parameters of the neural network.</p>
@@ -294,7 +294,7 @@ that define the subnetwork</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.ParamNameSubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask identifying the specified parameters.</p></div>
@@ -312,7 +312,7 @@ that define the subnetwork</dd>
 </dd>
 <dt id="laplace.utils.subnetmask.ModuleNameSubnetMask"><code class="flex name class">
 <span>class <span class="ident">ModuleNameSubnetMask</span></span>
-<span>(</span><span>model, module_names)</span>
+<span>(</span><span>model: nn.Module, module_names: list[str])</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask corresponding to the specified modules of the neural network.</p>
@@ -335,7 +335,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.ModuleNameSubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask identifying the specified modules.</p></div>
@@ -353,7 +353,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 </dd>
 <dt id="laplace.utils.subnetmask.LastLayerSubnetMask"><code class="flex name class">
 <span>class <span class="ident">LastLayerSubnetMask</span></span>
-<span>(</span><span>model, last_layer_name=None)</span>
+<span>(</span><span>model: nn.Module, last_layer_name: str | None = None)</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Subnetwork mask corresponding to the last layer of the neural network.</p>
@@ -372,7 +372,7 @@ the modules cannot have children, i.e. need to be leaf modules</dd>
 <h3>Methods</h3>
 <dl>
 <dt id="laplace.utils.subnetmask.LastLayerSubnetMask.get_subnet_mask"><code class="name flex">
-<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader)</span>
+<span>def <span class="ident">get_subnet_mask</span></span>(<span>self, train_loader: DataLoader) ‑> torch.Tensor</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Get the subnetwork mask identifying the last layer.</p></div>

@@ -1,8 +1,10 @@
 <div align="center">
-	<img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
-</div>
+ <img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
 
-[![Main](https://travis-ci.com/AlexImmer/Laplace.svg?token=rpuRxEjQS6cCZi7ptL9y&branch=main)](https://travis-ci.com/AlexImmer/Laplace)
+![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest.yml/badge.svg)
+![lint](https://github.com/aleximmer/laplace/actions/workflows/lint-ruff.yml/badge.svg)
+![format](https://github.com/aleximmer/laplace/actions/workflows/format-ruff.yml/badge.svg)
+</div>
 
 
 The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
@@ -23,6 +25,28 @@ There is also a corresponding paper, [_Laplace Redux — Effortless Bayesian Dee
 
 The [code](https://github.com/runame/laplace-redux) to reproduce the experiments in the paper is also publicly available; it provides examples of how to use our library for predictive uncertainty quantification, model selection, and continual learning.
 
+> [!IMPORTANT]
+> As a user, one should not expect Laplace to work automatically.
+> That is, one should experiment with different Laplace's options
+> (hessian_factorization, prior precision tuning method, predictive method, backend,
+> etc!). Try looking at various papers that use Laplace for references on how to
+> set all those options depending on the applications/problems at hand.
+
+## Table of contents
+
+1. [Setup](#setup)
+2. [Example usage](#example-usage)
+   1. [Simple usage](#simple-usage)
+   2. [Marginal likelihood](#marginal-likelihood)
+   3. [Laplace on LLM](#laplace-on-llm)
+   4. [Subnetwork Laplace](#subnetwork-laplace)
+   5. [Serialization](#serialization)
+3. [Structure](#structure)
+4. [Extendability](#extendability)
+5. [When to use which backend?](#when-to-use-which-backend)
+6. [Contributing](#contributing)
+7. [References](#references)
+
 ## Setup
 
 For full compatibility, install this package in a fresh virtual env.
@@ -31,22 +55,27 @@ PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with `pip`, run the following:
 
 ```bash
-pip install laplace-torch
+pip install --upgrade pip wheel packaging
+pip install git+https://github.com/aleximmer/laplace.git@0.2
 ```
+
+> [!CAUTION]
+> Unfortunately, we lost our PyPI account and so running `pip install laplace-torch`
+> only installs the previous version (0.1)!
 
 For development purposes, clone the repository and then install:
 
 ```bash
-# or after cloning the repository for development
-pip install -e .
-# run tests
-pip install -e '.[tests]'
-pytest tests/
+# first install the build system:
+pip install --upgrade pip wheel packaging
+
+# then install the develop 
+pip install -e ".[all]"
 ```
 
 ## Example usage
 
-### _Post-hoc_ prior precision tuning of diagonal LA
+### Simple usage
 
 In the following example, a pre-trained model is loaded,
 then the Laplace approximation is fit to the training data
@@ -54,6 +83,22 @@ then the Laplace approximation is fit to the training data
 and the prior precision is optimized with cross-validation `"gridsearch"`.
 After that, the resulting LA is used for prediction with
 the `"probit"` predictive for classification.
+
+> [!IMPORTANT]
+> Laplace expects all data loaders, e.g. `train_loader` and `val_loader` below,
+> to be instances of PyTorch
+> [`DataLoader`](https://pytorch.org/tutorials/beginner/basics/data_tutorial.html).
+> Each batch, `next(iter(data_loader))` must either be the standard `(X, y)` tensors
+> or a dict-like object containing at least the keys specified in
+> `dict_key_x` and `dict_key_y` in Laplace's constructor.
+
+> [!IMPORTANT]
+> The total number of data points in all data loaders must be accessible via
+> `len(train_loader.dataset)`.
+
+> [!IMPORTANT]
+> In `optimize_prior_precision`, make sure to match the arguments with
+> the ones you want to pass in `la(x, ...)` during prediction.
 
 ```python
 from laplace import Laplace
@@ -66,13 +111,18 @@ la = Laplace(model, "classification",
              subset_of_weights="all",
              hessian_structure="diag")
 la.fit(train_loader)
-la.optimize_prior_precision(method="gridsearch", val_loader=val_loader)
+la.optimize_prior_precision(
+    method="gridsearch", 
+    pred_type="glm", 
+    link_approx="probit", 
+    val_loader=val_loader
+)
 
 # User-specified predictive approx.
-pred = la(x, link_approx="probit")
+pred = la(x, pred_type="glm", link_approx="probit")
 ```
 
-### Differentiating the log marginal likelihood w.r.t. hyperparameters
+### Marginal likelihood
 
 The marginal likelihood can be used for model selection [10] and is differentiable
 for continuous hyperparameters like the prior precision or observation noise.
@@ -94,11 +144,12 @@ ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
 ```
 
-### Laplace on foundation models like LLMs
+### Laplace on LLM
 
-This library also supports Huggingface models and parameter-efficient fine-tuning.
-See `examples/huggingface_examples.py` and `examples/huggingface_examples.md` for the
-exposition.
+> [!TIP]
+> This library also supports Huggingface models and parameter-efficient fine-tuning.
+> See `examples/huggingface_examples.py` and `examples/huggingface_examples.md`
+> for the full exposition.
 
 First, we need to wrap the pretrained model so that the `forward` method takes a
 dict-like input. Note that when you iterate over a Huggingface dataloader,
@@ -190,7 +241,7 @@ test_data = next(iter(dataloader))
 lora_pred = lora_la(test_data)
 ```
 
-### Applying the LA over only a subset of the model parameters via the Subnetwork Laplace
+### Subnetwork Laplace
 
 This example shows how to fit the Laplace approximation over only
 a subnetwork within a neural network (while keeping all other parameters
@@ -284,6 +335,11 @@ trained on a GPU but want to run predictions on CPU. In this case, use
 torch.load(..., map_location="cpu")
 ```
 
+> [!WARNING]
+> Currently, this library always assumes that the model has an
+> output tensor of shape `(batch_size, ..., n_classes)`, so in
+> the case of image outputs, you need to rearrange from NCHW to NHWC.
+
 ## Structure
 
 The laplace package consists of two main components:
@@ -311,10 +367,30 @@ Alternatively, extending or integrating backends (subclasses of [`curvature.curv
 approximations to the Laplace approximations.
 For example, currently the [`curvature.CurvlinopsInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/curvlinops.py) based on [Curvlinops](https://github.com/f-dangel/curvlinops) and the native `torch.func` (previously known as `functorch`), [`curvature.BackPackInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/backpack.py) based on [BackPACK](https://github.com/f-dangel/backpack/) and [`curvature.AsdlInterface`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/asdl.py) based on [ASDL](https://github.com/kazukiosawa/asdfghjkl) are available.
 
-The `curvature.CurvlinopsInterface` backend is the default and provides all Hessian approximation variants except the low-rank Hessian.
-For the latter, `curvature.AsdlInterface` can be used.
-Note that `curvature.AsdlInterface` and `curvature.BackPackInterface` are less complete and less compatible than `curvature.CurvlinopsInterface`.
-So, we recommend to stick with `curvature.CurvlinopsInterface` unless you have a specific need of ASDL or BackPACK.
+## When to use which backend
+
+> [!TIP]
+> Each backend as its own caveat/behavior. The use the following to guide you
+> picking the suitable backend, depending on you model & application.
+
+- **Small, simple MLP, or last-layer Laplace:** Any backend should work well.
+  `CurvlinopsGGN` or `CurvlinopsEF` is recommended if
+  `hessian_factorization = 'kron'`, but it's inefficient for other factorizations.
+- **LLMs with PEFT (e.g. LoRA):** `AsdlGGN` and `AsdlEF` are recommended.
+- **Continuous Bayesian optimization:** `CurvlinopsGGN/EF` and `BackpackGGN/EF` are
+  recommended since they are the only ones supporting backprop over Jacobians.
+
+> [!CAUTION]
+> The `curvlinops` backends are inefficient for full and diagonal factorizations.
+> Moreover, they're also inefficient for computing the Jacobians of large models
+> since they rely on `torch.func.jacrev` along `torch.func.vmap`!
+> Finally, `curvlinops` only computes K-FAC (`hessian_factorization = 'kron'`)
+> for `nn.Linear` and `nn.Conv2d` modules (including those inside larger modules
+> like Attention).
+
+> [!CAUTION]
+> The `BackPack` backends are limited to models expressed as `nn.Sequential`.
+> Also, they're not compatible with normalization layers.
 
 ## Documentation
 
@@ -322,7 +398,7 @@ The documentation is available [here](https://aleximmer.github.io/Laplace) or ca
 
 ```bash
 # assuming the repository was cloned
-pip install -e .[docs]
+pip install -e ".[docs]"
 # create docs and write to html
 bash update_docs.sh
 # .. or serve the docs directly
