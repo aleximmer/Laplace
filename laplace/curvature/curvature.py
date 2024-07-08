@@ -26,6 +26,8 @@ class CurvatureInterface:
     subnetwork_indices : torch.LongTensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
@@ -49,6 +51,7 @@ class CurvatureInterface:
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
@@ -57,6 +60,7 @@ class CurvatureInterface:
         self.model: nn.Module = model
         self.last_layer: bool = last_layer
         self.subnetwork_indices: torch.LongTensor | None = subnetwork_indices
+        self.logit_class_dim = logit_class_dim
         self.dict_key_x = dict_key_x
         self.dict_key_y = dict_key_y
 
@@ -305,6 +309,8 @@ class GGNInterface(CurvatureInterface):
     subnetwork_indices : torch.Tensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
@@ -325,6 +331,7 @@ class GGNInterface(CurvatureInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         stochastic: bool = False,
@@ -334,7 +341,13 @@ class GGNInterface(CurvatureInterface):
         self.num_samples: int = num_samples
 
         super().__init__(
-            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+            model,
+            likelihood,
+            last_layer,
+            subnetwork_indices,
+            logit_class_dim,
+            dict_key_x,
+            dict_key_y,
         )
 
     def _get_mc_functional_fisher(self, f: torch.Tensor) -> torch.Tensor:
@@ -350,7 +363,7 @@ class GGNInterface(CurvatureInterface):
             else:  # classification with softmax
                 y_sample = torch.distributions.Multinomial(logits=f).sample()
                 # First functional derivative of the loglik is p - y
-                p = torch.softmax(f, dim=-1)
+                p = torch.softmax(f, dim=self.logit_class_dim)
                 grad_sample = p - y_sample
 
             F += (
@@ -366,8 +379,9 @@ class GGNInterface(CurvatureInterface):
             return None
         else:
             # second derivative of log lik is diag(p) - pp^T
-            ps = torch.softmax(f, dim=-1)
+            ps = torch.softmax(f, dim=self.logit_class_dim)
             G = torch.diag_embed(ps) - torch.einsum("mk,mc->mck", ps, ps)
+
             return G
 
     def full(
@@ -445,6 +459,8 @@ class EFInterface(CurvatureInterface):
     subnetwork_indices : torch.Tensor, default=None
         indices of the vectorized model parameters that define the subnetwork
         to apply the Laplace approximation over
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface

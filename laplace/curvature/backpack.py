@@ -29,11 +29,18 @@ class BackPackInterface(CurvatureInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ) -> None:
         super().__init__(
-            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+            model,
+            likelihood,
+            last_layer,
+            subnetwork_indices,
+            logit_class_dim,
+            dict_key_x,
+            dict_key_y,
         )
 
         extend(self._model)
@@ -139,12 +146,19 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         stochastic: bool = False,
     ):
         super().__init__(
-            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+            model,
+            likelihood,
+            last_layer,
+            subnetwork_indices,
+            logit_class_dim,
+            dict_key_x,
+            dict_key_y,
         )
         self.stochastic = stochastic
 
@@ -182,7 +196,11 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.likelihood == "regression"
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
@@ -203,7 +221,11 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = KFAC if self.stochastic else KFLR
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.likelihood == "regression"
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
@@ -225,7 +247,11 @@ class BackPackEF(BackPackInterface, EFInterface):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
+        f = (
+            f
+            if self.likelihood == "regression"
+            else f.view(-1, f.size(self.logit_class_dim))
+        )
         y = y if self.likelihood == "regression" else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):

@@ -176,6 +176,7 @@ class AsdfghjklHessian(AsdfghjklInterface):
         model: nn.Module,
         likelihood: Likelihood | str,
         last_layer: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         low_rank: int = 10,
@@ -185,6 +186,7 @@ class AsdfghjklHessian(AsdfghjklInterface):
             likelihood,
             last_layer,
             None,
+            logit_class_dim,
             dict_key_x="input_ids",
             dict_key_y="labels",
         )
@@ -241,6 +243,7 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
         likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         stochastic: bool = False,
@@ -248,7 +251,13 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
         if likelihood != Likelihood.CLASSIFICATION:
             raise ValueError("This backend only supports classification currently.")
         super().__init__(
-            model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
+            model,
+            likelihood,
+            last_layer,
+            subnetwork_indices,
+            logit_class_dim,
+            dict_key_x,
+            dict_key_y,
         )
         self.stochastic = stochastic
 
@@ -265,13 +274,16 @@ class AsdfghjklEF(AsdfghjklInterface, EFInterface):
         model: nn.Module,
         likelihood: Likelihood | None,
         last_layer: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ) -> None:
         if likelihood != Likelihood.CLASSIFICATION:
             raise ValueError("This backend only supports classification currently.")
 
-        super().__init__(model, likelihood, last_layer, None, dict_key_x, dict_key_y)
+        super().__init__(
+            model, likelihood, last_layer, None, logit_class_dim, dict_key_x, dict_key_y
+        )
 
     @property
     def _ggn_type(self) -> str:

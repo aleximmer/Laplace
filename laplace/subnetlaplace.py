@@ -65,6 +65,8 @@ class SubnetLaplace(ParametricLaplace):
     temperature : float, default=1
         temperature of the likelihood; lower temperature leads to more
         concentrated posterior and vice versa.
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     backend : subclasses of `laplace.curvature.CurvatureInterface`
         backend for access to curvature/Hessian approximations
     backend_kwargs : dict, default=None
@@ -81,6 +83,7 @@ class SubnetLaplace(ParametricLaplace):
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
+        logit_class_dim: int = -1,
         backend: Type[CurvatureInterface] | None = None,
         backend_kwargs: dict | None = None,
         asdl_fisher_kwargs: dict | None = None,
@@ -96,6 +99,7 @@ class SubnetLaplace(ParametricLaplace):
             prior_precision=prior_precision,
             prior_mean=prior_mean,
             temperature=temperature,
+            logit_class_dim=logit_class_dim,
             backend=backend,
             backend_kwargs=backend_kwargs,
         )

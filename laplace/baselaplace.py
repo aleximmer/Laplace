@@ -69,6 +69,8 @@ class BaseLaplace:
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     dict_key_x: str, default='input_ids'
         The dictionary key under which the input tensor `x` is stored. Only has effect
         when the model takes a `MutableMapping` as the input. Useful for Huggingface
@@ -95,6 +97,7 @@ class BaseLaplace:
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         backend: type[CurvatureInterface] | None = None,
@@ -126,6 +129,7 @@ class BaseLaplace:
         self.sigma_noise: float | torch.Tensor = sigma_noise
         self.temperature: float = temperature
         self.enable_backprop: bool = enable_backprop
+        self.logit_class_dim: int = logit_class_dim
 
         # For models with dict-like inputs (e.g. Huggingface LLMs)
         self.dict_key_x = dict_key_x
@@ -178,6 +182,7 @@ class BaseLaplace:
             self._backend = self._backend_cls(
                 self.model,
                 likelihood,
+                logit_class_dim=self.logit_class_dim,
                 dict_key_x=self.dict_key_x,
                 dict_key_y=self.dict_key_y,
                 **self._backend_kwargs,
@@ -596,6 +601,7 @@ class ParametricLaplace(BaseLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "inputs_id",
         dict_key_y: str = "labels",
         backend: type[CurvatureInterface] | None = None,
@@ -610,6 +616,7 @@ class ParametricLaplace(BaseLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
             backend,
@@ -933,7 +940,8 @@ class ParametricLaplace(BaseLaplace):
                 ).mean(dim=0)
             elif link_approx == LinkApprox.PROBIT:
                 kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
-                return torch.softmax(kappa * f_mu, dim=-1)
+
+                return torch.softmax(kappa * f_mu, dim=self.logit_class_dim)
             elif "bridge" in link_approx:
                 # zero mean correction
                 f_mu -= (
@@ -1025,7 +1033,7 @@ class ParametricLaplace(BaseLaplace):
             if self.likelihood == Likelihood.REGRESSION:
                 return f_samples
             else:
-                return torch.softmax(f_samples, dim=-1)
+                return torch.softmax(f_samples, dim=self.logit_class_dim)
 
         else:  # 'nn'
             return self._nn_predictive_samples(x, n_samples, generator)
@@ -1087,7 +1095,7 @@ class ParametricLaplace(BaseLaplace):
         fs = torch.stack(fs)
 
         if self.likelihood == Likelihood.CLASSIFICATION:
-            fs = torch.softmax(fs, dim=-1)
+            fs = torch.softmax(fs, dim=self.logit_class_dim)
 
         return fs
 
@@ -1103,7 +1111,7 @@ class ParametricLaplace(BaseLaplace):
             logits = self.model(
                 X.to(self._device) if isinstance(X, torch.Tensor) else X, **model_kwargs
             ).detach()
-            py += torch.softmax(logits, dim=-1) / n_samples
+            py += torch.softmax(logits, dim=self.logit_class_dim) / n_samples
 
         vector_to_parameters(self.mean, self.params)
 
@@ -1305,6 +1313,7 @@ class FullLaplace(ParametricLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         backend: type[CurvatureInterface] | None = None,
@@ -1318,6 +1327,7 @@ class FullLaplace(ParametricLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
             backend,
@@ -1440,6 +1450,7 @@ class KronLaplace(ParametricLaplace):
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
         enable_backprop: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "inputs_id",
         dict_key_y: str = "labels",
         backend: type[CurvatureInterface] | None = None,
@@ -1457,6 +1468,7 @@ class KronLaplace(ParametricLaplace):
             prior_mean,
             temperature,
             enable_backprop,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
             backend,
@@ -1612,6 +1624,7 @@ class LowRankLaplace(ParametricLaplace):
         prior_mean: float | torch.Tensor = 0,
         temperature: float = 1,
         enable_backprop: bool = False,
+        logit_class_dim: int = -1,
         dict_key_x: str = "inputs_id",
         dict_key_y: str = "labels",
         backend=AsdfghjklHessian,
@@ -1619,12 +1632,13 @@ class LowRankLaplace(ParametricLaplace):
     ):
         super().__init__(
             model,
-            likelihood,
+            likelihood=likelihood,
             sigma_noise=sigma_noise,
             prior_precision=prior_precision,
             prior_mean=prior_mean,
             temperature=temperature,
             enable_backprop=enable_backprop,
+            logit_class_dim=logit_class_dim,
             dict_key_x=dict_key_x,
             dict_key_y=dict_key_y,
             backend=backend,

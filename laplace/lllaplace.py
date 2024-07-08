@@ -63,6 +63,8 @@ class LLLaplace(ParametricLaplace):
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
+    logit_class_dim: int, default=-1
+        the dim of the model's logit tensor that corresponds to the class/output
     feature_reduction: FeatureReduction or str, optional, default=None
         when the last-layer `features` is a tensor of dim >= 3, this tells how to reduce
         it into a dim-2 tensor. E.g. in LLMs for non-language modeling problems,
@@ -98,6 +100,7 @@ class LLLaplace(ParametricLaplace):
         temperature: float = 1.0,
         enable_backprop: bool = False,
         feature_reduction: FeatureReduction | str | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "inputs_id",
         dict_key_y: str = "labels",
         backend: type[CurvatureInterface] | None = None,
@@ -117,6 +120,7 @@ class LLLaplace(ParametricLaplace):
             prior_mean=0.0,
             temperature=temperature,
             enable_backprop=enable_backprop,
+            logit_class_dim=logit_class_dim,
             dict_key_x=dict_key_x,
             dict_key_y=dict_key_y,
             backend=backend,
@@ -272,7 +276,7 @@ class LLLaplace(ParametricLaplace):
         fs = torch.stack(fs)
 
         if self.likelihood == Likelihood.CLASSIFICATION:
-            fs = torch.softmax(fs, dim=-1)
+            fs = torch.softmax(fs, dim=self.logit_class_dim)
 
         return fs
 
@@ -298,7 +302,7 @@ class LLLaplace(ParametricLaplace):
                 # Used the cached features for the rest iterations
                 logits = self.model.last_layer(feats)
 
-            py += torch.softmax(logits.detach(), dim=-1) / n_samples
+            py += torch.softmax(logits.detach(), dim=self.logit_class_dim) / n_samples
 
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
 
@@ -396,6 +400,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         temperature: float = 1.0,
         enable_backprop: bool = False,
         feature_reduction: FeatureReduction | str | None = None,
+        logit_class_dim: int = -1,
         dict_key_x: str = "inputs_id",
         dict_key_y: str = "labels",
         backend: type[CurvatureInterface] | None = None,
@@ -414,6 +419,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
             temperature,
             enable_backprop,
             feature_reduction,
+            logit_class_dim,
             dict_key_x,
             dict_key_y,
             backend,
