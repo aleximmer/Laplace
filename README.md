@@ -54,8 +54,13 @@ PyTorch version 2.0 and up is also required for full compatibility.
 To install laplace with `pip`, run the following:
 
 ```bash
-pip install laplace-torch
+pip install --upgrade pip wheel packaging
+pip install git+https://github.com/aleximmer/laplace.git@0.2
 ```
+
+> [!CAUTION]
+> Unfortunately, we lost our PyPI account and so running `pip install laplace-torch`
+> only installs the previous version (0.1)!
 
 For development purposes, clone the repository and then install:
 
