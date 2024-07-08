@@ -53,7 +53,7 @@ def test_sod_data_loader(reg_loader, model):
 
 def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     C = model.output_size
-    func_la = FunctionalLaplace(model, "regression", M, diagonal_kernel=False)
+    func_la = FunctionalLaplace(model, "regression", M, independent_outputs=False)
     func_la.n_outputs = C
     func_la.batch_size = batch_size
 
@@ -112,7 +112,7 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
 
 def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=2):
     C = model.output_size
-    func_la = FunctionalLaplace(model, "regression", M, diagonal_kernel=True)
+    func_la = FunctionalLaplace(model, "regression", M, independent_outputs=True)
     func_la.n_outputs = C
     func_la.batch_size = batch_size
 
@@ -240,9 +240,9 @@ def test_gp_kernel(
     func_la = FunctionalLaplace(
         model,
         "regression",
-        num_data=X.shape[0],
+        n_subset=X.shape[0],
         prior_precision=1.0,
-        diagonal_kernel=False,
+        independent_outputs=False,
     )
     func_la.prior_factor_sod = 1.0
     func_la.n_outputs = y.shape[-1]
@@ -276,7 +276,7 @@ def test_gp_kernel(
         expected_full_kernel, full_kernel.to(expected_full_kernel.dtype)
     )
 
-    func_la.diagonal_kernel = True
+    func_la.independent_outputs = True
 
     if kernel_type == "kernel_star":
         block_diag_kernel = kernel(jacobians)

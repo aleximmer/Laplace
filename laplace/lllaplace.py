@@ -483,7 +483,7 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ("last_layer", "diag")
-    
+
     def functional_variance_fast(self, X):
         f_mu, phi = self.model.forward_with_features(X)
         k = f_mu.shape[-1]  # num_classes
@@ -503,7 +503,7 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
 
         return f_mu, f_var
 
-      
+
 class FunctionalLLLaplace(FunctionalLaplace):
     """Here not much changes in terms of GP inference compared to FunctionalLaplace class.
     Since now we treat only the last layer probabilistically and the rest of the network is used as a "fixed feature
@@ -521,7 +521,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        num_data: int,
+        n_subset: int,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -533,13 +533,13 @@ class FunctionalLLLaplace(FunctionalLaplace):
         last_layer_name: str = None,
         backend: type[CurvatureInterface] | None = BackPackGGN,
         backend_kwargs: dict[str, Any] | None = None,
-        diagonal_kernel: bool = False,
+        independent_outputs: bool = False,
         seed: int = 0,
     ):
         super().__init__(
             model,
             likelihood,
-            num_data=num_data,
+            n_subset=n_subset,
             sigma_noise=sigma_noise,
             prior_precision=prior_precision,
             prior_mean=0.0,
@@ -549,7 +549,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
             dict_key_x=dict_key_x,
             dict_key_y=dict_key_y,
             backend_kwargs=backend_kwargs,
-            diagonal_kernel=diagonal_kernel,
+            independent_outputs=independent_outputs,
             seed=seed,
         )
         self._last_layer_name = last_layer_name

@@ -117,13 +117,13 @@ def test_serialize(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors_functional)
 def test_serialize_functional(laplace, model, reg_loader):
-    la = laplace(model, "regression", num_data=10)
+    la = laplace(model, "regression", n_subset=10)
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model, "regression", num_data=10)
+    la2 = laplace(model, "regression", n_subset=10)
     la2.load_state_dict(torch.load("state_dict.bin"))
 
     assert la.sigma_noise == la2.sigma_noise
@@ -171,7 +171,7 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors_functional)
 def test_serialize_no_pickle_functional(laplace, model, reg_loader):
-    la = laplace(model, "regression", num_data=10)
+    la = laplace(model, "regression", n_subset=10)
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231

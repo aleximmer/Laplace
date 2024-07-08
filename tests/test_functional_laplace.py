@@ -24,13 +24,13 @@ torch.manual_seed(711)
 
 
 @pytest.mark.parametrize(
-    "laplace,diagonal_kernel",
+    "laplace,independent_outputs",
     product(
         [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
         [True, False],
     ),
 )
-def test_gp_equivalence_regression(laplace, diagonal_kernel):
+def test_gp_equivalence_regression(laplace, independent_outputs):
     X_train, y_train, train_loader, X_test = toy_regression_dataset_1d(
         sigma=true_sigma_noise, batch_size=60
     )
@@ -44,9 +44,9 @@ def test_gp_equivalence_regression(laplace, diagonal_kernel):
     functional_gp_la = functional_laplace(
         model,
         "regression",
-        num_data=M,
+        n_subset=M,
         sigma_noise=true_sigma_noise,
-        diagonal_kernel=diagonal_kernel,
+        independent_outputs=independent_outputs,
         prior_precision=2.0,
     )
     full_la.fit(train_loader)
@@ -78,9 +78,9 @@ def test_gp_equivalence_regression_multivariate(
     functional_gp_la = functional_laplace(
         model,
         "regression",
-        num_data=len(X_train),
+        n_subset=len(X_train),
         sigma_noise=true_sigma_noise,
-        diagonal_kernel=False,
+        independent_outputs=False,
         prior_precision=2.0,
     )
     full_la.fit(train_loader)
@@ -95,14 +95,14 @@ def test_gp_equivalence_regression_multivariate(
 
 
 @pytest.mark.parametrize(
-    "laplace,diagonal_kernel,gp_backend",
+    "laplace,independent_outputs,gp_backend",
     product(
         [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
         [True, False],
         [BackPackGGN, AsdlGGN, CurvlinopsGGN],
     ),
 )
-def test_gp_equivalence_classification(laplace, diagonal_kernel, gp_backend, c=2):
+def test_gp_equivalence_classification(laplace, independent_outputs, gp_backend, c=2):
     X_train, y_train, train_loader, X_test = toy_classification_dataset(
         batch_size=60, in_dim=4, out_dim=c
     )
@@ -113,8 +113,8 @@ def test_gp_equivalence_classification(laplace, diagonal_kernel, gp_backend, c=2
     functional_gp_la = functional_laplace(
         model,
         "classification",
-        num_data=len(X_train),
-        diagonal_kernel=diagonal_kernel,
+        n_subset=len(X_train),
+        independent_outputs=independent_outputs,
         prior_precision=1.0,
         backend=gp_backend,
     )

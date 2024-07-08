@@ -619,6 +619,8 @@ class BaseLaplace:
         )
 
         if likelihood == Likelihood.REGRESSION:
+            if diagonal_output and not joint:
+                f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
             return f_mu, f_var
 
         if link_approx == LinkApprox.MC:
@@ -1946,7 +1948,7 @@ class FunctionalLaplace(BaseLaplace):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
-        num_data: int,
+        n_subset: int,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -1956,7 +1958,7 @@ class FunctionalLaplace(BaseLaplace):
         dict_key_y="labels",
         backend: type[CurvatureInterface] | None = BackPackGGN,
         backend_kwargs: dict[str, Any] | None = None,
-        diagonal_kernel: bool = False,
+        independent_outputs: bool = False,
         seed: int = 0,
     ):
         assert backend in [BackPackGGN, AsdlGGN, CurvlinopsGGN]
@@ -1976,8 +1978,8 @@ class FunctionalLaplace(BaseLaplace):
         )
         self.enable_backprop = enable_backprop
 
-        self.num_data = num_data
-        self.diagonal_kernel = diagonal_kernel
+        self.n_subset = n_subset
+        self.independent_outputs = independent_outputs
         self.seed = seed
 
         self.K_MM = None
@@ -2014,14 +2016,14 @@ class FunctionalLaplace(BaseLaplace):
         this is a list of C \((M,M\)) tensors for diagonal kernel and \((M x C, M x C)\)
         otherwise.
         """
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             self.K_MM = [
-                torch.empty(size=(self.num_data, self.num_data), device=self._device)
+                torch.empty(size=(self.n_subset, self.n_subset), device=self._device)
                 for _ in range(self.n_outputs)
             ]
         else:
             self.K_MM = torch.empty(
-                size=(self.num_data * self.n_outputs, self.num_data * self.n_outputs),
+                size=(self.n_subset * self.n_outputs, self.n_subset * self.n_outputs),
                 device=self._device,
             )
 
@@ -2033,14 +2035,14 @@ class FunctionalLaplace(BaseLaplace):
         See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
         Equation 15 for more information.
         """
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             self.Sigma_inv = [
-                torch.empty(size=(self.num_data, self.num_data), device=self._device)
+                torch.empty(size=(self.n_subset, self.n_subset), device=self._device)
                 for _ in range(self.n_outputs)
             ]
         else:
             self.Sigma_inv = torch.empty(
-                size=(self.num_data * self.n_outputs, self.num_data * self.n_outputs),
+                size=(self.n_subset * self.n_outputs, self.n_subset * self.n_outputs),
                 device=self._device,
             )
 
@@ -2048,24 +2050,24 @@ class FunctionalLaplace(BaseLaplace):
         """Given the kernel matrix between the i-th and the j-th batch, stores it in the
         corresponding position in self.K_MM.
         """
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             for c in range(self.n_outputs):
                 self.K_MM[c][
-                    i * self.batch_size : min((i + 1) * self.batch_size, self.num_data),
-                    j * self.batch_size : min((j + 1) * self.batch_size, self.num_data),
+                    i * self.batch_size : min((i + 1) * self.batch_size, self.n_subset),
+                    j * self.batch_size : min((j + 1) * self.batch_size, self.n_subset),
                 ] = K_batch[:, :, c]
                 if i != j:
                     self.K_MM[c][
                         j * self.batch_size : min(
-                            (j + 1) * self.batch_size, self.num_data
+                            (j + 1) * self.batch_size, self.n_subset
                         ),
                         i * self.batch_size : min(
-                            (i + 1) * self.batch_size, self.num_data
+                            (i + 1) * self.batch_size, self.n_subset
                         ),
                     ] = torch.transpose(K_batch[:, :, c], 0, 1)
         else:
             bC = self.batch_size * self.n_outputs
-            MC = self.num_data * self.n_outputs
+            MC = self.n_subset * self.n_outputs
             self.K_MM[
                 i * bC : min((i + 1) * bC, MC), j * bC : min((j + 1) * bC, MC)
             ] = K_batch
@@ -2095,7 +2097,7 @@ class FunctionalLaplace(BaseLaplace):
         # Concatenate batch dimension and discard non-diagonal entries.
         L_diag = torch.diagonal(torch.cat(lambdas, dim=0), dim1=-2, dim2=-1).reshape(-1)
 
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             return [L_diag[i :: self.n_outputs] for i in range(self.n_outputs)]
         else:
             return L_diag
@@ -2111,7 +2113,7 @@ class FunctionalLaplace(BaseLaplace):
         As the diagonal approximation is performed with \Lambda_{MM} (which is stored in self.L),
         the code is greatly simplified.
         """
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             self.Sigma_inv = [
                 torch.linalg.cholesky(
                     self.gp_kernel_prior_variance * self.K_MM[c]
@@ -2135,7 +2137,7 @@ class FunctionalLaplace(BaseLaplace):
             dataset=train_loader.dataset,
             batch_size=train_loader.batch_size,
             sampler=SoDSampler(
-                N=len(train_loader.dataset), M=self.num_data, seed=self.seed
+                N=len(train_loader.dataset), M=self.n_subset, seed=self.seed
             ),
             shuffle=False,
         )
@@ -2181,7 +2183,7 @@ class FunctionalLaplace(BaseLaplace):
         if (
             self.likelihood == "regression"
             and self.n_outputs > 1
-            and self.diagonal_kernel
+            and self.independent_outputs
         ):
             warnings.warn(
                 "Using FunctionalLaplace with the diagonal approximation of a GP kernel is not recommended "
@@ -2192,12 +2194,12 @@ class FunctionalLaplace(BaseLaplace):
         self.n_data = N
 
         assert (
-            self.num_data <= N
+            self.n_subset <= N
         ), "`num_data` must be less than or equal to the original number of data points."
 
         train_loader = self._get_SoD_data_loader(train_loader)
         self.train_loader = train_loader
-        self._prior_factor_sod = self.num_data / self.n_data
+        self._prior_factor_sod = self.n_subset / self.n_data
 
         self._init_K_MM()
         self._init_Sigma_inv()
@@ -2436,7 +2438,7 @@ class FunctionalLaplace(BaseLaplace):
 
         # If the considered kernel is diagonal, embed the covariances.
         # from (N*, C) -> (N*, C, C)
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             f_var = torch.diag_embed(f_var)
 
         return f_var
@@ -2473,7 +2475,7 @@ class FunctionalLaplace(BaseLaplace):
 
         # If the considered kernel is diagonal, embed the covariances.
         # from (N*, N*, C) -> (N*, N*, C, C)
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             f_var = torch.diag_embed(f_var)
 
         # Reshape from (N*, N*, C, C) to (N*xC, N*xC)
@@ -2504,7 +2506,7 @@ class FunctionalLaplace(BaseLaplace):
         # Shape (N_test, N, C, C) or (N_test, N, C) for diagonal
         K_M_star = torch.cat(K_M_star, dim=1)
 
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             prods = []
             for c in range(self.n_outputs):
                 # Compute K_{*M}L^{-1}
@@ -2546,7 +2548,7 @@ class FunctionalLaplace(BaseLaplace):
         log determinant term := \\( \log | K + \\sigma_2 I | \\)
         """
         if self.likelihood == Likelihood.REGRESSION:
-            if self.diagonal_kernel:
+            if self.independent_outputs:
                 log_det = torch.tensor(0.0, requires_grad=True)
                 for c in range(self.n_outputs):
                     log_det = log_det + torch.logdet(
@@ -2562,7 +2564,7 @@ class FunctionalLaplace(BaseLaplace):
                     * self.sigma_noise.square()
                 )
         else:
-            if self.diagonal_kernel:
+            if self.independent_outputs:
                 log_det = torch.tensor(0.0, requires_grad=True)
                 for c in range(self.n_outputs):
                     W = torch.sqrt(self._H_factor * self.L[c])
@@ -2598,7 +2600,7 @@ class FunctionalLaplace(BaseLaplace):
             noise = self.sigma_noise.square()
         else:
             noise = eps
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             scatter = torch.tensor(0.0, requires_grad=True)
             for c in range(self.n_outputs):
                 m = self.K_MM[c].shape[0]
@@ -2685,7 +2687,7 @@ class FunctionalLaplace(BaseLaplace):
         """
         jacobians_2, _ = self._jacobians(batch)
         P = jacobians.shape[-1]  # nr model params
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             kernel = torch.empty(
                 (jacobians.shape[0], jacobians_2.shape[0], self.n_outputs),
                 device=jacobians.device,
@@ -2717,13 +2719,13 @@ class FunctionalLaplace(BaseLaplace):
 
         """
         if joint:
-            if self.diagonal_kernel:
+            if self.independent_outputs:
                 kernel = torch.einsum("acp,bcp->abcc", jacobians, jacobians)
             else:
                 kernel = torch.einsum("acp,bep->abce", jacobians, jacobians)
 
         else:
-            if self.diagonal_kernel:
+            if self.independent_outputs:
                 kernel = torch.empty(
                     (jacobians.shape[0], self.n_outputs), device=jacobians.device
                 )
@@ -2749,7 +2751,7 @@ class FunctionalLaplace(BaseLaplace):
             K_batch_star with shape (b1, b2, C, C)
         """
         jacobians_2, _ = self._jacobians(batch)
-        if self.diagonal_kernel:
+        if self.independent_outputs:
             kernel = torch.empty(
                 (jacobians.shape[0], jacobians_2.shape[0], self.n_outputs),
                 device=jacobians.device,
@@ -2867,8 +2869,8 @@ class FunctionalLaplace(BaseLaplace):
     def state_dict(self) -> dict:
         state_dict = {
             "mean": self.mean,
-            "num_data": self.num_data,
-            "diagonal_kernel": self.diagonal_kernel,
+            "num_data": self.n_subset,
+            "diagonal_kernel": self.independent_outputs,
             "seed": self.seed,
             "K_MM": self.K_MM,
             "Sigma_inv": self.Sigma_inv,
@@ -2923,8 +2925,8 @@ class FunctionalLaplace(BaseLaplace):
             )
 
         self.mean = state_dict["mean"]
-        self.num_data = state_dict["num_data"]
-        self.diagonal_kernel = state_dict["diagonal_kernel"]
+        self.n_subset = state_dict["num_data"]
+        self.independent_outputs = state_dict["diagonal_kernel"]
         self.seed = state_dict["seed"]
         self.K_MM = state_dict["K_MM"]
         self.Sigma_inv = state_dict["Sigma_inv"]
