@@ -10,6 +10,7 @@ import torch
 import torchmetrics
 import tqdm
 from torch import nn
+from torch.func import functional_call, jvp, vjp, vmap
 from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
@@ -1130,6 +1131,48 @@ class ParametricLaplace(BaseLaplace):
             output covariance `(batch, outputs, outputs)`
         """
         raise NotImplementedError
+
+    def functional_variance_implicit(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute functional variance for the `glm` predictive implicitly.
+
+        Parameters
+        ----------
+        x: torch.Tensor
+            test points of shape `(batch, dim)`
+
+        Returns
+        -------
+        f_mean: torch.Tensor
+            output mean `(batch, outputs)`
+
+        f_var: torch.Tensor
+            output variance `(batch, outputs)`
+        """
+        buffers_dict: dict[str, torch.Tensor] = {
+            k: v for k, v in self.model.named_buffers()
+        }
+
+        def model_fn_params_only(params_dict):
+            out = functional_call(self.model, (params_dict, buffers_dict), x)
+            return out, out
+
+        params_dict: dict[str, nn.Parameter] = {
+            k: v for k, v in self.model.named_parameters() if v.requires_grad
+        }
+
+        _, vjpfunc = vjp(model_fn_params_only, params_dict, has_aux=True)
+        _, jvpfunc = jvp(model_fn_params_only, params_dict, has_aux=True)
+
+        def JSJT(v):
+            v, f = vjpfunc(v)
+            v = self.posterior_covariance @ v
+            v, _ = jvpfunc(v)
+            return f, v
+
+        f_mean, func_var = vmap(JSJT)(torch.eye(self.n_outputs, device=self._device))
+        return f_mean, func_var
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
         """Compute functional covariance for the `'glm'` predictive:
