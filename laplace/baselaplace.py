@@ -2333,7 +2333,7 @@ class FunctionalLaplace(BaseLaplace):
             )
 
         if self._recompute_Sigma is True:
-            Warning(
+            warnings.warn(
                 "The prior precision has been changed since fit. "
                 + "Re-compututing its value..."
             )
