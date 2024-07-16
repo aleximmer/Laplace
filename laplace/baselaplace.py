@@ -223,7 +223,7 @@ class BaseLaplace:
             c = (
                 self.n_data
                 * self.n_outputs
-                * torch.log(torch.tensor(self.sigma_noise) * sqrt(2 * pi))
+                * torch.log(torch.as_tensor(self.sigma_noise) * sqrt(2 * pi))
             )
             return factor * self.loss - c
         else:
