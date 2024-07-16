@@ -94,9 +94,11 @@ class BackPackInterface(CurvatureInterface):
         CTX.remove_hooks()
         _cleanup(model)
         if model.output_size > 1:
-            return torch.stack(to_stack, dim=2).transpose(1, 2), f
+            J = torch.stack(to_stack, dim=2).transpose(1, 2)
         else:
-            return Jk.unsqueeze(-1).transpose(1, 2), f
+            J = Jk.unsqueeze(-1).transpose(1, 2)
+
+        return (J, f) if enable_backprop else (J.detach(), f.detach())
 
     def gradients(
         self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor

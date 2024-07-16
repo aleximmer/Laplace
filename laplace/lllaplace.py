@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 from copy import deepcopy
-from typing import Any
+from typing import Any, Union
 
 import torch
 from torch import nn
@@ -12,15 +12,23 @@ from torch.utils.data import DataLoader
 from laplace.baselaplace import (
     DiagLaplace,
     FullLaplace,
+    FunctionalLaplace,
     KronLaplace,
-    Likelihood,
     ParametricLaplace,
 )
+from laplace.curvature import BackPackGGN
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.utils import FeatureExtractor, Kron
+from laplace.utils.enums import Likelihood
 from laplace.utils.feature_extractor import FeatureReduction
 
-__all__ = ["LLLaplace", "FullLLLaplace", "KronLLLaplace", "DiagLLLaplace"]
+__all__ = [
+    "LLLaplace",
+    "FullLLLaplace",
+    "KronLLLaplace",
+    "DiagLLLaplace",
+    "FunctionalLLLaplace",
+]
 
 
 class LLLaplace(ParametricLaplace):
@@ -206,7 +214,7 @@ class LLLaplace(ParametricLaplace):
         diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if joint:
-            Js, f_mu = self.backend.last_layer_jacobians(X)
+            Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
         elif diagonal_output:
@@ -214,10 +222,10 @@ class LLLaplace(ParametricLaplace):
                 f_mu, f_var = self.functional_variance_fast(X)
             except NotImplementedError:
                 # WARN: Fallback if not implemented
-                Js, f_mu = self.backend.last_layer_jacobians(X)
+                Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
                 f_var = self.functional_variance(Js).diagonal(dim1=-2, dim2=-1)
         else:
-            Js, f_mu = self.backend.last_layer_jacobians(X)
+            Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
             f_var = self.functional_variance(Js)
 
         return (
@@ -239,7 +247,7 @@ class LLLaplace(ParametricLaplace):
         f_var_diag: torch.Tensor of shape (batch_size, num_outputs)
             Corresponding to the diagonal of the covariance matrix of the outputs
         """
-        Js, f_mu = self.backend.last_layer_jacobians(X)
+        Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
         f_cov = self.functional_variance(Js)  # No trick possible for Full Laplace
         f_var = torch.diagonal(f_cov, dim1=-2, dim2=-1)
         return f_mu, f_var
@@ -494,3 +502,138 @@ class DiagLLLaplace(LLLaplace, DiagLaplace):
             f_var += self.posterior_variance[-k:].reshape(1, k)
 
         return f_mu, f_var
+
+
+class FunctionalLLLaplace(FunctionalLaplace):
+    """Here not much changes in terms of GP inference compared to FunctionalLaplace class.
+    Since now we treat only the last layer probabilistically and the rest of the network is used as a "fixed feature
+    extractor", that means that the \\(X \in \mathbb{R}^{M \\times D}\\) in GP inference changes
+    to \\(\\tilde{X} \\in \mathbb{R}^{M \\times l_{n-1}} \\),  where \\(l_{n-1}\\) is the dimension of the output
+    of the penultimate NN layer.
+
+    See `FunctionalLaplace` for the full interface.
+    """
+
+    # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
+    _key = ("last_layer", "gp")
+
+    def __init__(
+        self,
+        model: nn.Module,
+        likelihood: Likelihood | str,
+        n_subset: int,
+        sigma_noise: float | torch.Tensor = 1.0,
+        prior_precision: float | torch.Tensor = 1.0,
+        prior_mean: float | torch.Tensor = 0.0,
+        temperature: float = 1.0,
+        enable_backprop: bool = False,
+        feature_reduction: FeatureReduction = None,
+        dict_key_x: str = "inputs_id",
+        dict_key_y: str = "labels",
+        last_layer_name: str = None,
+        backend: type[CurvatureInterface] | None = BackPackGGN,
+        backend_kwargs: dict[str, Any] | None = None,
+        independent_outputs: bool = False,
+        seed: int = 0,
+    ):
+        super().__init__(
+            model,
+            likelihood,
+            n_subset=n_subset,
+            sigma_noise=sigma_noise,
+            prior_precision=prior_precision,
+            prior_mean=0.0,
+            temperature=temperature,
+            backend=backend,
+            enable_backprop=enable_backprop,
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
+            backend_kwargs=backend_kwargs,
+            independent_outputs=independent_outputs,
+            seed=seed,
+        )
+        self._last_layer_name = last_layer_name
+        self.model = FeatureExtractor(
+            deepcopy(model),
+            last_layer_name=last_layer_name,
+            enable_backprop=enable_backprop,
+            feature_reduction=feature_reduction,
+        )
+        if self.model.last_layer is None:
+            self.n_params = None
+            self.n_layers = None
+            # ignore checks of prior mean setter temporarily, check on .fit()
+            self._prior_precision = prior_precision
+            self._prior_mean = prior_mean
+        else:
+            self.n_params = len(self.mean)
+            self.n_layers = len(list(self.model.last_layer.parameters()))
+            self.prior_precision = prior_precision
+            self.prior_mean = prior_mean
+        self._backend_kwargs["last_layer"] = True
+
+    def fit(self, train_loader: DataLoader) -> None:
+        """Fit the Laplace approximation of a GP posterior.
+
+        Parameters
+        ----------
+        train_loader : torch.data.utils.DataLoader
+            `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
+            `train_loader.batch_size` needs to be set to access \\(b\\) batch_size
+        """
+        self.model.eval()
+
+        if self.model.last_layer is None:
+            self.data = next(iter(train_loader))
+            with torch.no_grad():
+                self._find_last_layer(self.data)
+            self.mean = parameters_to_vector(
+                self.model.last_layer.parameters()
+            ).detach()
+            self.n_params = len(self.mean)
+            self.n_layers = len(list(self.model.last_layer.parameters()))
+            # here, check the already set prior precision again
+            self.prior_precision = self._prior_precision
+            self.prior_mean = self._prior_mean
+
+        super().fit(train_loader)
+
+    def _jacobians(self, X: torch.Tensor, enable_backprop: bool = None) -> torch.Tensor:
+        """
+        A helper function to compute jacobians.
+        """
+        if enable_backprop is None:
+            enable_backprop = self.enable_backprop
+        return self.backend.last_layer_jacobians(X, enable_backprop=enable_backprop)
+
+    @torch.no_grad()
+    def _find_last_layer(self, data: Union[torch.Tensor, MutableMapping]) -> None:
+        # To support Huggingface dataset
+        if isinstance(data, MutableMapping):
+            self.model.find_last_layer(data)
+        else:
+            X = data[0]
+            try:
+                self.model.find_last_layer(X[:1].to(self._device))
+            except (TypeError, AttributeError):
+                self.model.find_last_layer(X.to(self._device))
+
+    def state_dict(self) -> dict:
+        state_dict = super().state_dict()
+        state_dict["data"] = getattr(self, "data", None)  # None if not present
+        state_dict["_last_layer_name"] = self._last_layer_name
+        return state_dict
+
+    def load_state_dict(self, state_dict: dict):
+        if self._last_layer_name != state_dict["_last_layer_name"]:
+            raise ValueError("Different `last_layer_name` detected!")
+
+        self.data = state_dict["data"]
+        if self.data is not None:
+            self._find_last_layer(self.data)
+
+        super().load_state_dict(state_dict)
+
+        params = parameters_to_vector(self.model.last_layer.parameters()).detach()
+        self.n_params = len(params)
+        self.n_layers = len(list(self.model.last_layer.parameters()))

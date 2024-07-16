@@ -22,6 +22,7 @@ from laplace.utils.subnetmask import (
 )
 from laplace.utils.swag import fit_diagonal_swag_var
 from laplace.utils.utils import (
+    SoDSampler,
     _is_batchnorm,
     _is_valid_scalar,
     block_diag,
@@ -47,6 +48,7 @@ __all__ = [
     "symeig",
     "block_diag",
     "normal_samples",
+    "SoDSampler",
     "_is_batchnorm",
     "_is_valid_scalar",
     "expand_prior_precision",

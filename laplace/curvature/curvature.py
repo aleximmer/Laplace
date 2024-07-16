@@ -163,7 +163,7 @@ class CurvatureInterface:
         if self.model.last_layer.bias is not None:
             Js = torch.cat([Js, identity], dim=2)
 
-        return Js, f
+        return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
     def gradients(
         self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor

@@ -12,7 +12,7 @@ from torch import nn
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.nn.utils import parameters_to_vector
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 from torchmetrics import Metric
 
 import laplace
@@ -28,6 +28,7 @@ __all__ = [
     "symeig",
     "block_diag",
     "expand_prior_precision",
+    "SoDSampler",
 ]
 
 
@@ -244,6 +245,18 @@ def block_diag(blocks: list[torch.Tensor]) -> torch.Tensor:
         M[p_cur : p_cur + p_block, p_cur : p_cur + p_block] = block
         p_cur += p_block
     return M
+
+
+class SoDSampler(Sampler):
+    def __init__(self, N, M, seed: int = 0):
+        rng = np.random.default_rng(seed)
+        self.indices = torch.tensor(rng.choice(list(range(N)), M, replace=False))
+
+    def __iter__(self):
+        return (i for i in self.indices)
+
+    def __len__(self):
+        return len(self.indices)
 
 
 def expand_prior_precision(prior_prec: torch.Tensor, model: nn.Module) -> torch.Tensor:
