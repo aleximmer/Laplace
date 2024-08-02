@@ -818,3 +818,56 @@ def test_subnet_marginal_likelihood(
 
     lap.fit(loader)
     lap.log_marginal_likelihood()
+
+
+@pytest.mark.parametrize(
+    "likelihood,hessian_structure", product(likelihoods, hessian_structures)
+)
+def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
+    loader = class_loader if likelihood == "classification" else reg_loader
+
+    subnetmask = RandomSubnetMask(model=model, n_params_subnet=10)
+    subnetmask.select()
+
+    lap = Laplace(
+        model,
+        likelihood=likelihood,
+        subset_of_weights="subnetwork",
+        subnetwork_indices=subnetmask.indices,
+        hessian_structure=hessian_structure,
+    )
+    lap.fit(loader)
+
+    n_samples = 20
+    generator = torch.Generator()
+    generator.manual_seed(123)
+    generator_state = generator.get_state()
+
+    # Generate different samples.
+    for gen in [generator, None]:
+        samples_1 = lap.sample(n_samples=n_samples, generator=gen)
+        samples_2 = lap.sample(n_samples=n_samples, generator=gen)
+        assert not (samples_1 == samples_2).all()
+    assert samples_1.shape == (n_samples, model.n_params)
+
+    # Test that generator gets used.
+    generator.set_state(generator_state)
+    samples_1 = lap.sample(n_samples=n_samples, generator=generator)
+    generator.set_state(generator_state)
+    samples_2 = lap.sample(n_samples=n_samples, generator=generator)
+    assert (samples_1 == samples_2).all()
+
+    # Test that only model params indexed by subnetmask.indices vary across samples.
+    model_params = parameters_to_vector(model.parameters())
+    fixed_mask = torch.ones(model.n_params, dtype=bool)
+    fixed_mask[subnetmask.indices] = False
+    n_fixed = model.n_params - lap.n_params_subnet
+    assert n_fixed == fixed_mask.nonzero().shape[0]
+    assert samples_1[:, fixed_mask].shape == (n_samples, n_fixed)
+    assert (
+        samples_1[:, fixed_mask] == model_params[fixed_mask].repeat(n_samples, 1)
+    ).all()
+    assert (samples_1[:, ~fixed_mask] == samples_1[:, subnetmask.indices]).all()
+    assert not (
+        samples_1[:, ~fixed_mask] == model_params[~fixed_mask].repeat(n_samples, 1)
+    ).all()
