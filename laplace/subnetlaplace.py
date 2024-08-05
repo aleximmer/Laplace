@@ -4,7 +4,6 @@ from typing import Type
 
 import torch
 from torch import nn
-from torch.distributions import MultivariateNormal
 
 from laplace.baselaplace import DiagLaplace, FullLaplace, Likelihood, ParametricLaplace
 from laplace.curvature import EFInterface, GGNInterface
@@ -192,9 +191,10 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
     def sample(
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        # sample only subnetwork parameters and set all other parameters to their MAP estimates
-        dist = MultivariateNormal(loc=self.mean_subnet, scale_tril=self.posterior_scale)
-        subnet_samples = dist.sample((n_samples,))
+        samples = torch.randn(
+            n_samples, self.n_params_subnet, device=self._device, generator=generator
+        )
+        subnet_samples = self.mean_subnet[None, ...] + samples @ self.posterior_scale
         return self.assemble_full_samples(subnet_samples)
 
 
