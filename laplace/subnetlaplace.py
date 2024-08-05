@@ -4,7 +4,6 @@ from typing import Type
 
 import torch
 from torch import nn
-from torch.distributions import MultivariateNormal
 
 from laplace.baselaplace import DiagLaplace, FullLaplace, Likelihood, ParametricLaplace
 from laplace.curvature import EFInterface, GGNInterface
