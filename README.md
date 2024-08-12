@@ -248,6 +248,9 @@ a subnetwork within a neural network (while keeping all other parameters
 fixed at their MAP estimates), as proposed in [11]. It also exemplifies
 different ways to specify the subnetwork to perform inference over.
 
+First, we make use of `SubnetLaplace`, where we specify the subnetwork by
+generating a list of indices for the active model parameters.
+
 ```python
 from laplace import Laplace
 
@@ -279,6 +282,27 @@ la = Laplace(model, "classification",
              subnetwork_indices=subnetwork_indices)
 la.fit(train_loader)
 ```
+
+Besides `SubnetLaplace`, you can, as already mentioned, also treat the last
+layer only using `Laplace(..., subset_of_weights='last_layer')`, which uses
+`LLLaplace`. As a third method, you may define a subnetwork by disabling
+gradients of fixed model parameters. The different methods target different use
+cases. Each method has pros and cons, please see [this
+discussion](https://github.com/aleximmer/Laplace/issues/217#issuecomment-2278311460)
+for details. In summary
+
+* Disable-grad: General method to perform Laplace on specific types of
+  layer/parameter, e.g. in an LLM with LoRA. Can be used to emulate `LLLaplace`
+  as well. Always use `subset_of_weights='all'` for this method.
+    * subnet selection by disabling grads is more efficient than
+      `SubnetLaplace` since it avoids calculating full Jacobians first
+    * disabling grads can only be performed on `Parameter` level and not for
+      individual weights, so this doesn't cover all cases that `SubnetLaplace`
+      offers such as `Largest*SubnetMask` or `RandomSubnetMask`
+* `LLLaplace`: last-layer specific code with improved performance (#145)
+* `SubnetLaplace`: more fine-grained partitioning such as
+  `LargestMagnitudeSubnetMask`
+
 
 ### Serialization
 
