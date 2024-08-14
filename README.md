@@ -4,8 +4,8 @@
 ![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest.yml/badge.svg)
 ![lint](https://github.com/aleximmer/laplace/actions/workflows/lint-ruff.yml/badge.svg)
 ![format](https://github.com/aleximmer/laplace/actions/workflows/format-ruff.yml/badge.svg)
-</div>
 
+</div>
 
 The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
@@ -49,29 +49,30 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Setup
 
-For full compatibility, install this package in a fresh virtual env.
-We assume Python >= 3.9 since lower versions are [(soon to be) deprecated](https://devguide.python.org/versions/).
-PyTorch version 2.0 and up is also required for full compatibility.
+> [!IMPORTANT]
+> We assume Python >= 3.9 since lower versions are [(soon to be) deprecated](https://devguide.python.org/versions/).
+> PyTorch version 2.0 and up is also required for full compatibility.
+
 To install laplace with `pip`, run the following:
 
 ```bash
-pip install --upgrade pip wheel packaging
-pip install git+https://github.com/aleximmer/laplace.git@0.2
+pip install laplace-torch
 ```
 
-> [!CAUTION]
-> Unfortunately, we lost our PyPI account and so running `pip install laplace-torch`
-> only installs the previous version (0.1)!
-
-For development purposes, clone the repository and then install:
+For development purposes, e.g. if you would like to make contributions,
+clone the repository and then install:
 
 ```bash
 # first install the build system:
 pip install --upgrade pip wheel packaging
 
-# then install the develop 
+# then install the develop
 pip install -e ".[all]"
 ```
+
+> [!NOTE]
+> See [contributing guideline](#contributing).
+> We're looking forward to your contributions!
 
 ## Example usage
 
@@ -112,9 +113,9 @@ la = Laplace(model, "classification",
              hessian_structure="diag")
 la.fit(train_loader)
 la.optimize_prior_precision(
-    method="gridsearch", 
-    pred_type="glm", 
-    link_approx="probit", 
+    method="gridsearch",
+    pred_type="glm",
+    link_approx="probit",
     val_loader=val_loader
 )
 
@@ -291,18 +292,17 @@ cases. Each method has pros and cons, please see [this
 discussion](https://github.com/aleximmer/Laplace/issues/217#issuecomment-2278311460)
 for details. In summary
 
-* Disable-grad: General method to perform Laplace on specific types of
+- Disable-grad: General method to perform Laplace on specific types of
   layer/parameter, e.g. in an LLM with LoRA. Can be used to emulate `LLLaplace`
   as well. Always use `subset_of_weights='all'` for this method.
-    * subnet selection by disabling grads is more efficient than
-      `SubnetLaplace` since it avoids calculating full Jacobians first
-    * disabling grads can only be performed on `Parameter` level and not for
-      individual weights, so this doesn't cover all cases that `SubnetLaplace`
-      offers such as `Largest*SubnetMask` or `RandomSubnetMask`
-* `LLLaplace`: last-layer specific code with improved performance (#145)
-* `SubnetLaplace`: more fine-grained partitioning such as
+  - subnet selection by disabling grads is more efficient than
+    `SubnetLaplace` since it avoids calculating full Jacobians first
+  - disabling grads can only be performed on `Parameter` level and not for
+    individual weights, so this doesn't cover all cases that `SubnetLaplace`
+    offers such as `Largest*SubnetMask` or `RandomSubnetMask`
+- `LLLaplace`: last-layer specific code with improved performance (#145)
+- `SubnetLaplace`: more fine-grained partitioning such as
   `LargestMagnitudeSubnetMask`
-
 
 ### Serialization
 
@@ -368,7 +368,7 @@ torch.load(..., map_location="cpu")
 
 The laplace package consists of two main components:
 
-1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'`, `'diag'` and `'gp'`). This results in _ten_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, `laplace.FunctionalLaplace` the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`,  `laplace.DiagLLLaplace` and `laplace.FunctionalLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), [`laplace.SubnetLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py) (which only supports `'full'` and `'diag'` Hessian approximations) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
+1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'`, `'diag'` and `'gp'`). This results in _ten_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, `laplace.FunctionalLaplace` the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`, `laplace.DiagLLLaplace` and `laplace.FunctionalLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), [`laplace.SubnetLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py) (which only supports `'full'` and `'diag'` Hessian approximations) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
 2. The backends in [`laplace.curvature`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/) which provide access to Hessian approximations of
    the corresponding sparsity structures, for example, the diagonal GGN.
 
