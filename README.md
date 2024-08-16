@@ -56,7 +56,7 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 To install laplace with `pip`, run the following:
 
 ```bash
-pip install git+https://github.com/kazukiosawa/asdl
+pip install git+https://github.com/kazukiosawa/asdl@v0.1a4
 pip install laplace-torch
 ```
 
