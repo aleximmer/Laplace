@@ -101,17 +101,8 @@ def test_subnet_laplace_init(model, likelihood):
             hessian_structure=hessian_structure,
         )
 
-    # subnet Laplace with kron or lowrank Hessians should raise errors
+    # subnet Laplace with kron Hessians should raise errors
     hessian_structure = "kron"
-    with pytest.raises(ValueError):
-        lap = Laplace(
-            model,
-            likelihood=likelihood,
-            subset_of_weights="subnetwork",
-            subnetwork_indices=subnetmask.indices,
-            hessian_structure=hessian_structure,
-        )
-    hessian_structure = "lowrank"
     with pytest.raises(ValueError):
         lap = Laplace(
             model,

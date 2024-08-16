@@ -11,7 +11,6 @@ class HessianStructure(str, Enum):
     FULL = "full"
     KRON = "kron"
     DIAG = "diag"
-    LOWRANK = "lowrank"
     GP = "gp"
 
 

@@ -21,27 +21,22 @@ from laplace import (
     KronLLLaplace,
     Laplace,
     LLLaplace,
-    LowRankLaplace,
     SubnetLaplace,
 )
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
 
-lrlaplace_param = pytest.param(
-    LowRankLaplace, marks=pytest.mark.xfail(reason="Unimplemented in the new ASDL")
-)
 flavors = [
     FullLaplace,
     KronLaplace,
     DiagLaplace,
-    lrlaplace_param,
     FullLLLaplace,
     KronLLLaplace,
     DiagLLLaplace,
 ]
 
-flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param]
+flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace]
 flavors_llla = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_subnet = [DiagSubnetLaplace, FullSubnetLaplace]
 flavors_functional = [FunctionalLaplace, FunctionalLLLaplace]

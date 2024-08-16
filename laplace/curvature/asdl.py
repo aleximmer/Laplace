@@ -26,7 +26,7 @@ EPS = 1e-6
 
 
 class AsdlInterface(CurvatureInterface):
-    """Interface for asdfghjkl backend."""
+    """Interface for ASDL backend."""
 
     def __init__(
         self,
@@ -53,7 +53,7 @@ class AsdlInterface(CurvatureInterface):
         enable_backprop: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute Jacobians \\(\\nabla_\\theta f(x;\\theta)\\) at current parameter \\(\\theta\\)
-        using asdfghjkl's gradient per output dimension.
+        using ASDL's gradient per output dimension.
 
         Parameters
         ----------
@@ -99,7 +99,7 @@ class AsdlInterface(CurvatureInterface):
         self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any], y: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute gradients \\(\\nabla_\\theta \\ell(f(x;\\theta, y)\\) at current parameter
-        \\(\\theta\\) using asdfghjkl's backend.
+        \\(\\theta\\) using ASDL's backend.
 
         Parameters
         ----------
@@ -316,7 +316,7 @@ class AsdlHessian(AsdlInterface):
 
 
 class AsdlGGN(AsdlInterface, GGNInterface):
-    """Implementation of the `GGNInterface` using asdfghjkl."""
+    """Implementation of the `GGNInterface` using ASDL."""
 
     def __init__(
         self,
@@ -339,7 +339,7 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 
 
 class AsdlEF(AsdlInterface, EFInterface):
-    """Implementation of the `EFInterface` using asdfghjkl."""
+    """Implementation of the `EFInterface` using ASDL."""
 
     def __init__(
         self,

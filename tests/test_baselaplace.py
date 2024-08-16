@@ -15,7 +15,7 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
-from laplace import DiagLaplace, FullLaplace, KronLaplace, LowRankLaplace
+from laplace import DiagLaplace, FullLaplace, KronLaplace
 from laplace.curvature import AsdlEF, AsdlGGN, BackPackGGN
 from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
@@ -24,7 +24,7 @@ from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace]
+flavors = [FullLaplace, KronLaplace, DiagLaplace]
 online_flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 
@@ -153,8 +153,6 @@ def test_laplace_init(laplace, model):
         H = lap.H.clone()
         lap._init_H()
         assert torch.allclose(H, lap.H)
-    elif laplace == LowRankLaplace:
-        assert lap.H is None
     else:
         H = [[k.clone() for k in kfac] for kfac in lap.H.kfacs]
         lap._init_H()
@@ -345,9 +343,6 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     lml = lml - 1 / 2 * theta @ prior_prec @ theta
     if laplace == DiagLaplace:
         log_det_post_prec = lap.posterior_precision.log().sum()
-    elif laplace == LowRankLaplace:
-        (U, eigval), p0 = lap.posterior_precision
-        log_det_post_prec = (U @ torch.diag(eigval) @ U.T + p0.diag()).logdet()
     else:
         log_det_post_prec = lap.posterior_precision.logdet()
     lml = lml + 1 / 2 * (prior_prec.logdet() - log_det_post_prec)
@@ -368,9 +363,6 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
         Sigma = lap.posterior_covariance
     elif laplace == KronLaplace:
         Sigma = lap.posterior_precision.to_matrix(exponent=-1)
-    elif laplace == LowRankLaplace:
-        (U, eigval), p0 = lap.posterior_precision
-        Sigma = (U @ torch.diag(eigval) @ U.T + p0.diag()).inverse()
     elif laplace == DiagLaplace:
         Sigma = torch.diag(lap.posterior_variance)
     Js, f = jacobians_naive(model, loader.dataset.tensors[0])

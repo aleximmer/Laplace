@@ -8,7 +8,6 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import DiagLaplace, FullLaplace, KronLaplace
 from laplace.curvature import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPackGGN
-from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 
 torch.manual_seed(240)
@@ -68,15 +67,6 @@ def test_incompatible_backend(laplace, lh, model):
 
     with pytest.raises(ValueError):
         laplace(model, lh, backend=BackPackEF)
-
-    with pytest.raises(ValueError):
-        laplace(model, lh, backend=AsdfghjklGGN)
-
-    with pytest.raises(ValueError):
-        laplace(model, lh, backend=AsdfghjklEF)
-
-    with pytest.raises(ValueError):
-        laplace(model, lh, backend=AsdfghjklHessian)
 
 
 @pytest.mark.parametrize("laplace", flavors)

@@ -13,7 +13,6 @@ from laplace.baselaplace import (
     FullLaplace,
     FunctionalLaplace,
     KronLaplace,
-    LowRankLaplace,
 )
 from laplace.laplace import Laplace
 from laplace.lllaplace import (
@@ -43,7 +42,6 @@ __all__ = [
     "KronLaplace",
     "DiagLaplace",
     "FunctionalLaplace",
-    "LowRankLaplace",  # all-weights
     "LLLaplace",  # base-class last-layer
     "FullLLLaplace",
     "KronLLLaplace",
