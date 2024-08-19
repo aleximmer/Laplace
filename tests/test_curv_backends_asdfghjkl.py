@@ -1,10 +1,10 @@
 import pytest
 import torch
-from asdfghjkl.operations import Bias, Scale
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import AsdfghjklEF, AsdfghjklGGN, BackPackEF, BackPackGGN
+from laplace.third_party.asdfghjkl.operations import Bias, Scale
 
 
 @pytest.fixture

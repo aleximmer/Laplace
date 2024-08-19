@@ -6,7 +6,11 @@ from typing import Any
 
 import numpy as np
 import torch
-from asdfghjkl import (
+from torch import nn
+from torch.utils.data import DataLoader
+
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.third_party.asdfghjkl import (
     COV,
     FISHER_EXACT,
     FISHER_MC,
@@ -15,12 +19,8 @@ from asdfghjkl import (
     SHAPE_KRON,
     fisher_for_cross_entropy,
 )
-from asdfghjkl.gradient import batch_gradient
-from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
-from torch import nn
-from torch.utils.data import DataLoader
-
-from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.third_party.asdfghjkl.gradient import batch_gradient
+from laplace.third_party.asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
 from laplace.utils import Kron, _is_batchnorm
 from laplace.utils.enums import Likelihood
 
