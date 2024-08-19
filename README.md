@@ -56,8 +56,14 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 To install laplace with `pip`, run the following:
 
 ```bash
-pip install laplace-torch
+pip install git+https://github.com/aleximmer/laplace@update-deps
 ```
+
+> [!WARNING]
+> The ASDL dependency has recently been updated and it breaks the compatibility with
+> `laplace-torch`. Please _do not_ install `laplace-torch` from `pip` or the `main`
+> branch. Instead install it as above, from the `update-deps` branch.
+> We're actively fixing this issue.
 
 For development purposes, e.g. if you would like to make contributions,
 clone the repository and then install:
