@@ -341,6 +341,67 @@ See <code>DiagLaplace</code>, <code><a title="laplace.lllaplace.LLLaplace" href=
 </li>
 </ul>
 </dd>
+<dt id="laplace.lllaplace.FunctionalLLLaplace"><code class="flex name class">
+<span>class <span class="ident">FunctionalLLLaplace</span></span>
+<span>(</span><span>model: nn.Module, likelihood: Likelihood | str, n_subset: int, sigma_noise: float | torch.Tensor = 1.0, prior_precision: float | torch.Tensor = 1.0, prior_mean: float | torch.Tensor = 0.0, temperature: float = 1.0, enable_backprop: bool = False, feature_reduction: FeatureReduction = None, dict_key_x: str = 'inputs_id', dict_key_y: str = 'labels', last_layer_name: str = None, backend: type[CurvatureInterface] | None = laplace.curvature.backpack.BackPackGGN, backend_kwargs: dict[str, Any] | None = None, independent_outputs: bool = False, seed: int = 0)</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Here not much changes in terms of GP inference compared to FunctionalLaplace class.
+Since now we treat only the last layer probabilistically and the rest of the network is used as a "fixed feature
+extractor", that means that the <span><span class="MathJax_Preview">X \in \mathbb{R}^{M \times D}</span><script type="math/tex">X \in \mathbb{R}^{M \times D}</script></span> in GP inference changes
+to <span><span class="MathJax_Preview">\tilde{X} \in \mathbb{R}^{M \times l_{n-1}} </span><script type="math/tex">\tilde{X} \in \mathbb{R}^{M \times l_{n-1}} </script></span>,
+where <span><span class="MathJax_Preview">l_{n-1}</span><script type="math/tex">l_{n-1}</script></span> is the dimension of the output
+of the penultimate NN layer.</p>
+<p>See <code>FunctionalLaplace</code> for the full interface.</p></div>
+<h3>Ancestors</h3>
+<ul class="hlist">
+<li><a title="laplace.baselaplace.FunctionalLaplace" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace">FunctionalLaplace</a></li>
+<li><a title="laplace.baselaplace.BaseLaplace" href="baselaplace.html#laplace.baselaplace.BaseLaplace">BaseLaplace</a></li>
+</ul>
+<h3>Methods</h3>
+<dl>
+<dt id="laplace.lllaplace.FunctionalLLLaplace.fit"><code class="name flex">
+<span>def <span class="ident">fit</span></span>(<span>self, train_loader: DataLoader) ‑> None</span>
+</code></dt>
+<dd>
+<div class="desc"><p>Fit the Laplace approximation of a GP posterior.</p>
+<h2 id="parameters">Parameters</h2>
+<dl>
+<dt><strong><code>train_loader</code></strong> :&ensp;<code>torch.data.utils.DataLoader</code></dt>
+<dd><code>train_loader.dataset</code> needs to be set to access <span><span class="MathJax_Preview">N</span><script type="math/tex">N</script></span>, size of the data set
+<code>train_loader.batch_size</code> needs to be set to access <span><span class="MathJax_Preview">b</span><script type="math/tex">b</script></span> batch_size</dd>
+</dl></div>
+</dd>
+<dt id="laplace.lllaplace.FunctionalLLLaplace.state_dict"><code class="name flex">
+<span>def <span class="ident">state_dict</span></span>(<span>self) ‑> dict</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+<dt id="laplace.lllaplace.FunctionalLLLaplace.load_state_dict"><code class="name flex">
+<span>def <span class="ident">load_state_dict</span></span>(<span>self, state_dict: dict)</span>
+</code></dt>
+<dd>
+<div class="desc"></div>
+</dd>
+</dl>
+<h3>Inherited members</h3>
+<ul class="hlist">
+<li><code><b><a title="laplace.baselaplace.FunctionalLaplace" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace">FunctionalLaplace</a></b></code>:
+<ul class="hlist">
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.functional_covariance" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace.functional_covariance">functional_covariance</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.functional_variance" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace.functional_variance">functional_variance</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.log_det_ratio" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace.log_det_ratio">log_det_ratio</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.log_likelihood" href="baselaplace.html#laplace.baselaplace.BaseLaplace.log_likelihood">log_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.log_marginal_likelihood" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace.log_marginal_likelihood">log_marginal_likelihood</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.optimize_prior_precision" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace.optimize_prior_precision">optimize_prior_precision</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.predictive_samples" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace.predictive_samples">predictive_samples</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.prior_precision_diag" href="baselaplace.html#laplace.baselaplace.BaseLaplace.prior_precision_diag">prior_precision_diag</a></code></li>
+<li><code><a title="laplace.baselaplace.FunctionalLaplace.scatter" href="baselaplace.html#laplace.baselaplace.FunctionalLaplace.scatter">scatter</a></code></li>
+</ul>
+</li>
+</ul>
+</dd>
 </dl>
 </section>
 </article>
@@ -374,6 +435,14 @@ See <code>DiagLaplace</code>, <code><a title="laplace.lllaplace.LLLaplace" href=
 </li>
 <li>
 <h4><code><a title="laplace.lllaplace.DiagLLLaplace" href="#laplace.lllaplace.DiagLLLaplace">DiagLLLaplace</a></code></h4>
+</li>
+<li>
+<h4><code><a title="laplace.lllaplace.FunctionalLLLaplace" href="#laplace.lllaplace.FunctionalLLLaplace">FunctionalLLLaplace</a></code></h4>
+<ul class="">
+<li><code><a title="laplace.lllaplace.FunctionalLLLaplace.fit" href="#laplace.lllaplace.FunctionalLLLaplace.fit">fit</a></code></li>
+<li><code><a title="laplace.lllaplace.FunctionalLLLaplace.state_dict" href="#laplace.lllaplace.FunctionalLLLaplace.state_dict">state_dict</a></code></li>
+<li><code><a title="laplace.lllaplace.FunctionalLLLaplace.load_state_dict" href="#laplace.lllaplace.FunctionalLLLaplace.load_state_dict">load_state_dict</a></code></li>
+</ul>
 </li>
 </ul>
 </li>
