@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
+from importlib.util import find_spec
 from math import log, pi, sqrt
 from typing import Any, Callable
 
@@ -1686,6 +1687,9 @@ class LowRankLaplace(ParametricLaplace):
     are usedto reduce the costs of inversion to the that of a \\(K \times K\\) matrix
     if we have a rank of K.
 
+    Note that only `AsdfghjklHessian` backend is supported. Install it via:
+    pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl
+
     See `BaseLaplace` for the full interface.
     """
 
@@ -1695,6 +1699,9 @@ class LowRankLaplace(ParametricLaplace):
         self,
         model: nn.Module,
         likelihood: Likelihood | str,
+        backend: type[CurvatureInterface] = AsdfghjklHessian
+        if find_spec("asdfghjkl") is not None
+        else CurvatureInterface,
         sigma_noise: float | torch.Tensor = 1,
         prior_precision: float | torch.Tensor = 1,
         prior_mean: float | torch.Tensor = 0,
@@ -1702,9 +1709,14 @@ class LowRankLaplace(ParametricLaplace):
         enable_backprop: bool = False,
         dict_key_x: str = "inputs_id",
         dict_key_y: str = "labels",
-        backend=AsdfghjklHessian,
         backend_kwargs: dict[str, Any] | None = None,
     ):
+        if find_spec("asdfghjkl") is None:
+            raise ImportError(
+                """To use LowRankLaplace, please install the old asdfghjkl dependency: """
+                """pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl"""
+            )
+
         super().__init__(
             model,
             likelihood,
@@ -1718,7 +1730,6 @@ class LowRankLaplace(ParametricLaplace):
             backend=backend,
             backend_kwargs=backend_kwargs,
         )
-        self.backend: AsdfghjklHessian
 
     def _init_H(self):
         self.H: tuple[torch.Tensor, torch.Tensor] | None = None

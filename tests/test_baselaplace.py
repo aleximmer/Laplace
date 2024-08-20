@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 from copy import deepcopy
+from importlib.util import find_spec
 from itertools import product
 from math import prod, sqrt
 
@@ -24,7 +25,11 @@ from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
 torch.manual_seed(240)
 torch.set_default_tensor_type(torch.DoubleTensor)
-flavors = [FullLaplace, KronLaplace, DiagLaplace, LowRankLaplace]
+
+flavors = [FullLaplace, KronLaplace, DiagLaplace]
+if find_spec("asdfghjkl") is not None:
+    flavors.append(LowRankLaplace)
+
 online_flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 

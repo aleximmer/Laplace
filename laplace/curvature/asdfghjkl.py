@@ -2,21 +2,25 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
+from importlib.util import find_spec
 from typing import Any
 
 import numpy as np
 import torch
-from asdfghjkl import (
-    COV,
-    FISHER_EXACT,
-    FISHER_MC,
-    SHAPE_DIAG,
-    SHAPE_FULL,
-    SHAPE_KRON,
-    fisher_for_cross_entropy,
-)
-from asdfghjkl.gradient import batch_gradient
-from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
+
+if find_spec("asdfghjkl") is not None:
+    from asdfghjkl import (
+        COV,
+        FISHER_EXACT,
+        FISHER_MC,
+        SHAPE_DIAG,
+        SHAPE_FULL,
+        SHAPE_KRON,
+        fisher_for_cross_entropy,
+    )
+    from asdfghjkl.gradient import batch_gradient
+    from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
+
 from torch import nn
 from torch.utils.data import DataLoader
 

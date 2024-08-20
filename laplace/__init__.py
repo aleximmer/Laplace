@@ -14,6 +14,7 @@ from laplace.baselaplace import (
     FunctionalLaplace,
     KronLaplace,
     LowRankLaplace,
+    ParametricLaplace,
 )
 from laplace.laplace import Laplace
 from laplace.lllaplace import (

@@ -32,7 +32,7 @@
 <h2 class="section-title" id="header-functions">Functions</h2>
 <dl>
 <dt id="laplace.laplace.Laplace"><code class="name flex">
-<span>def <span class="ident">Laplace</span></span>(<span>model: torch.nn.Module, likelihood: Likelihood | str, subset_of_weights: SubsetOfWeights | str = SubsetOfWeights.LAST_LAYER, hessian_structure: HessianStructure | str = HessianStructure.KRON, *args, **kwargs) ‑> ParametricLaplace</span>
+<span>def <span class="ident">Laplace</span></span>(<span>model: torch.nn.Module, likelihood: Likelihood | str, subset_of_weights: SubsetOfWeights | str = SubsetOfWeights.LAST_LAYER, hessian_structure: HessianStructure | str = HessianStructure.KRON, *args, **kwargs) ‑> BaseLaplace</span>
 </code></dt>
 <dd>
 <div class="desc"><p>Simplified Laplace access using strings instead of different classes.</p>
@@ -44,13 +44,14 @@
 <dd>&nbsp;</dd>
 <dt><strong><code>subset_of_weights</code></strong> :&ensp;<code>SubsetofWeights</code> or <code>{'last_layer', 'subnetwork', 'all'}</code>, default=<code>SubsetOfWeights.LAST_LAYER</code></dt>
 <dd>subset of weights to consider for inference</dd>
-<dt><strong><code>hessian_structure</code></strong> :&ensp;<code>HessianStructure</code> or <code>str in {'diag', 'kron', 'full', 'lowrank'}</code>, default=<code>HessianStructure.KRON</code></dt>
-<dd>structure of the Hessian approximation</dd>
+<dt><strong><code>hessian_structure</code></strong> :&ensp;<code>HessianStructure</code> or <code>str in {'diag', 'kron', 'full', 'lowrank', 'gp'}</code>, default=<code>HessianStructure.KRON</code></dt>
+<dd>structure of the Hessian approximation (note that in case of 'gp',
+we are not actually doing any Hessian approximation, the inference is instead done in the functional space)</dd>
 </dl>
 <h2 id="returns">Returns</h2>
 <dl>
-<dt><strong><code>laplace</code></strong> :&ensp;<code>ParametricLaplace</code></dt>
-<dd>chosen subclass of ParametricLaplace instantiated with additional arguments</dd>
+<dt><strong><code>laplace</code></strong> :&ensp;<code>BaseLaplace</code></dt>
+<dd>chosen subclass of BaseLaplace instantiated with additional arguments</dd>
 </dl></div>
 </dd>
 </dl>
