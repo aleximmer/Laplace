@@ -70,7 +70,9 @@ pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl
 For development purposes, e.g. if you would like to make contributions, follow
 the following steps:
 
-1. Install [`uv`](https://github.com/astral-sh/uv)
+**With `uv`**
+
+1. Install [`uv`](https://github.com/astral-sh/uv), e.g. `pip install --upgrade uv`
 2. Then clone this repository and install the development dependencies:
 
 ```bash
@@ -81,11 +83,23 @@ uv sync --all-extras
 3. `laplace-torch` is now available in editable mode, e.g. you can run:
 
 ```bash
-uv run python example/regression_example.py
+uv run python examples/regression_example.py
 
 # Or, equivalently:
 source .venv/bin/activate
-python example/regression_example.py
+python examples/regression_example.py
+```
+
+**With `pip`**
+
+```bash
+git clone git@github.com:aleximmer/Laplace.git
+
+# Recommended to create a virtualenv before the following step
+pip install -e ".[dev]"
+
+# Run as usual, e.g.
+python examples/regression_examples.py
 ```
 
 > [!NOTE]
@@ -438,6 +452,8 @@ For example, currently the [`curvature.CurvlinopsInterface`](https://github.com/
 
 The documentation is available [here](https://aleximmer.github.io/Laplace) or can be generated and/or viewed locally:
 
+**With `uv`**
+
 ```bash
 # assuming the repository was cloned
 uv sync --all-extras
@@ -447,11 +463,22 @@ uv run bash update_docs.sh
 uv run pdoc --http 0.0.0.0:8080 laplace --template-dir template
 ```
 
+**With `pip`**
+
+```bash
+# assuming the repository was cloned
+pip install -e ".[dev]"
+# create docs and write to html
+bash update_docs.sh
+# .. or serve the docs directly
+pdoc --http 0.0.0.0:8080 laplace --template-dir template
+```
+
 ## Contributing
 
 Pull requests are very welcome. Please follow these guidelines:
 
-1. Install Laplace via `uv sync --all-extras` which will install `ruff` and all requirements necessary to run the tests and build the docs.
+1. Follow the [development setup](#setup-dev-environment).
 2. Use [ruff](https://github.com/astral-sh/ruff) as autoformatter. Please refer to the following [makefile](https://github.com/aleximmer/Laplace/blob/main/makefile) and run it via `make ruff`. Please note that the order of `ruff check --fix` and `ruff format` is important!
 3. Also use [ruff](https://github.com/astral-sh/ruff) as linter. Please manually fix all linting errors/warnings before opening a pull request.
 4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
