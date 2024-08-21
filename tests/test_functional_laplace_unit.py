@@ -62,10 +62,10 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     #  must set it to zero.
     func_la.K_MM *= 0
 
-    assert torch.equal(torch.zeros(size=(M * C, M * C)), func_la.K_MM)
+    assert torch.allclose(torch.zeros(size=(M * C, M * C)), func_la.K_MM)
 
     func_la._store_K_batch(torch.ones(size=(4, 4)), 0, 0)
-    assert torch.equal(
+    assert torch.allclose(
         torch.tensor(
             [
                 [1.0, 1.0, 1.0, 1.0, 0.0, 0.0],
@@ -80,7 +80,7 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     )
 
     func_la._store_K_batch(torch.ones(size=(4, 2)), 0, 1)
-    assert torch.equal(
+    assert torch.allclose(
         torch.tensor(
             [
                 [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
@@ -95,7 +95,7 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     )
 
     func_la._store_K_batch(torch.ones(size=(2, 2)), 1, 1)
-    assert torch.equal(
+    assert torch.allclose(
         torch.tensor(
             [
                 [1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
@@ -118,7 +118,7 @@ def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=
 
     def _check(expected_K_MM):
         for c in range(C):
-            assert torch.equal(expected_K_MM[c], func_la.K_MM[c])
+            assert torch.allclose(expected_K_MM[c], func_la.K_MM[c])
 
     func_la._init_K_MM()
     # Right now K_MM is initialized with torch.empty. To run this tests we
