@@ -65,15 +65,27 @@ Additionally, if you want to use the `asdfghjkl` backend, please install it via:
 pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl
 ```
 
-For development purposes, e.g. if you would like to make contributions,
-clone the repository and then install:
+### Setup dev environment
+
+For development purposes, e.g. if you would like to make contributions, follow
+the following steps:
+
+1. Install [`uv`](https://github.com/astral-sh/uv)
+2. Then clone this repository and install the development dependencies:
 
 ```bash
-# first install the build system:
-pip install --upgrade pip wheel packaging
+git clone git@github.com:aleximmer/Laplace.git
+uv sync --all-extras
+```
 
-# then install the develop
-pip install -e ".[all]"
+3. `laplace-torch` is now available in editable mode, e.g. you can run:
+
+```bash
+uv run python example/regression_example.py
+
+# Or, equivalently:
+source .venv/bin/activate
+python example/regression_example.py
 ```
 
 > [!NOTE]
@@ -428,24 +440,28 @@ The documentation is available [here](https://aleximmer.github.io/Laplace) or ca
 
 ```bash
 # assuming the repository was cloned
-pip install -e ".[docs]"
+uv sync --all-extras
 # create docs and write to html
-bash update_docs.sh
+uv run bash update_docs.sh
 # .. or serve the docs directly
-pdoc --http 0.0.0.0:8080 laplace --template-dir template
+uv run pdoc --http 0.0.0.0:8080 laplace --template-dir template
 ```
 
 ## Contributing
 
 Pull requests are very welcome. Please follow these guidelines:
 
-1. Install Laplace via `pip install -e ".[dev]"` which will install `ruff` and all requirements necessary to run the tests and build the docs.
+1. Install Laplace via `uv sync --all-extras` which will install `ruff` and all requirements necessary to run the tests and build the docs.
 2. Use [ruff](https://github.com/astral-sh/ruff) as autoformatter. Please refer to the following [makefile](https://github.com/aleximmer/Laplace/blob/main/makefile) and run it via `make ruff`. Please note that the order of `ruff check --fix` and `ruff format` is important!
 3. Also use [ruff](https://github.com/astral-sh/ruff) as linter. Please manually fix all linting errors/warnings before opening a pull request.
 4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
 5. Provide as many test cases as possible. Make sure all test cases pass.
 
 Issues, bug reports, and ideas are also very welcome!
+
+## Useful links
+
+- Publishing package with `uv`: <https://docs.astral.sh/uv/guides/publish/>
 
 ## References
 
