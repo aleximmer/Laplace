@@ -4,33 +4,33 @@ version = "0.2.1"
 description = "laplace - Laplace approximations for deep learning"
 readme = "README.md"
 authors = [
-    { name = "Alex Immer" },
-    { name = "Runa Eschenhagen" },
-    { name = "Agustinus Kristiadi" },
-    { name = "Erik Daxberger" },
+  { name = "Alex Immer" },
+  { name = "Runa Eschenhagen" },
+  { name = "Agustinus Kristiadi" },
+  { name = "Erik Daxberger" },
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
-requires-python = ">=3.9"
-dependencies = [
-    "asdfghjkl == 0.1a4",
-    "backpack-for-pytorch",
-    "curvlinops-for-pytorch >= 2.0",
-    "numpy",
-    "opt_einsum",
-    "torch >= 2.0",
-    "torchaudio",
-    "torchmetrics",
-    "torchvision",
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
 ]
 license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = [
+  "asdfghjkl == 0.1a4",
+  "backpack-for-pytorch",
+  "curvlinops-for-pytorch >= 2.0",
+  "numpy",
+  "opt_einsum",
+  "torch>=2.0",
+  "torchaudio",
+  "torchmetrics",
+  "torchvision",
+]
 
 [project.urls]
 Homepage = "https://github.com/aleximmer/Laplace"
@@ -43,16 +43,16 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 py-modules = ["laplace"]
 
-[tool.uv]
-dev-dependencies = [
-    "coveralls",
-    "matplotlib",
-    "pdoc3",
-    "pytest",
-    "pytest-cov",
-    "pytest-mock",
-    "ruff",
-    "scipy",
+[project.optional-dependencies]
+dev = [
+  "coveralls",
+  "matplotlib",
+  "pdoc3",
+  "pytest",
+  "pytest-cov",
+  "pytest-mock",
+  "ruff",
+  "scipy",
 ]
 
 [tool.pytest.ini_options]

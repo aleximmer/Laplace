@@ -75,7 +75,7 @@ the following steps:
 
 ```bash
 git clone git@github.com:aleximmer/Laplace.git
-uv sync
+uv sync --dev
 ```
 
 3. `laplace-torch` is now available in editable mode, e.g. you can run:
@@ -451,7 +451,7 @@ uv run pdoc --http 0.0.0.0:8080 laplace --template-dir template
 
 Pull requests are very welcome. Please follow these guidelines:
 
-1. Install Laplace via `uv sync` which will install `ruff` and all requirements necessary to run the tests and build the docs.
+1. Install Laplace via `uv sync --dev` which will install `ruff` and all requirements necessary to run the tests and build the docs.
 2. Use [ruff](https://github.com/astral-sh/ruff) as autoformatter. Please refer to the following [makefile](https://github.com/aleximmer/Laplace/blob/main/makefile) and run it via `make ruff`. Please note that the order of `ruff check --fix` and `ruff format` is important!
 3. Also use [ruff](https://github.com/astral-sh/ruff) as linter. Please manually fix all linting errors/warnings before opening a pull request.
 4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
