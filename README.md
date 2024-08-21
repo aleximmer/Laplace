@@ -1,7 +1,7 @@
 <div align="center">
  <img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
 
-![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest.yml/badge.svg)
+![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest-default.yml/badge.svg)
 ![lint](https://github.com/aleximmer/laplace/actions/workflows/lint-ruff.yml/badge.svg)
 ![format](https://github.com/aleximmer/laplace/actions/workflows/format-ruff.yml/badge.svg)
 
