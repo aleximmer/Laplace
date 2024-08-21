@@ -1,4 +1,4 @@
-name: pytest
+name: pytest-default
 
 on: pull_request
 
@@ -16,13 +16,9 @@ jobs:
           uv venv && source .venv/bin/activate
           uv pip install --index-url https://download.pytorch.org/whl/cpu torch==2.4.0+cpu torchvision==0.19.0+cpu torchaudio==2.4.0+cpu
           uv pip install -r pyproject.toml --extra dev --override uv_overrides.txt
+      - name: Uninstall the old asdfghjkl if exists
+        run: uv pip uninstall asdfghjkl-old
       - name: Test without the old asdfghjkl
         run: |
           source .venv/bin/activate
-          uv pip uninstall asdfghjkl-old
-          python3 -m pytest tests
-      - name: Test with pytest
-        run: |
-          source .venv/bin/activate
-          uv pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl
           python3 -m pytest tests
