@@ -440,7 +440,7 @@ The documentation is available [here](https://aleximmer.github.io/Laplace) or ca
 
 ```bash
 # assuming the repository was cloned
-uv sync
+uv sync --all-extras
 # create docs and write to html
 uv run bash update_docs.sh
 # .. or serve the docs directly
