@@ -26,10 +26,10 @@ dependencies = [
   "curvlinops-for-pytorch >= 2.0",
   "numpy",
   "opt_einsum",
-  "torch>=2.0",
-  "torchaudio",
+  "torch >= 2.0",
+  "torchaudio >= 2.0",
   "torchmetrics",
-  "torchvision",
+  "torchvision >= 0.15",
 ]
 
 [project.urls]
