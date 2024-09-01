@@ -1,4 +1,4 @@
-from .core import extend
+from .core import extend  # noqa F401
 from .fisher import *  # noqa: F403
 from .gradient import *  # noqa: F403
 from .hessian import *  # noqa: F403

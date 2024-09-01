@@ -19,23 +19,23 @@ from .operation import (
 from .scale import Scale, ScaleExt
 
 __all__ = [
-    'Linear',
-    'Conv2d',
-    'BatchNorm1d',
-    'BatchNorm2d',
-    'Bias',
-    'Scale',
-    'BiasExt',
-    'ScaleExt',
-    'get_op_class',
-    'Operation',
-    'OP_COV_KRON',
-    'OP_COV_DIAG',
-    'OP_COV_UNIT_WISE',
-    'OP_GRAM_DIRECT',
-    'OP_GRAM_HADAMARD',
-    'OP_BATCH_GRADS',
-    'OP_ACCUMULATE_GRADS'
+    "Linear",
+    "Conv2d",
+    "BatchNorm1d",
+    "BatchNorm2d",
+    "Bias",
+    "Scale",
+    "BiasExt",
+    "ScaleExt",
+    "get_op_class",
+    "Operation",
+    "OP_COV_KRON",
+    "OP_COV_DIAG",
+    "OP_COV_UNIT_WISE",
+    "OP_GRAM_DIRECT",
+    "OP_GRAM_HADAMARD",
+    "OP_BATCH_GRADS",
+    "OP_ACCUMULATE_GRADS",
 ]
 
 
@@ -53,5 +53,5 @@ def get_op_class(module):
     elif isinstance(module, Scale):
         return ScaleExt
     else:
-        warnings.warn(f'Failed to lookup operations for Module {module}.')
+        warnings.warn(f"Failed to lookup operations for Module {module}.")
         return None

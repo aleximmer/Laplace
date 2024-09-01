@@ -1,7 +1,7 @@
 from .core import extend
 from .operations import OP_BATCH_GRADS
 
-__all__ = ['batch_gradient']
+__all__ = ["batch_gradient"]
 
 
 def batch_gradient(model, loss_fn, inputs, targets):
@@ -11,4 +11,3 @@ def batch_gradient(model, loss_fn, inputs, targets):
         loss = loss_fn(f, targets)
         loss.backward()
     return f
-

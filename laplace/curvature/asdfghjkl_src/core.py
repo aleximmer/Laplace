@@ -32,7 +32,7 @@ def extend(model, op_names):
 
     for module in model.modules():
         requires_grad = False
-        for attr in ['weight', 'bias']:
+        for attr in ["weight", "bias"]:
             param = getattr(module, attr, None)
             if param is not None:
                 requires_grad = requires_grad or param.requires_grad
@@ -78,8 +78,7 @@ def _preprocess_in_data(module, in_data, out_data):
         else:
             shape = (1, f, 1, 1, 1)
         # restore normalized input
-        in_data_norm = (out_data -
-                        bnorm.bias.view(shape)).div(bnorm.weight.view(shape))
+        in_data_norm = (out_data - bnorm.bias.view(shape)).div(bnorm.weight.view(shape))
         in_data = in_data_norm
 
     if isinstance(module, nn.LayerNorm):
@@ -101,19 +100,19 @@ def _preprocess_out_grads(module, out_grads):
 def _register_operations(model: nn.Module, module: nn.Module, op_names: Sequence):
     op_class = get_op_class(module)
     if op_class is not None:
-        setattr(module, 'operation', op_class(module, model, op_names))
+        setattr(module, "operation", op_class(module, model, op_names))
 
 
 def _call_operations_in_forward(module, in_data):
-    if hasattr(module, 'operation'):
+    if hasattr(module, "operation"):
         module.operation.forward_post_process(in_data)
 
 
 def _call_operations_in_backward(module, in_data, out_grads):
-    if hasattr(module, 'operation'):
+    if hasattr(module, "operation"):
         module.operation.backward_pre_process(in_data, out_grads)
 
 
 def _remove_operations(module):
-    if hasattr(module, 'operation'):
-        delattr(module, 'operation')
+    if hasattr(module, "operation"):
+        delattr(module, "operation")

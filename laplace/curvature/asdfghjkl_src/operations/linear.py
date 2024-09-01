@@ -13,6 +13,7 @@ class Linear(Operation):
     in_data: n x f_in
     out_grads: n x f_out
     """
+
     @staticmethod
     def batch_grads_weight(
         module: nn.Module, in_data: torch.Tensor, out_grads: torch.Tensor

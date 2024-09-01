@@ -2,7 +2,7 @@ import torch
 import torch.distributed as dist
 
 __all__ = [
-    'power_method',
+    "power_method",
 ]
 
 
@@ -17,7 +17,7 @@ def power_method(
     tol=1e-3,
     is_distributed=False,
     print_progress=False,
-    random_seed=None
+    random_seed=None,
 ):
     # adopted from https://github.com/amirgholami/PyHessian/blob/master/pyhessian/hessian.py
     assert top_n >= 1
@@ -37,13 +37,13 @@ def power_method(
             inputs=inputs,
             targets=targets,
             random_seed=random_seed,
-            is_distributed=is_distributed
+            is_distributed=is_distributed,
         )
 
     eigvals = []
     eigvecs = []
     for i in range(top_n):
-        _report(f'start power iteration for lambda({i+1}).')
+        _report(f"start power iteration for lambda({i+1}).")
         vec = [torch.randn_like(p) for p in params]
         if is_distributed:
             vec = _flatten_parameters(vec)
@@ -61,7 +61,7 @@ def power_method(
                 eigval = eigval.item()
             if j > 0:
                 diff = abs(eigval - last_eigval) / (abs(last_eigval) + 1e-6)
-                _report(f'{j}/{max_iters} diff={diff}')
+                _report(f"{j}/{max_iters} diff={diff}")
                 if diff < tol:
                     break
             last_eigval = eigval
@@ -83,7 +83,7 @@ def mvp(
     targets=None,
     random_seed=None,
     damping=None,
-    is_distributed=False
+    is_distributed=False,
 ):
     if random_seed:
         # for matrices that are not deterministic (e.g., fisher_mc)
@@ -146,7 +146,7 @@ def _unflatten_like_parameters(vec, params):
     rst = []
     for param in params:
         numel = param.numel()
-        rst.append(vec[pointer:pointer + numel].view_as(param))
+        rst.append(vec[pointer : pointer + numel].view_as(param))
         pointer += numel
     return rst
 
@@ -155,7 +155,7 @@ def _group_product(xs, ys):
     return sum([torch.sum(x * y) for (x, y) in zip(xs, ys)])
 
 
-def _group_add(xs, ys, alpha=1.):
+def _group_add(xs, ys, alpha=1.0):
     return [x.add(y.mul(alpha)) for x, y in zip(xs, ys)]
 
 

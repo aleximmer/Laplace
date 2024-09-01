@@ -30,11 +30,11 @@ _SHAPE_TO_OP = {
     SHAPE_DIAG: OP_COV_DIAG,  # diagonal
 }
 
-_COV_FULL = 'cov_full'
-_COV_BLOCK_DIAG = 'cov_block_diag'
+_COV_FULL = "cov_full"
+_COV_BLOCK_DIAG = "cov_block_diag"
 
 __all__ = [
-    'fisher_for_cross_entropy',
+    "fisher_for_cross_entropy",
 ]
 
 _supported_types = [FISHER_EXACT, FISHER_MC, COV]
@@ -63,13 +63,15 @@ def fisher_for_cross_entropy(
     fisher_types = set(fisher_types)
     fisher_shapes = set(fisher_shapes)
     for ftype in fisher_types:
-        assert ftype in _supported_types, \
-            f'Invalid fisher_type: {ftype}. ' \
-            f'fisher_type must be in {_supported_types}.'
+        assert ftype in _supported_types, (
+            f"Invalid fisher_type: {ftype}. "
+            f"fisher_type must be in {_supported_types}."
+        )
     for fshape in fisher_shapes:
-        assert fshape in _supported_shapes, \
-            f'Invalid fisher_shape: {fshape}. ' \
-            f'fisher_shape must be in {_supported_shapes}.'
+        assert fshape in _supported_shapes, (
+            f"Invalid fisher_shape: {fshape}. "
+            f"fisher_shape must be in {_supported_shapes}."
+        )
 
     zero_fisher(model, fisher_types)
 
@@ -83,7 +85,7 @@ def fisher_for_cross_entropy(
     kwargs = dict(
         compute_full_fisher=SHAPE_FULL in fisher_shapes,
         compute_block_diag_fisher=SHAPE_BLOCK_DIAG in fisher_shapes,
-        n_mc_samples=n_mc_samples
+        n_mc_samples=n_mc_samples,
     )
 
     if data_loader is not None:
@@ -101,9 +103,7 @@ def fisher_for_cross_entropy(
         # compute fisher for a single batch
         assert inputs is not None
         with extend(model, op_names):
-            _fisher_for_cross_entropy(
-                model, fisher_types, inputs, targets, **kwargs
-            )
+            _fisher_for_cross_entropy(model, fisher_types, inputs, targets, **kwargs)
 
     # reduce matrices
     if is_distributed:
@@ -127,7 +127,7 @@ def _fisher_for_cross_entropy(
     targets=None,
     compute_full_fisher=False,
     compute_block_diag_fisher=False,
-    n_mc_samples=1
+    n_mc_samples=1,
 ):
     logits = model(inputs)
     log_probs = F.log_softmax(logits, dim=1)
@@ -135,7 +135,7 @@ def _fisher_for_cross_entropy(
 
     def loss_and_backward(target):
         model.zero_grad(set_to_none=True)
-        loss = F.nll_loss(log_probs, target, reduction='sum')
+        loss = F.nll_loss(log_probs, target, reduction="sum")
         loss.backward(retain_graph=True)
         if compute_full_fisher:
             _full_covariance(model)
@@ -152,14 +152,16 @@ def _fisher_for_cross_entropy(
         _fisher_exact(loss_and_backward, model, probs)
 
     if COV in fisher_types:
-        assert targets is not None, 'targets must be specified for computing covariance.'
+        assert (
+            targets is not None
+        ), "targets must be specified for computing covariance."
         _covariance(loss_and_backward, model, targets)
 
 
 def _module_batch_grads(model):
     rst = []
     for module in model.modules():
-        operation = getattr(module, 'operation', None)
+        operation = getattr(module, "operation", None)
         if operation is None:
             continue
         batch_grads = operation.get_op_results()[OP_BATCH_GRADS]
@@ -171,8 +173,7 @@ def _module_batch_flatten_grads(model):
     rst = []
     for module, batch_grads in _module_batch_grads(model):
         batch_flatten_grads = torch.cat(
-            [g.flatten(start_dim=1) for g in batch_grads.values()],
-            dim=1
+            [g.flatten(start_dim=1) for g in batch_grads.values()], dim=1
         )
         rst.append((module, batch_flatten_grads))
     return rst
@@ -198,12 +199,7 @@ def _fisher_mc(loss_and_backward, model, probs, n_mc_samples=1):
     _targets = dist.sample(torch.Size((n_mc_samples,)))
     for i in range(n_mc_samples):
         loss_and_backward(_targets[i])
-        _register_fisher(
-            model,
-            FISHER_MC,
-            scale=1 / n_mc_samples,
-            accumulate=True
-        )
+        _register_fisher(model, FISHER_MC, scale=1 / n_mc_samples, accumulate=True)
 
 
 def _fisher_exact(loss_and_backward, model, probs):
@@ -213,9 +209,7 @@ def _fisher_exact(loss_and_backward, model, probs):
     for i in range(n_classes):
         with _grads_scale(model, sqrt_probs[:, i]):
             loss_and_backward(_targets[:, i])
-        _register_fisher(
-            model, FISHER_EXACT, accumulate=True
-        )
+        _register_fisher(model, FISHER_EXACT, accumulate=True)
 
 
 def _covariance(loss_and_backward, model, targets):
@@ -227,7 +221,7 @@ def _covariance(loss_and_backward, model, targets):
 @contextmanager
 def _grads_scale(model, scale):
     for module in model.modules():
-        operation = getattr(module, 'operation', None)
+        operation = getattr(module, "operation", None)
         if operation is None:
             continue
         operation.grads_scale = scale
@@ -235,13 +229,13 @@ def _grads_scale(model, scale):
     yield
 
     for module in model.modules():
-        operation = getattr(module, 'operation', None)
+        operation = getattr(module, "operation", None)
         if operation is None:
             continue
         operation.grads_scale = None
 
 
-def _register_fisher(model, fisher_type, scale=1., accumulate=False):
+def _register_fisher(model, fisher_type, scale=1.0, accumulate=False):
     """
     module.fisher_{fisher_type} = op_results
     op_results = {
@@ -253,19 +247,17 @@ def _register_fisher(model, fisher_type, scale=1., accumulate=False):
     """
     device = next(model.parameters()).device
     for module in model.modules():
-        operation = getattr(module, 'operation', None)
+        operation = getattr(module, "operation", None)
         if operation is None:
             continue
         op_results = operation.get_op_results()
         kron = diag = unit = None
         if OP_COV_KRON in op_results:
             rst = op_results[OP_COV_KRON]
-            kron = Kron(rst['A'], rst['B'], device=device)
+            kron = Kron(rst["A"], rst["B"], device=device)
         if OP_COV_DIAG in op_results:
             rst = op_results[OP_COV_DIAG]
-            diag = Diag(
-                rst.get('weight', None), rst.get('bias', None), device=device
-            )
+            diag = Diag(rst.get("weight", None), rst.get("bias", None), device=device)
         if OP_COV_UNIT_WISE in op_results:
             rst = op_results[OP_COV_UNIT_WISE]
             unit = UnitWise(rst, device=device)
@@ -279,7 +271,7 @@ def _register_fisher(model, fisher_type, scale=1., accumulate=False):
             diag=diag,
             unit=unit,
             scale=scale,
-            accumulate=accumulate
+            accumulate=accumulate,
         )
 
     # move full fisher
@@ -295,8 +287,8 @@ def _accumulate_fisher(
     kron=None,
     diag=None,
     unit=None,
-    scale=1.,
-    accumulate=False
+    scale=1.0,
+    accumulate=False,
 ):
     data = getattr(module, data_src_attr, None)
     if all(v is None for v in [data, kron, diag, unit]):

@@ -8,7 +8,7 @@ class Bias(nn.Module):
     def __init__(self):
         super(Bias, self).__init__()
         self.weight = nn.Parameter(torch.zeros(1))
-        
+
     def reset_parameters(self):
         nn.init.constant_(self.weight, 0)
 
@@ -24,6 +24,7 @@ class BiasExt(Operation):
     in_data: n x f_in
     out_grads: n x f_out
     """
+
     @staticmethod
     def batch_grads_weight(module, in_data, out_grads):
         N = out_grads.size(0)

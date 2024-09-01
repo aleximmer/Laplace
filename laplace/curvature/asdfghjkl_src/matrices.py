@@ -6,26 +6,26 @@ import torch.distributed as dist
 
 from .symmatrix import SymMatrix
 
-HESSIAN = 'hessian'  # Hessian
-FISHER_EXACT = 'fisher_exact'  # exact Fisher
-FISHER_MC = 'fisher_mc'  # Fisher estimation by Monte-Carlo sampling
-COV = 'cov'  # un-centered covariance a.k.a. empirical Fisher
+HESSIAN = "hessian"  # Hessian
+FISHER_EXACT = "fisher_exact"  # exact Fisher
+FISHER_MC = "fisher_mc"  # Fisher estimation by Monte-Carlo sampling
+COV = "cov"  # un-centered covariance a.k.a. empirical Fisher
 
-SHAPE_FULL = 'full'  # full
-SHAPE_BLOCK_DIAG = 'block_diag'  # layer-wise block-diagonal
-SHAPE_KRON = 'kron'  # Kronecker-factored
-SHAPE_DIAG = 'diag'  # diagonal
+SHAPE_FULL = "full"  # full
+SHAPE_BLOCK_DIAG = "block_diag"  # layer-wise block-diagonal
+SHAPE_KRON = "kron"  # Kronecker-factored
+SHAPE_DIAG = "diag"  # diagonal
 
 __all__ = [
-    'MatrixManager',
-    'FISHER_EXACT',
-    'FISHER_MC',
-    'COV',
-    'HESSIAN',
-    'SHAPE_FULL',
-    'SHAPE_BLOCK_DIAG',
-    'SHAPE_KRON',
-    'SHAPE_DIAG'
+    "MatrixManager",
+    "FISHER_EXACT",
+    "FISHER_MC",
+    "COV",
+    "HESSIAN",
+    "SHAPE_FULL",
+    "SHAPE_BLOCK_DIAG",
+    "SHAPE_KRON",
+    "SHAPE_DIAG",
 ]
 
 _supported_types = [HESSIAN, FISHER_EXACT, FISHER_MC, COV]
@@ -35,22 +35,24 @@ _normalizations = (torch.nn.BatchNorm1d, torch.nn.BatchNorm2d)
 
 
 def _requires_matrix(module: torch.nn.Module):
-    if not hasattr(module, 'weight'):
+    if not hasattr(module, "weight"):
         return False
     if module.weight.requires_grad:
         return True
-    return hasattr(module, 'bias') and module.bias.requires_grad
+    return hasattr(module, "bias") and module.bias.requires_grad
 
 
 class MatrixManager:
-    def __init__(self, model, matrix_types, scale=1., smoothing_weight=None):
+    def __init__(self, model, matrix_types, scale=1.0, smoothing_weight=None):
         self._model = model
         self._device = next(model.parameters()).device
         if isinstance(matrix_types, str):
             matrix_types = [matrix_types]
         for mat_type in matrix_types:
             if mat_type not in _supported_types:
-                raise ValueError(f'Invalid matrix_type {mat_type} not in {_supported_types}.')
+                raise ValueError(
+                    f"Invalid matrix_type {mat_type} not in {_supported_types}."
+                )
         # remove duplicates
         self._matrix_types = set(matrix_types)
         # for updating stats
@@ -62,7 +64,7 @@ class MatrixManager:
     def _get_save_field(matrix_type, stats_name=None):
         if stats_name is None:
             return matrix_type
-        return f'{stats_name}_{matrix_type}'
+        return f"{stats_name}_{matrix_type}"
 
     def _clear_stats(self, stats_name):
         if stats_name in self._stats_names:
@@ -71,11 +73,9 @@ class MatrixManager:
     def _check_stats_name(self, stats_name):
         if stats_name is None:
             return
-        assert stats_name in self._stats_names, f'stats {stats_name} does not exist.'
+        assert stats_name in self._stats_names, f"stats {stats_name} does not exist."
 
-    def accumulate_matrices(
-        self, stats_name, scale=None, smoothing_weight=None
-    ):
+    def accumulate_matrices(self, stats_name, scale=None, smoothing_weight=None):
         """
         Accumulate the latest fisher values to acc_fisher.
         module.{fisher_type} = fisher
@@ -106,7 +106,7 @@ class MatrixManager:
                     stats = stats + matrix
                     setattr(module, stats_attr, stats)
 
-    def save_matrices(self, root, relative_dir='', stats_name=None):
+    def save_matrices(self, root, relative_dir="", stats_name=None):
         """
         Save fisher for each fisher_type and for each module.
         module.{stats_name}_{fisher_type} = fisher
@@ -134,7 +134,9 @@ class MatrixManager:
 
     def load_matrices(self, root, relative_paths, matrix_shapes):
         for mat_shape in matrix_shapes:
-            assert mat_shape in _supported_shapes, f'Invalid matrix_shape: {mat_shape}. matrix_shape must be in {_supported_shapes}'
+            assert (
+                mat_shape in _supported_shapes
+            ), f"Invalid matrix_shape: {mat_shape}. matrix_shape must be in {_supported_shapes}"
 
         def root_join(path_or_dict):
             if isinstance(path_or_dict, dict):
@@ -150,7 +152,7 @@ class MatrixManager:
         for mat_type in self._matrix_types:
             mat_paths = paths.get(mat_type, None)
             if mat_paths is None:
-                raise ValueError(f'matrix type {mat_type} does not exist.')
+                raise ValueError(f"matrix type {mat_type} does not exist.")
 
             def _load_path(mat_shape, load_key, path_key, module_name=None):
                 try:
@@ -162,12 +164,10 @@ class MatrixManager:
                 except (KeyError, FileNotFoundError):
                     if module_name:
                         raise ValueError(
-                            f'{mat_type}.{mat_shape} for module {module_name} does not exist.'
+                            f"{mat_type}.{mat_shape} for module {module_name} does not exist."
                         )
                     else:
-                        raise ValueError(
-                            f'{mat_type}.{mat_shape} does not exist.'
-                        )
+                        raise ValueError(f"{mat_type}.{mat_shape} does not exist.")
 
             # load layer-wise matrices
             for mname, module in self._model.named_modules():
@@ -177,22 +177,20 @@ class MatrixManager:
                     continue
                 matrix = SymMatrix(device=self._device)
                 if SHAPE_BLOCK_DIAG in matrix_shapes:
-                    _load_path(SHAPE_BLOCK_DIAG, 'path', 'tril', mname)
+                    _load_path(SHAPE_BLOCK_DIAG, "path", "tril", mname)
                 if SHAPE_KRON in matrix_shapes:
                     if isinstance(module, _normalizations):
-                        _load_path(
-                            'unit_wise', 'unit_path', 'unit_wise', mname
-                        )
+                        _load_path("unit_wise", "unit_path", "unit_wise", mname)
                     else:
-                        _load_path(SHAPE_KRON, 'kron_path', 'kron', mname)
+                        _load_path(SHAPE_KRON, "kron_path", "kron", mname)
                 if SHAPE_DIAG in matrix_shapes:
-                    _load_path(SHAPE_DIAG, 'diag_path', 'diag', mname)
+                    _load_path(SHAPE_DIAG, "diag_path", "diag", mname)
                 setattr(module, mat_type, matrix)
 
             # full matrix
             if SHAPE_FULL in matrix_shapes:
                 matrix = SymMatrix(device=self._device)
-                _load_path(SHAPE_FULL, 'path', 'tril')
+                _load_path(SHAPE_FULL, "path", "tril")
                 setattr(self._model, mat_type, matrix)
 
     def matrices_exist(self, root, relative_paths, matrix_shapes):
@@ -264,9 +262,7 @@ class MatrixManager:
 
         assert pointer == torch.numel(vec)
 
-    def reduce_matrices(
-        self, stats_name=None, is_master=True, all_reduce=False
-    ):
+    def reduce_matrices(self, stats_name=None, is_master=True, all_reduce=False):
         # pack
         packed_tensor = self.matrices_to_vector(stats_name)
         # reduce
@@ -282,18 +278,14 @@ class MatrixManager:
         dist.barrier()
 
     def _collect_metrics(
-        self,
-        matrix_type,
-        matrix_shape,
-        stats_name,
-        metrics_fn,
-        reduce_fn,
-        init
+        self, matrix_type, matrix_shape, stats_name, metrics_fn, reduce_fn, init
     ):
         stats_attr = self._get_save_field(matrix_type, stats_name)
         if matrix_shape == SHAPE_FULL:
             matrix = getattr(self._model, stats_attr, None)
-            assert matrix is not None and matrix.has_data, f'{matrix_type}.{matrix_shape} does not exist.'
+            assert (
+                matrix is not None and matrix.has_data
+            ), f"{matrix_type}.{matrix_shape} does not exist."
             return getattr(matrix, metrics_fn)()
 
         rst = init
@@ -303,22 +295,30 @@ class MatrixManager:
             if not _requires_matrix(module):
                 continue
             matrix = getattr(module, stats_attr, None)
-            assert matrix is not None, f'{matrix_type} for {mname} does not exist.'
+            assert matrix is not None, f"{matrix_type} for {mname} does not exist."
             if matrix_shape == SHAPE_BLOCK_DIAG:
-                assert matrix.has_data, f'{matrix_type}.{matrix_shape} for {mname} does not exist.'
+                assert (
+                    matrix.has_data
+                ), f"{matrix_type}.{matrix_shape} for {mname} does not exist."
                 rst = reduce_fn(rst, getattr(matrix, metrics_fn)())
             elif matrix_shape == SHAPE_KRON:
                 if isinstance(module, _normalizations):
-                    assert matrix.has_unit, f'{matrix_type}.unit_wise for {mname} does not exist.'
+                    assert (
+                        matrix.has_unit
+                    ), f"{matrix_type}.unit_wise for {mname} does not exist."
                     rst = reduce_fn(rst, getattr(matrix.unit, metrics_fn)())
                 else:
-                    assert matrix.has_kron, f'{matrix_type}.{matrix_shape} for {mname} does not exist.'
+                    assert (
+                        matrix.has_kron
+                    ), f"{matrix_type}.{matrix_shape} for {mname} does not exist."
                     rst = reduce_fn(rst, getattr(matrix.kron, metrics_fn)())
             elif matrix_shape == SHAPE_DIAG:
-                assert matrix.has_diag, f'{matrix_type}.{matrix_shape} for {mname} does not exist.'
+                assert (
+                    matrix.has_diag
+                ), f"{matrix_type}.{matrix_shape} for {mname} does not exist."
                 rst = reduce_fn(rst, getattr(matrix.diag, metrics_fn)())
             else:
-                raise ValueError(f'Invalid matrix_shape: {matrix_shape}.')
+                raise ValueError(f"Invalid matrix_shape: {matrix_shape}.")
         return rst
 
     def get_eigenvalues(self, matrix_type, matrix_shape, stats_name=None):
@@ -330,9 +330,9 @@ class MatrixManager:
             matrix_type,
             matrix_shape,
             stats_name,
-            metrics_fn='eigenvalues',
+            metrics_fn="eigenvalues",
             reduce_fn=reduce,
-            init=[]
+            init=[],
         )
         if not isinstance(rst, torch.Tensor):
             rst = torch.sort(torch.cat(rst), descending=True)[0]
@@ -347,9 +347,9 @@ class MatrixManager:
             matrix_type,
             matrix_shape,
             stats_name,
-            metrics_fn='top_eigenvalue',
+            metrics_fn="top_eigenvalue",
             reduce_fn=reduce,
-            init=-1
+            init=-1,
         )
         return rst
 
@@ -362,17 +362,13 @@ class MatrixManager:
             matrix_type,
             matrix_shape,
             stats_name,
-            metrics_fn='trace',
+            metrics_fn="trace",
             reduce_fn=reduce,
-            init=0
+            init=0,
         )
         return rst
 
-    def get_effective_dim(
-        self, matrix_type, matrix_shape, reg, stats_name=None
-    ):
-        eigs = self.get_eigenvalues(
-            matrix_type, matrix_shape, stats_name=stats_name
-        )
+    def get_effective_dim(self, matrix_type, matrix_shape, reg, stats_name=None):
+        eigs = self.get_eigenvalues(matrix_type, matrix_shape, stats_name=stats_name)
 
         return torch.sum(eigs / (eigs + reg))

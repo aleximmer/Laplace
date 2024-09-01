@@ -5,9 +5,9 @@ from .mvp import power_method
 from .symmatrix import Diag, SymMatrix
 
 __all__ = [
-    'hessian_eigenvalues',
-    'hessian',
-    'hessian_for_loss',
+    "hessian_eigenvalues",
+    "hessian",
+    "hessian_for_loss",
 ]
 _supported_shapes = [SHAPE_FULL, SHAPE_BLOCK_DIAG, SHAPE_DIAG]
 
@@ -22,7 +22,7 @@ def hessian_eigenvalues(
     max_iters=100,
     tol=1e-3,
     is_distributed=False,
-    print_progress=False
+    print_progress=False,
 ):
     def hvp_fn(vec, x, y):
         model.zero_grad()
@@ -41,7 +41,7 @@ def hessian_eigenvalues(
         max_iters=max_iters,
         tol=tol,
         is_distributed=is_distributed,
-        print_progress=print_progress
+        print_progress=print_progress,
     )
 
 
@@ -68,7 +68,9 @@ def hessian_for_loss(
     # remove duplicates
     hessian_shapes = set(hessian_shapes)
     for hshape in hessian_shapes:
-        assert hshape in _supported_shapes, f'Invalid hessian_shape: {hshape}. hessian_shape must be in {_supported_shapes}.'
+        assert (
+            hshape in _supported_shapes
+        ), f"Invalid hessian_shape: {hshape}. hessian_shape must be in {_supported_shapes}."
 
     # setup matrix manager as needed
     if matrix_manager is None:
@@ -79,9 +81,7 @@ def hessian_for_loss(
         for inputs, targets in data_loader:
             inputs, targets = inputs.to(device), targets.to(device)
             _hessian_for_loss(model, loss_fn, hessian_shapes, inputs, targets)
-        matrix_manager.accumulate_matrices(
-            stats_name, scale=1 / len(data_loader)
-        )
+        matrix_manager.accumulate_matrices(stats_name, scale=1 / len(data_loader))
     else:
         assert inputs is not None and targets is not None
         _hessian_for_loss(model, loss_fn, hessian_shapes, inputs, targets)
@@ -102,18 +102,17 @@ def _hessian_for_loss(model, loss_fn, hessian_shapes, inputs, targets):
     # full
     if SHAPE_FULL in hessian_shapes:
         full_hess = hessian(loss, params)
-        setattr(model, 'hessian', SymMatrix(data=full_hess, device=device))
+        setattr(model, "hessian", SymMatrix(data=full_hess, device=device))
     else:
         full_hess = None
 
-    if SHAPE_BLOCK_DIAG not in hessian_shapes \
-            and SHAPE_DIAG not in hessian_shapes:
+    if SHAPE_BLOCK_DIAG not in hessian_shapes and SHAPE_DIAG not in hessian_shapes:
         return
 
     idx = 0
     for module in model.modules():
-        w = getattr(module, 'weight', None)
-        b = getattr(module, 'bias', None)
+        w = getattr(module, "weight", None)
+        b = getattr(module, "bias", None)
         params = [p for p in [w, b] if p is not None and p.requires_grad]
         if len(params) == 0:
             continue
@@ -123,12 +122,12 @@ def _hessian_for_loss(model, loss_fn, hessian_shapes, inputs, targets):
             m_hess = hessian(loss, params)
         else:
             m_numel = sum([p.numel() for p in params])
-            m_hess = full_hess[idx:idx + m_numel, idx:idx + m_numel]
+            m_hess = full_hess[idx : idx + m_numel, idx : idx + m_numel]
             idx += m_numel
 
         # block-diagonal
         if SHAPE_BLOCK_DIAG in hessian_shapes:
-            setattr(module, 'hessian', SymMatrix(data=m_hess, device=device))
+            setattr(module, "hessian", SymMatrix(data=m_hess, device=device))
 
         # diagonal
         if SHAPE_DIAG in hessian_shapes:
@@ -137,25 +136,25 @@ def _hessian_for_loss(model, loss_fn, hessian_shapes, inputs, targets):
             w_hess = b_hess = None
             if w is not None and w.requires_grad:
                 w_numel = w.numel()
-                w_hess = m_hess[_idx:_idx + w_numel].view_as(w)
+                w_hess = m_hess[_idx : _idx + w_numel].view_as(w)
                 _idx += w_numel
             if b is not None and b.requires_grad:
                 b_numel = b.numel()
-                b_hess = m_hess[_idx:_idx + b_numel].view_as(b)
+                b_hess = m_hess[_idx : _idx + b_numel].view_as(b)
                 _idx += b_numel
             diag = Diag(weight=w_hess, bias=b_hess, device=device)
-            if hasattr(module, 'hessian'):
+            if hasattr(module, "hessian"):
                 module.hessian.diag = diag
             else:
-                setattr(module, 'hessian', SymMatrix(diag=diag, device=device))
+                setattr(module, "hessian", SymMatrix(diag=diag, device=device))
 
 
 # adopted from https://github.com/mariogeiger/hessian/blob/master/hessian/hessian.py
 def hessian(output, inputs, out=None, allow_unused=False, create_graph=False):
-    '''
+    """
     Compute the Hessian of `output` with respect to `inputs`
     hessian((x * y).sum(), [x, y])
-    '''
+    """
     assert output.ndimension() == 0
 
     if torch.is_tensor(inputs):
@@ -178,17 +177,14 @@ def hessian(output, inputs, out=None, allow_unused=False, create_graph=False):
         for j in range(inp.numel()):
             if grad[j].requires_grad:
                 row = _gradient(
-                    grad[j],
-                    inputs[i:],
-                    retain_graph=True,
-                    create_graph=create_graph
+                    grad[j], inputs[i:], retain_graph=True, create_graph=create_graph
                 )[j:]
             else:
                 row = grad[j].new_zeros(sum(x.numel() for x in inputs[i:]) - j)
 
             out[ai, ai:].add_(row.type_as(out))  # ai's row
             if ai + 1 < n:
-                out[ai + 1:, ai].add_(row[1:].type_as(out))  # ai's column
+                out[ai + 1 :, ai].add_(row[1:].type_as(out))  # ai's column
             del row
             ai += 1
         del grad
@@ -200,11 +196,11 @@ def hessian(output, inputs, out=None, allow_unused=False, create_graph=False):
 def _gradient(
     outputs, inputs, grad_outputs=None, retain_graph=None, create_graph=False
 ):
-    '''
+    """
     Compute the gradient of `outputs` with respect to `inputs`
     gradient(x.sum(), x)
     gradient((x * y).sum(), [x, y])
-    '''
+    """
     if torch.is_tensor(inputs):
         inputs = [inputs]
     else:
@@ -215,10 +211,7 @@ def _gradient(
         grad_outputs,
         allow_unused=True,
         retain_graph=retain_graph,
-        create_graph=create_graph
+        create_graph=create_graph,
     )
-    grads = [
-        x if x is not None else torch.zeros_like(y) for x,
-        y in zip(grads, inputs)
-    ]
+    grads = [x if x is not None else torch.zeros_like(y) for x, y in zip(grads, inputs)]
     return torch.cat([x.contiguous().view(-1) for x in grads])

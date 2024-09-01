@@ -5,16 +5,16 @@ from torch import nn
 from torch.cuda import nvtx
 from torch.nn import functional as F
 
-_REQUIRES_GRAD_ATTR = '_original_requires_grad'
+_REQUIRES_GRAD_ATTR = "_original_requires_grad"
 
 __all__ = [
-    'original_requires_grad',
-    'record_original_requires_grad',
-    'restore_original_requires_grad',
-    'disable_param_grad',
-    'im2col_2d',
-    'add_value_to_diagonal',
-    'nvtx_range'
+    "original_requires_grad",
+    "record_original_requires_grad",
+    "restore_original_requires_grad",
+    "disable_param_grad",
+    "im2col_2d",
+    "add_value_to_diagonal",
+    "nvtx_range",
 ]
 
 
@@ -28,14 +28,11 @@ def record_original_requires_grad(param):
 
 
 def restore_original_requires_grad(param):
-    param.requires_grad = getattr(
-        param, _REQUIRES_GRAD_ATTR, param.requires_grad
-    )
+    param.requires_grad = getattr(param, _REQUIRES_GRAD_ATTR, param.requires_grad)
 
 
 @contextmanager
 def disable_param_grad(model):
-
     for param in model.parameters():
         record_original_requires_grad(param)
         param.requires_grad = False
@@ -55,7 +52,7 @@ def im2col_2d(x: torch.Tensor, conv2d: nn.Module):
         conv2d.kernel_size,
         dilation=conv2d.dilation,
         padding=conv2d.padding,
-        stride=conv2d.stride
+        stride=conv2d.stride,
     )
 
     return Mx

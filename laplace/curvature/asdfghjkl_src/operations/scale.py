@@ -8,10 +8,10 @@ class Scale(nn.Module):
     def __init__(self):
         super(Scale, self).__init__()
         self.weight = nn.Parameter(torch.ones(1))
-        
+
     def reset_parameters(self):
         nn.init.constant_(self.weight, 1)
-        
+
     def forward(self, input):
         return self.weight * input
 
@@ -24,6 +24,7 @@ class ScaleExt(Operation):
     in_data: n x f_in
     out_grads: n x f_out = f_in
     """
+
     @staticmethod
     def batch_grads_weight(module, in_data, out_grads):
         N = out_grads.size(0)
@@ -37,8 +38,8 @@ class ScaleExt(Operation):
     @staticmethod
     def cov_kron_A(module, in_data):
         N = in_data.size(0)
-        setattr(module, 'n_in_data', in_data.reshape(N, -1))
-        return torch.ones(1, 1, device=in_data.device) 
+        setattr(module, "n_in_data", in_data.reshape(N, -1))
+        return torch.ones(1, 1, device=in_data.device)
 
     @staticmethod
     def cov_kron_B(module, out_grads):

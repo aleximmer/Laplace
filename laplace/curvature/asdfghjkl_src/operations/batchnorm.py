@@ -11,7 +11,7 @@ from .operation import (
 
 
 class _BatchNormNd(Operation):
-    def __init__(self, module, model, op_names, save_attr='op_results'):
+    def __init__(self, module, model, op_names, save_attr="op_results"):
         if OP_COV_KRON in op_names:
             op_names = op_names.copy()
             # kron operation is not supported. unit_wise will be used instead.
@@ -31,10 +31,7 @@ class _BatchNormNd(Operation):
         raise NotImplementedError
 
     def batch_grads_weight(
-        self,
-        module: nn.Module,
-        in_data: torch.Tensor,
-        out_grads: torch.Tensor
+        self, module: nn.Module, in_data: torch.Tensor, out_grads: torch.Tensor
     ):
         return self._reduce(in_data.mul(out_grads))  # n x f
 
@@ -53,8 +50,8 @@ class _BatchNormNd(Operation):
         n_features = in_data.shape[1]  # f
         grads_w = self.batch_grads_weight(module, in_data, out_grads)  # n x f
         grads_b = self.batch_grads_bias(module, out_grads)  # n x f
-        cov_ww = (grads_w ** 2).sum(0)  # f
-        cov_bb = (grads_b ** 2).sum(0)  # f
+        cov_ww = (grads_w**2).sum(0)  # f
+        cov_bb = (grads_b**2).sum(0)  # f
         cov_wb = (grads_w * grads_b).sum(0)  # f
         blocks = torch.zeros(n_features, 2, 2).to(in_data.device)
         for i in range(n_features):
@@ -65,26 +62,22 @@ class _BatchNormNd(Operation):
 
     @staticmethod
     def cov_kron_A(module, in_data):
-        raise ValueError(
-            f'{OP_COV_KRON} operation is not supported in BatchNormNd.'
-        )
+        raise ValueError(f"{OP_COV_KRON} operation is not supported in BatchNormNd.")
 
     @staticmethod
     def cov_kron_B(module, out_grads):
-        raise ValueError(
-            f'{OP_COV_KRON} operation is not supported in BatchNormNd.'
-        )
+        raise ValueError(f"{OP_COV_KRON} operation is not supported in BatchNormNd.")
 
     @staticmethod
     def gram_A(module, in_data1, in_data2):
         raise ValueError(
-            f'{OP_GRAM_HADAMARD} operation is not supported in BatchNormNd.'
+            f"{OP_GRAM_HADAMARD} operation is not supported in BatchNormNd."
         )
 
     @staticmethod
     def gram_B(module, out_grads1, out_grads2):
         raise ValueError(
-            f'{OP_GRAM_HADAMARD} operation is not supported in BatchNormNd.'
+            f"{OP_GRAM_HADAMARD} operation is not supported in BatchNormNd."
         )
 
 
@@ -97,6 +90,7 @@ class BatchNorm1d(_BatchNormNd):
     in_data: n x f
     out_grads: n x f
     """
+
     def _reduce(self, tensor):
         return tensor
 
@@ -110,5 +104,6 @@ class BatchNorm2d(_BatchNormNd):
     in_data: n x c x h x w
     out_grads: n x c x h x w
     """
+
     def _reduce(self, tensor):
         return tensor.sum(dim=(2, 3))

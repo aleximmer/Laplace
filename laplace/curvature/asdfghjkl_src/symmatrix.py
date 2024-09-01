@@ -4,13 +4,13 @@ import numpy as np
 import torch
 
 __all__ = [
-    'matrix_to_tril',
-    'tril_to_matrix',
-    'get_n_cols_by_tril',
-    'SymMatrix',
-    'Kron',
-    'Diag',
-    'UnitWise'
+    "matrix_to_tril",
+    "tril_to_matrix",
+    "get_n_cols_by_tril",
+    "SymMatrix",
+    "Kron",
+    "Diag",
+    "UnitWise",
 ]
 
 
@@ -64,18 +64,16 @@ def _save_as_numpy(path, tensor):
     dirname = os.path.dirname(path)
     if not os.path.isdir(dirname):
         os.makedirs(dirname)
-    np.save(path, tensor.cpu().numpy().astype('float32'))
+    np.save(path, tensor.cpu().numpy().astype("float32"))
 
 
-def _load_from_numpy(path, device='cpu'):
+def _load_from_numpy(path, device="cpu"):
     data = np.load(path)
     return torch.from_numpy(data).to(device)
 
 
 class SymMatrix:
-    def __init__(
-        self, data=None, kron=None, diag=None, unit=None, device='cpu'
-    ):
+    def __init__(self, data=None, kron=None, diag=None, unit=None, device="cpu"):
         self.data = data
         self.kron = kron
         self.diag = diag
@@ -142,19 +140,19 @@ class SymMatrix:
         relative_paths = {}
         if self.has_data:
             tril = matrix_to_tril(self.data)
-            relative_path = os.path.join(relative_dir, 'tril.npy')
+            relative_path = os.path.join(relative_dir, "tril.npy")
             absolute_path = os.path.join(root, relative_path)
             _save_as_numpy(absolute_path, tril)
-            relative_paths['tril'] = relative_path
+            relative_paths["tril"] = relative_path
         if self.has_kron:
             rst = self.kron.save(root, relative_dir)
-            relative_paths['kron'] = rst
+            relative_paths["kron"] = rst
         if self.has_diag:
             rst = self.diag.save(root, relative_dir)
-            relative_paths['diag'] = rst
+            relative_paths["diag"] = rst
         if self.has_unit:
             rst = self.unit.save(root, relative_dir)
-            relative_paths['unit_wise'] = rst
+            relative_paths["unit_wise"] = rst
 
         return relative_paths
 
@@ -165,15 +163,12 @@ class SymMatrix:
         if kron_path is not None:
             if not self.has_kron:
                 self.kron = Kron(A=None, B=None, device=self.device)
-            self.kron.load(
-                A_path=kron_path['A_tril'], B_path=kron_path['B_tril']
-            )
+            self.kron.load(A_path=kron_path["A_tril"], B_path=kron_path["B_tril"])
         if diag_path is not None:
             if not self.has_diag:
                 self.diag = Diag(device=self.device)
             self.diag.load(
-                w_path=diag_path.get('weight', None),
-                b_path=diag_path.get('bias', None)
+                w_path=diag_path.get("weight", None), b_path=diag_path.get("bias", None)
             )
         if unit_path is not None:
             if not self.has_unit:
@@ -197,7 +192,7 @@ class SymMatrix:
     def to_matrices(self, vec, pointer):
         def unflatten(mat, p):
             numel = mat.numel()
-            mat.copy_(vec[p:p + numel].view_as(mat))
+            mat.copy_(vec[p : p + numel].view_as(mat))
             p += numel
             return p
 
@@ -214,15 +209,13 @@ class SymMatrix:
 
 
 class Kron:
-    def __init__(self, A, B, device='cpu'):
+    def __init__(self, A, B, device="cpu"):
         self.A = A
         self.B = B
         self.device = device
 
     def __add__(self, other):
-        return Kron(
-            A=self.A.add(other.A), B=self.B.add(other.B), device=self.device
-        )
+        return Kron(A=self.A.add(other.A), B=self.B.add(other.B), device=self.device)
 
     @property
     def data(self):
@@ -250,15 +243,13 @@ class Kron:
 
     def save(self, root, relative_dir):
         relative_paths = {}
-        for name in ['A', 'B']:
+        for name in ["A", "B"]:
             mat = getattr(self, name, None)
             if mat is None:
                 continue
             tril = matrix_to_tril(mat)
-            tril_name = f'{name}_tril'
-            relative_path = os.path.join(
-                relative_dir, 'kron', f'{tril_name}.npy'
-            )
+            tril_name = f"{name}_tril"
+            relative_path = os.path.join(relative_dir, "kron", f"{tril_name}.npy")
             absolute_path = os.path.join(root, relative_path)
             _save_as_numpy(absolute_path, tril)
             relative_paths[tril_name] = relative_path
@@ -278,7 +269,7 @@ class Kron:
 
 
 class Diag:
-    def __init__(self, weight=None, bias=None, device='cpu'):
+    def __init__(self, weight=None, bias=None, device="cpu"):
         self.weight = weight
         self.bias = bias
         self.device = device
@@ -338,11 +329,11 @@ class Diag:
 
     def save(self, root, relative_dir):
         relative_paths = {}
-        for name in ['weight', 'bias']:
+        for name in ["weight", "bias"]:
             mat = getattr(self, name, None)
             if mat is None:
                 continue
-            relative_path = os.path.join(relative_dir, 'diag', f'{name}.npy')
+            relative_path = os.path.join(relative_dir, "diag", f"{name}.npy")
             absolute_path = os.path.join(root, relative_path)
             _save_as_numpy(absolute_path, mat)
             relative_paths[name] = relative_path
@@ -364,7 +355,7 @@ class Diag:
 
 
 class UnitWise:
-    def __init__(self, data=None, device='cpu'):
+    def __init__(self, data=None, device="cpu"):
         self.data = data
         self.device = device
 
@@ -398,7 +389,7 @@ class UnitWise:
         return trace
 
     def save(self, root, relative_dir):
-        relative_path = os.path.join(relative_dir, 'unit_wise.npy')
+        relative_path = os.path.join(relative_dir, "unit_wise.npy")
         absolute_path = os.path.join(root, relative_path)
         _save_as_numpy(absolute_path, self.data)
         return relative_path

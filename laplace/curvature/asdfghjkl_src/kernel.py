@@ -11,27 +11,36 @@ from .core import extend
 from .operations import OP_BATCH_GRADS, OP_GRAM_DIRECT, OP_GRAM_HADAMARD
 
 __all__ = [
-    'batch',
-    'empirical_direct_ntk',
-    'empirical_implicit_ntk',
-    'empirical_class_wise_direct_ntk',
-    'empirical_class_wise_hadamard_ntk',
-    'logits_hessian_cross_entropy',
-    'natural_gradient_cross_entropy',
-    'efficient_natural_gradient_cross_entropy',
-    'parallel_efficient_natural_gradient_cross_entropy',
-    'kernel_vector_product',
-    'kernel_free_cross_entropy',
-    'kernel_eigenvalues'
+    "batch",
+    "empirical_direct_ntk",
+    "empirical_implicit_ntk",
+    "empirical_class_wise_direct_ntk",
+    "empirical_class_wise_hadamard_ntk",
+    "logits_hessian_cross_entropy",
+    "natural_gradient_cross_entropy",
+    "efficient_natural_gradient_cross_entropy",
+    "parallel_efficient_natural_gradient_cross_entropy",
+    "kernel_vector_product",
+    "kernel_free_cross_entropy",
+    "kernel_eigenvalues",
 ]
 
 
-_MASTER = 'master'
-_ALL = 'all'
-_SPLIT = 'split'
+_MASTER = "master"
+_ALL = "all"
+_SPLIT = "split"
 
 
-def batch(kernel_fn, model, x1, x2=None, batch_size=1, store_on_device=True, is_distributed=False, gather_type=_MASTER):
+def batch(
+    kernel_fn,
+    model,
+    x1,
+    x2=None,
+    batch_size=1,
+    store_on_device=True,
+    is_distributed=False,
+    gather_type=_MASTER,
+):
     """
     :param kernel_fn:
     :param model:
@@ -48,11 +57,14 @@ def batch(kernel_fn, model, x1, x2=None, batch_size=1, store_on_device=True, is_
         if isinstance(x, DataLoader):
             return x
         elif isinstance(x, Tensor):
-            assert x.shape[0] % batch_size == 0, \
-                f'data size ({x.shape[0]}) has to be divisible by batch size ({batch_size}).'
+            assert (
+                x.shape[0] % batch_size == 0
+            ), f"data size ({x.shape[0]}) has to be divisible by batch size ({batch_size})."
             return DataLoader(TensorDataset(x), batch_size)
         else:
-            raise ValueError(f'x1 and x2 have to be {DataLoader} or {Tensor}. {type(x)} was given.')
+            raise ValueError(
+                f"x1 and x2 have to be {DataLoader} or {Tensor}. {type(x)} was given."
+            )
 
     loader1 = _get_loader(x1)
     if x2 is None:
@@ -61,7 +73,9 @@ def batch(kernel_fn, model, x1, x2=None, batch_size=1, store_on_device=True, is_
         loader2 = _get_loader(x2)
 
     if is_distributed:
-        return _parallel(kernel_fn, model, loader1, loader2, store_on_device, gather_type)
+        return _parallel(
+            kernel_fn, model, loader1, loader2, store_on_device, gather_type
+        )
     else:
         return _serial(kernel_fn, model, loader1, loader2, store_on_device)
 
@@ -77,7 +91,7 @@ def _get_inputs(data):
 
 def _serial(kernel_fn, model, loader1, loader2=None, store_on_device=True):
     device = next(iter(model.parameters())).device
-    tmp_device = device if store_on_device else 'cpu'
+    tmp_device = device if store_on_device else "cpu"
     if loader2 is not None:
         rows = []
         for batch1 in loader1:
@@ -90,7 +104,9 @@ def _serial(kernel_fn, model, loader1, loader2=None, store_on_device=True):
             rows.append(torch.cat(row_kernels, dim=1))
     else:
         n_batches1 = len(loader1)
-        blocks = [[torch.empty(0) for _ in range(n_batches1)] for _ in range(n_batches1)]
+        blocks = [
+            [torch.empty(0) for _ in range(n_batches1)] for _ in range(n_batches1)
+        ]
         for i, batch1 in enumerate(loader1):
             batch1 = _get_inputs(batch1).to(device)
             for j, batch2 in enumerate(loader1):
@@ -121,15 +137,16 @@ def _get_subset_loader(loader: DataLoader, batch_indices: List):
         subset_sample_indices.extend(sample_indices)
     subset = Subset(loader.dataset, subset_sample_indices)
 
-    return DataLoader(subset,
-                      batch_size,
-                      pin_memory=loader.pin_memory,
-                      num_workers=loader.num_workers)
+    return DataLoader(
+        subset, batch_size, pin_memory=loader.pin_memory, num_workers=loader.num_workers
+    )
 
 
-def _parallel(kernel_fn, model, loader1, loader2=None, store_on_device=True, gather_type=_MASTER):
+def _parallel(
+    kernel_fn, model, loader1, loader2=None, store_on_device=True, gather_type=_MASTER
+):
     device = next(iter(model.parameters())).device
-    tmp_device = device if store_on_device else 'cpu'
+    tmp_device = device if store_on_device else "cpu"
     assert gather_type in [_MASTER, _ALL, _SPLIT]
     n_batches1 = len(loader1)
     is_symmetric = loader2 is None
@@ -145,7 +162,9 @@ def _parallel(kernel_fn, model, loader1, loader2=None, store_on_device=True, gat
     rank = dist.get_rank()
     is_master = rank == 0
     world_size = dist.get_world_size()
-    assert len(indices) >= world_size, f'At least 1 block have to be assigned to each process. There are only {len(indices)} blocks for {world_size} processes.'
+    assert (
+        len(indices) >= world_size
+    ), f"At least 1 block have to be assigned to each process. There are only {len(indices)} blocks for {world_size} processes."
     indices_split = np.array_split(indices, world_size)
 
     local_indices = indices_split[rank]
@@ -161,7 +180,9 @@ def _parallel(kernel_fn, model, loader1, loader2=None, store_on_device=True, gat
         # bs x bs x c x *
         block = kernel_fn(model, batch1, batch2)
         local_blocks.append(block.to(tmp_device))
-    local_blocks = torch.stack(local_blocks).to(device)  # local_n_blocks x bs x bs x c x *
+    local_blocks = torch.stack(local_blocks).to(
+        device
+    )  # local_n_blocks x bs x bs x c x *
 
     # match the size of local blocks to the maximum size
     max_n_blocks = len(indices_split[0])
@@ -170,13 +191,15 @@ def _parallel(kernel_fn, model, loader1, loader2=None, store_on_device=True, gat
         local_blocks = torch.cat([local_blocks, dummy])
 
     def _construct_block_matrix(block_list):
-        _blocks = [[torch.empty(0) for _ in range(n_batches2)] for _ in range(n_batches1)]
+        _blocks = [
+            [torch.empty(0) for _ in range(n_batches2)] for _ in range(n_batches1)
+        ]
         for _local_blocks, _local_indices in zip(block_list, indices_split):
             for _block, (i, j) in zip(_local_blocks, _local_indices):
                 _blocks[i][j] = _block
         if is_symmetric:
             for j in range(n_batches2):
-                for i in range(j+1, n_batches1):
+                for i in range(j + 1, n_batches1):
                     _block = _blocks[j][i].clone().transpose(0, 1)
                     if _block.ndim == 4:
                         # bs x bs x c x c
@@ -207,7 +230,9 @@ def _parallel(kernel_fn, model, loader1, loader2=None, store_on_device=True, gat
     # all-to-all
     gather_list = []
     for dst, local_classes in enumerate(classes_split):
-        tensor = local_blocks[:, :, :, local_classes].clone()  # local_n_blocks x bs x bs x local_c
+        tensor = local_blocks[
+            :, :, :, local_classes
+        ].clone()  # local_n_blocks x bs x bs x local_c
         if rank == dst:
             gather_list = [torch.zeros_like(tensor) for _ in range(world_size)]
             dist.gather(tensor, gather_list, dst=dst)
@@ -250,7 +275,7 @@ def empirical_direct_ntk(model, x1, x2=None):
             scalar.backward(retain_graph=(k < n_classes - 1))
             j_k = []
             for module in model.modules():
-                operation = getattr(module, 'operation', None)
+                operation = getattr(module, "operation", None)
                 if operation is None:
                     continue
                 batch_grads = operation.get_op_results()[OP_BATCH_GRADS]
@@ -264,9 +289,9 @@ def empirical_direct_ntk(model, x1, x2=None):
                 j2[:, k, :] = j_k[n1:]
 
     if is_single_batch:
-        return torch.einsum('ncp,mdp->nmcd', j1, j1)  # n1 x n1 x c x c
+        return torch.einsum("ncp,mdp->nmcd", j1, j1)  # n1 x n1 x c x c
     else:
-        return torch.einsum('ncp,mdp->nmcd', j1, j2)  # n1 x n2 x c x c
+        return torch.einsum("ncp,mdp->nmcd", j1, j2)  # n1 x n2 x c x c
 
 
 def empirical_implicit_ntk(model, x1, x2=None):
@@ -291,7 +316,9 @@ def empirical_implicit_ntk(model, x1, x2=None):
     for j in range(n2):
         for k in range(n_classes):
             retain_graph = j < n2 - 1 or k < n_classes - 1
-            kernel = torch.autograd.grad(ntk_dot_v[j][k], v1, retain_graph=retain_graph)[0]
+            kernel = torch.autograd.grad(
+                ntk_dot_v[j][k], v1, retain_graph=retain_graph
+            )[0]
             ntk[:, j, :, k] = kernel
 
     return ntk  # n1 x n2 x c x c
@@ -342,7 +369,7 @@ def logits_second_order_grad_cross_entropy(logits, targets, damping=1e-5):
     hessian = logits_hessian_cross_entropy(logits)  # n x c x c
     hessian = _add_value_to_diagonal(hessian, damping)
 
-    loss = F.cross_entropy(logits, targets, reduction='sum')
+    loss = F.cross_entropy(logits, targets, reduction="sum")
     grads = torch.autograd.grad(loss, logits, retain_graph=True)[0]  # n x c
 
     return _cholesky_solve(hessian, grads)  # n x c
@@ -364,7 +391,7 @@ def natural_gradient_cross_entropy(model, inputs, targets, kernel, damping=1e-5)
             else:
                 # dense x dense
                 block = torch.matmul(hessian[i], kernel[i, j])
-            mat[i * c: (i+1) * c, j * c: (j+1) * c] = block
+            mat[i * c : (i + 1) * c, j * c : (j + 1) * c] = block
     mat.div_(n)
     mat = _add_value_to_diagonal(mat, damping)
     inv = torch.inverse(mat)
@@ -378,7 +405,9 @@ def natural_gradient_cross_entropy(model, inputs, targets, kernel, damping=1e-5)
     torch.autograd.backward(outputs, grad_tensors=v)
 
 
-def efficient_natural_gradient_cross_entropy(model, inputs, targets, class_kernels, damping=1e-5):
+def efficient_natural_gradient_cross_entropy(
+    model, inputs, targets, class_kernels, damping=1e-5
+):
     assert class_kernels.ndim == 3  # c x n x n
     model.zero_grad()
     outputs = model(inputs)
@@ -393,7 +422,9 @@ def efficient_natural_gradient_cross_entropy(model, inputs, targets, class_kerne
     torch.autograd.backward(outputs, grad_tensors=v)
 
 
-def parallel_efficient_natural_gradient_cross_entropy(model, inputs, targets, local_class_kernels, damping=1e-5):
+def parallel_efficient_natural_gradient_cross_entropy(
+    model, inputs, targets, local_class_kernels, damping=1e-5
+):
     rank = dist.get_rank()
     world_size = dist.get_world_size()
     local_n = inputs.shape[0]  # n
@@ -424,7 +455,9 @@ def parallel_efficient_natural_gradient_cross_entropy(model, inputs, targets, lo
         local_c, n, m = local_class_kernels.shape
         assert n == local_n * world_size
         v = torch.cat(gather_list).transpose(0, 1)  # local_c x n
-        assert v.shape[0] == local_c and v.shape[1] == n == m, f'rank: {rank}, v: {v.shape}, local_class_kernels: {local_class_kernels.shape}'
+        assert (
+            v.shape[0] == local_c and v.shape[1] == n == m
+        ), f"rank: {rank}, v: {v.shape}, local_class_kernels: {local_class_kernels.shape}"
         v = _cholesky_solve(local_class_kernels, v)  # local_c x n
 
     # class to data-parallel (all-to-all)
@@ -432,7 +465,9 @@ def parallel_efficient_natural_gradient_cross_entropy(model, inputs, targets, lo
     max_n_classes = len(classes_split[0])
     for dst in range(world_size):
         if has_local_classes:
-            tensor = v[:, dst * local_n: (dst + 1) * local_n].clone()  # local_c x local_n
+            tensor = v[
+                :, dst * local_n : (dst + 1) * local_n
+            ].clone()  # local_c x local_n
             local_c = len(classes_split[rank])
             for _ in range(max_n_classes - local_c):
                 dummy = torch.zeros_like(tensor[0]).unsqueeze(0)
@@ -465,20 +500,22 @@ def parallel_efficient_natural_gradient_cross_entropy(model, inputs, targets, lo
     pointer = 0
     for p in params:
         numel = p.numel()
-        grad = packed_tensor[pointer: pointer + numel].view_as(p.grad)
+        grad = packed_tensor[pointer : pointer + numel].view_as(p.grad)
         p.grad.copy_(grad)
         pointer += numel
     assert pointer == packed_tensor.numel()
 
 
-def kernel_free_cross_entropy(model,
-                              inputs,
-                              targets,
-                              damping=1e-5,
-                              tol=1e-3,
-                              max_iters=None,
-                              is_distributed=False,
-                              print_progress=False):
+def kernel_free_cross_entropy(
+    model,
+    inputs,
+    targets,
+    damping=1e-5,
+    tol=1e-3,
+    max_iters=None,
+    is_distributed=False,
+    print_progress=False,
+):
     outputs = model(inputs)  # n x c
     n_data, n_classes = outputs.shape
     if is_distributed:
@@ -487,7 +524,7 @@ def kernel_free_cross_entropy(model,
         max_iters = n_data * n_classes
 
     hessian = logits_hessian_cross_entropy(outputs)  # n x c x c
-    loss = F.cross_entropy(outputs, targets, reduction='sum').div(n_data)
+    loss = F.cross_entropy(outputs, targets, reduction="sum").div(n_data)
     grads = torch.autograd.grad(loss, outputs, retain_graph=True)[0]  # n x c
 
     gg = torch.sum(torch.pow(grads, 2))
@@ -503,12 +540,18 @@ def kernel_free_cross_entropy(model,
     if is_distributed:
         dist.all_reduce(last_n)
     for i in range(max_iters):
-        vjp = torch.autograd.grad(outputs, list(model.parameters()), grad_outputs=p, retain_graph=True, create_graph=True)
+        vjp = torch.autograd.grad(
+            outputs,
+            list(model.parameters()),
+            grad_outputs=p,
+            retain_graph=True,
+            create_graph=True,
+        )
         g = [tensor.clone() for tensor in vjp]
         if is_distributed:
             g = _all_reduce_tensor_list(g)
         kernel_vp = torch.autograd.grad(vjp, p, grad_outputs=g)[0]
-        u = torch.einsum('nij,nj->ni', hessian, kernel_vp).div(n_data)  # n x c
+        u = torch.einsum("nij,nj->ni", hessian, kernel_vp).div(n_data)  # n x c
         u.add_(p, alpha=damping)
 
         m = torch.sum(p.mul(u))
@@ -525,7 +568,7 @@ def kernel_free_cross_entropy(model,
 
         err = n.sqrt() / g_norm
         if print_progress:
-            print(f'{i+1}/{max_iters} err={err}')
+            print(f"{i+1}/{max_iters} err={err}")
         if err < tol:
             break
         beta = (n / last_n).item()
@@ -541,28 +584,32 @@ def kernel_free_cross_entropy(model,
         pointer = 0
         for j, p in enumerate(params):
             numel = p.grad.numel()
-            p.grad.copy_(packed_tensor[pointer: pointer + numel].reshape_as(p.grad))
+            p.grad.copy_(packed_tensor[pointer : pointer + numel].reshape_as(p.grad))
             pointer += numel
 
 
 def kernel_vector_product(model, inputs, vec):
     outputs = model(inputs)
     vec.requires_grad_(True)
-    vjp = torch.autograd.grad(outputs, list(model.parameters()), grad_outputs=vec, create_graph=True)
+    vjp = torch.autograd.grad(
+        outputs, list(model.parameters()), grad_outputs=vec, create_graph=True
+    )
     return torch.autograd.grad(vjp, vec, grad_outputs=vjp)[0]
 
 
-def kernel_eigenvalues(model,
-                       inputs,
-                       top_n=1,
-                       max_iters=100,
-                       tol=1e-3,
-                       eps=1e-6,
-                       eigenvectors=False,
-                       cross_entropy=False,
-                       is_distributed=False,
-                       gather_type=_ALL,
-                       print_progress=False):
+def kernel_eigenvalues(
+    model,
+    inputs,
+    top_n=1,
+    max_iters=100,
+    tol=1e-3,
+    eps=1e-6,
+    eigenvectors=False,
+    cross_entropy=False,
+    is_distributed=False,
+    gather_type=_ALL,
+    print_progress=False,
+):
     assert top_n >= 1
     assert max_iters >= 1
 
@@ -577,7 +624,7 @@ def kernel_eigenvalues(model,
 
     for i in range(top_n):
         if print_progress:
-            print(f'start power iteration for lambda({i+1}).')
+            print(f"start power iteration for lambda({i+1}).")
         vec = torch.randn_like(outputs)
         eigval = None
         last_eigval = 0
@@ -598,16 +645,20 @@ def kernel_eigenvalues(model,
 
             # J'v
             vec.requires_grad_(True)
-            vjp = torch.autograd.grad(outputs, list(model.parameters()), grad_outputs=vec, create_graph=True)
+            vjp = torch.autograd.grad(
+                outputs, list(model.parameters()), grad_outputs=vec, create_graph=True
+            )
             g = [tensor.clone() for tensor in vjp]
             if is_distributed:
                 g = _all_reduce_tensor_list(g)
 
             # JJ'v
-            kernel_vp = torch.autograd.grad(vjp, vec, grad_outputs=g, retain_graph=True)[0]
+            kernel_vp = torch.autograd.grad(
+                vjp, vec, grad_outputs=g, retain_graph=True
+            )[0]
             if cross_entropy:
                 # HJJ'v
-                kernel_vp = torch.einsum('nij,nj->ni', hessian, kernel_vp)
+                kernel_vp = torch.einsum("nij,nj->ni", hessian, kernel_vp)
 
             # v'JJ'v / v'v = v'JJ'v
             eigval = torch.sum(kernel_vp.mul(vec))
@@ -617,7 +668,7 @@ def kernel_eigenvalues(model,
             if j > 0:
                 diff = abs(eigval - last_eigval) / (abs(last_eigval) + eps)
                 if print_progress:
-                    print(f'{j}/{max_iters} diff={diff}')
+                    print(f"{j}/{max_iters} diff={diff}")
                 if diff < tol:
                     break
 
@@ -643,7 +694,7 @@ def kernel_eigenvalues(model,
                 elif gather_type == _ALL:
                     dist.all_gather(gather_list, v)
                 else:
-                    raise ValueError(f'Invalid gather type {gather_type}.')
+                    raise ValueError(f"Invalid gather type {gather_type}.")
                 eigvecs[i] = torch.cat([_v.flatten() for _v in gather_list])
         return eigvals, eigvecs
     else:
@@ -657,7 +708,7 @@ def _all_reduce_tensor_list(tensor_list):
     rst = []
     for i, tensor in enumerate(tensor_list):
         numel = tensor.numel()
-        v = packed_tensor[pointer: pointer + numel].clone().reshape_as(tensor)
+        v = packed_tensor[pointer : pointer + numel].clone().reshape_as(tensor)
         rst.append(v)
         pointer += numel
 
@@ -674,7 +725,9 @@ def _cholesky_solve(A, b, eps=1e-8):
 
 def _add_value_to_diagonal(X, value):
     if X.ndim == 3:
-        return torch.stack([_add_value_to_diagonal(X[i], value) for i in range(X.shape[0])])
+        return torch.stack(
+            [_add_value_to_diagonal(X[i], value) for i in range(X.shape[0])]
+        )
     else:
         assert X.ndim == 2
 
@@ -686,13 +739,10 @@ def _add_value_to_diagonal(X, value):
 
 def _zero_kernel(model, n_data1, n_data2):
     p = next(iter(model.parameters()))
-    kernel = torch.zeros(n_data1,
-                         n_data2,
-                         device=p.device,
-                         dtype=p.dtype)
-    setattr(model, 'kernel', kernel)
+    kernel = torch.zeros(n_data1, n_data2, device=p.device, dtype=p.dtype)
+    setattr(model, "kernel", kernel)
 
 
 def _clear_kernel(model):
-    if hasattr(model, 'kernel'):
-        delattr(model, 'kernel')
+    if hasattr(model, "kernel"):
+        delattr(model, "kernel")
