@@ -155,7 +155,7 @@ def _group_product(xs, ys):
     return sum([torch.sum(x * y) for (x, y) in zip(xs, ys)])
 
 
-def _group_add(xs, ys, alpha: float | torch.Tensor=1.):
+def _group_add(xs, ys, alpha=1.):
     return [x.add(y.mul(alpha)) for x, y in zip(xs, ys)]
 
 
