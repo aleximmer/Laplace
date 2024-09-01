@@ -1,7 +1,12 @@
 import logging
-from importlib.util import find_spec
 
 from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.asdfghjkl import (
+    AsdfghjklEF,
+    AsdfghjklGGN,
+    AsdfghjklHessian,
+    AsdfghjklInterface,
+)
 
 try:
     from laplace.curvature.backpack import BackPackEF, BackPackGGN, BackPackInterface
@@ -27,6 +32,10 @@ __all__ = [
     "CurvatureInterface",
     "GGNInterface",
     "EFInterface",
+    "AsdfghjklInterface",
+    "AsdfghjklGGN",
+    "AsdfghjklEF",
+    "AsdfghjklHessian",
     "BackPackInterface",
     "BackPackGGN",
     "BackPackEF",
@@ -39,30 +48,3 @@ __all__ = [
     "CurvlinopsEF",
     "CurvlinopsHessian",
 ]
-
-if find_spec("asdfghjkl") is None:
-    logging.info(
-        """Asdfghjkl backend not available since the old asdfghjkl dependency """
-        """is not installed. If you want to use it, run: """
-        """pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl"""
-    )
-else:
-    try:
-        from laplace.curvature.asdfghjkl import (
-            AsdfghjklEF,  # noqa: F401
-            AsdfghjklGGN,  # noqa: F401
-            AsdfghjklHessian,  # noqa: F401
-            AsdfghjklInterface,  # noqa: F401
-        )
-
-        __all__.extend(
-            [
-                "AsdfghjklInterface",
-                "AsdfghjklGGN",
-                "AsdfghjklEF",
-                "AsdfghjklHessian",
-                "AsdlInterface",
-            ]
-        )
-    except ModuleNotFoundError:
-        logging.info("Asdfghjkl backend not available.")
