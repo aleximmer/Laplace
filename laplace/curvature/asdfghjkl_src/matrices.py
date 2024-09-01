@@ -1,5 +1,5 @@
-import os
 import copy
+import os
 
 import torch
 import torch.distributed as dist
@@ -9,7 +9,7 @@ from .symmatrix import SymMatrix
 HESSIAN = 'hessian'  # Hessian
 FISHER_EXACT = 'fisher_exact'  # exact Fisher
 FISHER_MC = 'fisher_mc'  # Fisher estimation by Monte-Carlo sampling
-COV = 'cov'  # no-centered covariance a.k.a. empirical Fisher
+COV = 'cov'  # un-centered covariance a.k.a. empirical Fisher
 
 SHAPE_FULL = 'full'  # full
 SHAPE_BLOCK_DIAG = 'block_diag'  # layer-wise block-diagonal
@@ -49,7 +49,8 @@ class MatrixManager:
         if isinstance(matrix_types, str):
             matrix_types = [matrix_types]
         for mat_type in matrix_types:
-            assert mat_type in _supported_types, f'Invalid matrix_type: {mat_type}. matrix_type must be in {_supported_types}.'
+            if mat_type not in _supported_types:
+                raise ValueError(f'Invalid matrix_type {mat_type} not in {_supported_types}.')
         # remove duplicates
         self._matrix_types = set(matrix_types)
         # for updating stats

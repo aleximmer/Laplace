@@ -10,6 +10,14 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.asdfghjkl_src.gradient import batch_gradient
+from laplace.curvature.asdfghjkl_src.hessian import (
+    hessian_eigenvalues,
+    hessian_for_loss,
+)
+from laplace.utils import Kron, _is_batchnorm
+from laplace.utils.enums import Likelihood
+
 from .asdfghjkl_src import (
     COV,
     FISHER_EXACT,
@@ -19,13 +27,6 @@ from .asdfghjkl_src import (
     SHAPE_KRON,
     fisher_for_cross_entropy,
 )
-from laplace.curvature.asdfghjkl_src.gradient import batch_gradient
-from laplace.curvature.asdfghjkl_src.hessian import (
-    hessian_eigenvalues,
-    hessian_for_loss,
-)
-from laplace.utils import Kron, _is_batchnorm
-from laplace.utils.enums import Likelihood
 
 EPS = 1e-6
 
