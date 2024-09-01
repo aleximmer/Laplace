@@ -59,12 +59,6 @@ To install laplace with `pip`, run the following:
 pip install laplace-torch
 ```
 
-Additionally, if you want to use the `asdfghjkl` backend, please install it via:
-
-```bash
-pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl
-```
-
 ### Setup dev environment
 
 For development purposes, e.g. if you would like to make contributions, follow
