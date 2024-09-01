@@ -228,9 +228,9 @@ class AsdfghjklHessian(AsdfghjklInterface):
         device = eigvecs.device
         eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
         loss = torch.tensor(0, device=device, dtype=eigvecs.dtype)
-        for x, y in data_loader:
-            with torch.no_grad():
-                loss = self.lossfunc(self.model(x.to(device)), y.to(device)) + loss
+        with torch.no_grad():
+            for x, y in data_loader:
+                loss += self.lossfunc(self.model(x.to(device)), y.to(device))
         return eigvecs, self.factor * eigvals, self.factor * loss
 
 
