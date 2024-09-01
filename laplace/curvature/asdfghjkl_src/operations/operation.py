@@ -1,7 +1,8 @@
 import torch
+
 from ..utils import original_requires_grad
 
-# compute no-centered covariance
+# compute un-centered covariance
 OP_COV_KRON = 'cov_kron'  # Kronecker-factored
 OP_COV_DIAG = 'cov_diag'  # diagonal
 OP_COV_UNIT_WISE = 'cov_unit_wise'  # unit-wise
@@ -142,7 +143,7 @@ class Operation:
         self.set_op_results(op_results)
 
     @staticmethod
-    def batch_grads_weight(module, in_data, out_grads):
+    def batch_grads_weight(module, in_data, out_grads) -> torch.Tensor:
         raise NotImplementedError
 
     @staticmethod

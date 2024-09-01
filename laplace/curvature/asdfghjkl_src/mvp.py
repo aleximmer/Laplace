@@ -1,31 +1,25 @@
-import math
-import copy
-
 import torch
 import torch.distributed as dist
 
 __all__ = [
     'power_method',
-    'conjugate_gradient_method',
-    'mvp',
 ]
 
 
-def power_method(mvp_fn,
-                 model,
-                 data_loader=None,
-                 inputs=None,
-                 targets=None,
-                 top_n=1,
-                 max_iters=100,
-                 tol=1e-3,
-                 is_distributed=False,
-                 print_progress=False,
-                 random_seed=None):
-    # main logic is adopted from https://github.com/amirgholami/PyHessian/blob/master/pyhessian/hessian.py
-    # modified interface and format
-    # modified for various matrices and distributed memory run
-
+def power_method(
+    mvp_fn,
+    model,
+    data_loader=None,
+    inputs=None,
+    targets=None,
+    top_n=1,
+    max_iters=100,
+    tol=1e-3,
+    is_distributed=False,
+    print_progress=False,
+    random_seed=None
+):
+    # adopted from https://github.com/amirgholami/PyHessian/blob/master/pyhessian/hessian.py
     assert top_n >= 1
     assert max_iters >= 1
 
@@ -36,13 +30,15 @@ def power_method(mvp_fn,
             print(message)
 
     def _call_mvp(v):
-        return mvp(mvp_fn,
-                   v,
-                   data_loader=data_loader,
-                   inputs=inputs,
-                   targets=targets,
-                   random_seed=random_seed,
-                   is_distributed=is_distributed)
+        return mvp(
+            mvp_fn,
+            v,
+            data_loader=data_loader,
+            inputs=inputs,
+            targets=targets,
+            random_seed=random_seed,
+            is_distributed=is_distributed
+        )
 
     eigvals = []
     eigvecs = []
@@ -54,13 +50,15 @@ def power_method(mvp_fn,
             dist.broadcast(vec, src=0)
             vec = _unflatten_like_parameters(vec, params)
 
-        eigval = None
-        last_eigval = None
+        eigval = 0
+        last_eigval = 0
         # power iteration
         for j in range(max_iters):
             vec = _orthnormal(vec, eigvecs)
             Mv = _call_mvp(vec)
-            eigval = _group_product(Mv, vec).item()
+            eigval = _group_product(Mv, vec)
+            if isinstance(eigval, torch.Tensor):
+                eigval = eigval.item()
             if j > 0:
                 diff = abs(eigval - last_eigval) / (abs(last_eigval) + 1e-6)
                 _report(f'{j}/{max_iters} diff={diff}')
@@ -77,95 +75,16 @@ def power_method(mvp_fn,
     return eigvals, eigvecs
 
 
-def conjugate_gradient_method(mvp_fn,
-                              b,
-                              data_loader=None,
-                              inputs=None,
-                              targets=None,
-                              init_x=None,
-                              damping=1e-3,
-                              max_iters=None,
-                              tol=1e-8,
-                              preconditioner=None,
-                              is_distributed=False,
-                              print_progress=False,
-                              random_seed=None,
-                              save_log=False):
-    """
-    Solve (A + d * I)x = b by conjugate gradient method.
-    d: damping
-    Return x when x is close enough to inv(A) * b.
-    """
-    if max_iters is None:
-        n_dim = sum([_b.numel() for _b in b])
-        max_iters = n_dim
-
-    def _call_mvp(v):
-        return mvp(mvp_fn,
-                   v,
-                   data_loader=data_loader,
-                   inputs=inputs,
-                   targets=targets,
-                   random_seed=random_seed,
-                   damping=damping,
-                   is_distributed=is_distributed)
-
-    x = init_x
-    if x is None:
-        x = [torch.zeros_like(_b) for _b in b]
-        r = copy.deepcopy(b)
-    else:
-        Ax = _call_mvp(x)
-        r = _group_add(b, Ax, -1)
-
-    if preconditioner is None:
-        p = copy.deepcopy(r)
-        last_rz = _group_product(r, r)
-    else:
-        p = preconditioner.precondition_vector(r)
-        last_rz = _group_product(r, p)
-
-    b_norm = math.sqrt(_group_product(b, b))
-
-    log = []
-    for i in range(max_iters):
-        Ap = _call_mvp(p)
-        alpha = last_rz / _group_product(p, Ap)
-        x = _group_add(x, p, alpha)
-        r = _group_add(r, Ap, -alpha)
-        rr = _group_product(r, r)
-        err = math.sqrt(rr) / b_norm
-        log.append({'step': i + 1, 'error': err})
-        if print_progress:
-            print(f'{i+1}/{max_iters} err={err}')
-        if err < tol:
-            break
-        if preconditioner is None:
-            z = r
-            rz = rr
-        else:
-            z = preconditioner.precondition_vector(r)
-            rz = _group_product(r, z)
-
-        beta = rz / last_rz  # Fletcher-Reeves
-        p = _group_add(z, p, beta)
-        last_rz = rz
-
-    if save_log:
-        return x, log
-    else:
-        return x
-
-
-def mvp(mvp_fn,
-        vec,
-        data_loader=None,
-        inputs=None,
-        targets=None,
-        random_seed=None,
-        damping=None,
-        is_distributed=False):
-
+def mvp(
+    mvp_fn,
+    vec,
+    data_loader=None,
+    inputs=None,
+    targets=None,
+    random_seed=None,
+    damping=None,
+    is_distributed=False
+):
     if random_seed:
         # for matrices that are not deterministic (e.g., fisher_mc)
         torch.manual_seed(random_seed)
@@ -187,11 +106,11 @@ def mvp(mvp_fn,
 
 def _data_loader_mvp(mvp_fn, vec, data_loader):
     device = vec[0].device
-    Mv = None
+    Mv = []
     for inputs, targets in data_loader:
         inputs, targets = inputs.to(device), targets.to(device)
         _Mv = mvp_fn(vec, inputs, targets)
-        if Mv is None:
+        if not Mv:
             Mv = _Mv
         else:
             Mv = [mv.add(_mv) for mv, _mv in zip(Mv, _Mv)]
@@ -236,7 +155,7 @@ def _group_product(xs, ys):
     return sum([torch.sum(x * y) for (x, y) in zip(xs, ys)])
 
 
-def _group_add(xs, ys, alpha=1.):
+def _group_add(xs, ys, alpha: float | torch.Tensor=1.):
     return [x.add(y.mul(alpha)) for x, y in zip(xs, ys)]
 
 

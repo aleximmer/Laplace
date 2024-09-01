@@ -10,7 +10,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
-from laplace.curvature.asdfghjkl_src import (
+from .asdfghjkl_src import (
     COV,
     FISHER_EXACT,
     FISHER_MC,

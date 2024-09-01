@@ -1,7 +1,13 @@
 import torch
 from torch import nn
 
-from .operation import Operation, OP_COV_KRON, OP_COV_UNIT_WISE, OP_GRAM_HADAMARD, OP_GRAM_DIRECT  # NOQA
+from .operation import (
+    OP_COV_KRON,
+    OP_COV_UNIT_WISE,
+    OP_GRAM_DIRECT,
+    OP_GRAM_HADAMARD,
+    Operation,
+)
 
 
 class _BatchNormNd(Operation):

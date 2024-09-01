@@ -1,10 +1,21 @@
 import warnings
+
 from torch import nn
-from .operation import *
-from .linear import Linear
-from .conv import Conv2d
+
 from .batchnorm import BatchNorm1d, BatchNorm2d
 from .bias import Bias, BiasExt
+from .conv import Conv2d
+from .linear import Linear
+from .operation import (
+    OP_ACCUMULATE_GRADS,
+    OP_BATCH_GRADS,
+    OP_COV_DIAG,
+    OP_COV_KRON,
+    OP_COV_UNIT_WISE,
+    OP_GRAM_DIRECT,
+    OP_GRAM_HADAMARD,
+    Operation,
+)
 from .scale import Scale, ScaleExt
 
 __all__ = [

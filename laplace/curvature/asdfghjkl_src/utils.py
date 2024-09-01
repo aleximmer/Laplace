@@ -2,8 +2,8 @@ from contextlib import contextmanager
 
 import torch
 from torch import nn
-from torch.nn import functional as F
 from torch.cuda import nvtx
+from torch.nn import functional as F
 
 _REQUIRES_GRAD_ATTR = '_original_requires_grad'
 

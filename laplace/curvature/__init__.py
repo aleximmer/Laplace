@@ -1,4 +1,4 @@
-import logging
+import logging  # noqa: I001 can be resolved by integrating asfghjkl.py directly into curvature.py
 
 from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.asdfghjkl import (

@@ -1,9 +1,10 @@
-from typing import List
 from contextlib import contextmanager
+from typing import Sequence
 
 import torch.nn as nn
-from .utils import im2col_2d, record_original_requires_grad
+
 from .operations import OP_ACCUMULATE_GRADS, get_op_class
+from .utils import im2col_2d, record_original_requires_grad
 
 
 @contextmanager
@@ -97,7 +98,7 @@ def _preprocess_out_grads(module, out_grads):
     return out_grads
 
 
-def _register_operations(model: nn.Module, module: nn.Module, op_names: List):
+def _register_operations(model: nn.Module, module: nn.Module, op_names: Sequence):
     op_class = get_op_class(module)
     if op_class is not None:
         setattr(module, 'operation', op_class(module, model, op_names))

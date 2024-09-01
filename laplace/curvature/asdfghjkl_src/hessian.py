@@ -1,13 +1,13 @@
 import torch
-from .symmatrix import SymMatrix, Diag
-from .matrices import SHAPE_FULL, SHAPE_BLOCK_DIAG, SHAPE_DIAG, HESSIAN, MatrixManager
-from .mvp import power_method, conjugate_gradient_method
+
+from .matrices import HESSIAN, SHAPE_BLOCK_DIAG, SHAPE_DIAG, SHAPE_FULL, MatrixManager
+from .mvp import power_method
+from .symmatrix import Diag, SymMatrix
 
 __all__ = [
     'hessian_eigenvalues',
     'hessian',
     'hessian_for_loss',
-    'hessian_free'
 ]
 _supported_shapes = [SHAPE_FULL, SHAPE_BLOCK_DIAG, SHAPE_DIAG]
 
@@ -31,52 +31,18 @@ def hessian_eigenvalues(
         grads = torch.autograd.grad(loss, inputs=params, create_graph=True)
         return hvp(vec, grads, params)
 
-    eigvals, eigvecs = power_method(hvp_fn,
-                                    model,
-                                    data_loader=data_loader,
-                                    inputs=inputs,
-                                    targets=targets,
-                                    top_n=top_n,
-                                    max_iters=max_iters,
-                                    tol=tol,
-                                    is_distributed=is_distributed,
-                                    print_progress=print_progress)
-
-    return eigvals, eigvecs
-
-
-def hessian_free(
+    return power_method(
+        hvp_fn,
         model,
-        loss_fn,
-        b,
-        data_loader=None,
-        inputs=None,
-        targets=None,
-        init_x=None,
-        damping=1e-3,
-        max_iters=None,
-        tol=1e-8,
-        is_distributed=False,
-        print_progress=False,
-):
-    def hvp_fn(vec, x, y):
-        model.zero_grad()
-        loss = loss_fn(model(x), y)
-        params = [p for p in model.parameters() if p.requires_grad]
-        grads = torch.autograd.grad(loss, inputs=params, create_graph=True)
-        return hvp(vec, grads, params)
-
-    return conjugate_gradient_method(hvp_fn,
-                                     b,
-                                     data_loader=data_loader,
-                                     inputs=inputs,
-                                     targets=targets,
-                                     init_x=init_x,
-                                     damping=damping,
-                                     max_iters=max_iters,
-                                     tol=tol,
-                                     is_distributed=is_distributed,
-                                     print_progress=print_progress)
+        data_loader=data_loader,
+        inputs=inputs,
+        targets=targets,
+        top_n=top_n,
+        max_iters=max_iters,
+        tol=tol,
+        is_distributed=is_distributed,
+        print_progress=print_progress
+    )
 
 
 def hvp(vec, grads, params):

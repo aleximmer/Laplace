@@ -28,7 +28,7 @@ class Conv2d(Operation):
         )  # n x c_out x c_in x k_h x k_w
 
     @staticmethod
-    def batch_grads_bias(module: nn.Module, out_grads: torch.tensor):
+    def batch_grads_bias(module: nn.Module, out_grads):
         return out_grads.sum(axis=2)  # n x c_out
 
     @staticmethod
