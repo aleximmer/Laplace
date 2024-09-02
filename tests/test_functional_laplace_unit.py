@@ -15,9 +15,35 @@ def reg_loader():
 
 
 @pytest.fixture
+def reg_loader_1d():
+    torch.manual_seed(9999)
+    X = torch.randn(10, 3)
+    y = torch.randn(10, 1)
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reg_loader_1d_flat():
+    torch.manual_seed(9999)
+    X = torch.randn(10, 3)
+    y = torch.randn((10,))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     setattr(model, "output_size", 2)
+    model_params = list(model.parameters())
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
+def model_1d():
+    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 1))
+    setattr(model, "output_size", 1)
     model_params = list(model.parameters())
     setattr(model, "n_layers", len(model_params))  # number of parameter groups
     setattr(model, "n_params", len(parameters_to_vector(model_params)))
@@ -286,3 +312,14 @@ def test_gp_kernel(
         expected_block_diagonal_kernel,
         block_diag_kernel.to(expected_block_diagonal_kernel.dtype),
     )
+
+
+def test_prametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
+    la = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
+    la.fit(reg_loader_1d)
+
+    la2 = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
+    la2.fit(reg_loader_1d_flat)
+
+    assert torch.allclose(la.mu, la2.mu)
+    assert torch.allclose(la.L, la2.L)
