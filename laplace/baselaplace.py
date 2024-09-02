@@ -847,7 +847,7 @@ class ParametricLaplace(BaseLaplace):
                 X, y = data
                 X, y = X.to(self._device), y.to(self._device)
 
-            if self.likelihood == Likelihood.REGRESSION and y.ndim == 1:
+            if self.likelihood == Likelihood.REGRESSION and y.ndim == out.ndim - 1:
                 y = y.unsqueeze(-1)
 
             self.model.zero_grad()
@@ -2233,10 +2233,10 @@ class FunctionalLaplace(BaseLaplace):
                 X, y = data
                 X, y = X.to(self._device), y.to(self._device)
 
-            if self.likelihood == Likelihood.REGRESSION and y.ndim == 1:
-                y = y.unsqueeze(1)
-
             Js_batch, f_batch = self._jacobians(X, enable_backprop=False)
+
+            if self.likelihood == Likelihood.REGRESSION and y.ndim == f_batch.ndim - 1:
+                y = y.unsqueeze(1)
 
             with torch.no_grad():
                 loss_batch = self.backend.factor * self.backend.lossfunc(f_batch, y)
