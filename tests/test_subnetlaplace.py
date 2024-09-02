@@ -9,6 +9,10 @@ from torchvision.models import wide_resnet50_2
 
 from laplace import DiagSubnetLaplace, FullSubnetLaplace, Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
+from laplace.curvature.asdl import AsdlEF, AsdlGGN, AsdlHessian
+from laplace.curvature.backpack import BackPackEF, BackPackGGN
+from laplace.curvature.curvature import EFInterface, GGNInterface
+from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 from laplace.utils import (
     LargestMagnitudeSubnetMask,
     LargestVarianceDiagLaplaceSubnetMask,
@@ -32,6 +36,17 @@ layer_subnet_masks = [ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnet
 all_subnet_masks = score_based_subnet_masks + layer_subnet_masks
 likelihoods = ["classification", "regression"]
 hessian_structures = ["full", "diag"]
+backends = [
+    AsdlEF,
+    AsdlGGN,
+    AsdlHessian,
+    BackPackEF,
+    BackPackGGN,
+    AsdlHessian,
+    CurvlinopsEF,
+    CurvlinopsGGN,
+    CurvlinopsHessian,
+]
 
 
 @pytest.fixture
@@ -120,6 +135,31 @@ def test_subnet_laplace_init(model, likelihood):
             subnetwork_indices=subnetmask.indices,
             hessian_structure=hessian_structure,
         )
+
+
+@pytest.mark.parametrize("likelihood", likelihoods)
+@pytest.mark.parametrize("hessian_structure", hessian_structures)
+@pytest.mark.parametrize("backend", backends)
+def test_subnet_laplace_backend_init(model, likelihood, hessian_structure, backend):
+    if issubclass(backend, (GGNInterface, EFInterface)):
+        _ = Laplace(
+            model,
+            likelihood=likelihood,
+            subset_of_weights="subnetwork",
+            subnetwork_indices=torch.LongTensor([1, 2]),
+            hessian_structure=hessian_structure,
+            backend=backend,
+        )
+    else:
+        with pytest.raises(ValueError):
+            _ = Laplace(
+                model,
+                likelihood=likelihood,
+                subset_of_weights="subnetwork",
+                subnetwork_indices=torch.LongTensor([1, 2]),
+                hessian_structure=hessian_structure,
+                backend=backend,
+            )
 
 
 @pytest.mark.parametrize(
