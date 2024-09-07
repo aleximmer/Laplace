@@ -11,7 +11,7 @@ from laplace import DiagSubnetLaplace, FullSubnetLaplace, Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
 from laplace.curvature.asdl import AsdlEF, AsdlGGN, AsdlHessian
 from laplace.curvature.backpack import BackPackEF, BackPackGGN
-from laplace.curvature.curvature import EFInterface, GGNInterface
+from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 from laplace.utils import (
     LargestMagnitudeSubnetMask,
@@ -46,6 +46,9 @@ backends = [
     CurvlinopsEF,
     CurvlinopsGGN,
     CurvlinopsHessian,
+    GGNInterface,
+    EFInterface,
+    CurvatureInterface,
 ]
 
 
