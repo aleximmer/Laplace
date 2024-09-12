@@ -849,8 +849,8 @@ class ParametricLaplace(BaseLaplace):
 
             if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
                 raise ValueError(
-                    f"The model's output is of shape {tuple(out.shape)} but "
-                    f"the target has shape {tuple(y.shape)}."
+                    f"The model's output has {out.ndim} dims but "
+                    f"the target has {y.ndim} dims."
                 )
 
             self.model.zero_grad()
@@ -1768,12 +1768,19 @@ class LowRankLaplace(ParametricLaplace):
         if not self.enable_backprop:
             self.mean = self.mean.detach()
 
-        X, _ = next(iter(train_loader))
+        X, y = next(iter(train_loader))
         with torch.no_grad():
             try:
                 out = self.model(X[:1].to(self._device))
             except (TypeError, AttributeError):
                 out = self.model(X.to(self._device))
+
+        if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
+            raise ValueError(
+                f"The model's output has {out.ndim} dims but "
+                f"the target has {y.ndim} dims."
+            )
+
         self.n_outputs = out.shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
 
@@ -2240,8 +2247,8 @@ class FunctionalLaplace(BaseLaplace):
 
             if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
                 raise ValueError(
-                    f"The model's output is of shape {tuple(out.shape)} but "
-                    f"the target has shape {tuple(y.shape)}."
+                    f"The model's output has {out.ndim} dims but "
+                    f"the target has {y.ndim} dims."
                 )
 
             with torch.no_grad():
