@@ -314,12 +314,11 @@ def test_gp_kernel(
     )
 
 
-def test_prametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
+def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
     la = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
     la.fit(reg_loader_1d)
 
     la2 = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
-    la2.fit(reg_loader_1d_flat)
 
-    assert torch.allclose(la.mu, la2.mu)
-    assert torch.allclose(la.L, la2.L)
+    with pytest.raises(ValueError):
+        la2.fit(reg_loader_1d_flat)

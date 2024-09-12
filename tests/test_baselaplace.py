@@ -24,7 +24,7 @@ from laplace.utils import KronDecomposed
 from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
 torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_dtype(torch.double)
 
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 if find_spec("asdfghjkl") is not None:
@@ -847,16 +847,11 @@ def test_gridsearch(model, likelihood, prior_prec_type, reg_loader, class_loader
 
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_prametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, laplace):
+def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, laplace):
     lap = laplace(model_1d, likelihood="regression")
     lap.fit(reg_loader_1d)  # OK
 
     lap2 = laplace(model_1d, likelihood="regression")
-    lap2.fit(reg_loader_1d_flat)  # Also OK!
 
-    H1, H2 = lap.H, lap2.H
-
-    if isinstance(H1, KronDecomposed) and isinstance(H2, KronDecomposed):
-        H1, H2 = H1.to_matrix(), H2.to_matrix()
-
-    assert torch.allclose(H1, H2)
+    with pytest.raises(ValueError):
+        lap2.fit(reg_loader_1d_flat)

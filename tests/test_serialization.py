@@ -26,7 +26,7 @@ from laplace import (
 )
 
 torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_dtype(torch.double)
 
 lrlaplace_param = pytest.param(
     LowRankLaplace, marks=pytest.mark.xfail(reason="Unimplemented in the new ASDL")
