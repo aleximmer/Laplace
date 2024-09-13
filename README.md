@@ -450,17 +450,16 @@ For example, currently the [`curvature.CurvlinopsInterface`](https://github.com/
 
 ## Documentation
 
-The documentation is available [here](https://aleximmer.github.io/Laplace) or can be generated and/or viewed locally:
+The documentation is available [here](https://aleximmer.github.io/Laplace) or can be 
+generated and/or viewed locally:
 
 **With `uv`**
 
 ```bash
 # assuming the repository was cloned
 uv sync --all-extras
-# create docs and write to html
-uv run bash update_docs.sh
-# .. or serve the docs directly
-uv run pdoc --http 0.0.0.0:8080 laplace --template-dir template
+# serve the docs on a liveserver
+uv run mkdocs serve
 ```
 
 **With `pip`**
@@ -468,10 +467,8 @@ uv run pdoc --http 0.0.0.0:8080 laplace --template-dir template
 ```bash
 # assuming the repository was cloned
 pip install -e ".[dev]"
-# create docs and write to html
-bash update_docs.sh
-# .. or serve the docs directly
-pdoc --http 0.0.0.0:8080 laplace --template-dir template
+# serve the docs on a liveserver
+mkdocs serve
 ```
 
 ## Contributing
@@ -481,7 +478,9 @@ Pull requests are very welcome. Please follow these guidelines:
 1. Follow the [development setup](#setup-dev-environment).
 2. Use [ruff](https://github.com/astral-sh/ruff) as autoformatter. Please refer to the following [makefile](https://github.com/aleximmer/Laplace/blob/main/makefile) and run it via `make ruff`. Please note that the order of `ruff check --fix` and `ruff format` is important!
 3. Also use [ruff](https://github.com/astral-sh/ruff) as linter. Please manually fix all linting errors/warnings before opening a pull request.
-4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
+4. Fully document your changes in the form of Python docstrings, typehinting.
+5. Add tutorial-style documentation in both `docs/` (in the form of markdown files) 
+    and `examples/` (in the form of runnable scripts) dirs.
 5. Provide as many test cases as possible. Make sure all test cases pass.
 
 Issues, bug reports, and ideas are also very welcome!
