@@ -1,4 +1,4 @@
-site_name: Laplace Approximations in PyTorch
+site_name: laplace-torch
 theme:
   name: material
   # logo: assets/laplace_logo.png
@@ -6,7 +6,6 @@ theme:
     - navigation.instant
     - navigation.instant.prefetch
     - navigation.instant.progress
-    - navigation.sections
     - navigation.indexes
     - navigation.tracking
     - content.code.annotate
@@ -84,11 +83,12 @@ extra_javascript:
   - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
 nav:
   - Introduction: index.md
-  - Regression Example: regression_example.md
-  - Calibration Example: calibration_example.md
-  - GP Inference Example: calibration_gp_example.md
-  - Huggingface LLMs Example: huggingface_example.md
-  - Reward Modeling Example: reward_modeling_example.md
+  - Developer's Guide: devs_guide.md
+  - "Example: Regression": regression_example.md
+  - "Example: Calibration": calibration_example.md
+  - "Example: GP Inference": calibration_gp_example.md
+  - "Example: Huggingface LLMs": huggingface_example.md
+  - "Example: Reward Modeling": reward_modeling_example.md
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
       - Base Laplace: api_reference/baselaplace.md
