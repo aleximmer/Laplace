@@ -1,0 +1,88 @@
+site_name: Laplace Approximations in PyTorch
+theme:
+  name: material
+  # logo: assets/laplace_logo.png
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - navigation.sections
+    - navigation.indexes
+    - navigation.tracking
+    - content.code.annotate
+    - toc.follow
+    - navigation.footer
+    - navigation.top
+    - content.code.copy
+    - content.tabs.link
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      primary: black
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      primary: black
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: black
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+repo_url: https://github.com/aleximmer/laplace
+repo_name: laplace
+site_author: wiseodd
+site_url: https://aleximmer.github.io/Laplace/
+site_dir: site/laplace
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - toc:
+      permalink: "#"
+  - pymdownx.snippets:
+  - pymdownx.magiclink:
+  - attr_list:
+  - md_in_html:
+  - pymdownx.inlinehilite:
+  - pymdownx.superfences:
+  - markdown.extensions.attr_list:
+  - pymdownx.keys:
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+plugins:
+  - search
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/aleximmer/laplace
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/laplace-torch/
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+nav:
+  - Introduction: index.md
+  - Regression Example: regression_example.md
+  - Calibration Example: calibration_example.md
+  - GP Inference Example: calibration_gp_example.md
+  - Huggingface LLMs Example: huggingface_example.md
+  - Reward Modeling Example: reward_modeling_example.md
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn

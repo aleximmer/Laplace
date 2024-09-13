@@ -1,8 +1,8 @@
-## Full Example: Bayesian Bradley-Terry Reward Modeling
-
 The `laplace-torch` library can also be used to "Bayesianize" a pretrained Bradley-Terry
 reward model, popular in large language models. See <http://arxiv.org/abs/2009.01325>
 for a primer in reward modeling.
+
+## Defining a preference dataset
 
 First order of business, let's define our comparison dataset. We will use the `datasets`
 library from Huggingface to handle the data.
@@ -40,6 +40,8 @@ data_dict = [
 ]
 dataset = Dataset.from_list(data_dict)
 ```
+
+## Defining a reward model
 
 Now, let's define the reward model. During training, it assumes that `x` is a tensor
 of shape `(batch_size, 2, dim)`, which is a concatenation of `x0` and `x1` above.
@@ -91,6 +93,8 @@ class SimpleRewardModel(nn.Module):
             return logits
 ```
 
+## Data preprocessing
+
 To fulfill the 3D tensor requirement, we need to preprocess the dict-based dataset.
 
 ```python
@@ -108,6 +112,8 @@ tensor_dataloader = data_utils.DataLoader(
 )
 ```
 
+## MAP training
+
 Then, we can train as usual using the cross entropy loss.
 
 ```python
@@ -123,6 +129,8 @@ for epoch in range(10):
         loss.backward()
         opt.step()
 ```
+
+## Applying Laplace
 
 Applying Laplace to this model is a breeze. Simply state that the likelihood is `reward_modeling`.
 
