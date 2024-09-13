@@ -723,10 +723,12 @@ class ParametricLaplace(BaseLaplace):
     a Gaussian distribution \\(\\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
     The goal of this class is to compute the posterior precision \\(P\\)
     which sums as
-    \\[
+
+    $$
         P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
         \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
-    \\]
+    $$
+
     Every subclass implements different approximations to the log likelihood Hessians,
     for example, a diagonal one. The prior is assumed to be Gaussian and therefore we have
     a simple form for \\(\\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}} = P_0 \\).
@@ -892,9 +894,10 @@ class ParametricLaplace(BaseLaplace):
     @property
     def log_det_ratio(self) -> torch.Tensor:
         """Compute the log determinant ratio, a part of the log marginal likelihood.
-        \\[
+
+        $$
             \\log \\frac{\\det P}{\\det P_0} = \\log \\det P - \\log \\det P_0
-        \\]
+        $$
 
         Returns
         -------
@@ -904,9 +907,11 @@ class ParametricLaplace(BaseLaplace):
 
     def square_norm(self, value) -> torch.Tensor:
         """Compute the square norm under post. Precision with `value-self.mean` as 𝛥:
-        \\[
+
+        $$
             \\Delta^\top P \\Delta
-        \\]
+        $$
+
         Returns
         -------
         square_form
@@ -2420,7 +2425,9 @@ class FunctionalLaplace(BaseLaplace):
     def functional_variance(self, Js_star: torch.Tensor) -> torch.Tensor:
         """GP posterior variance:
 
-        \\[ k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\]
+        $$
+            k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
+        $$
 
         Parameters
         ----------
@@ -2457,7 +2464,9 @@ class FunctionalLaplace(BaseLaplace):
     def functional_covariance(self, Js_star: torch.Tensor) -> torch.Tensor:
         """GP posterior covariance:
 
-        \\[ k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\]
+        $$
+            k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
+        $$
 
         Parameters
         ----------

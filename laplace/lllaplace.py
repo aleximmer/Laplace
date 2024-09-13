@@ -43,10 +43,12 @@ class LLLaplace(ParametricLaplace):
     are treated probabilistically.
     The goal of this class is to compute the posterior precision \\(P\\)
     which sums as
-    \\[
+
+    $$
         P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
         \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
-    \\]
+    $$
+
     Every subclass implements different approximations to the log likelihood Hessians,
     for example, a diagonal one. The prior is assumed to be Gaussian and therefore we have
     a simple form for \\(\\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}} = P_0 \\).

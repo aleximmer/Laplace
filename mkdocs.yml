@@ -65,7 +65,14 @@ markdown_extensions:
       generic: true
 plugins:
   - search
-  - mkdocstrings
+  - mkdocstrings:
+      enabled: true
+      default_handler: python
+      handlers:
+        python:
+          options:
+            docstring_style: numpy
+            show_root_heading: false
 extra:
   social:
     - icon: fontawesome/brands/github
@@ -82,6 +89,16 @@ nav:
   - GP Inference Example: calibration_gp_example.md
   - Huggingface LLMs Example: huggingface_example.md
   - Reward Modeling Example: reward_modeling_example.md
+  - API Reference:
+      - Laplace Frontend: api_reference/laplace.md
+      - Base Laplace: api_reference/baselaplace.md
+      - Parametric Laplace: api_reference/parametriclaplace.md
+      - Functional Laplace: api_reference/functionallaplace.md
+      - Last-Layer Laplace: api_reference/lllaplace.md
+      - Subnet Laplace: api_reference/subnetlaplace.md
+      - Curvatures: api_reference/curvatures.md
+      - Marglik Training Utils: api_reference/marglik_training.md
+      - Utilities: api_reference/utils.md
 validation:
   omitted_files: warn
   absolute_links: warn
