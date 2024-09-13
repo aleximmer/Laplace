@@ -48,14 +48,13 @@ markdown_extensions:
   - pymdownx.details
   - toc:
       permalink: "#"
-  - pymdownx.snippets:
-  - pymdownx.magiclink:
-  - attr_list:
-  - md_in_html:
-  - pymdownx.inlinehilite:
-  - pymdownx.superfences:
-  - markdown.extensions.attr_list:
-  - pymdownx.keys:
+  - pymdownx.snippets
+  - pymdownx.magiclink
+  - attr_list
+  - md_in_html
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.keys
   - pymdownx.tasklist:
       custom_checkbox: true
   - pymdownx.highlight:
@@ -66,6 +65,7 @@ markdown_extensions:
       generic: true
 plugins:
   - search
+  - mkdocstrings
 extra:
   social:
     - icon: fontawesome/brands/github

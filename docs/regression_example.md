@@ -88,8 +88,7 @@ pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 plot_regression(X_train, y_train, x, f_mu, pred_std)
 ```
 
-.. image:: regression_example.png
-:align: center
+![Posthoc Laplace](assets/regression_example.png)
 
 In comparison to the MAP, the predictive shows useful uncertainties.
 When our MAP is over or underfit, the Laplace approximation cannot fix this anymore.
@@ -118,5 +117,4 @@ pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 plot_regression(X_train, y_train, x, f_mu, pred_std)
 ```
 
-.. image:: regression_example_online.png
-:align: center
+![Online Laplace](assets/regression_example_online.png)
