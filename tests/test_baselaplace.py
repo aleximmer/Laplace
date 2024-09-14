@@ -24,7 +24,7 @@ from laplace.utils import KronDecomposed
 from tests.utils import ListDataset, dict_data_collator, jacobians_naive
 
 torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_dtype(torch.double)
 
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 if find_spec("asdfghjkl") is not None:
@@ -37,6 +37,16 @@ online_flavors = [FullLaplace, KronLaplace, DiagLaplace]
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     setattr(model, "output_size", 2)
+    model_params = list(model.parameters())
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
+def model_1d():
+    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 1))
+    setattr(model, "output_size", 1)
     model_params = list(model.parameters())
     setattr(model, "n_layers", len(model_params))  # number of parameter groups
     setattr(model, "n_params", len(parameters_to_vector(model_params)))
@@ -110,6 +120,22 @@ def class_loader():
 def reg_loader():
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reg_loader_1d():
+    torch.manual_seed(9999)
+    X = torch.randn(10, 3)
+    y = torch.randn(10, 1)
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reg_loader_1d_flat():
+    torch.manual_seed(9999)
+    X = torch.randn(10, 3)
+    y = torch.randn((10,))
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
@@ -853,3 +879,14 @@ def test_gridsearch(model, likelihood, prior_prec_type, reg_loader, class_loader
 
     # Should not raise an error
     lap.optimize_prior_precision(method="gridsearch", val_loader=dataloader, n_steps=10)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, laplace):
+    lap = laplace(model_1d, likelihood="regression")
+    lap.fit(reg_loader_1d)  # OK
+
+    lap2 = laplace(model_1d, likelihood="regression")
+
+    with pytest.raises(ValueError):
+        lap2.fit(reg_loader_1d_flat)

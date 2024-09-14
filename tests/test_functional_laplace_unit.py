@@ -15,9 +15,35 @@ def reg_loader():
 
 
 @pytest.fixture
+def reg_loader_1d():
+    torch.manual_seed(9999)
+    X = torch.randn(10, 3)
+    y = torch.randn(10, 1)
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reg_loader_1d_flat():
+    torch.manual_seed(9999)
+    X = torch.randn(10, 3)
+    y = torch.randn((10,))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
     setattr(model, "output_size", 2)
+    model_params = list(model.parameters())
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
+    return model
+
+
+@pytest.fixture
+def model_1d():
+    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 1))
+    setattr(model, "output_size", 1)
     model_params = list(model.parameters())
     setattr(model, "n_layers", len(model_params))  # number of parameter groups
     setattr(model, "n_params", len(parameters_to_vector(model_params)))
@@ -320,3 +346,13 @@ def test_functional_samples(model, reg_loader):
     )
     assert fsamples_clf_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
     assert torch.allclose(fsamples_clf_nn, fsamples_reg_nn)
+
+
+def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
+    la = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
+    la.fit(reg_loader_1d)
+
+    la2 = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
+
+    with pytest.raises(ValueError):
+        la2.fit(reg_loader_1d_flat)

@@ -64,7 +64,7 @@ class SubnetLaplace(ParametricLaplace):
     temperature : float, default=1
         temperature of the likelihood; lower temperature leads to more
         concentrated posterior and vice versa.
-    backend : subclasses of `laplace.curvature.CurvatureInterface`
+    backend : subclasses of `laplace.curvature.{GGNInterface,EFInterface}`
         backend for access to curvature/Hessian approximations
     backend_kwargs : dict, default=None
         arguments passed to the backend on initialization, for example to
@@ -99,11 +99,8 @@ class SubnetLaplace(ParametricLaplace):
             backend_kwargs=backend_kwargs,
         )
 
-        if backend is not None:
-            if not isinstance(backend, GGNInterface) and not isinstance(
-                backend, EFInterface
-            ):
-                raise ValueError("SubnetLaplace can only be used with GGN and EF.")
+        if backend is not None and not issubclass(backend, (GGNInterface, EFInterface)):
+            raise ValueError("SubnetLaplace can only be used with GGN and EF.")
 
         # check validity of subnetwork indices and pass them to backend
         self._check_subnetwork_indices(subnetwork_indices)
