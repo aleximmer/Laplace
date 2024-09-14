@@ -2468,6 +2468,48 @@ class FunctionalLaplace(BaseLaplace):
             x, likelihood, joint, link_approx, n_samples, diagonal_output
         )
 
+    def functional_samples(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        pred_type: PredType | str = PredType.GLM,
+        n_samples: int = 100,
+        diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """Sample from the functional posterior on input data `x`.
+        Can be used, for example, for Thompson sampling.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            input data `(batch_size, input_shape)`
+
+        pred_type : {'glm'}, default='glm'
+            type of posterior predictive, linearized GLM predictive.
+
+        n_samples : int
+            number of samples
+
+        diagonal_output : bool
+            whether to use a diagonalized glm posterior predictive on the outputs.
+            Only applies when `pred_type='glm'`.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
+
+        Returns
+        -------
+        samples : torch.Tensor
+            samples `(n_samples, batch_size, output_shape)`
+        """
+        if pred_type not in PredType.__members__.values():
+            raise ValueError("Only glm  supported as prediction type.")
+
+        f_mu, f_var = self._glm_predictive_distribution(x)
+        return self._glm_functional_samples(
+            f_mu, f_var, n_samples, diagonal_output, generator
+        )
+
     def predictive_samples(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -2477,7 +2519,8 @@ class FunctionalLaplace(BaseLaplace):
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Sample from the posterior predictive on input data `x`.
-        Can be used, for example, for Thompson sampling.
+        I.e., the corresponding inverse-link function is applied on top of the
+        functional sample. Can be used, for example, for Thompson sampling.
 
         Parameters
         ----------
