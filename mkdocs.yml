@@ -31,21 +31,17 @@ theme:
   logo: assets/laplace_logo_inv.png
 
   features:
-    - announce.dismiss
-    - content.action.edit
-    - content.action.view
-    - content.code.annotate
-    - content.code.copy
-    - content.tooltips
-    - navigation.footer
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
     - navigation.indexes
-    - navigation.sections
-    - navigation.tabs
-    - navigation.tabs.sticky
-    - navigation.top
-    - search.highlight
-    - search.suggest
+    - navigation.tracking
+    - content.code.annotate
     - toc.follow
+    - navigation.footer
+    - navigation.top
+    - content.code.copy
+    - content.tabs.link
 
   palette:
     # Palette toggle for automatic mode
