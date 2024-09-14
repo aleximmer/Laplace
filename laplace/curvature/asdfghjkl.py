@@ -2,31 +2,31 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
-from importlib.util import find_spec
 from typing import Any
 
 import numpy as np
 import torch
-
-if find_spec("asdfghjkl") is not None:
-    from asdfghjkl import (
-        COV,
-        FISHER_EXACT,
-        FISHER_MC,
-        SHAPE_DIAG,
-        SHAPE_FULL,
-        SHAPE_KRON,
-        fisher_for_cross_entropy,
-    )
-    from asdfghjkl.gradient import batch_gradient
-    from asdfghjkl.hessian import hessian_eigenvalues, hessian_for_loss
-
 from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.asdfghjkl_src.gradient import batch_gradient
+from laplace.curvature.asdfghjkl_src.hessian import (
+    hessian_eigenvalues,
+    hessian_for_loss,
+)
 from laplace.utils import Kron, _is_batchnorm
 from laplace.utils.enums import Likelihood
+
+from .asdfghjkl_src import (
+    COV,
+    FISHER_EXACT,
+    FISHER_MC,
+    SHAPE_DIAG,
+    SHAPE_FULL,
+    SHAPE_KRON,
+    fisher_for_cross_entropy,
+)
 
 EPS = 1e-6
 
@@ -227,12 +227,10 @@ class AsdfghjklHessian(AsdfghjklInterface):
         )[:, mask]
         device = eigvecs.device
         eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
-        loss = sum(
-            [
-                self.lossfunc(self.model(x.to(device)).detach(), y.to(device))
-                for x, y in data_loader
-            ]
-        )
+        loss = torch.tensor(0, device=device, dtype=eigvecs.dtype)
+        with torch.no_grad():
+            for x, y in data_loader:
+                loss += self.lossfunc(self.model(x.to(device)), y.to(device))
         return eigvecs, self.factor * eigvals, self.factor * loss
 
 
