@@ -664,7 +664,7 @@ class BaseLaplace:
                 "Prediction path invalid. Check the likelihood, pred_type, link_approx combination!"
             )
 
-    def _glm_predictive_samples(
+    def _glm_functional_samples(
         self,
         f_mu: torch.Tensor,
         f_var: torch.Tensor,
@@ -672,7 +672,7 @@ class BaseLaplace:
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
-        """Sample from the posterior predictive on input data `x` using "glm" prediction
+        """Sample from the posterior functional on input data `x` using "glm" prediction
         type.
 
         Parameters
@@ -702,7 +702,45 @@ class BaseLaplace:
         if diagonal_output:
             f_var = torch.diagonal(f_var, dim1=1, dim2=2)
 
-        f_samples = normal_samples(f_mu, f_var, n_samples, generator)
+        return normal_samples(f_mu, f_var, n_samples, generator)
+
+    def _glm_predictive_samples(
+        self,
+        f_mu: torch.Tensor,
+        f_var: torch.Tensor,
+        n_samples: int,
+        diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """Sample from the posterior predictive on input data `x` using "glm" prediction
+        type. I.e., the inverse-link function correponding to the likelihood is applied
+        on top of the functional sample.
+
+        Parameters
+        ----------
+        f_mu : torch.Tensor or MutableMapping
+            glm predictive mean `(batch_size, output_shape)`
+
+        f_var : torch.Tensor or MutableMapping
+            glm predictive covariances `(batch_size, output_shape, output_shape)`
+
+        n_samples : int
+            number of samples
+
+        diagonal_output : bool
+            whether to use a diagonalized glm posterior predictive on the outputs.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
+
+        Returns
+        -------
+        samples : torch.Tensor
+            samples `(n_samples, batch_size, output_shape)`
+        """
+        f_samples = self._glm_functional_samples(
+            f_mu, f_var, n_samples, diagonal_output, generator
+        )
 
         if self.likelihood == Likelihood.REGRESSION:
             return f_samples
@@ -1071,6 +1109,54 @@ class ParametricLaplace(BaseLaplace):
             else:  # classification; the average is computed online
                 return self._nn_predictive_classification(x, n_samples, **model_kwargs)
 
+    def functional_samples(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        pred_type: PredType | str = PredType.GLM,
+        n_samples: int = 100,
+        diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """Sample from the function-space posterior on input data `x`.
+        Can be used, for example, for Thompson sampling or to compute an arbitrary
+        expectation.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            input data `(batch_size, input_shape)`
+
+        pred_type : {'glm', 'nn'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive. The GLM predictive is consistent with
+            the curvature approximations used here.
+
+        n_samples : int
+            number of samples
+
+        diagonal_output : bool
+            whether to use a diagonalized glm posterior predictive on the outputs.
+            Only applies when `pred_type='glm'`.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
+
+        Returns
+        -------
+        samples : torch.Tensor
+            samples `(n_samples, batch_size, output_shape)`
+        """
+        if pred_type not in PredType.__members__.values():
+            raise ValueError("Only glm and nn supported as prediction types.")
+
+        if pred_type == PredType.GLM:
+            f_mu, f_var = self._glm_predictive_distribution(x)
+            return self._glm_functional_samples(
+                f_mu, f_var, n_samples, diagonal_output, generator
+            )
+        else:  # 'nn'
+            return self._nn_functional_samples(x, n_samples, generator)
+
     def predictive_samples(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -1079,8 +1165,9 @@ class ParametricLaplace(BaseLaplace):
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
-        """Sample from the posterior predictive on input data `x`.
-        Can be used, for example, for Thompson sampling.
+        """Sample from the posterior predictive on input data `x`. I.e., the respective
+        inverse-link function (e.g. softmax) is applied on top of the functional
+        sample.
 
         Parameters
         ----------
@@ -1115,7 +1202,6 @@ class ParametricLaplace(BaseLaplace):
             return self._glm_predictive_samples(
                 f_mu, f_var, n_samples, diagonal_output, generator
             )
-
         else:  # 'nn'
             return self._nn_predictive_samples(x, n_samples, generator)
 
@@ -1157,7 +1243,7 @@ class ParametricLaplace(BaseLaplace):
             else (f_mu, f_var)
         )
 
-    def _nn_predictive_samples(
+    def _nn_functional_samples(
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         n_samples: int = 100,
@@ -1174,6 +1260,17 @@ class ParametricLaplace(BaseLaplace):
 
         vector_to_parameters(self.mean, self.params)
         fs = torch.stack(fs)
+
+        return fs
+
+    def _nn_predictive_samples(
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        n_samples: int = 100,
+        generator: torch.Generator | None = None,
+        **model_kwargs: dict[str, Any],
+    ) -> torch.Tensor:
+        fs = self._nn_functional_samples(X, n_samples, generator, **model_kwargs)
 
         if self.likelihood == Likelihood.CLASSIFICATION:
             fs = torch.softmax(fs, dim=-1)
