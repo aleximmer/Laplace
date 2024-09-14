@@ -91,6 +91,7 @@ nav:
   - "Example: Reward Modeling": reward_modeling_example.md
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
+      - Laplace Options: api_reference/enums.md
       - Base Laplace: api_reference/baselaplace.md
       - Parametric Laplace: api_reference/parametriclaplace.md
       - Functional Laplace: api_reference/functionallaplace.md
