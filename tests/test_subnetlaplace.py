@@ -25,7 +25,7 @@ from laplace.utils import (
 )
 
 torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_dtype(torch.double)
 score_based_subnet_masks = [
     RandomSubnetMask,
     LargestMagnitudeSubnetMask,
