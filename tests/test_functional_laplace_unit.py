@@ -6,6 +6,9 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from laplace.baselaplace import FunctionalLaplace
 
+torch.manual_seed(240)
+torch.set_default_dtype(torch.double)
+
 
 @pytest.fixture
 def reg_loader():
