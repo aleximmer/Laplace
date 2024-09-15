@@ -20,7 +20,9 @@ from tests.utils import (
 )
 
 true_sigma_noise = 0.1
+
 torch.manual_seed(711)
+torch.set_default_dtype(torch.double)
 
 
 @pytest.mark.parametrize(
