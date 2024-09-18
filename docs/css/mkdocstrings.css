@@ -1,3 +1,11 @@
+html {
+  font-size: 19px;
+}
+
+.md-typeset .admonition {
+  font-size: 0.7rem;
+}
+
 /* Indentation. */
 div.doc-contents:not(.first) {
   padding-left: 25px;
