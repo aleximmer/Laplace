@@ -173,6 +173,10 @@ class BaseLaplace:
         return next(self.model.parameters()).device
 
     @property
+    def _dtype(self) -> torch.dtype:
+        return next(self.model.parameters()).dtype
+
+    @property
     def backend(self) -> CurvatureInterface:
         if self._backend is None:
             likelihood = (
@@ -274,14 +278,16 @@ class BaseLaplace:
         )
 
         if prior_prec.ndim == 0 or len(prior_prec) == 1:  # scalar
-            return self.prior_precision * torch.ones(self.n_params, device=self._device)
+            return self.prior_precision * torch.ones(
+                self.n_params, device=self._device, dtype=self._dtype
+            )
         elif len(prior_prec) == self.n_params:  # diagonal
             return prior_prec
         elif len(prior_prec) == self.n_layers:  # per layer
             n_params_per_layer = [p.numel() for p in self.params]
             return torch.cat(
                 [
-                    prior * torch.ones(n_params, device=self._device)
+                    prior * torch.ones(n_params, device=self._device, dtype=self._dtype)
                     for prior, n_params in zip(prior_prec, n_params_per_layer)
                 ]
             )
@@ -297,14 +303,18 @@ class BaseLaplace:
     @prior_mean.setter
     def prior_mean(self, prior_mean: float | torch.Tensor) -> None:
         if np.isscalar(prior_mean) and np.isreal(prior_mean):
-            self._prior_mean = torch.tensor(prior_mean, device=self._device)
+            self._prior_mean = torch.tensor(
+                prior_mean, device=self._device, dtype=self._dtype
+            )
         elif isinstance(prior_mean, torch.Tensor):
             if prior_mean.ndim == 0:
-                self._prior_mean = prior_mean.reshape(-1).to(self._device)
+                self._prior_mean = (
+                    prior_mean.reshape(-1).to(self._device).to(self._dtype)
+                )
             elif prior_mean.ndim == 1:
                 if len(prior_mean) not in [1, self.n_params]:
                     raise ValueError("Invalid length of prior mean.")
-                self._prior_mean = prior_mean
+                self._prior_mean = prior_mean.to(self._device).to(self._dtype)
             else:
                 raise ValueError("Prior mean has too many dimensions!")
         else:
@@ -319,17 +329,21 @@ class BaseLaplace:
         self._posterior_scale = None
 
         if np.isscalar(prior_precision) and np.isreal(prior_precision):
-            self._prior_precision = torch.tensor([prior_precision], device=self._device)
+            self._prior_precision = torch.tensor(
+                [prior_precision], device=self._device, dtype=self._dtype
+            )
         elif isinstance(prior_precision, torch.Tensor):
             if prior_precision.ndim == 0:
                 # make dimensional
-                self._prior_precision = prior_precision.reshape(-1).to(self._device)
+                self._prior_precision = (
+                    prior_precision.reshape(-1).to(self._device).to(self._dtype)
+                )
             elif prior_precision.ndim == 1:
                 if len(prior_precision) not in [1, self.n_layers, self.n_params]:
                     raise ValueError(
                         "Length of prior precision does not align with architecture."
                     )
-                self._prior_precision = prior_precision.to(self._device)
+                self._prior_precision = prior_precision.to(self._device).to(self._dtype)
             else:
                 raise ValueError(
                     "Prior precision needs to be at most one-dimensional tensor."
@@ -547,14 +561,16 @@ class BaseLaplace:
         self._posterior_scale = None
 
         if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
-            self._sigma_noise = torch.tensor(sigma_noise, device=self._device)
+            self._sigma_noise = torch.tensor(
+                sigma_noise, device=self._device, dtype=self._dtype
+            )
         elif isinstance(sigma_noise, torch.Tensor):
             if sigma_noise.ndim == 0:
-                self._sigma_noise = sigma_noise.to(self._device)
+                self._sigma_noise = sigma_noise.to(self._device).to(self._dtype)
             elif sigma_noise.ndim == 1:
                 if len(sigma_noise) > 1:
                     raise ValueError("Only homoscedastic output noise supported.")
-                self._sigma_noise = sigma_noise[0].to(self._device)
+                self._sigma_noise = sigma_noise[0].to(self._device).to(self._dtype)
             else:
                 raise ValueError("Sigma noise needs to be scalar or 1-dimensional.")
         else:
