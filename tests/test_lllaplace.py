@@ -730,5 +730,12 @@ def test_hessian_dtype(laplace, backend, dtype):
         elif isinstance(la.H, KronDecomposed):
             assert la.H.eigenvalues[0][0].dtype == dtype
             assert la.H.eigenvectors[0][0].dtype == dtype
+
+        y_pred, y_var = la(X, pred_type="glm")
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
+
+        y_pred = la(X, pred_type="nn", num_samples=3)
+        assert y_pred.dtype == dtype
     except (ValueError, RuntimeError, SystemExit):
         pass
