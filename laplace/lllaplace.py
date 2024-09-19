@@ -431,7 +431,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
         )
 
     def _init_H(self) -> None:
-        self.H = Kron.init_from_model(self.model.last_layer, self._device)
+        self.H = Kron.init_from_model(self.model.last_layer, self._device, self._dtype)
 
     def functional_variance_fast(self, X):
         raise NotImplementedError

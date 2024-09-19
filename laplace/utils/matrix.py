@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from math import pow
-from typing import Iterable, Iterator
+from typing import Iterable
 
 import numpy as np
 import opt_einsum as oe
@@ -35,6 +35,7 @@ class Kron:
         cls,
         model: nn.Module | Iterable[nn.Parameter],
         device: torch.device,
+        dtype: torch.dtype,
     ) -> Kron:
         """Initialize Kronecker factors based on a models architecture.
 
@@ -42,20 +43,18 @@ class Kron:
         ----------
         model: `nn.Module` or iterable of parameters, e.g. `model.parameters()`
         device: The device where each of the Kronecker factor lives in.
+        dtype: The data type of each Kronecker factor.
 
         Returns
         -------
         kron : Kron
         """
-        params: Iterator[nn.Parameter]
         if isinstance(model, torch.nn.Module):
             params = model.parameters()
         else:
-            params = iter(model)
+            params = model
 
-        dtype = next(params).dtype
         kfacs = list()
-
         for p in params:
             if p.ndim == 1:  # bias
                 P = p.size(0)

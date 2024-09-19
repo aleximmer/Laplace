@@ -1578,7 +1578,7 @@ class KronLaplace(ParametricLaplace):
 
     def _init_H(self) -> None:
         self.H: Kron | KronDecomposed | None = Kron.init_from_model(
-            self.params, self._device
+            self.params, self._device, self._dtype
         )
 
     def _check_H_init(self):
