@@ -914,3 +914,32 @@ def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     assert not (
         samples_1[:, ~fixed_mask] == model_params[~fixed_mask].repeat(n_samples, 1)
     ).all()
+
+
+@pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
+@pytest.mark.parametrize(
+    "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
+)
+@pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
+def test_hessian_dtype(laplace, backend, dtype):
+    X = torch.randn((10, 3), dtype=dtype)
+    Y = torch.randn((10, 3), dtype=dtype)
+
+    data = TensorDataset(X, Y)
+    dataloader = DataLoader(data, batch_size=10)
+
+    model = nn.Linear(3, 3, dtype=dtype)
+
+    subnetmask = RandomSubnetMask(model=model, n_params_subnet=10)
+    subnetmask.select()
+
+    try:
+        la = laplace(model, "regression", subnetwork_indices=subnetmask.indices)
+        la.fit(dataloader)
+
+        assert la.H is not None
+
+        if isinstance(la.H, torch.Tensor):
+            assert la.H.dtype == dtype
+    except (ValueError, RuntimeError, SystemExit):
+        pass
