@@ -1439,7 +1439,7 @@ class FullLaplace(ParametricLaplace):
 
     def _init_H(self) -> None:
         self.H: torch.Tensor = torch.zeros(
-            self.n_params, self.n_params, device=self._device
+            self.n_params, self.n_params, device=self._device, dtype=self._dtype
         )
 
     def _curv_closure(
@@ -1876,7 +1876,9 @@ class DiagLaplace(ParametricLaplace):
     _key = ("all", "diag")
 
     def _init_H(self) -> None:
-        self.H: torch.Tensor = torch.zeros(self.n_params, device=self._device)
+        self.H: torch.Tensor = torch.zeros(
+            self.n_params, device=self._device, dtype=self._dtype
+        )
 
     def _curv_closure(
         self,
@@ -2654,7 +2656,10 @@ class FunctionalLaplace(BaseLaplace):
                 mu_term = torch.linalg.solve(
                     torch.linalg.cholesky(
                         self.gp_kernel_prior_variance * self.K_MM[c]
-                        + torch.diag(torch.ones(m, device=self._device) * noise)
+                        + torch.diag(
+                            torch.ones(m, device=self._device, dtype=self._dtype)
+                            * noise
+                        )
                     ),
                     self.mu[:, c],
                 )
@@ -2664,7 +2669,9 @@ class FunctionalLaplace(BaseLaplace):
             mu_term = torch.linalg.solve(
                 torch.linalg.cholesky(
                     self.gp_kernel_prior_variance * self.K_MM
-                    + torch.diag(torch.ones(m, device=self._device) * noise)
+                    + torch.diag(
+                        torch.ones(m, device=self._device, dtype=self._dtype) * noise
+                    )
                 ),
                 self.mu.reshape(-1),
             )

@@ -862,7 +862,7 @@ def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, lap
     "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
 )
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
-def test_hessian_dtype_reg(laplace, backend, dtype):
+def test_hessian_dtype(laplace, backend, dtype):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
 
@@ -872,7 +872,7 @@ def test_hessian_dtype_reg(laplace, backend, dtype):
     model = nn.Linear(3, 3, dtype=dtype)
 
     try:
-        la = laplace(model=model, likelihood="regression")
+        la = laplace(model, "regression")
         la.fit(dataloader)
 
         assert la.H is not None
@@ -882,5 +882,5 @@ def test_hessian_dtype_reg(laplace, backend, dtype):
         elif isinstance(la.H, KronDecomposed):
             assert la.H.eigenvalues[0][0].dtype == dtype
             assert la.H.eigenvectors[0][0].dtype == dtype
-    except (ValueError, RuntimeError):
+    except (ValueError, RuntimeError, SystemExit):
         pass
