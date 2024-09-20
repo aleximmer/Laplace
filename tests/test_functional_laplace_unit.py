@@ -346,11 +346,14 @@ def test_dtype(laplace, backend, dtype):
         )
         la.fit(dataloader)
 
+        assert la.L is not None
+        assert la.L.dtype == dtype
+
         assert la.Sigma_inv is not None
         assert la.Sigma_inv.dtype == dtype
 
-        # y_pred, y_var = la(X)
-        # assert y_pred.dtype == dtype
-        # assert y_var.dtype == dtype
+        y_pred, y_var = la(X)
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
     except (ValueError, RuntimeError, SystemExit):
         pass

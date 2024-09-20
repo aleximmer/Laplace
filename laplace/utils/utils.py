@@ -185,7 +185,9 @@ def diagonal_add_scalar(X: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
     -------
     X_add_scalar : torch.Tensor
     """
-    indices = torch.LongTensor([[i, i] for i in range(X.shape[0])], device=X.device)
+    indices = torch.LongTensor(
+        [[i, i] for i in range(X.shape[0])], device=X.device, dtype=X.dtype
+    )
     values = X.new_ones(X.shape[0]).mul(value)
     return X.index_put(tuple(indices.t()), values, accumulate=True)
 
@@ -278,10 +280,10 @@ def expand_prior_precision(prior_prec: torch.Tensor, model: nn.Module) -> torch.
     """
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     theta = parameters_to_vector(trainable_params)
-    device, P = theta.device, len(theta)
+    device, dtype, P = theta.device, theta.dtype, len(theta)
     assert prior_prec.ndim == 1
     if len(prior_prec) == 1:  # scalar
-        return torch.ones(P, device=device) * prior_prec
+        return torch.ones(P, device=device, dtype=dtype) * prior_prec
     elif len(prior_prec) == P:  # full diagonal
         return prior_prec.to(device)
     else:

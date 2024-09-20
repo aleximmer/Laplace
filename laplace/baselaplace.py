@@ -2299,7 +2299,9 @@ class FunctionalLaplace(BaseLaplace):
 
             if self.likelihood == Likelihood.REGRESSION:
                 b, C = f_batch.shape
-                lambdas_batch = torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
+                lambdas_batch = torch.unsqueeze(
+                    torch.eye(C, device=self._device, dtype=self._dtype), 0
+                ).repeat(b, 1, 1)
             else:
                 # second derivative of log lik is diag(p) - pp^T
                 ps = torch.softmax(f_batch, dim=-1)
