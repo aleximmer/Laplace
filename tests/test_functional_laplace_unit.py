@@ -331,7 +331,9 @@ def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
 @pytest.mark.parametrize("laplace", [FunctionalLaplace, FunctionalLLLaplace])
 @pytest.mark.parametrize("backend", [AsdlGGN, BackPackGGN, CurvlinopsGGN])
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
-def test_dtype(laplace, backend, dtype):
+@pytest.mark.parametrize("independent_outputs", [True, False])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, independent_outputs, likelihood):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
 
@@ -342,15 +344,25 @@ def test_dtype(laplace, backend, dtype):
 
     try:
         la = laplace(
-            model, "regression", 10, independent_outputs=False, backend=backend
+            model,
+            likelihood,
+            10,
+            independent_outputs=independent_outputs,
+            backend=backend,
         )
         la.fit(dataloader)
 
         assert la.L is not None
-        assert la.L.dtype == dtype
-
         assert la.Sigma_inv is not None
-        assert la.Sigma_inv.dtype == dtype
+
+        if independent_outputs:
+            assert la.L[0].dtype == dtype
+            assert la.Sigma_inv[0].dtype == dtype
+        else:
+            assert la.L.dtype == dtype
+            assert la.Sigma_inv.dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
 
         y_pred, y_var = la(X)
         assert y_pred.dtype == dtype

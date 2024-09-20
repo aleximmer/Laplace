@@ -138,7 +138,6 @@ class Kron:
                 if Hi.ndim > 1:
                     # Dense Kronecker factor.
                     eigval, Q = symeig(Hi)
-                    print(Hi.dtype, Q.dtype)
                 else:
                     # Diagonal Kronecker factor.
                     eigval = Hi

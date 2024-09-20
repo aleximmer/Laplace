@@ -921,7 +921,8 @@ def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
 )
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
-def test_dtype(laplace, backend, dtype):
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, likelihood):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
 
@@ -935,7 +936,7 @@ def test_dtype(laplace, backend, dtype):
 
     try:
         la = laplace(
-            model, "regression", subnetwork_indices=subnetmask.indices, backend=backend
+            model, likelihood, subnetwork_indices=subnetmask.indices, backend=backend
         )
         la.fit(dataloader)
 
@@ -943,6 +944,8 @@ def test_dtype(laplace, backend, dtype):
 
         if isinstance(la.H, torch.Tensor):
             assert la.H.dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
 
         y_pred, y_var = la(X, pred_type="glm")
         assert y_pred.dtype == dtype

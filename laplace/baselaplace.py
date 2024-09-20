@@ -228,7 +228,12 @@ class BaseLaplace:
             c = (
                 self.n_data
                 * self.n_outputs
-                * torch.log(torch.as_tensor(self.sigma_noise) * sqrt(2 * pi))
+                * torch.log(
+                    torch.as_tensor(
+                        self.sigma_noise, device=self._device, dtype=self._dtype
+                    )
+                    * sqrt(2 * pi)
+                )
             )
             return factor * self.loss - c
         else:
@@ -2625,7 +2630,9 @@ class FunctionalLaplace(BaseLaplace):
         """
         if self.likelihood == Likelihood.REGRESSION:
             if self.independent_outputs:
-                log_det = torch.tensor(0.0, requires_grad=True)
+                log_det = torch.tensor(
+                    0.0, requires_grad=True, device=self._device, dtype=self._dtype
+                )
                 for c in range(self.n_outputs):
                     log_det = log_det + torch.logdet(
                         self.gp_kernel_prior_variance * self.K_MM[c]
@@ -2647,7 +2654,9 @@ class FunctionalLaplace(BaseLaplace):
                 )
         else:
             if self.independent_outputs:
-                log_det = torch.tensor(0.0, requires_grad=True)
+                log_det = torch.tensor(
+                    0.0, requires_grad=True, device=self._device, dtype=self._dtype
+                )
                 for c in range(self.n_outputs):
                     W = torch.sqrt(self._H_factor * self.L[c])
                     log_det = log_det + torch.logdet(
@@ -2689,7 +2698,9 @@ class FunctionalLaplace(BaseLaplace):
         else:
             noise = eps
         if self.independent_outputs:
-            scatter = torch.tensor(0.0, requires_grad=True)
+            scatter = torch.tensor(
+                0.0, requires_grad=True, device=self._device, dtype=self._dtype
+            )
             for c in range(self.n_outputs):
                 m = self.K_MM[c].shape[0]
                 mu_term = torch.linalg.solve(

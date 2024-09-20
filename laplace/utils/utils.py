@@ -185,9 +185,7 @@ def diagonal_add_scalar(X: torch.Tensor, value: torch.Tensor) -> torch.Tensor:
     -------
     X_add_scalar : torch.Tensor
     """
-    indices = torch.LongTensor(
-        [[i, i] for i in range(X.shape[0])], device=X.device, dtype=X.dtype
-    )
+    indices = torch.LongTensor([[i, i] for i in range(X.shape[0])], device=X.device)
     values = X.new_ones(X.shape[0]).mul(value)
     return X.index_put(tuple(indices.t()), values, accumulate=True)
 

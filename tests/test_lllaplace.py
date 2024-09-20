@@ -710,7 +710,8 @@ def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
     "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
 )
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
-def test_dtype(laplace, backend, dtype):
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, likelihood):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
 
@@ -720,7 +721,7 @@ def test_dtype(laplace, backend, dtype):
     model = nn.Linear(3, 3, dtype=dtype)
 
     try:
-        la = laplace(model, "regression", backend=backend)
+        la = laplace(model, likelihood, backend=backend)
         la.fit(dataloader)
 
         assert la.H is not None
@@ -730,6 +731,8 @@ def test_dtype(laplace, backend, dtype):
         elif isinstance(la.H, KronDecomposed):
             assert la.H.eigenvalues[0][0].dtype == dtype
             assert la.H.eigenvectors[0][0].dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
 
         y_pred, y_var = la(X, pred_type="glm")
         assert y_pred.dtype == dtype

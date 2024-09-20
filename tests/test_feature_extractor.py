@@ -42,7 +42,6 @@ class CNN(nn.Module):
 
     def forward(self, x):
         x = self.conv1(x)
-        # print("x = self.conv1(x)   ", x.shape, "  ", torch.Size)
         x = self.conv2(x)
         x = x.view(x.size()[0], -1)
         x = self.fc(x)

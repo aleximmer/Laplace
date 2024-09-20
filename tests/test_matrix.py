@@ -42,15 +42,6 @@ def test_init_from_iterable(model):
     kron = Kron.init_from_model(model.parameters(), "cpu", torch.float)
     expected_sizes = [[20 * 20, 3 * 3], [20 * 20], [2 * 2, 20 * 20], [2 * 2]]
 
-    for p in model.parameters():
-        print(p.shape)
-
-    print()
-
-    for facs in kron.kfacs:
-        for fi in facs:
-            print(fi.shape)
-
     for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
             assert torch.all(fi == 0)
