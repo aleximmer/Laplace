@@ -159,7 +159,8 @@ def marglik_training(
         optimizer_kwargs["weight_decay"] = 0.0
 
     # get device, data set size N, number of layers H, number of parameters P
-    device = parameters_to_vector(model.parameters()).device
+    p = next(model.parameters())
+    device, dtype = p.device, p.dtype
     N = len(train_loader.dataset)
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     H = len(trainable_params)
@@ -170,7 +171,7 @@ def marglik_training(
     # prior precision
     log_prior_prec_init = np.log(temperature * prior_prec_init)
     log_prior_prec = fix_prior_prec_structure(
-        log_prior_prec_init, prior_structure, H, P, device
+        log_prior_prec_init, prior_structure, H, P, device, dtype
     )
     log_prior_prec.requires_grad = True
     hyperparameters.append(log_prior_prec)
@@ -182,7 +183,9 @@ def marglik_training(
     elif likelihood == Likelihood.REGRESSION:
         criterion = MSELoss(reduction="mean")
         log_sigma_noise_init = np.log(sigma_noise_init)
-        log_sigma_noise = log_sigma_noise_init * torch.ones(1, device=device)
+        log_sigma_noise = log_sigma_noise_init * torch.ones(
+            1, device=device, dtype=dtype
+        )
         log_sigma_noise.requires_grad = True
         hyperparameters.append(log_sigma_noise)
 

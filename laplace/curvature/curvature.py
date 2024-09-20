@@ -153,8 +153,9 @@ class CurvatureInterface:
         output_size = int(f.numel() / bsize)
 
         # calculate Jacobians using the feature vector 'phi'
+        p = next(self.model.parameters())
         identity = (
-            torch.eye(output_size, device=next(self.model.parameters()).device)
+            torch.eye(output_size, device=p.device, dtype=p.dtype)
             .unsqueeze(0)
             .tile(bsize, 1, 1)
         )
@@ -345,7 +346,8 @@ class GGNInterface(CurvatureInterface):
 
         for _ in range(self.num_samples):
             if self.likelihood == "regression":
-                y_sample = f + torch.randn(f.shape, device=f.device)  # N(y | f, 1)
+                # N(y | f, 1)
+                y_sample = f + torch.randn(f.shape, device=f.device, dtype=f.dtype)
                 grad_sample = f - y_sample  # functional MSE grad
             else:  # classification with softmax
                 y_sample = torch.distributions.Multinomial(logits=f).sample()

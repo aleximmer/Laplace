@@ -129,9 +129,10 @@ class CurvlinopsInterface(CurvatureInterface):
             check_deterministic=False,
             **curvlinops_kwargs,
         )
+
+        p = next(self.model.parameters())
         H = torch.as_tensor(
-            linop @ torch.eye(linop.shape[0]),
-            device=next(self.model.parameters()).device,
+            linop @ torch.eye(linop.shape[0]), device=p.device, dtype=p.dtype
         )
 
         f = self.model(x)
