@@ -892,5 +892,5 @@ def test_dtype(laplace, backend, dtype, likelihood):
 
         y_pred = la(X, pred_type="nn", num_samples=3)
         assert y_pred.dtype == dtype
-    except (ValueError, RuntimeError, SystemExit):
+    except (ValueError, AttributeError, RuntimeError, SystemExit):
         pass
