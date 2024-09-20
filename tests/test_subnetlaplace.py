@@ -921,7 +921,7 @@ def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
 )
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
-def test_hessian_dtype(laplace, backend, dtype):
+def test_dtype(laplace, backend, dtype):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
 
@@ -934,7 +934,9 @@ def test_hessian_dtype(laplace, backend, dtype):
     subnetmask.select()
 
     try:
-        la = laplace(model, "regression", subnetwork_indices=subnetmask.indices)
+        la = laplace(
+            model, "regression", subnetwork_indices=subnetmask.indices, backend=backend
+        )
         la.fit(dataloader)
 
         assert la.H is not None

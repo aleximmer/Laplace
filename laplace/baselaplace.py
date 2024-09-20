@@ -453,6 +453,7 @@ class BaseLaplace:
                     self.n_layers,
                     self.n_params,
                     self._device,
+                    self._dtype,
                 )
 
             log_prior_prec = self.prior_precision.log()
@@ -668,7 +669,9 @@ class BaseLaplace:
             # optional: variance correction
             if link_approx == LinkApprox.BRIDGE_NORM:
                 f_var_diag_mean = f_var_diag.mean(dim=1)
-                f_var_diag_mean /= torch.as_tensor([K / 2], device=self._device).sqrt()
+                f_var_diag_mean /= torch.as_tensor(
+                    [K / 2], device=self._device, dtype=self._dtype
+                ).sqrt()
                 f_mu /= f_var_diag_mean.sqrt().unsqueeze(-1)
                 f_var_diag /= f_var_diag_mean.unsqueeze(-1)
 
@@ -1520,7 +1523,11 @@ class FullLaplace(ParametricLaplace):
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
-            n_samples, self.n_params, device=self._device, generator=generator
+            n_samples,
+            self.n_params,
+            device=self._device,
+            dtype=self._dtype,
+            generator=generator,
         )
         # (n_samples, n_params) x (n_params, n_params) -> (n_samples, n_params)
         samples = samples @ self.posterior_scale
@@ -1670,7 +1677,11 @@ class KronLaplace(ParametricLaplace):
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
-            n_samples, self.n_params, device=self._device, generator=generator
+            n_samples,
+            self.n_params,
+            device=self._device,
+            dtype=self._dtype,
+            generator=generator,
         )
         samples = self.posterior_precision.bmm(samples, exponent=-0.5)
         return self.mean.reshape(1, self.n_params) + samples.reshape(
@@ -1945,7 +1956,11 @@ class DiagLaplace(ParametricLaplace):
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
-            n_samples, self.n_params, device=self._device, generator=generator
+            n_samples,
+            self.n_params,
+            device=self._device,
+            dtype=self._dtype,
+            generator=generator,
         )
         samples = samples * self.posterior_scale.reshape(1, self.n_params)
         return self.mean.reshape(1, self.n_params) + samples
@@ -2061,13 +2076,18 @@ class FunctionalLaplace(BaseLaplace):
         """
         if self.independent_outputs:
             self.K_MM = [
-                torch.empty(size=(self.n_subset, self.n_subset), device=self._device)
+                torch.empty(
+                    size=(self.n_subset, self.n_subset),
+                    device=self._device,
+                    dtype=self._dtype,
+                )
                 for _ in range(self.n_outputs)
             ]
         else:
             self.K_MM = torch.empty(
                 size=(self.n_subset * self.n_outputs, self.n_subset * self.n_outputs),
                 device=self._device,
+                dtype=self._dtype,
             )
 
     def _init_Sigma_inv(self):
@@ -2080,13 +2100,18 @@ class FunctionalLaplace(BaseLaplace):
         """
         if self.independent_outputs:
             self.Sigma_inv = [
-                torch.empty(size=(self.n_subset, self.n_subset), device=self._device)
+                torch.empty(
+                    size=(self.n_subset, self.n_subset),
+                    device=self._device,
+                    dtype=self._dtype,
+                )
                 for _ in range(self.n_outputs)
             ]
         else:
             self.Sigma_inv = torch.empty(
                 size=(self.n_subset * self.n_outputs, self.n_subset * self.n_outputs),
                 device=self._device,
+                dtype=self._dtype,
             )
 
     def _store_K_batch(self, K_batch: torch.Tensor, i: int, j: int):
@@ -2602,14 +2627,20 @@ class FunctionalLaplace(BaseLaplace):
                 for c in range(self.n_outputs):
                     log_det = log_det + torch.logdet(
                         self.gp_kernel_prior_variance * self.K_MM[c]
-                        + torch.eye(n=self.K_MM[c].shape[0], device=self._device)
+                        + torch.eye(
+                            n=self.K_MM[c].shape[0],
+                            device=self._device,
+                            dtype=self._dtype,
+                        )
                         * self.sigma_noise.square()
                     )
                 return log_det
             else:
                 return torch.logdet(
                     self.gp_kernel_prior_variance * self.K_MM
-                    + torch.eye(n=self.K_MM.shape[0], device=self._device)
+                    + torch.eye(
+                        n=self.K_MM.shape[0], device=self._device, dtype=self._dtype
+                    )
                     * self.sigma_noise.square()
                 )
         else:
@@ -2619,14 +2650,20 @@ class FunctionalLaplace(BaseLaplace):
                     W = torch.sqrt(self._H_factor * self.L[c])
                     log_det = log_det + torch.logdet(
                         W[:, None] * self.gp_kernel_prior_variance * self.K_MM[c] * W
-                        + torch.eye(n=self.K_MM[c].shape[0], device=self._device)
+                        + torch.eye(
+                            n=self.K_MM[c].shape[0],
+                            device=self._device,
+                            dtype=self._dtype,
+                        )
                     )
                 return log_det
             else:
                 W = torch.sqrt(self._H_factor * self.L)
                 return torch.logdet(
                     W[:, None] * self.gp_kernel_prior_variance * self.K_MM * W
-                    + torch.eye(n=self.K_MM.shape[0], device=self._device)
+                    + torch.eye(
+                        n=self.K_MM.shape[0], device=self._device, dtype=self._dtype
+                    )
                 )
 
     @property
@@ -2745,6 +2782,7 @@ class FunctionalLaplace(BaseLaplace):
             kernel = torch.empty(
                 (jacobians.shape[0], jacobians_2.shape[0], self.n_outputs),
                 device=jacobians.device,
+                dtype=self._dtype,
             )
             for c in range(self.n_outputs):
                 kernel[:, :, c] = torch.einsum(
@@ -2781,7 +2819,9 @@ class FunctionalLaplace(BaseLaplace):
         else:
             if self.independent_outputs:
                 kernel = torch.empty(
-                    (jacobians.shape[0], self.n_outputs), device=jacobians.device
+                    (jacobians.shape[0], self.n_outputs),
+                    device=jacobians.device,
+                    dtype=self._dtype,
                 )
                 for c in range(self.n_outputs):
                     kernel[:, c] = torch.norm(jacobians[:, c, :], dim=1) ** 2
@@ -2809,6 +2849,7 @@ class FunctionalLaplace(BaseLaplace):
             kernel = torch.empty(
                 (jacobians.shape[0], jacobians_2.shape[0], self.n_outputs),
                 device=jacobians.device,
+                dtype=self._dtype,
             )
             for c in range(self.n_outputs):
                 kernel[:, :, c] = torch.einsum(
@@ -2897,17 +2938,21 @@ class FunctionalLaplace(BaseLaplace):
     def prior_precision(self, prior_precision):
         self._posterior_scale = None
         if np.isscalar(prior_precision) and np.isreal(prior_precision):
-            self._prior_precision = torch.tensor([prior_precision], device=self._device)
+            self._prior_precision = torch.tensor(
+                [prior_precision], device=self._device, dtype=self._dtype
+            )
         elif torch.is_tensor(prior_precision):
             if prior_precision.ndim == 0:
                 # make dimensional
-                self._prior_precision = prior_precision.reshape(-1).to(self._device)
+                self._prior_precision = (
+                    prior_precision.reshape(-1).to(self._device).to(self._dtype)
+                )
             elif prior_precision.ndim == 1:
                 if len(prior_precision) not in [1, self.n_layers, self.n_params]:
                     raise ValueError(
                         "Length of prior precision does not align with architecture."
                     )
-                self._prior_precision = prior_precision.to(self._device)
+                self._prior_precision = prior_precision.to(self._device).to(self._dtype)
             else:
                 raise ValueError(
                     "Prior precision needs to be at most one-dimensional tensor."

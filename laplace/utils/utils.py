@@ -299,6 +299,7 @@ def fix_prior_prec_structure(
     n_layers: int,
     n_params: int,
     device: torch.device,
+    dtype: torch.dtype,
 ) -> torch.Tensor:
     """Create a tensor of prior precision with the correct shape, depending on the
     choice of the prior structure type.
@@ -312,17 +313,22 @@ def fix_prior_prec_structure(
     n_layers: int
     n_params: int
     device: torch.device
+    dtype: torch.dtype
 
     Returns
     -------
     correct_prior_precision: torch.Tensor
     """
     if prior_structure == PriorStructure.SCALAR:
-        prior_prec_init = torch.full((1,), prior_prec_init, device=device)
+        prior_prec_init = torch.full((1,), prior_prec_init, device=device, dtype=dtype)
     elif prior_structure == PriorStructure.LAYERWISE:
-        prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device)
+        prior_prec_init = torch.full(
+            (n_layers,), prior_prec_init, device=device, dtype=dtype
+        )
     elif prior_structure == PriorStructure.DIAG:
-        prior_prec_init = torch.full((n_params,), prior_prec_init, device=device)
+        prior_prec_init = torch.full(
+            (n_params,), prior_prec_init, device=device, dtype=dtype
+        )
     else:
         raise ValueError(f"Invalid prior structure {prior_structure}.")
     return prior_prec_init
