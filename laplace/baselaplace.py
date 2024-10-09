@@ -848,6 +848,13 @@ class ParametricLaplace(BaseLaplace):
             else:
                 X, y = data
                 X, y = X.to(self._device), y.to(self._device)
+
+            if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
+                raise ValueError(
+                    f"The model's output has {out.ndim} dims but "
+                    f"the target has {y.ndim} dims."
+                )
+
             self.model.zero_grad()
             loss_batch, H_batch = self._curv_closure(X, y, N=N)
             self.loss += loss_batch
@@ -1766,12 +1773,19 @@ class LowRankLaplace(ParametricLaplace):
         if not self.enable_backprop:
             self.mean = self.mean.detach()
 
-        X, _ = next(iter(train_loader))
+        X, y = next(iter(train_loader))
         with torch.no_grad():
             try:
                 out = self.model(X[:1].to(self._device))
             except (TypeError, AttributeError):
                 out = self.model(X.to(self._device))
+
+        if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
+            raise ValueError(
+                f"The model's output has {out.ndim} dims but "
+                f"the target has {y.ndim} dims."
+            )
+
         self.n_outputs = out.shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
 
@@ -2120,14 +2134,18 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_Sigma_inv(self):
         """Computes the cholesky decomposition of
-        \\[
-            K_{MM} + \\Lambda_{MM}^{-1}.
-        \\]
-        See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
-        Equation 15 for more information.
+                \\[
+                    K_{MM} + \\Lambda_{MM}^{-1}.
+                \\]
+                See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
+                Equation 15 for more information.
 
-        As the diagonal approximation is performed with \\Lambda_{MM} (which is stored in self.L),
-        the code is greatly simplified.
+        <<<<<<< HEAD
+                As the diagonal approximation is performed with \\Lambda_{MM} (which is stored in self.L),
+        =======
+                As the diagonal approximation is performed with \\(\\Lambda_{MM}\\) (which is stored in self.L),
+        >>>>>>> main
+                the code is greatly simplified.
         """
         if self.independent_outputs:
             self.Sigma_inv = [
@@ -2236,10 +2254,16 @@ class FunctionalLaplace(BaseLaplace):
 
             Js_batch, f_batch = self._jacobians(X, enable_backprop=False)
 
+            if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
+                raise ValueError(
+                    f"The model's output has {out.ndim} dims but "
+                    f"the target has {y.ndim} dims."
+                )
+
             with torch.no_grad():
                 loss_batch = self.backend.factor * self.backend.lossfunc(f_batch, y)
 
-            if self.likelihood == "regression":
+            if self.likelihood == Likelihood.REGRESSION:
                 b, C = f_batch.shape
                 lambdas_batch = torch.unsqueeze(torch.eye(C), 0).repeat(b, 1, 1)
             else:
