@@ -1935,7 +1935,7 @@ class FunctionalLaplace(BaseLaplace):
     See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
     for more details.
 
-    Note that for `likelihood='classification'`, we approximate \( L_{NN} \\) with a diagonal matrix
+    Note that for `likelihood='classification'`, we approximate \\( L_{NN} \\) with a diagonal matrix
     ( \\( L_{NN} \\) is a block-diagonal matrix, where blocks represent Hessians of per-data-point log-likelihood w.r.t.
     neural network output \\( f \\), See Appendix [A.2.1](https://arxiv.org/abs/2008.08400) for exact definition). We
     resort to such an approximation because of the (possible) errors found in Laplace approximation for
@@ -2028,8 +2028,8 @@ class FunctionalLaplace(BaseLaplace):
 
     def _init_K_MM(self):
         """Allocates memory for the kernel matrix evaluated at the subset of the training
-        data points. If the subset is of size \(M\) and the problem has \(C\) outputs,
-        this is a list of C \((M,M\)) tensors for diagonal kernel and \((M x C, M x C)\)
+        data points. If the subset is of size \\(M\\) and the problem has \\(C\\) outputs,
+        this is a list of C \\((M,M\\)) tensors for diagonal kernel and \\((M x C, M x C)\\)
         otherwise.
         """
         if self.independent_outputs:
@@ -2045,9 +2045,9 @@ class FunctionalLaplace(BaseLaplace):
 
     def _init_Sigma_inv(self):
         """Allocates memory for the cholesky decomposition of
-        \[
-            K_{MM} + \Lambda_{MM}^{-1}.
-        \]
+        \\[
+            K_{MM} + \\Lambda_{MM}^{-1}.
+        \\]
         See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
         Equation 15 for more information.
         """
@@ -2120,13 +2120,13 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_Sigma_inv(self):
         """Computes the cholesky decomposition of
-        \[
-            K_{MM} + \Lambda_{MM}^{-1}.
-        \]
+        \\[
+            K_{MM} + \\Lambda_{MM}^{-1}.
+        \\]
         See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
         Equation 15 for more information.
 
-        As the diagonal approximation is performed with \Lambda_{MM} (which is stored in self.L),
+        As the diagonal approximation is performed with \\Lambda_{MM} (which is stored in self.L),
         the code is greatly simplified.
         """
         if self.independent_outputs:
@@ -2561,11 +2561,11 @@ class FunctionalLaplace(BaseLaplace):
         [GP book R&W 2006](http://www.gaussianprocess.org/gpml/chapters/) with
         (note that we always use diagonal approximation \\(D\\) of the Hessian of log likelihood w.r.t. \\(f\\)):
 
-        log determinant term := \\( \log | I + D^{1/2}K D^{1/2} | \\)
+        log determinant term := \\( \\log | I + D^{1/2}K D^{1/2} | \\)
 
         For `regression`, we use ["standard" GP marginal likelihood](https://stats.stackexchange.com/questions/280105/log-marginal-likelihood-for-gaussian-process):
 
-        log determinant term := \\( \log | K + \\sigma_2 I | \\)
+        log determinant term := \\( \\log | K + \\sigma_2 I | \\)
         """
         if self.likelihood == Likelihood.REGRESSION:
             if self.independent_outputs:
@@ -2605,7 +2605,7 @@ class FunctionalLaplace(BaseLaplace):
         """Compute scatter term in GP log marginal likelihood.
 
         For `classification` we use eq. (3.44) from Chapter 3.5 from
-        [GP book R&W 2006](http://www.gaussianprocess.org/gpml/chapters/) with \\(\hat{f} = f \\):
+        [GP book R&W 2006](http://www.gaussianprocess.org/gpml/chapters/) with \\(\\hat{f} = f \\):
 
         scatter term := \\( f K^{-1} f^{T} \\)
 

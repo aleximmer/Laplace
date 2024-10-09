@@ -57,10 +57,8 @@ The documentation is available [here](https://aleximmer.github.io/Laplace) or ca
 ```bash
 # assuming the repository was cloned
 uv sync --all-extras
-# create docs and write to html
-uv run bash update_docs.sh
-# .. or serve the docs directly
-uv run pdoc --http 0.0.0.0:8080 laplace --template-dir template
+# serve the docs locally
+uv run mkdocs serve
 ```
 
 **With `pip`**
@@ -68,10 +66,8 @@ uv run pdoc --http 0.0.0.0:8080 laplace --template-dir template
 ```bash
 # assuming the repository was cloned
 pip install -e ".[dev]"
-# create docs and write to html
-bash update_docs.sh
-# .. or serve the docs directly
-pdoc --http 0.0.0.0:8080 laplace --template-dir template
+# serve the docs locally
+mkdocs serve
 ```
 
 ## Publishing the `laplace-torch` package to PyPi

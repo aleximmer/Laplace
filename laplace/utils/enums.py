@@ -92,7 +92,7 @@ class PriorStructure(str, Enum):
     """Valid options for the `prior_structure` in `optimize_prior_precision`."""
 
     SCALAR = "scalar"
-    """Scalar prior precision \\( \\tau I, \\tau \in \\mathbf{R} \\)."""
+    """Scalar prior precision \\( \\tau I, \\tau \\in \\mathbf{R} \\)."""
 
     DIAG = "diag"
     """Scalar prior precision \\( \\tau \\in \\mathbb{R}^p \\)."""
