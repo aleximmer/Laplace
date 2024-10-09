@@ -47,7 +47,9 @@ py-modules = ["laplace"]
 dev = [
   "coveralls",
   "matplotlib",
-  "pdoc3",
+  "mkdocs",
+  "mkdocs-material",
+  "mkdocstrings-python",
   "pytest",
   "pytest-cov",
   "pytest-mock",
