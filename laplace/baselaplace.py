@@ -254,8 +254,7 @@ class BaseLaplace:
             raise ValueError("Jacobians have to be torch.Tensor.")
         if not Js.device == self._device:
             raise ValueError("Jacobians need to be on the same device as Laplace.")
-        m, k, p = Js.size()
-        if p != self.n_params:
+        if Js.shape[-1] != self.n_params:
             raise ValueError("Invalid Jacobians shape for Laplace posterior approx.")
 
     @property
@@ -1138,7 +1137,7 @@ class ParametricLaplace(BaseLaplace):
         joint: bool = False,
         diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        if "asdl" in self._backend_cls.__name__.lower():
+        if "asdl" in self._backend_cls.__name__.lower() and self.enable_backprop:
             # Asdl's doesn't support backprop over Jacobians
             # falling back to functorch
             warnings.warn(
@@ -1244,7 +1243,7 @@ class ParametricLaplace(BaseLaplace):
         ----------
         Js : torch.Tensor
             Jacobians of model output wrt parameters
-            `(batch*outputs, parameters)`
+            `([batch_dims], outputs, parameters)`
 
         Returns
         -------
@@ -1498,11 +1497,10 @@ class FullLaplace(ParametricLaplace):
         return delta @ self.posterior_precision @ delta
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
-        return torch.einsum("ncp,pq,nkq->nck", Js, self.posterior_covariance, Js)
+        return torch.einsum("...cp,pq,...kq->...ck", Js, self.posterior_covariance, Js)
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
+        Js = Js.reshape(-1, Js.shape[-1])
         return torch.einsum("np,pq,mq->nm", Js, self.posterior_covariance, Js)
 
     def sample(
@@ -1813,19 +1811,19 @@ class LowRankLaplace(ParametricLaplace):
         return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
-        prior_var = torch.einsum("ncp,nkp->nck", Js / self.prior_precision_diag, Js)
-        Js_V = torch.einsum("ncp,pl->ncl", Js, self.V)
-        info_gain = torch.einsum("ncl,nkl->nck", Js_V @ self.Kinv, Js_V)
+        prior_var = torch.einsum(
+            "...cp,...kp->...ck", Js / self.prior_precision_diag, Js
+        )
+        Js_V = torch.einsum("...cp,pl->...cl", Js, self.V)
+        info_gain = torch.einsum("...cl,...kl->...ck", Js_V @ self.Kinv, Js_V)
         return prior_var - info_gain
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
+        Js = Js.reshape(-1, Js.shape[-1])
         prior_cov = torch.einsum("np,mp->nm", Js / self.prior_precision_diag, Js)
         Js_V = torch.einsum("np,pl->nl", Js, self.V)
         info_gain = torch.einsum("nl,ml->nm", Js_V @ self.Kinv, Js_V)
         cov = prior_cov - info_gain
-        assert cov.shape == (n_batch * n_outs, n_batch * n_outs)
         return cov
 
     def sample(
@@ -1919,12 +1917,13 @@ class DiagLaplace(ParametricLaplace):
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
-        return torch.einsum("ncp,p,nkp->nck", Js, self.posterior_variance, Js)
+        return torch.einsum("...cp,p,...kp->...ck", Js, self.posterior_variance, Js)
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
+        # (prod(batch_dims) * out_dim, n_params)
+        Js = Js.reshape(-1, Js.shape[-1])
+        # (prod(batch_dims) * out_dim, prod(batch_dims) * out_dim)
         cov = torch.einsum("np,p,mp->nm", Js, self.posterior_variance, Js)
         return cov
 

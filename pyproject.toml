@@ -27,7 +27,6 @@ dependencies = [
   "numpy",
   "opt_einsum",
   "torch >= 2.0",
-  "torchaudio >= 2.0",
   "torchmetrics",
   "torchvision >= 0.15",
 ]
@@ -55,6 +54,7 @@ dev = [
   "pytest-mock",
   "ruff",
   "scipy",
+  "tensordict",
 ]
 
 [tool.pytest.ini_options]

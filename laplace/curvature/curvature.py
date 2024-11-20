@@ -356,7 +356,7 @@ class GGNInterface(CurvatureInterface):
             F += (
                 1
                 / self.num_samples
-                * torch.einsum("bc,bk->bck", grad_sample, grad_sample)
+                * torch.einsum("...c,...k->...ck", grad_sample, grad_sample)
             )
 
         return F
@@ -401,9 +401,9 @@ class GGNInterface(CurvatureInterface):
         )
 
         if H_lik is not None:
-            H = torch.einsum("bcp,bck,bkq->pq", Js, H_lik, Js)
+            H = torch.einsum("...cp,...ck,...kq->pq", Js, H_lik, Js)
         else:  # The case of exact GGN for regression
-            H = torch.einsum("bcp,bcq->pq", Js, Js)
+            H = torch.einsum("...cp,...cq->pq", Js, Js)
         loss = self.factor * self.lossfunc(f, y)
 
         return loss.detach(), H.detach()
@@ -424,9 +424,9 @@ class GGNInterface(CurvatureInterface):
         )
 
         if H_lik is not None:
-            H = torch.einsum("bcp,bck,bkp->p", Js, H_lik, Js)
+            H = torch.einsum("...cp,...ck,...kp->p", Js, H_lik, Js)
         else:  # The case of exact GGN for regression
-            H = torch.einsum("bcp,bcp->p", Js, Js)
+            H = torch.einsum("...cp,...cp->p", Js, Js)
 
         return loss.detach(), H.detach()
 
@@ -496,8 +496,8 @@ class EFInterface(CurvatureInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Gs is (batchsize, n_params)
+        # Gs is (..., n_params)
         Gs, loss = self.gradients(x, y)
         Gs, loss = Gs.detach(), loss.detach()
-        diag_ef = torch.einsum("bp,bp->p", Gs, Gs)
+        diag_ef = torch.einsum("...p,...p->p", Gs, Gs)
         return self.factor * loss, self.factor * diag_ef

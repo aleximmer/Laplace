@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import MutableMapping
 from copy import deepcopy
 from importlib.util import find_spec
@@ -110,6 +111,32 @@ def reward_model():
 
 
 @pytest.fixture
+def multidim_model():
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.attn = nn.MultiheadAttention(8, num_heads=1)
+            self.final_layer = nn.Linear(8, 2)
+
+        def forward(self, x):
+            """x is (B, L, D)"""
+            out = self.attn(x, x, x, need_weights=False)[0]  # (B, L, D)
+            return self.final_layer(out)  # (B, L, O)
+
+    model = Model()
+
+    for mod_name, mod in model.named_modules():
+        if mod_name == "final_layer":
+            for p in mod.parameters():
+                p.requires_grad = True
+        else:
+            for p in mod.parameters():
+                p.requires_grad = False
+
+    return model
+
+
+@pytest.fixture
 def class_loader():
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
@@ -137,6 +164,13 @@ def reg_loader_1d_flat():
     X = torch.randn(10, 3)
     y = torch.randn((10,))
     return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reg_loader_multidim():
+    X = torch.randn(10, 6, 8)
+    y = torch.randn(10, 6, 2)
+    return DataLoader(TensorDataset(X, y), batch_size=4, shuffle=False)
 
 
 @pytest.fixture
@@ -855,3 +889,36 @@ def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, lap
 
     with pytest.raises(ValueError):
         lap2.fit(reg_loader_1d_flat)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_functional_variance_multidim(multidim_model, reg_loader_multidim, laplace):
+    if laplace == KronLaplace:
+        pytest.skip("KronLaplace doesn't support multidim batch yet.")
+
+    lap = laplace(multidim_model, "regression", enable_backprop=True)
+    lap.fit(reg_loader_multidim)
+
+    x, _ = next(iter(reg_loader_multidim))
+    pred_mean, pred_var = lap(x, pred_type="glm", joint=False)
+
+    assert pred_mean.shape == (*x.shape[:-1], lap.n_outputs)
+    assert pred_var.shape == (*x.shape[:-1], lap.n_outputs, lap.n_outputs)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_functional_covariance_multidim(multidim_model, reg_loader_multidim, laplace):
+    if laplace == KronLaplace:
+        pytest.skip("KronLaplace doesn't support multidim batch yet.")
+
+    lap = laplace(multidim_model, "regression", enable_backprop=True)
+    lap.fit(reg_loader_multidim)
+
+    x, _ = next(iter(reg_loader_multidim))
+    pred_mean, pred_cov = lap(x, pred_type="glm", joint=True)
+
+    assert pred_mean.shape == (math.prod(x.shape[:-1]) * lap.n_outputs,)
+    assert pred_cov.shape == (
+        math.prod(x.shape[:-1]) * lap.n_outputs,
+        math.prod(x.shape[:-1]) * lap.n_outputs,
+    )
