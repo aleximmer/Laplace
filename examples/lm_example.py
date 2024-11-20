@@ -4,8 +4,8 @@ from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
 from laplace import Laplace
-from laplace.curvature.asdl import AsdlGGN
-from laplace.utils.enums import PredType
+from laplace.curvature.asdl import AsdlEF, AsdlGGN
+from laplace.utils.enums import LinkApprox, PredType
 
 BATCH_SIZE = 4  # B
 SEQ_LENGTH = 6  # L
@@ -45,12 +45,13 @@ for mod_name, mod in model.named_modules():
         for p in mod.parameters():
             p.requires_grad = False
 
+# GLM
 la = Laplace(
     model,
     "regression",
     hessian_structure="full",
     subset_of_weights="all",
-    backend=AsdlGGN,
+    backend=AsdlEF,
     dict_key_x=INPUT_KEY,
     dict_key_y=OUTPUT_KEY,
     enable_backprop=True,
@@ -59,10 +60,32 @@ la.fit(dl)
 
 data = next(iter(dl))  # data[INPUT_KEY].shape = (B, L * D)
 pred_map = model(data)  # (B, D)
-# pred_la_mean, pred_la_var = la(
-#     data, pred_type=PredType.NN, link_approx=LinkApprox.MC, n_samples=10
-# )
-pred_la_mean, pred_la_var = la(data, pred_type=PredType.GLM, joint=False)
+pred_la_mean, pred_la_var = la(data, pred_type=PredType.GLM)
+
+# Detach the grad if you don't need to backprop
+pred_la_mean, pred_la_var = pred_la_mean.detach(), pred_la_var.detach()
+
+# torch.Size([4, 6, 1]) torch.Size([4, 6, 1, 1])
+print(pred_la_mean.shape, pred_la_var.shape)
+
+
+# MC
+la = Laplace(
+    model,
+    "regression",
+    hessian_structure="diag",
+    subset_of_weights="all",
+    backend=AsdlGGN,
+    dict_key_x=INPUT_KEY,
+    dict_key_y=OUTPUT_KEY,
+)
+la.fit(dl)
+
+data = next(iter(dl))  # data[INPUT_KEY].shape = (B, L * D)
+pred_map = model(data)  # (B, D)
+pred_la_mean, pred_la_var = la(
+    data, pred_type=PredType.NN, link_approx=LinkApprox.MC, n_samples=10
+)
 
 # torch.Size([4, 6, 1]) torch.Size([4, 6, 1])
 print(pred_la_mean.shape, pred_la_var.shape)
