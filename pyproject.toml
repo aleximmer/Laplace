@@ -27,7 +27,6 @@ dependencies = [
   "numpy",
   "opt_einsum",
   "torch >= 2.0",
-  "torchaudio >= 2.0",
   "torchmetrics",
   "torchvision >= 0.15",
 ]
@@ -47,7 +46,9 @@ py-modules = ["laplace"]
 dev = [
   "coveralls",
   "matplotlib",
-  "pdoc3",
+  "mkdocs",
+  "mkdocs-material",
+  "mkdocstrings-python",
   "pytest",
   "pytest-cov",
   "pytest-mock",

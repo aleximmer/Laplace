@@ -1,5 +1,3 @@
-## Full Example: Applying Laplace on a Huggingface LLM model
-
 In this example, we will see how to apply Laplace on a GPT2 Huggingface (HF) model.
 Laplace only has lightweight requirements for this; namely that the model's `forward`
 method must only take a single dict-like object (`dict`, `UserDict`, or in general,
@@ -83,7 +81,7 @@ attention_mask torch.Size([4, 9])
 labels torch.Size([4])
 ```
 
-### Laplace on a subset of an LLM's weights
+## Laplace on a subset of an LLM's weights
 
 Now, let's do the main "meat" of this example: Wrapping the HF model into a model that is
 compatible with Laplace. Notice that this wrapper just wraps the HF model and nothing else.
@@ -248,7 +246,7 @@ As a final note, the dict-like input requirement of Laplace is very flexible. It
 be applicable to any tasks and any models. You just need to wrap the said model and make sure
 that your data loaders emit dict-like objects, where the input tensors are the dicts' values.
 
-### Caveats
+## Caveats
 
 Currently, diagonal EF with the Curvlinops backend is unsupported for dict-based inputs.
 This is because we use `torch.func`'s `vmap` to compute the diag-EF, and it only accepts

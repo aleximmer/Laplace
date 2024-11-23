@@ -761,10 +761,12 @@ class ParametricLaplace(BaseLaplace):
     a Gaussian distribution \\(\\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
     The goal of this class is to compute the posterior precision \\(P\\)
     which sums as
-    \\[
+
+    $$
         P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
         \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
-    \\]
+    $$
+
     Every subclass implements different approximations to the log likelihood Hessians,
     for example, a diagonal one. The prior is assumed to be Gaussian and therefore we have
     a simple form for \\(\\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}} = P_0 \\).
@@ -937,9 +939,10 @@ class ParametricLaplace(BaseLaplace):
     @property
     def log_det_ratio(self) -> torch.Tensor:
         """Compute the log determinant ratio, a part of the log marginal likelihood.
-        \\[
+
+        $$
             \\log \\frac{\\det P}{\\det P_0} = \\log \\det P - \\log \\det P_0
-        \\]
+        $$
 
         Returns
         -------
@@ -949,9 +952,11 @@ class ParametricLaplace(BaseLaplace):
 
     def square_norm(self, value) -> torch.Tensor:
         """Compute the square norm under post. Precision with `value-self.mean` as 𝛥:
-        \\[
+
+        $$
             \\Delta^\top P \\Delta
-        \\]
+        $$
+
         Returns
         -------
         square_form
@@ -2135,8 +2140,8 @@ class FunctionalLaplace(BaseLaplace):
     def _init_K_MM(self):
         """Allocates memory for the kernel matrix evaluated at the subset of the training
         data points. If the subset is of size \\(M\\) and the problem has \\(C\\) outputs,
-        this is a list of C \\((M,M\\)) tensors for diagonal kernel and
-        \\((M \\times C, M \\times C)\\) otherwise.
+        this is a list of C \\((M,M\\)) tensors for diagonal kernel and \\((M x C, M x C)\\)
+        otherwise.
         """
         if self.independent_outputs:
             self.K_MM = [
@@ -2226,14 +2231,18 @@ class FunctionalLaplace(BaseLaplace):
 
     def _build_Sigma_inv(self):
         """Computes the cholesky decomposition of
-        \\[
-            K_{MM} + \\Lambda_{MM}^{-1}.
-        \\]
-        See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
-        Equation 15 for more information.
+                \\[
+                    K_{MM} + \\Lambda_{MM}^{-1}.
+                \\]
+                See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
+                Equation 15 for more information.
 
-        As the diagonal approximation is performed with \\(\\Lambda_{MM}\\) (which is stored in self.L),
-        the code is greatly simplified.
+        <<<<<<< HEAD
+                As the diagonal approximation is performed with \\Lambda_{MM} (which is stored in self.L),
+        =======
+                As the diagonal approximation is performed with \\(\\Lambda_{MM}\\) (which is stored in self.L),
+        >>>>>>> main
+                the code is greatly simplified.
         """
         if self.independent_outputs:
             self.Sigma_inv = [
@@ -2580,7 +2589,9 @@ class FunctionalLaplace(BaseLaplace):
     def functional_variance(self, Js_star: torch.Tensor) -> torch.Tensor:
         """GP posterior variance:
 
-        \\[ k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\]
+        $$
+            k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
+        $$
 
         Parameters
         ----------
@@ -2617,7 +2628,9 @@ class FunctionalLaplace(BaseLaplace):
     def functional_covariance(self, Js_star: torch.Tensor) -> torch.Tensor:
         """GP posterior covariance:
 
-        \\[ k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}\\]
+        $$
+            k_{**} - K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
+        $$
 
         Parameters
         ----------

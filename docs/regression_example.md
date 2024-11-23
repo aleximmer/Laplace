@@ -1,11 +1,9 @@
-## Full example: Optimization of the marginal likelihood and prediction
-
-### Sinusoidal toy data
+## Sinusoidal toy data
 
 We show how the marginal likelihood can be used after training a MAP network on a simple sinusoidal regression task.
 Subsequently, we use the optimized LA to predict which provides uncertainty on top of the MAP prediction.
 We also show how the `marglik_training` utility method can be used to jointly train the MAP and hyperparameters.
-First, we set up the training data for the problem with observation noise \\(\\sigma=0.3\\):
+First, we set up the training data for the problem with observation noise \(\sigma=0.3\):
 
 ```python
 from laplace.baselaplace import FullLaplace
@@ -24,7 +22,7 @@ torch.manual_seed(711)
 X_train, y_train, train_loader, X_test = get_sinusoid_example(sigma_noise=0.3)
 ```
 
-### Training a MAP
+## Training a MAP
 
 We now use `pytorch` to train a neural network with single hidden layer and Tanh activation.
 The trained neural network will be our MAP estimate.
@@ -49,7 +47,7 @@ for i in range(n_epochs):
         optimizer.step()
 ```
 
-### Fitting and optimizing the Laplace approximation using empirical Bayes
+## Fitting and optimizing the Laplace approximation using empirical Bayes
 
 With the MAP-trained model at hand, we can estimate the prior precision and observation noise
 using empirical Bayes after training.
@@ -70,15 +68,15 @@ for i in range(n_epochs):
     hyper_optimizer.step()
 ```
 
-The obtained observation noise is close to the ground truth with a value of \\(\\sigma \\approx 0.28\\)
+The obtained observation noise is close to the ground truth with a value of \(\sigma \approx 0.28\)
 without the need for any validation data.
-The resulting prior precision is \\(\\delta \\approx 0.10\\).
+The resulting prior precision is \(\delta \approx 0.10\).
 
-### Bayesian predictive
+## Bayesian predictive
 
 Here, we compare the MAP prediction to the obtained LA prediction.
-For LA, we have a closed-form predictive distribution on the output \\(f\\) which is a Gaussian
-\\(\\mathcal{N}(f(x;\\theta\_{MAP}), \\mathbb{V}[f] + \\sigma^2)\\):
+For LA, we have a closed-form predictive distribution on the output \(f\) which is a Gaussian
+\(\mathcal{N}(f(x;\theta\_{MAP}), \mathbb{V}[f] + \sigma^2)\):
 
 ```python
 x = X_test.flatten().cpu().numpy()
@@ -90,14 +88,13 @@ pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 plot_regression(X_train, y_train, x, f_mu, pred_std)
 ```
 
-.. image:: regression_example.png
-:align: center
+![Posthoc Laplace](assets/regression_example.png)
 
 In comparison to the MAP, the predictive shows useful uncertainties.
 When our MAP is over or underfit, the Laplace approximation cannot fix this anymore.
 In this case, joint optimization of MAP and marginal likelihood can be useful.
 
-### Jointly optimize MAP and hyperparameters using online empirical Bayes
+## Jointly optimize MAP and hyperparameters using online empirical Bayes
 
 We provide a utility method `marglik_training` that implements the algorithm proposed in [1].
 The method optimizes the neural network and the hyperparameters in an interleaved way
@@ -120,5 +117,4 @@ pred_std = np.sqrt(f_sigma**2 + la.sigma_noise.item()**2)
 plot_regression(X_train, y_train, x, f_mu, pred_std)
 ```
 
-.. image:: regression_example_online.png
-:align: center
+![Online Laplace](assets/regression_example_online.png)
