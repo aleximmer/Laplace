@@ -279,7 +279,7 @@ class BaseLaplace:
         prior_prec: torch.Tensor = (
             self.prior_precision
             if isinstance(self.prior_precision, torch.Tensor)
-            else torch.tensor(self.prior_precision)
+            else torch.as_tensor(self.prior_precision)
         )
 
         if prior_prec.ndim == 0 or len(prior_prec) == 1:  # scalar
@@ -308,18 +308,18 @@ class BaseLaplace:
     @prior_mean.setter
     def prior_mean(self, prior_mean: float | torch.Tensor) -> None:
         if np.isscalar(prior_mean) and np.isreal(prior_mean):
-            self._prior_mean = torch.tensor(
+            self._prior_mean = torch.as_tensor(
                 prior_mean, device=self._device, dtype=self._dtype
             )
         elif isinstance(prior_mean, torch.Tensor):
             if prior_mean.ndim == 0:
-                self._prior_mean = (
-                    prior_mean.reshape(-1).to(self._device).to(self._dtype)
+                self._prior_mean = prior_mean.reshape(-1).to(
+                    device=self._device, dtype=self._dtype
                 )
             elif prior_mean.ndim == 1:
                 if len(prior_mean) not in [1, self.n_params]:
                     raise ValueError("Invalid length of prior mean.")
-                self._prior_mean = prior_mean.to(self._device).to(self._dtype)
+                self._prior_mean = prior_mean.to(device=self._device, dtype=self._dtype)
             else:
                 raise ValueError("Prior mean has too many dimensions!")
         else:
@@ -334,21 +334,23 @@ class BaseLaplace:
         self._posterior_scale = None
 
         if np.isscalar(prior_precision) and np.isreal(prior_precision):
-            self._prior_precision = torch.tensor(
+            self._prior_precision = torch.as_tensor(
                 [prior_precision], device=self._device, dtype=self._dtype
             )
         elif isinstance(prior_precision, torch.Tensor):
             if prior_precision.ndim == 0:
                 # make dimensional
-                self._prior_precision = (
-                    prior_precision.reshape(-1).to(self._device).to(self._dtype)
+                self._prior_precision = prior_precision.reshape(-1).to(
+                    device=self._device, dtype=self._dtype
                 )
             elif prior_precision.ndim == 1:
                 if len(prior_precision) not in [1, self.n_layers, self.n_params]:
                     raise ValueError(
                         "Length of prior precision does not align with architecture."
                     )
-                self._prior_precision = prior_precision.to(self._device).to(self._dtype)
+                self._prior_precision = prior_precision.to(
+                    device=self._device, dtype=self._dtype
+                )
             else:
                 raise ValueError(
                     "Prior precision needs to be at most one-dimensional tensor."
@@ -445,7 +447,7 @@ class BaseLaplace:
             self.prior_precision = (
                 init_prior_prec
                 if isinstance(init_prior_prec, torch.Tensor)
-                else torch.tensor(init_prior_prec)
+                else torch.as_tensor(init_prior_prec)
             )
 
             if (
@@ -567,16 +569,20 @@ class BaseLaplace:
         self._posterior_scale = None
 
         if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
-            self._sigma_noise = torch.tensor(
+            self._sigma_noise = torch.as_tensor(
                 sigma_noise, device=self._device, dtype=self._dtype
             )
         elif isinstance(sigma_noise, torch.Tensor):
             if sigma_noise.ndim == 0:
-                self._sigma_noise = sigma_noise.to(self._device).to(self._dtype)
+                self._sigma_noise = sigma_noise.to(
+                    device=self._device, dtype=self._dtype
+                )
             elif sigma_noise.ndim == 1:
                 if len(sigma_noise) > 1:
                     raise ValueError("Only homoscedastic output noise supported.")
-                self._sigma_noise = sigma_noise[0].to(self._device).to(self._dtype)
+                self._sigma_noise = sigma_noise[0].to(
+                    device=self._device, dtype=self._dtype
+                )
             else:
                 raise ValueError("Sigma noise needs to be scalar or 1-dimensional.")
         else:
@@ -2964,21 +2970,23 @@ class FunctionalLaplace(BaseLaplace):
     def prior_precision(self, prior_precision):
         self._posterior_scale = None
         if np.isscalar(prior_precision) and np.isreal(prior_precision):
-            self._prior_precision = torch.tensor(
+            self._prior_precision = torch.as_tensor(
                 [prior_precision], device=self._device, dtype=self._dtype
             )
         elif torch.is_tensor(prior_precision):
             if prior_precision.ndim == 0:
                 # make dimensional
-                self._prior_precision = (
-                    prior_precision.reshape(-1).to(self._device).to(self._dtype)
+                self._prior_precision = prior_precision.reshape(-1).to(
+                    device=self._device, dtype=self._dtype
                 )
             elif prior_precision.ndim == 1:
                 if len(prior_precision) not in [1, self.n_layers, self.n_params]:
                     raise ValueError(
                         "Length of prior precision does not align with architecture."
                     )
-                self._prior_precision = prior_precision.to(self._device).to(self._dtype)
+                self._prior_precision = prior_precision.to(
+                    device=self._device, dtype=self._dtype
+                )
             else:
                 raise ValueError(
                     "Prior precision needs to be at most one-dimensional tensor."
