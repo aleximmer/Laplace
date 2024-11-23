@@ -1,0 +1,139 @@
+site_name: laplace-torch
+
+repo_url: https://github.com/aleximmer/laplace
+repo_name: laplace
+site_author: wiseodd
+site_url: https://aleximmer.github.io/Laplace/
+site_dir: site/laplace
+
+nav:
+  - Introduction: index.md
+  - Developer's Guide: devs_guide.md
+  - "Example: Regression": regression_example.md
+  - "Example: Calibration": calibration_example.md
+  - "Example: GP Inference": calibration_gp_example.md
+  - "Example: Huggingface LLMs": huggingface_example.md
+  - "Example: Reward Modeling": reward_modeling_example.md
+  - API Reference:
+      - Laplace Frontend: api_reference/laplace.md
+      - Laplace Options: api_reference/enums.md
+      - Base Laplace: api_reference/baselaplace.md
+      - Parametric Laplace: api_reference/parametriclaplace.md
+      - Functional Laplace: api_reference/functionallaplace.md
+      - Last-Layer Laplace: api_reference/lllaplace.md
+      - Subnet Laplace: api_reference/subnetlaplace.md
+      - Curvatures: api_reference/curvatures.md
+      - Marglik Training Utils: api_reference/marglik_training.md
+      - Utilities: api_reference/utils.md
+
+theme:
+  name: material
+  logo: assets/laplace_logo_inv.png
+
+  features:
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - navigation.indexes
+    - navigation.tracking
+    - content.code.annotate
+    - toc.follow
+    - navigation.footer
+    - navigation.top
+    - content.code.copy
+    - content.tabs.link
+
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      primary: black
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      primary: black
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: black
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - toc:
+      permalink: "#"
+  - pymdownx.snippets
+  - pymdownx.magiclink
+  - attr_list
+  - md_in_html
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.keys
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.arithmatex:
+      generic: true
+
+plugins:
+  - search
+  - mkdocstrings:
+      enabled: true
+      default_handler: python
+      handlers:
+        python:
+          import:
+            - https://docs.python.org/3/objects.inv
+          options:
+            docstring_style: numpy
+            docstring_section_style: list
+            docstring_options:
+              ignore_init_summary: true
+            filters: []
+            heading_level: 1
+            members: true
+            members_order: source
+            merge_init_into_class: true
+            inherited_members: true
+            parameter_headings: true
+            separate_signature: true
+            show_if_no_docstring: false
+            show_labels: false
+            show_root_heading: true
+            show_signature_annotations: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            signature_crossrefs: true
+            summary: true
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/aleximmer/laplace
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/laplace-torch/
+
+extra_css:
+  - css/mkdocstrings.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn

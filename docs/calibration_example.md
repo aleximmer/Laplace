@@ -1,8 +1,6 @@
-## Full example: _post-hoc_ Laplace on a large image classifier
-
 An advantage of the Laplace approximation over variational Bayes and Markov Chain Monte Carlo methods is its _post-hoc_ nature. That means we can apply LA on (almost) any _pre-trained_ neural network. In this example, we will see how we can apply the last-layer LA on a deep WideResNet model, trained on CIFAR-10.
 
-#### Data loading
+## Data loading
 
 First, let us load the CIFAR-10 dataset. The helper scripts for CIFAR-10 and WideResNet are available in the `examples/helper` directory in the main repository.
 
@@ -28,7 +26,7 @@ test_loader = dl.CIFAR10(train=False)
 targets = torch.cat([y for x, y in test_loader], dim=0).numpy()
 ```
 
-#### Load a pre-trained model
+## Load a pre-trained model
 
 Next, we will load a pre-trained WideResNet-16-4 model. Note that a GPU with CUDA support is needed for this example.
 
@@ -57,7 +55,7 @@ def predict(dataloader, model, laplace=False):
     return torch.cat(py).cpu().numpy()
 ```
 
-#### The calibration of MAP
+## The calibration of MAP
 
 We are now ready to see how calibrated is the model. The metrics we use are the expected calibration error (ECE, Naeni et al., AAAI 2015) and the negative (Categorical) log-likelihood. Note that lower values are better for both these metrics.
 
@@ -78,7 +76,7 @@ Running this snippet, we would get:
 [MAP] Acc.: 94.8%; ECE: 2.0%; NLL: 0.172
 ```
 
-### The calibration of Laplace
+## The calibration of Laplace
 
 Now we inspect the benefit of the LA. Let us apply the simple last-layer LA model, and optimize the prior precision hyperparameter using a _post-hoc_ marginal likelihood maximization.
 
