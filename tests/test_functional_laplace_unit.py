@@ -367,5 +367,8 @@ def test_dtype(laplace, backend, dtype, independent_outputs, likelihood):
         y_pred, y_var = la(X)
         assert y_pred.dtype == dtype
         assert y_var.dtype == dtype
-    except (ValueError, RuntimeError, SystemExit):
-        pass
+    except (ValueError, AttributeError, RuntimeError, SystemExit) as e:
+        if "must have the same dtype" in str(e):
+            assert False  # Fail the test
+        else:
+            pass  # Ignore
