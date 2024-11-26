@@ -10,6 +10,9 @@ from laplace.curvature.backpack import BackPackGGN
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.lllaplace import FunctionalLLLaplace
 
+torch.manual_seed(240)
+torch.set_default_dtype(torch.double)
+
 
 @pytest.fixture
 def reg_loader():
@@ -316,6 +319,40 @@ def test_gp_kernel(
         expected_block_diagonal_kernel,
         block_diag_kernel.to(expected_block_diagonal_kernel.dtype),
     )
+
+
+def test_functional_samples(model, reg_loader):
+    lap = FunctionalLaplace(model, "regression", n_subset=5)
+    lap.fit(reg_loader)
+    X, y = reg_loader.dataset.tensors
+    f = model(X)
+
+    generator = torch.Generator()
+
+    fsamples_reg_glm = lap.functional_samples(
+        X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_reg_glm.shape == torch.Size([100, f.shape[0], f.shape[1]])
+
+    fsamples_reg_nn = lap.functional_samples(
+        X, pred_type="nn", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_reg_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
+
+    # The samples should not be affected by the likelihood
+    lap.likelihood = "classification"
+
+    fsamples_clf_glm = lap.functional_samples(
+        X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_clf_glm.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    assert torch.allclose(fsamples_clf_glm, fsamples_reg_glm)
+
+    fsamples_clf_nn = lap.functional_samples(
+        X, pred_type="nn", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_clf_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    assert torch.allclose(fsamples_clf_nn, fsamples_reg_nn)
 
 
 def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
