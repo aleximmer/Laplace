@@ -271,7 +271,6 @@ def test_serialize_fail_different_liks(laplace, model, reg_loader):
 def test_serialize_fail_llla_different_last_layer_name(
     laplace, model, model3, reg_loader
 ):
-    print([n for n, _ in model.named_parameters()])
     la = laplace(model, "regression", last_layer_name="1")
     la.fit(reg_loader)
     la.optimize_prior_precision()

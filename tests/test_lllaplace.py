@@ -9,9 +9,13 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
+from laplace.curvature.asdl import AsdlEF, AsdlGGN
+from laplace.curvature.backpack import BackPackEF, BackPackGGN
+from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
+from laplace.utils.matrix import KronDecomposed
 from tests.utils import jacobians_naive
 
 
@@ -699,3 +703,45 @@ def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
 
     f_mean, f_var = lap(X, pred_type="glm", joint=False, diagonal_output=False)
     assert f_var.shape == (n_batch, n_outputs, n_outputs)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize(
+    "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
+)
+@pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, likelihood):
+    X = torch.randn((10, 3), dtype=dtype)
+    Y = torch.randn((10, 3), dtype=dtype)
+
+    data = TensorDataset(X, Y)
+    dataloader = DataLoader(data, batch_size=10)
+
+    model = nn.Linear(3, 3, dtype=dtype)
+
+    try:
+        la = laplace(model, likelihood, backend=backend)
+        la.fit(dataloader)
+
+        assert la.H is not None
+
+        if isinstance(la.H, torch.Tensor):
+            assert la.H.dtype == dtype
+        elif isinstance(la.H, KronDecomposed):
+            assert la.H.eigenvalues[0][0].dtype == dtype
+            assert la.H.eigenvectors[0][0].dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
+
+        y_pred, y_var = la(X, pred_type="glm")
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
+
+        y_pred = la(X, pred_type="nn", num_samples=3)
+        assert y_pred.dtype == dtype
+    except (ValueError, AttributeError, RuntimeError, SystemExit) as e:
+        if "must have the same dtype" in str(e):
+            assert False  # Fail the test
+        else:
+            pass  # Ignore

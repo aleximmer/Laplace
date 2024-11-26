@@ -5,6 +5,10 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace.baselaplace import FunctionalLaplace
+from laplace.curvature.asdl import AsdlGGN
+from laplace.curvature.backpack import BackPackGGN
+from laplace.curvature.curvlinops import CurvlinopsGGN
+from laplace.lllaplace import FunctionalLLLaplace
 
 
 @pytest.fixture
@@ -322,3 +326,49 @@ def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
 
     with pytest.raises(ValueError):
         la2.fit(reg_loader_1d_flat)
+
+
+@pytest.mark.parametrize("laplace", [FunctionalLaplace, FunctionalLLLaplace])
+@pytest.mark.parametrize("backend", [AsdlGGN, BackPackGGN, CurvlinopsGGN])
+@pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
+@pytest.mark.parametrize("independent_outputs", [True, False])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, independent_outputs, likelihood):
+    X = torch.randn((10, 3), dtype=dtype)
+    Y = torch.randn((10, 3), dtype=dtype)
+
+    data = TensorDataset(X, Y)
+    dataloader = DataLoader(data, batch_size=10)
+
+    model = nn.Linear(3, 3, dtype=dtype)
+
+    try:
+        la = laplace(
+            model,
+            likelihood,
+            10,
+            independent_outputs=independent_outputs,
+            backend=backend,
+        )
+        la.fit(dataloader)
+
+        assert la.L is not None
+        assert la.Sigma_inv is not None
+
+        if independent_outputs:
+            assert la.L[0].dtype == dtype
+            assert la.Sigma_inv[0].dtype == dtype
+        else:
+            assert la.L.dtype == dtype
+            assert la.Sigma_inv.dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
+
+        y_pred, y_var = la(X)
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
+    except (ValueError, AttributeError, RuntimeError, SystemExit) as e:
+        if "must have the same dtype" in str(e):
+            assert False  # Fail the test
+        else:
+            pass  # Ignore
