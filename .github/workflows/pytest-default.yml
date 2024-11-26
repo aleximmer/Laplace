@@ -8,7 +8,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Set up uv
-        run: curl -LsSf https://astral.sh/uv/0.3.0/install.sh | sh
+        run: curl -LsSf https://astral.sh/uv/0.5.4/install.sh | sh
       - name: Set up Python
         run: uv python install 3.9
       - name: Install the project

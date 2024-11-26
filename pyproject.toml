@@ -42,18 +42,18 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools]
 py-modules = ["laplace"]
 
-[project.optional-dependencies]
-dev = [
-  "coveralls",
+[tool.uv]
+default-groups = ["dev", "docs"]
+
+[dependency-groups]
+dev = ["coveralls", "pytest", "pytest-cov", "pytest-mock", "ruff", "scipy"]
+docs = [
+  "black",
   "matplotlib",
-  "mkdocs",
-  "mkdocs-material",
-  "mkdocstrings-python",
-  "pytest",
-  "pytest-cov",
-  "pytest-mock",
-  "ruff",
-  "scipy",
+  "mkdocs == 1.6.1",
+  "mkdocs-material == 9.5.34",
+  "mkdocstrings == 0.26.1",
+  "mkdocstrings-python == 1.11.1",
 ]
 
 [tool.pytest.ini_options]
