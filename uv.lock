@@ -614,7 +614,7 @@ dependencies = [
     { name = "torchvision" },
 ]
 
-[package.dev-dependencies]
+[package.optional-dependencies]
 dev = [
     { name = "coveralls" },
     { name = "pytest" },
@@ -623,6 +623,8 @@ dev = [
     { name = "ruff" },
     { name = "scipy" },
 ]
+
+[package.dev-dependencies]
 docs = [
     { name = "black" },
     { name = "matplotlib" },
@@ -636,23 +638,21 @@ docs = [
 requires-dist = [
     { name = "asdfghjkl", specifier = "==0.1a4" },
     { name = "backpack-for-pytorch" },
+    { name = "coveralls", marker = "extra == 'dev'" },
     { name = "curvlinops-for-pytorch", specifier = ">=2.0" },
     { name = "numpy" },
     { name = "opt-einsum" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pytest-cov", marker = "extra == 'dev'" },
+    { name = "pytest-mock", marker = "extra == 'dev'" },
+    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "scipy", marker = "extra == 'dev'" },
     { name = "torch", specifier = ">=2.0" },
     { name = "torchmetrics" },
     { name = "torchvision", specifier = ">=0.15" },
 ]
 
 [package.metadata.requires-dev]
-dev = [
-    { name = "coveralls" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
-    { name = "ruff" },
-    { name = "scipy" },
-]
 docs = [
     { name = "black" },
     { name = "matplotlib" },

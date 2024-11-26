@@ -43,10 +43,12 @@ build-backend = "setuptools.build_meta"
 py-modules = ["laplace"]
 
 [tool.uv]
-default-groups = ["dev", "docs"]
+default-groups = ["docs"]
+
+[project.optional-dependencies]
+dev = ["coveralls", "pytest", "pytest-cov", "pytest-mock", "ruff", "scipy"]
 
 [dependency-groups]
-dev = ["coveralls", "pytest", "pytest-cov", "pytest-mock", "ruff", "scipy"]
 docs = [
   "black",
   "matplotlib",
