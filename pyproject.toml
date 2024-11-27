@@ -1,6 +1,6 @@
 [project]
 name = "laplace-torch"
-version = "0.2.2"
+version = "0.2.2.2"
 description = "laplace - Laplace approximations for deep learning"
 readme = "README.md"
 authors = [
@@ -36,11 +36,14 @@ Homepage = "https://github.com/aleximmer/Laplace"
 "Bug Tracker" = "https://github.com/aleximmer/Laplace/issues"
 
 [build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
 
 [tool.setuptools]
 py-modules = ["laplace"]
+
+[tool.pdm]
+distribution = true
 
 [tool.uv]
 default-groups = ["docs"]
