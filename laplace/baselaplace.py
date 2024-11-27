@@ -2140,7 +2140,7 @@ class FunctionalLaplace(BaseLaplace):
         number of data points for Subset-of-Data (SOD) approximate GP inference.
     independent_outputs : bool
         GP kernel here is product of Jacobians, which results in a \\( C \\times C\\) matrix where \\(C\\) is the output
-        dimension. If `diagonal_kernel=True`, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
+        dimension. If `True`, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
         assuming independent GPs across output channels.
     seed: int, default=0
         Random seed for subset of data sampler.
