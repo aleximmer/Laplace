@@ -1,3 +1,7 @@
+!!! caution
+
+    To follow this tutorial, you need to install `deepobs` and `netcal` dependencies.
+
 Applying the General-Gauss-Newton (GGN) approximation to the Hessian in the Laplace approximation (LA) of the BNN posterior
 turns the underlying probabilistic model from a BNN into a generalized linear model (GLM).
 This GLM is equivalent to a Gaussian Process (GP) with a particular kernel [1, 2].
@@ -97,8 +101,8 @@ for m in [50, 200, 800, 1600]:
     la = Laplace(model, 'classification',
                  subset_of_weights='all',
                  hessian_structure='gp',
-                 diagonal_kernel=True,
-                 num_data=m,
+                 independent_outputs=True,
+                 n_subset=m,
                  prior_precision=prior_precision)
     la.fit(train_loader)
 
