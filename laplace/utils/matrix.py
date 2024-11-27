@@ -297,7 +297,7 @@ class KronDecomposed:
     deltas : torch.Tensor
         addend for each group of Kronecker factors representing, for example,
         a prior precision
-    dampen : bool, default=False
+    damping : bool, default=False
         use dampen approximation mixing prior and Kron partially multiplicatively
     """
 

@@ -2102,14 +2102,48 @@ class FunctionalLaplace(BaseLaplace):
 
     Parameters
     ----------
-    num_data : int
+    model : torch.nn.Module
+    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+        determines the log likelihood Hessian approximation.
+        In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
+        then does prediction as in regression likelihood. The model needs to be defined accordingly:
+        The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
+        `y.shape = (batch_size,)`. Meanwhile, during evaluation `x.shape == (batch_size, dim)`.
+        Note that 'reward_modeling' only supports `KronLaplace` and `DiagLaplace`.
+    sigma_noise : torch.Tensor or float, default=1
+        observation noise for the regression setting; must be 1 for classification
+    prior_precision : torch.Tensor or float, default=1
+        prior precision of a Gaussian prior (= weight decay);
+        can be scalar, per-layer, or diagonal in the most general case
+    prior_mean : torch.Tensor or float, default=0
+        prior mean of a Gaussian prior, useful for continual learning
+    temperature : float, default=1
+        temperature of the likelihood; lower temperature leads to more
+        concentrated posterior and vice versa.
+    enable_backprop: bool, default=False
+        whether to enable backprop to the input `x` through the Laplace predictive.
+        Useful for e.g. Bayesian optimization.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    backend : subclasses of `laplace.curvature.CurvatureInterface`
+        backend for access to curvature/Hessian approximations. Defaults to CurvlinopsGGN if None.
+    backend_kwargs : dict, default=None
+        arguments passed to the backend on initialization, for example to
+        set the number of MC samples for stochastic approximations.
+    n_subset : int
         number of data points for Subset-of-Data (SOD) approximate GP inference.
-    diagonal_kernel : bool
+    independent_outputs : bool
         GP kernel here is product of Jacobians, which results in a \\( C \\times C\\) matrix where \\(C\\) is the output
-        dimension. If `diagonal_kernel=True`, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
+        dimension. If `True`, only a diagonal of a GP kernel is used. This is (somewhat) equivalent to
         assuming independent GPs across output channels.
-
-    See `BaseLaplace` class for the full interface.
+    seed: int, default=0
+        Random seed for subset of data sampler.
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)

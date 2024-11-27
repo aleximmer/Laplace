@@ -45,18 +45,20 @@ py-modules = ["laplace"]
 [tool.pdm]
 distribution = true
 
+[tool.uv]
+default-groups = ["docs"]
+
 [project.optional-dependencies]
-dev = [
-  "coveralls",
+dev = ["coveralls", "pytest", "pytest-cov", "pytest-mock", "ruff", "scipy"]
+
+[dependency-groups]
+docs = [
+  "black",
   "matplotlib",
-  "mkdocs",
-  "mkdocs-material",
-  "mkdocstrings-python",
-  "pytest",
-  "pytest-cov",
-  "pytest-mock",
-  "ruff",
-  "scipy",
+  "mkdocs == 1.6.1",
+  "mkdocs-material == 9.5.34",
+  "mkdocstrings == 0.26.1",
+  "mkdocstrings-python == 1.11.1",
 ]
 
 [tool.pytest.ini_options]
