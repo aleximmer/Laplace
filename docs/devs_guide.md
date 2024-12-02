@@ -19,6 +19,7 @@ uv sync --all-extras
 uv run python examples/regression_example.py
 
 # Or, equivalently:
+uv venv
 source .venv/bin/activate
 python examples/regression_example.py
 ```
@@ -70,16 +71,20 @@ pip install -e ".[dev]"
 mkdocs serve
 ```
 
-## Publishing the `laplace-torch` package to PyPi
+## Publishing the `laplace-torch` package to PyPI
 
-With `uv`, this is done via: <https://docs.astral.sh/uv/guides/publish/>.
+1. Update the package version in `pyproject.toml`
+2. Have your PyPI token ready
+3. Build the wheel: `uv build`
+4. Run `uv publish`
+5. Create a new release on Github
 
-If you want to make your life much easier, you can use `pdm`:
+!!! tip
 
-```bash
-pip install --upgrade pdm
-pdm publish
-```
+      It's a good idea to test on TestPyPI first. To do so, simply run the above but with
+      ```
+      uv publish --publish-url https://test.pypi.org/legacy/
+      ```
 
 ## Structure
 
