@@ -694,6 +694,62 @@ class BaseLaplace:
                 "Prediction path invalid. Check the likelihood, pred_type, link_approx combination!"
             )
 
+    def sample(
+        self, n_samples: int = 1, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
+        """Sample from the Laplace posterior approximation, i.e.,
+        \\( \\theta \\sim \\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
+
+        Parameters
+        ----------
+        n_samples : int, default=100
+            number of samples
+
+        generator : torch.Generator, optional
+            random number generator to control the samples
+
+        Returns
+        -------
+        samples: torch.Tensor
+        """
+        raise NotImplementedError
+
+    def functional_samples(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        pred_type: PredType | str = PredType.GLM,
+        n_samples: int = 1,
+        diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """Sample from the functional posterior on input data `x`.
+        Can be used, for example, for Thompson sampling.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            input data `(batch_size, input_shape)`
+
+        pred_type : {'glm'}, default='glm'
+            type of posterior predictive, linearized GLM predictive.
+
+        n_samples : int
+            number of samples
+
+        diagonal_output : bool
+            whether to use a diagonalized glm posterior predictive on the outputs.
+            Only applies when `pred_type='glm'`.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used)
+
+        Returns
+        -------
+        samples : torch.Tensor
+            samples `(n_samples, batch_size, output_shape)`
+        """
+        raise NotImplementedError
+
     def _glm_functional_samples(
         self,
         f_mu: torch.Tensor,

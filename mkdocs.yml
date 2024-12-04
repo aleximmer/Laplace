@@ -12,6 +12,7 @@ nav:
   - "Example: Regression": regression_example.md
   - "Example: Calibration": calibration_example.md
   - "Example: GP Inference": calibration_gp_example.md
+  - "Example: MC Acquistion Functions": expectation_example.md
   - "Example: Huggingface LLMs": huggingface_example.md
   - "Example: Reward Modeling": reward_modeling_example.md
   - API Reference:
