@@ -63,10 +63,10 @@ for pred_type in [PredType.GLM, PredType.NN]:
     x_test.requires_grad = True
 
     f_samples = la.functional_samples(x_test, pred_type=pred_type, n_samples=10)
-    ei_glm = (f_samples - f_best.reshape(1, 1, 1)).clamp(0.0).mean(0)
-    print(f"EI shape: {ei_glm.shape}, EI requires grad: {ei_glm.requires_grad}")
+    ei = (f_samples - f_best.reshape(1, 1, 1)).clamp(0.0).mean(0)
+    print(f"EI shape: {ei.shape}, EI requires grad: {ei.requires_grad}")
 
-    grad_x = autograd.grad(ei_glm.sum(), x_test)[0]
+    grad_x = autograd.grad(ei.sum(), x_test)[0]
 
     print(
         f"Grad x_test shape: {grad_x.shape}, Grad x_test vanishing: {torch.allclose(grad_x, torch.tensor(0.0))}"
