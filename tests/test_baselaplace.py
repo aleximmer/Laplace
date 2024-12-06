@@ -933,7 +933,7 @@ def test_functional_variance_multidim(
     multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
 ):
     if laplace in [KronLaplace, LowRankLaplace]:
-        pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet.")
+        pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet with GLM.")
 
     lap = laplace(
         multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
@@ -949,6 +949,27 @@ def test_functional_variance_multidim(
     pred_mean, pred_var = lap(x, pred_type="glm", joint=False, diagonal_output=True)
     assert pred_mean.shape == (*x.shape[:-1], lap.n_outputs)
     assert pred_var.shape == (*x.shape[:-1], lap.n_outputs)
+
+    pred_mean, pred_var = lap(x, pred_type="nn", link_approx="mc", n_samples=5)
+    assert pred_mean.shape == (*x.shape[:-1], lap.n_outputs)
+    assert pred_var.shape == (*x.shape[:-1], lap.n_outputs)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+@pytest.mark.parametrize("enable_backprop", [True, False])
+def test_functional_variance_multidim_nn(
+    multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
+):
+    if laplace in [LowRankLaplace]:
+        pytest.skip("LowRankLaplace doesn't support multidim batch yet.")
+
+    lap = laplace(
+        multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
+    )
+    lap.fit(reg_loader_multidim)
+
+    x, _ = next(iter(reg_loader_multidim))
 
     pred_mean, pred_var = lap(x, pred_type="nn", link_approx="mc", n_samples=5)
     assert pred_mean.shape == (*x.shape[:-1], lap.n_outputs)
