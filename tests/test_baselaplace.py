@@ -932,8 +932,8 @@ def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, lap
 def test_functional_variance_multidim(
     multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
 ):
-    if laplace == KronLaplace:
-        pytest.skip("KronLaplace doesn't support multidim batch yet.")
+    if laplace in [KronLaplace, LowRankLaplace]:
+        pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet.")
 
     lap = laplace(
         multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
@@ -961,8 +961,8 @@ def test_functional_variance_multidim(
 def test_functional_covariance_multidim(
     multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
 ):
-    if laplace == KronLaplace:
-        pytest.skip("KronLaplace doesn't support multidim batch yet.")
+    if laplace in [KronLaplace, LowRankLaplace]:
+        pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet.")
 
     lap = laplace(
         multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
