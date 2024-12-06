@@ -32,14 +32,18 @@ class Kron:
 
     @classmethod
     def init_from_model(
-        cls, model: nn.Module | Iterable[nn.Parameter], device: torch.device
+        cls,
+        model: nn.Module | Iterable[nn.Parameter],
+        device: torch.device,
+        dtype: torch.dtype,
     ) -> Kron:
         """Initialize Kronecker factors based on a models architecture.
 
         Parameters
         ----------
-        model : nn.Module or iterable of parameters, e.g. model.parameters()
-        device : torch.device
+        model: `nn.Module` or iterable of parameters, e.g. `model.parameters()`
+        device: The device where each of the Kronecker factor lives in.
+        dtype: The data type of each Kronecker factor.
 
         Returns
         -------
@@ -54,7 +58,7 @@ class Kron:
         for p in params:
             if p.ndim == 1:  # bias
                 P = p.size(0)
-                kfacs.append([torch.zeros(P, P, device=device)])
+                kfacs.append([torch.zeros(P, P, device=device, dtype=dtype)])
             elif 4 >= p.ndim >= 2:  # fully connected or conv
                 if p.ndim == 2:  # fully connected
                     P_in, P_out = p.size()
@@ -63,12 +67,13 @@ class Kron:
 
                 kfacs.append(
                     [
-                        torch.zeros(P_in, P_in, device=device),
-                        torch.zeros(P_out, P_out, device=device),
+                        torch.zeros(P_in, P_in, device=device, dtype=dtype),
+                        torch.zeros(P_out, P_out, device=device, dtype=dtype),
                     ]
                 )
             else:
                 raise ValueError("Invalid parameter shape in network.")
+
         return cls(kfacs)
 
     def __add__(self, other: Kron) -> Kron:
@@ -292,7 +297,7 @@ class KronDecomposed:
     deltas : torch.Tensor
         addend for each group of Kronecker factors representing, for example,
         a prior precision
-    dampen : bool, default=False
+    damping : bool, default=False
         use dampen approximation mixing prior and Kron partially multiplicatively
     """
 
@@ -305,9 +310,14 @@ class KronDecomposed:
     ):
         self.eigenvectors: list[tuple[torch.Tensor]] = eigenvectors
         self.eigenvalues: list[tuple[torch.Tensor]] = eigenvalues
+
         device: torch.device = eigenvectors[0][0].device
+        dtype: torch.dtype = eigenvectors[0][0].dtype
+
         if deltas is None:
-            self.deltas: torch.Tensor = torch.zeros(len(self), device=device)
+            self.deltas: torch.Tensor = torch.zeros(
+                len(self), device=device, dtype=dtype
+            )
         else:
             self._check_deltas(deltas)
             self.deltas: torch.Tensor = deltas

@@ -184,14 +184,21 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
 
     def _init_H(self) -> None:
         self.H = torch.zeros(
-            self.n_params_subnet, self.n_params_subnet, device=self._device
+            self.n_params_subnet,
+            self.n_params_subnet,
+            device=self._device,
+            dtype=self._dtype,
         )
 
     def sample(
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
-            n_samples, self.n_params_subnet, device=self._device, generator=generator
+            n_samples,
+            self.n_params_subnet,
+            device=self._device,
+            dtype=self._dtype,
+            generator=generator,
         )
         subnet_samples = self.mean_subnet[None, ...] + samples @ self.posterior_scale
         return self.assemble_full_samples(subnet_samples)
@@ -208,7 +215,9 @@ class DiagSubnetLaplace(SubnetLaplace, DiagLaplace):
     _key = ("subnetwork", "diag")
 
     def _init_H(self):
-        self.H = torch.zeros(self.n_params_subnet, device=self._device)
+        self.H = torch.zeros(
+            self.n_params_subnet, device=self._device, dtype=self._dtype
+        )
 
     def _check_jacobians(self, Js: torch.Tensor) -> None:
         if not isinstance(Js, torch.Tensor):

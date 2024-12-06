@@ -62,8 +62,8 @@ for m in [50, 200, 800, 1600]:
         "classification",
         subset_of_weights="all",
         hessian_structure="gp",
-        diagonal_kernel=True,
-        num_data=m,
+        independent_outputs=True,
+        n_subset=m,
         prior_precision=prior_precision,
     )
     la.fit(train_loader)

@@ -50,6 +50,4 @@ def test_running_nll_metric_ignore_idx():
         ignore_index=ignore_idx,
     ).item()
 
-    print(nll_running, nll_offline)
-
     assert math.isclose(nll_running, nll_offline, rel_tol=1e-7)

@@ -914,3 +914,47 @@ def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     assert not (
         samples_1[:, ~fixed_mask] == model_params[~fixed_mask].repeat(n_samples, 1)
     ).all()
+
+
+@pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
+@pytest.mark.parametrize(
+    "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
+)
+@pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, likelihood):
+    X = torch.randn((10, 3), dtype=dtype)
+    Y = torch.randn((10, 3), dtype=dtype)
+
+    data = TensorDataset(X, Y)
+    dataloader = DataLoader(data, batch_size=10)
+
+    model = nn.Linear(3, 3, dtype=dtype)
+
+    subnetmask = RandomSubnetMask(model=model, n_params_subnet=10)
+    subnetmask.select()
+
+    try:
+        la = laplace(
+            model, likelihood, subnetwork_indices=subnetmask.indices, backend=backend
+        )
+        la.fit(dataloader)
+
+        assert la.H is not None
+
+        if isinstance(la.H, torch.Tensor):
+            assert la.H.dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
+
+        y_pred, y_var = la(X, pred_type="glm")
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
+
+        y_pred = la(X, pred_type="nn", num_samples=3)
+        assert y_pred.dtype == dtype
+    except (ValueError, AttributeError, RuntimeError, SystemExit) as e:
+        if "must have the same dtype" in str(e):
+            assert False  # Fail the test
+        else:
+            pass  # Ignore

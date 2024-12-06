@@ -5,6 +5,13 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace.baselaplace import FunctionalLaplace
+from laplace.curvature.asdl import AsdlGGN
+from laplace.curvature.backpack import BackPackGGN
+from laplace.curvature.curvlinops import CurvlinopsGGN
+from laplace.lllaplace import FunctionalLLLaplace
+
+torch.manual_seed(240)
+torch.set_default_dtype(torch.double)
 
 
 @pytest.fixture
@@ -314,6 +321,40 @@ def test_gp_kernel(
     )
 
 
+def test_functional_samples(model, reg_loader):
+    lap = FunctionalLaplace(model, "regression", n_subset=5)
+    lap.fit(reg_loader)
+    X, y = reg_loader.dataset.tensors
+    f = model(X)
+
+    generator = torch.Generator()
+
+    fsamples_reg_glm = lap.functional_samples(
+        X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_reg_glm.shape == torch.Size([100, f.shape[0], f.shape[1]])
+
+    fsamples_reg_nn = lap.functional_samples(
+        X, pred_type="nn", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_reg_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
+
+    # The samples should not be affected by the likelihood
+    lap.likelihood = "classification"
+
+    fsamples_clf_glm = lap.functional_samples(
+        X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_clf_glm.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    assert torch.allclose(fsamples_clf_glm, fsamples_reg_glm)
+
+    fsamples_clf_nn = lap.functional_samples(
+        X, pred_type="nn", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_clf_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    assert torch.allclose(fsamples_clf_nn, fsamples_reg_nn)
+
+
 def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
     la = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
     la.fit(reg_loader_1d)
@@ -322,3 +363,49 @@ def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
 
     with pytest.raises(ValueError):
         la2.fit(reg_loader_1d_flat)
+
+
+@pytest.mark.parametrize("laplace", [FunctionalLaplace, FunctionalLLLaplace])
+@pytest.mark.parametrize("backend", [AsdlGGN, BackPackGGN, CurvlinopsGGN])
+@pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
+@pytest.mark.parametrize("independent_outputs", [True, False])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, independent_outputs, likelihood):
+    X = torch.randn((10, 3), dtype=dtype)
+    Y = torch.randn((10, 3), dtype=dtype)
+
+    data = TensorDataset(X, Y)
+    dataloader = DataLoader(data, batch_size=10)
+
+    model = nn.Linear(3, 3, dtype=dtype)
+
+    try:
+        la = laplace(
+            model,
+            likelihood,
+            10,
+            independent_outputs=independent_outputs,
+            backend=backend,
+        )
+        la.fit(dataloader)
+
+        assert la.L is not None
+        assert la.Sigma_inv is not None
+
+        if independent_outputs:
+            assert la.L[0].dtype == dtype
+            assert la.Sigma_inv[0].dtype == dtype
+        else:
+            assert la.L.dtype == dtype
+            assert la.Sigma_inv.dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
+
+        y_pred, y_var = la(X)
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
+    except (ValueError, AttributeError, RuntimeError, SystemExit) as e:
+        if "must have the same dtype" in str(e):
+            assert False  # Fail the test
+        else:
+            pass  # Ignore

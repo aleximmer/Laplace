@@ -632,6 +632,41 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
 
+@pytest.mark.parametrize("laplace", flavors)
+def test_functional_samples(laplace, model, reg_loader):
+    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap.fit(reg_loader)
+    X, y = reg_loader.dataset.tensors
+    f = model(X)
+
+    generator = torch.Generator()
+
+    fsamples_reg_glm = lap.functional_samples(
+        X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_reg_glm.shape == torch.Size([100, f.shape[0], f.shape[1]])
+
+    fsamples_reg_nn = lap.functional_samples(
+        X, pred_type="nn", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_reg_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
+
+    # The samples should not be affected by the likelihood
+    lap.likelihood = "classification"
+
+    fsamples_clf_glm = lap.functional_samples(
+        X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_clf_glm.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    assert torch.allclose(fsamples_clf_glm, fsamples_reg_glm)
+
+    fsamples_clf_nn = lap.functional_samples(
+        X, pred_type="nn", n_samples=100, generator=generator.manual_seed(123)
+    )
+    assert fsamples_clf_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
+    assert torch.allclose(fsamples_clf_nn, fsamples_reg_nn)
+
+
 @pytest.mark.parametrize("laplace", [KronLaplace, DiagLaplace])
 def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     lap = laplace(reward_model, "reward_modeling")
@@ -892,26 +927,46 @@ def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, lap
 
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_functional_variance_multidim(multidim_model, reg_loader_multidim, laplace):
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+@pytest.mark.parametrize("enable_backprop", [True, False])
+def test_functional_variance_multidim(
+    multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
+):
     if laplace == KronLaplace:
         pytest.skip("KronLaplace doesn't support multidim batch yet.")
 
-    lap = laplace(multidim_model, "regression", enable_backprop=True)
+    lap = laplace(
+        multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
+    )
     lap.fit(reg_loader_multidim)
 
     x, _ = next(iter(reg_loader_multidim))
-    pred_mean, pred_var = lap(x, pred_type="glm", joint=False)
 
+    pred_mean, pred_var = lap(x, pred_type="glm", joint=False)
     assert pred_mean.shape == (*x.shape[:-1], lap.n_outputs)
     assert pred_var.shape == (*x.shape[:-1], lap.n_outputs, lap.n_outputs)
 
+    pred_mean, pred_var = lap(x, pred_type="glm", joint=False, diagonal_output=True)
+    assert pred_mean.shape == (*x.shape[:-1], lap.n_outputs)
+    assert pred_var.shape == (*x.shape[:-1], lap.n_outputs)
+
+    pred_mean, pred_var = lap(x, pred_type="nn", link_approx="mc", n_samples=5)
+    assert pred_mean.shape == (*x.shape[:-1], lap.n_outputs)
+    assert pred_var.shape == (*x.shape[:-1], lap.n_outputs)
+
 
 @pytest.mark.parametrize("laplace", flavors)
-def test_functional_covariance_multidim(multidim_model, reg_loader_multidim, laplace):
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+@pytest.mark.parametrize("enable_backprop", [True, False])
+def test_functional_covariance_multidim(
+    multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
+):
     if laplace == KronLaplace:
         pytest.skip("KronLaplace doesn't support multidim batch yet.")
 
-    lap = laplace(multidim_model, "regression", enable_backprop=True)
+    lap = laplace(
+        multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
+    )
     lap.fit(reg_loader_multidim)
 
     x, _ = next(iter(reg_loader_multidim))
@@ -922,3 +977,45 @@ def test_functional_covariance_multidim(multidim_model, reg_loader_multidim, lap
         math.prod(x.shape[:-1]) * lap.n_outputs,
         math.prod(x.shape[:-1]) * lap.n_outputs,
     )
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize(
+    "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
+)
+@pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, likelihood):
+    X = torch.randn((10, 3), dtype=dtype)
+    Y = torch.randn((10, 3), dtype=dtype)
+
+    data = TensorDataset(X, Y)
+    dataloader = DataLoader(data, batch_size=10)
+
+    model = nn.Linear(3, 3, dtype=dtype)
+
+    try:
+        la = laplace(model, likelihood, backend=backend)
+        la.fit(dataloader)
+
+        assert la.H is not None
+
+        if isinstance(la.H, torch.Tensor):
+            assert la.H.dtype == dtype
+        elif isinstance(la.H, KronDecomposed):
+            assert la.H.eigenvalues[0][0].dtype == dtype
+            assert la.H.eigenvectors[0][0].dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
+
+        y_pred, y_var = la(X, pred_type="glm")
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
+
+        y_pred = la(X, pred_type="nn", num_samples=3)
+        assert y_pred.dtype == dtype
+    except (ValueError, AttributeError, RuntimeError, SystemExit) as e:
+        if "must have the same dtype" in str(e):
+            assert False  # Fail the test
+        else:
+            pass  # Ignore

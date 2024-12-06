@@ -30,7 +30,7 @@ def small_model():
 
 
 def test_init_from_model(model):
-    kron = Kron.init_from_model(model, "cpu")
+    kron = Kron.init_from_model(model, "cpu", torch.float)
     expected_sizes = [[20 * 20, 3 * 3], [20 * 20], [2 * 2, 20 * 20], [2 * 2]]
     for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
@@ -39,8 +39,9 @@ def test_init_from_model(model):
 
 
 def test_init_from_iterable(model):
-    kron = Kron.init_from_model(model.parameters(), "cpu")
+    kron = Kron.init_from_model(model.parameters(), "cpu", torch.float)
     expected_sizes = [[20 * 20, 3 * 3], [20 * 20], [2 * 2, 20 * 20], [2 * 2]]
+
     for facs, exp_facs in zip(kron.kfacs, expected_sizes):
         for fi, exp_fi in zip(facs, exp_facs):
             assert torch.all(fi == 0)
@@ -48,7 +49,7 @@ def test_init_from_iterable(model):
 
 
 def test_addition(model):
-    kron = Kron.init_from_model(model.parameters(), "cpu")
+    kron = Kron.init_from_model(model.parameters(), "cpu", torch.float)
     expected_sizes = [[20, 3], [20], [2, 20], [2]]
     to_add = Kron([[torch.randn(i, i) for i in sizes] for sizes in expected_sizes])
     kron += to_add
