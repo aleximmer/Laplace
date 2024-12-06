@@ -158,7 +158,7 @@ class BaseLaplace:
         )
 
         # log likelihood = g(loss)
-        self.loss: float = 0.0
+        self.loss: float | torch.Tensor = 0.0
         self.n_outputs: int = 0
         self.n_data: int = 0
 
@@ -234,10 +234,69 @@ class BaseLaplace:
     def __call__(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-        pred_type: PredType | str,
-        link_approx: LinkApprox | str,
-        n_samples: int,
+        pred_type: PredType | str = PredType.GLM,
+        joint: bool = False,
+        link_approx: LinkApprox | str = LinkApprox.PROBIT,
+        n_samples: int = 1,
+        diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
+        fitting: bool = False,
+        **model_kwargs: dict[str, Any],
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Compute the posterior predictive on input data `x`.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            `(batch_size, input_shape)` if tensor. If MutableMapping, must contain
+            the said tensor.
+
+        pred_type : {'glm', 'nn'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive. The GLM predictive is consistent with
+            the curvature approximations used here. When Laplace is done only
+            on subset of parameters (i.e. some grad are disabled),
+            only `nn` predictive is supported.
+
+        link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only 'mc' is possible.
+
+        joint : bool
+            Whether to output a joint predictive distribution in regression with
+            `pred_type='glm'`. If set to `True`, the predictive distribution
+            has the same form as GP posterior, i.e. N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
+            If `False`, then only outputs the marginal predictive distribution.
+            Only available for regression and GLM predictive.
+
+        n_samples : int
+            number of samples for `link_approx='mc'`.
+
+        diagonal_output : bool
+            whether to use a diagonalized posterior predictive on the outputs.
+            Only works for `pred_type='glm'` when `joint=False` in regression.
+            In the case of last-layer Laplace with a diagonal or Kron Hessian,
+            setting this to `True` makes computation much(!) faster for large
+            number of outputs.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used).
+
+        fitting : bool, default=False
+            whether or not this predictive call is done during fitting. Only useful for
+            reward modeling: the likelihood is set to `"regression"` when `False` and
+            `"classification"` when `True`.
+
+        Returns
+        -------
+        predictive: torch.Tensor or tuple[torch.Tensor]
+            For `likelihood='classification'`, a torch.Tensor is returned with
+            a distribution over classes (similar to a Softmax).
+            For `likelihood='regression'`, a tuple of torch.Tensor is returned
+            with the mean and the predictive variance.
+            For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
+            is returned with the mean and the predictive covariance.
+        """
         raise NotImplementedError
 
     def predictive(
@@ -247,7 +306,9 @@ class BaseLaplace:
         link_approx: LinkApprox | str,
         n_samples: int,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
-        return self(x, pred_type, link_approx, n_samples)
+        return self(
+            x, pred_type=pred_type, link_approx=link_approx, n_samples=n_samples
+        )
 
     def _check_jacobians(self, Js: torch.Tensor) -> None:
         if not isinstance(Js, torch.Tensor):
@@ -492,7 +553,9 @@ class BaseLaplace:
 
     def _gridsearch(
         self,
-        loss: torchmetrics.Metric | Callable[[torch.Tensor], torch.Tensor | float],
+        loss: torchmetrics.Metric
+        | Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        | Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor],
         interval: torch.Tensor,
         val_loader: DataLoader,
         pred_type: PredType | str,
@@ -989,7 +1052,7 @@ class ParametricLaplace(BaseLaplace):
         pred_type: PredType | str = PredType.GLM,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 100,
+        n_samples: int = 1,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
         fitting: bool = False,
@@ -1197,7 +1260,7 @@ class ParametricLaplace(BaseLaplace):
         n_samples: int = 100,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
-        py = 0.0
+        py = torch.tensor(0.0)
         for sample in self.sample(n_samples):
             vector_to_parameters(sample, self.params)
             logits = self.model(
@@ -2307,11 +2370,11 @@ class FunctionalLaplace(BaseLaplace):
 
     def __call__(
         self,
-        x: torch.Tensor | MutableMapping,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         pred_type: PredType | str = PredType.GP,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 100,
+        n_samples: int = 1,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
         fitting: bool = False,

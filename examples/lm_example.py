@@ -61,12 +61,13 @@ la.fit(dl)
 
 data = next(iter(dl))  # data[INPUT_KEY].shape = (B, L * D)
 pred_map = model(data)  # (B, D)
+
 pred_la_mean, pred_la_var = la(data, pred_type=PredType.GLM)
+# torch.Size([B, L, K]) torch.Size([B, L, K, K])
+print(pred_la_mean.shape, pred_la_var.shape)
 
-# Detach the grad if you don't need to backprop
-pred_la_mean, pred_la_var = pred_la_mean.detach(), pred_la_var.detach()
-
-# torch.Size([4, 6, 1]) torch.Size([4, 6, 1, 1])
+pred_la_mean, pred_la_var = la(data, pred_type=PredType.GLM, diagonal_output=True)
+# torch.Size([B, L, K]) torch.Size([B, L, K])
 print(pred_la_mean.shape, pred_la_var.shape)
 
 
@@ -88,5 +89,5 @@ pred_la_mean, pred_la_var = la(
     data, pred_type=PredType.NN, link_approx=LinkApprox.MC, n_samples=10
 )
 
-# torch.Size([4, 6, 1]) torch.Size([4, 6, 1])
+# torch.Size([B, L, K]) torch.Size([B, L, K])
 print(pred_la_mean.shape, pred_la_var.shape)
