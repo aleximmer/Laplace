@@ -2412,9 +2412,9 @@ class FunctionalLaplace(BaseLaplace):
         N = len(train_loader.dataset)
         self.n_data = N
 
-        assert (
-            self.n_subset <= N
-        ), "`num_data` must be less than or equal to the original number of data points."
+        assert self.n_subset <= N, (
+            "`num_data` must be less than or equal to the original number of data points."
+        )
 
         train_loader = self._get_SoD_data_loader(train_loader)
         self.train_loader = train_loader
