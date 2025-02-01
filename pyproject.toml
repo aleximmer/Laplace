@@ -42,9 +42,6 @@ build-backend = "pdm.backend"
 [tool.setuptools]
 py-modules = ["laplace"]
 
-[tool.pdm]
-distribution = true
-
 [tool.uv]
 default-groups = ["docs"]
 
