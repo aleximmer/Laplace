@@ -1643,7 +1643,7 @@ class FullLaplace(ParametricLaplace):
             generator=generator,
         )
         # (n_samples, n_params) x (n_params, n_params) -> (n_samples, n_params)
-        samples = samples @ self.posterior_scale
+        samples = samples @ self.posterior_scale.T
         return self.mean.reshape(1, self.n_params) + samples
 
 
