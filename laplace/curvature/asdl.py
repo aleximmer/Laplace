@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, Sequence
 
 import torch
 from asdl.fisher import FisherConfig, get_fisher_maker
@@ -83,16 +83,25 @@ class AsdlInterface(CurvatureInterface):
                 )
                 return f
 
-            Ji, f = batch_gradient(
-                self.model,
-                closure,
-                return_outputs=True,
-                batch_size=self._get_batch_size(x),
-            )
+            Ji, f = batch_gradient(self.model, closure, return_outputs=True)
+            print("Jac")
+            print(Ji)
+
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]
+
             Js.append(Ji)
-        Js = torch.stack(Js, dim=1)
+
+        Js = torch.stack(Js, dim=1)  # (prod_batch_dim, n_outputs, n_params)
+
+        if Js.ndim != 3:
+            raise AttributeError("ASDL Jacobian must be a 3-dim tensor.")
+
+        if Js.shape[0] != self._get_batch_size(x)[0]:
+            # There are intermediate "weight-sharing" dimensions.
+            # So, reshape `prod_batch_dim` into the original, individual batch dims.
+            Js = Js.reshape(*self._get_batch_size(x), *Js.shape[-2:])
+
         return Js, f
 
     def gradients(
@@ -120,9 +129,7 @@ class AsdlInterface(CurvatureInterface):
             loss.backward()
             return loss
 
-        Gs, loss = batch_gradient(
-            self.model, closure, return_outputs=True, batch_size=self._get_batch_size(x)
-        )
+        Gs, loss = batch_gradient(self.model, closure, return_outputs=True)
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
@@ -253,16 +260,16 @@ class AsdlInterface(CurvatureInterface):
     def _get_batch_size(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-    ) -> int | None:
+    ) -> Sequence[int]:
         """
         ASDL assumes that all leading dimensions are the batch size by default (batch_size = None).
         Here, we want to specify that only the first dimension is the actual batch size.
         This is the case for LLMs.
         """
         if isinstance(x, MutableMapping):
-            return x[self.dict_key_x].shape[0]
+            return x[self.dict_key_x].shape[:-1]
         else:
-            return None  # Use ASDL default behavior
+            return x.shape[:-1]
 
 
 class AsdlHessian(AsdlInterface):

@@ -21,7 +21,7 @@ classifiers = [
 license = { text = "MIT" }
 requires-python = ">=3.9"
 dependencies = [
-  "asdfghjkl == 0.1a4",
+  "asdfghjkl == 0.1a5",
   "backpack-for-pytorch",
   "curvlinops-for-pytorch >= 2.0",
   "numpy",
@@ -46,7 +46,15 @@ py-modules = ["laplace"]
 default-groups = ["docs"]
 
 [project.optional-dependencies]
-dev = ["coveralls", "pytest", "pytest-cov", "pytest-mock", "ruff", "scipy"]
+dev = [
+  "coveralls",
+  "pytest",
+  "pytest-cov",
+  "pytest-mock",
+  "ruff",
+  "scipy",
+  "tensordict",
+]
 
 [dependency-groups]
 docs = [
