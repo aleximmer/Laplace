@@ -84,6 +84,8 @@ class AsdlInterface(CurvatureInterface):
                 return f
 
             Ji, f = batch_gradient(self.model, closure, return_outputs=True)
+            print("Jac")
+            print(Ji)
 
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]

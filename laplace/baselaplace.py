@@ -2117,6 +2117,7 @@ class DiagLaplace(ParametricLaplace):
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
+        # print(Js)
         return torch.einsum("...cp,p,...kp->...ck", Js, self.posterior_variance, Js)
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:

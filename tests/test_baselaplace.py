@@ -1000,6 +1000,41 @@ def test_functional_covariance_multidim(
     )
 
 
+@pytest.mark.skip("WIP")
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+def test_predictive_multidim(laplace, backend):
+    if laplace in [KronLaplace, LowRankLaplace]:
+        pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet.")
+
+    X, Y = torch.randn(10, 3), torch.randn(10, 1)
+    X_multidim, Y_multidim = X.reshape(5, 2, 3), Y.reshape(5, 2, 1)
+
+    loader_std = DataLoader(TensorDataset(X, Y), batch_size=10)
+    loader_multidim = DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=5)
+
+    model_std = nn.Linear(3, 1)
+    model_multidim = deepcopy(model_std)
+
+    la_std = laplace(model_std, "regression", backend=backend)
+    la_std.fit(loader_std)
+    mean_std, var_std = la_std(X)
+
+    la_multidim = laplace(model_multidim, "regression", backend=backend)
+    la_multidim.fit(loader_multidim)
+    mean_multidim, var_multidim = la_std(X_multidim)
+
+    # assert torch.allclose(la_std.H, la_multidim.H)
+
+    # # print(mean_std.flatten(), mean_multidim.flatten())
+    # print(var_std.shape, var_multidim.shape)
+    print(la_std.H, la_multidim.H)
+    print(var_std.flatten(), var_multidim.flatten())
+
+    # assert torch.allclose(mean_std.flatten(), mean_multidim.flatten())
+    assert torch.allclose(var_std.flatten(), var_multidim.flatten())
+
+
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize(
     "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
