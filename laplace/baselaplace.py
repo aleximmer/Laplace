@@ -324,7 +324,7 @@ class BaseLaplace:
             raise ValueError("Jacobians have to be torch.Tensor.")
         if not Js.device == self._device:
             raise ValueError("Jacobians need to be on the same device as Laplace.")
-        if Js.shape[-1] != self.n_params:
+        if Js.ndim < 3 or Js.shape[-1] != self.n_params:
             raise ValueError("Invalid Jacobians shape for Laplace posterior approx.")
 
     @property
