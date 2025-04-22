@@ -14,6 +14,7 @@ nav:
   - "Example: GP Inference": calibration_gp_example.md
   - "Example: MC Acquistion Functions": expectation_example.md
   - "Example: Huggingface LLMs": huggingface_example.md
+  - "Example: Language Modeling": lm_example.md
   - "Example: Reward Modeling": reward_modeling_example.md
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
