@@ -869,7 +869,8 @@ def test_subnet_marginal_likelihood(
 def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     loader = class_loader if likelihood == "classification" else reg_loader
 
-    subnetmask = RandomSubnetMask(model=model, n_params_subnet=10)
+    n_params_subnet = 10
+    subnetmask = RandomSubnetMask(model=model, n_params_subnet=n_params_subnet)
     subnetmask.select()
 
     lap = Laplace(
@@ -914,6 +915,28 @@ def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     assert not (
         samples_1[:, ~fixed_mask] == model_params[~fixed_mask].repeat(n_samples, 1)
     ).all()
+
+    # Make sure empirical cov/var of samples matches posterior_covariance
+    # (full) / posterior_variance (diag). Since the internal posterior_*
+    # quantities are of shape (n_params_subnet, n_params_subnet) /
+    # (n_params_subnet,), we calculate the (co)variance of the active
+    # parameters only.
+    n_samples = int(1e6)
+    samples = lap.sample(n_samples=n_samples)[:, ~fixed_mask]
+    if hessian_structure == "full":
+        assert lap.posterior_scale.shape == (n_params_subnet, n_params_subnet)
+        assert lap.posterior_covariance.shape == (n_params_subnet, n_params_subnet)
+        assert torch.allclose(
+            lap.posterior_covariance, samples.T.cov(), rtol=0, atol=1e-2
+        )
+    elif hessian_structure == "diag":
+        assert lap.posterior_scale.shape == (n_params_subnet,)
+        assert lap.posterior_variance.shape == (n_params_subnet,)
+        assert torch.allclose(
+            lap.posterior_variance, samples.var(axis=0), rtol=0, atol=1e-2
+        )
+    else:
+        raise ValueError(f"{hessian_structure=} not supported")
 
 
 @pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
