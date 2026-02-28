@@ -23,13 +23,14 @@ requires-python = ">=3.9"
 dependencies = [
   "asdfghjkl == 0.1a4",
   "backpack-for-pytorch",
-  "curvlinops-for-pytorch >= 2.0",
+  "curvlinops-for-pytorch == 2.0.1",
   "numpy",
   "opt_einsum",
   "torch >= 2.0",
   "torchmetrics",
-  "torchvision >= 0.15",
+  "torchvision >= 0.15"
 ]
+
 
 [project.urls]
 Homepage = "https://github.com/aleximmer/Laplace"
