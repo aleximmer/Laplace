@@ -12,7 +12,7 @@ from curvlinops import (
     HessianLinearOperator,
     KFACLinearOperator,
 )
-from curvlinops._base import _LinearOperator
+from curvlinops.hessian import CurvatureLinearOperator
 from torch import nn
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
@@ -40,7 +40,7 @@ class CurvlinopsInterface(CurvatureInterface):
         raise NotImplementedError
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[CurvatureLinearOperator]:
         raise NotImplementedError
 
     @staticmethod
@@ -164,7 +164,7 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
         return FisherType.MC if self.stochastic else FisherType.TYPE2
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[CurvatureLinearOperator]:
         return FisherMCLinearOperator if self.stochastic else GGNLinearOperator
 
 
@@ -176,7 +176,7 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
         return FisherType.EMPIRICAL
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[CurvatureLinearOperator]:
         return EFLinearOperator
 
 
@@ -184,5 +184,5 @@ class CurvlinopsHessian(CurvlinopsInterface):
     """Implementation of the full Hessian using Curvlinops."""
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[CurvatureLinearOperator]:
         return HessianLinearOperator
