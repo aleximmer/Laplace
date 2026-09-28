@@ -152,6 +152,50 @@ class FeatureExtractor(nn.Module):
         # set forward hook to extract features in future forward passes
         self.last_layer.register_forward_hook(self._get_hook(last_layer_name))
 
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        # Older checkpoints registered the last layer both under model and directly
+        # under this wrapper. Remove an alias only when its model value is present
+        # and identical, including when the last layer has not yet been discovered.
+        legacy_prefix = f"{prefix}last_layer."
+        model_prefix = f"{prefix}model."
+        for legacy_key in tuple(state_dict):
+            if not legacy_key.startswith(legacy_prefix):
+                continue
+            name = legacy_key[len(legacy_prefix) :]
+            if self.last_layer is None:
+                model_keys = (
+                    key
+                    for key in state_dict
+                    if key.startswith(model_prefix) and key.endswith(f".{name}")
+                )
+            else:
+                model_keys = (f"{model_prefix}{self._last_layer_name}.{name}",)
+            if any(
+                model_key in state_dict
+                and torch.equal(state_dict[legacy_key], state_dict[model_key])
+                for model_key in model_keys
+            ):
+                del state_dict[legacy_key]
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
     def _get_hook(self, name: str) -> Callable:
         def hook(_, input, __):
             # only accepts one input (expects linear layer)
