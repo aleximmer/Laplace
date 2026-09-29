@@ -10,3 +10,4 @@ jobs:
       - uses: chartboost/ruff-action@v1
         with:
           args: "format --check"
+          src: "laplace tests examples"
