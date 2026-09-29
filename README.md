@@ -38,10 +38,6 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Installation
 
-> [!IMPORTANT]
-> Python >= 3.10 is required.
-> PyTorch version 2.0 and up is also required for full compatibility.
-
 To install laplace with `pip`, run the following:
 
 ```bash
