@@ -4,7 +4,7 @@ from collections.abc import MutableMapping
 from copy import deepcopy
 from importlib.util import find_spec
 from itertools import product
-from math import prod, sqrt
+from math import e, prod, sqrt
 
 import numpy as np
 import pytest
@@ -16,7 +16,13 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
-from laplace import DiagLaplace, FullLaplace, KronLaplace, LowRankLaplace
+from laplace import (
+    DiagLaplace,
+    FullLaplace,
+    FunctionalLaplace,
+    KronLaplace,
+    LowRankLaplace,
+)
 from laplace.curvature import AsdlEF, AsdlGGN, BackPackGGN
 from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
@@ -879,6 +885,59 @@ def test_gridsearch(model, likelihood, prior_prec_type, reg_loader, class_loader
 
     # Should not raise an error
     lap.optimize_prior_precision(method="gridsearch", val_loader=dataloader, n_steps=10)
+
+
+@pytest.mark.parametrize(
+    "base,expected",
+    [(None, [1.0, 10.0, 100.0]), (e, [1.0, e, e**2])],
+)
+@pytest.mark.parametrize("laplace_class", [DiagLaplace, FunctionalLaplace])
+def test_gridsearch_log_prior_prec_base(
+    model, reg_loader, monkeypatch, base, expected, laplace_class
+):
+    lap = (
+        FunctionalLaplace(model, "regression", n_subset=3)
+        if laplace_class is FunctionalLaplace
+        else DiagLaplace(model, "regression")
+    )
+    intervals = []
+
+    def capture_interval(loss, interval, val_loader, **kwargs):
+        intervals.append(interval)
+        return torch.tensor(1.0)
+
+    monkeypatch.setattr(lap, "_gridsearch", capture_interval)
+    if laplace_class is FunctionalLaplace:
+        monkeypatch.setattr(lap, "_build_Sigma_inv", lambda: None)
+    base_kwargs = {} if base is None else {"log_prior_prec_base": base}
+    lap.optimize_prior_precision(
+        method="gridsearch",
+        val_loader=reg_loader,
+        loss=lambda _: 0.0,
+        log_prior_prec_min=0,
+        log_prior_prec_max=2,
+        grid_size=3,
+        **base_kwargs,
+    )
+
+    assert len(intervals) == 1
+    torch.testing.assert_close(intervals[0], torch.tensor(expected))
+
+
+def test_gridsearch_custom_base_end_to_end(model, reg_loader):
+    lap = DiagLaplace(model, "regression")
+    lap.fit(reg_loader)
+    lap.optimize_prior_precision(
+        method="gridsearch",
+        val_loader=reg_loader,
+        log_prior_prec_min=0,
+        log_prior_prec_max=1,
+        grid_size=2,
+        log_prior_prec_base=e,
+    )
+
+    candidates = torch.tensor([1.0, e], dtype=lap.prior_precision.dtype)
+    assert torch.any(torch.isclose(lap.prior_precision, candidates))
 
 
 @pytest.mark.parametrize("laplace", flavors)

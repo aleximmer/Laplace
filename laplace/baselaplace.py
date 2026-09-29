@@ -379,6 +379,7 @@ class BaseLaplace:
         n_samples: int = 100,
         verbose: bool = False,
         progress_bar: bool = False,
+        log_prior_prec_base: float = 10.0,
     ) -> None:
         """Optimize the prior precision post-hoc using the `method`
         specified by the user.
@@ -408,9 +409,9 @@ class BaseLaplace:
             depends on the likelihood: `RunningNLLMetric()` for classification and
             reward modeling, running `MeanSquaredError()` for regression.
         log_prior_prec_min : float, default=-4
-            lower bound of gridsearch interval.
+            exponent of the lower bound of the gridsearch interval.
         log_prior_prec_max : float, default=4
-            upper bound of gridsearch interval.
+            exponent of the upper bound of the gridsearch interval.
         grid_size : int, default=100
             number of values to consider inside the gridsearch interval.
         link_approx : LinkApprox or str in {'mc', 'probit', 'bridge'}, default=LinkApprox.PROBIT
@@ -424,6 +425,10 @@ class BaseLaplace:
         progress_bar : bool, default=False
             whether to show a progress bar; updated at every batch-Hessian computation.
             Useful for very large model and large amount of data, esp. when `subset_of_weights='all'`.
+        log_prior_prec_base : float, default=10.0
+            base of the logarithmic gridsearch interval. The bounds are
+            `log_prior_prec_base` raised to `log_prior_prec_min` and
+            `log_prior_prec_max`.
         """
         likelihood = (
             Likelihood.CLASSIFICATION
@@ -487,7 +492,12 @@ class BaseLaplace:
             if val_loader is None:
                 raise ValueError("gridsearch requires a validation set DataLoader")
 
-            interval = torch.logspace(log_prior_prec_min, log_prior_prec_max, grid_size)
+            interval = torch.logspace(
+                log_prior_prec_min,
+                log_prior_prec_max,
+                grid_size,
+                base=log_prior_prec_base,
+            )
 
             if loss is None:
                 loss = (
@@ -1475,6 +1485,7 @@ class ParametricLaplace(BaseLaplace):
         n_samples: int = 100,
         verbose: bool = False,
         progress_bar: bool = False,
+        log_prior_prec_base: float = 10.0,
     ) -> None:
         assert pred_type in PredType.__members__.values()
 
@@ -1494,6 +1505,7 @@ class ParametricLaplace(BaseLaplace):
             n_samples,
             verbose,
             progress_bar,
+            log_prior_prec_base=log_prior_prec_base,
         )
 
     @property
@@ -2996,6 +3008,7 @@ class FunctionalLaplace(BaseLaplace):
         n_samples: int = 100,
         verbose: bool = False,
         progress_bar: bool = False,
+        log_prior_prec_base: float = 10.0,
     ) -> None:
         """`optimize_prior_precision_base` from `BaseLaplace` with `pred_type='gp'`"""
         assert pred_type == PredType.GP  # only gp supported
@@ -3020,6 +3033,7 @@ class FunctionalLaplace(BaseLaplace):
             n_samples,
             verbose,
             progress_bar,
+            log_prior_prec_base=log_prior_prec_base,
         )
         self._build_Sigma_inv()
 
