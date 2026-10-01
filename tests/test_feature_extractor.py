@@ -167,3 +167,37 @@ def test_multidim_features(reduction, additional_dims):
         assert feats.shape == (BATCH_SIZE, *(additional_dims), HIDDEN_DIM)
     else:
         assert feats.shape == EXPECTED_FEATS_SHAPE
+
+
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("known_last_layer", [False, True])
+def test_load_legacy_feature_extractor_state_dict(nested, known_last_layer):
+    model = nn.Sequential(nn.Linear(2, 3), nn.ReLU(), nn.Linear(3, 1))
+    extractor = FeatureExtractor(
+        model, last_layer_name="2" if known_last_layer else None
+    )
+    wrapper = nn.Sequential(extractor) if nested else extractor
+    prefix = "0." if nested else ""
+
+    expected = {key: value.clone() for key, value in wrapper.state_dict().items()}
+    legacy = dict(expected)
+    for name in model[2].state_dict():
+        legacy[f"{prefix}last_layer.{name}"] = expected[
+            f"{prefix}model.2.{name}"
+        ].clone()
+
+    with torch.no_grad():
+        model[2].weight.zero_()
+        model[2].bias.zero_()
+
+    wrapper.load_state_dict(legacy, strict=True)
+    for key, value in expected.items():
+        torch.testing.assert_close(wrapper.state_dict()[key], value)
+    assert all(key in legacy for key in expected)
+
+    wrapper.load_state_dict(expected, strict=True)
+
+    conflicting = dict(legacy)
+    conflicting[f"{prefix}last_layer.weight"] = legacy[f"{prefix}last_layer.weight"] + 1
+    with pytest.raises(RuntimeError, match="last_layer.weight"):
+        wrapper.load_state_dict(conflicting, strict=True)
