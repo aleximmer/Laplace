@@ -196,10 +196,12 @@ class AsdlInterface(CurvatureInterface):
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
+
         # ASDL attaches Fisher statistics to modules, but Laplace indexes a single
         # flattened parameter vector. In last-layer mode that vector belongs to
         # `_model`, not to the feature extractor around it.
         model = self._model
+
         # `self.params` contains trainable parameters only. Frozen parameters must
         # not consume index positions when we map module statistics into this vector.
         n_params = sum(p.numel() for p in self.params)
@@ -229,6 +231,7 @@ class AsdlInterface(CurvatureInterface):
             module_n_params = sum(p.numel() for _, p in module_params)
             if not module_n_params:
                 continue
+
             # These are positions in `selected`, not positions in the full vector.
             # The half-open range identifies indices owned by this module.
             in_module = (
@@ -251,6 +254,7 @@ class AsdlInterface(CurvatureInterface):
                     f"parameters in module '{module_name}' "
                     f"({type(module).__name__})."
                 )
+
             module_vec_parts = []
             for name, param in module_params:
                 # Read each statistic by parameter name: ASDL's fixed weight/bias
@@ -262,7 +266,9 @@ class AsdlInterface(CurvatureInterface):
                         f"in module '{module_name}' ({type(module).__name__})."
                     )
                 module_vec_parts.append(part.reshape(-1))
+
             module_vec = torch.cat(module_vec_parts)
+
             if in_module is None:
                 # With no subnetwork, the module fills its contiguous full-vector
                 # range directly.
@@ -275,23 +281,28 @@ class AsdlInterface(CurvatureInterface):
                 positions = in_module
                 local_indices = (selected[in_module] - offset).to(module_vec.device)
                 values = module_vec[local_indices]
+
             # Use the statistics' device and promote their dtypes across modules;
             # allocating from `f` could silently downcast these values.
             if result_device is None:
                 result_device = values.device
             elif result_device != values.device:
                 raise ValueError("ASDL Fisher statistics span multiple devices.")
+
             result_dtype = (
                 values.dtype
                 if result_dtype is None
                 else torch.promote_types(result_dtype, values.dtype)
             )
+
             pieces.append((positions, values))
             offset += module_n_params
+
         # A mismatch means module traversal did not describe Laplace's vector,
         # for example because parameters are shared in an unsupported layout.
         if offset != n_params:
             raise ValueError("ASDL module parameters do not match model parameters.")
+
         if pieces:
             diag_ggn = torch.empty(
                 n_params if selected is None else selected.numel(),
@@ -307,6 +318,7 @@ class AsdlInterface(CurvatureInterface):
         else:
             # No Fisher values were gathered, as with an empty subnetwork.
             diag_ggn = f.new_empty(0)
+
         if type(self) is AsdlEF and self.likelihood == "regression":
             curv_factor = 0.5  # correct scaling for diag ef
         else:
