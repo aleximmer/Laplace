@@ -2995,7 +2995,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                     prod = torch.einsum("bm,am->ba", v, v)
                 else:
                     prod = torch.einsum("bm,bm->b", v, v)
-                prods.append(prod.unsqueeze(1))
+                prods.append(prod.unsqueeze(-1))
             prods = torch.cat(prods, dim=-1)
             return prods
         else:
