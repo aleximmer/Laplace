@@ -3221,7 +3221,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         """
         if joint:
             if self.independent_outputs:
-                kernel = torch.einsum("acp,bcp->abcc", jacobians, jacobians)
+                kernel = torch.einsum("acp,bcp->abc", jacobians, jacobians)
             else:
                 kernel = torch.einsum("acp,bep->abce", jacobians, jacobians)
 
