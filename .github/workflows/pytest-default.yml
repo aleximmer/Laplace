@@ -23,10 +23,10 @@ jobs:
       - name: Smoke test ELLA and VaLLA examples
         run: |
           source .venv/bin/activate
-          python examples/ella.py
-          python examples/valla.py
+          python -m examples.ella
+          python -m examples.valla
       - name: Build documentation with strict checks
         run: |
           source .venv/bin/activate
           uv pip install "mkdocs==1.6.1" "mkdocs-material==9.5.34" "mkdocstrings==0.26.1" "mkdocstrings-python==1.11.1" matplotlib
-          mkdocs build --strict
+          PYTHONPATH=. mkdocs build --strict
