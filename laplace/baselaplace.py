@@ -3657,7 +3657,14 @@ class ELLA(BaseFunctionalLaplace):
             torch.finfo(values.dtype).eps * max(rows.shape) * eigenvalues.abs().max()
         )
         if torch.any(values <= tolerance):
-            raise ValueError("Nyström subset kernel has insufficient positive rank.")
+            usable_rank = int((eigenvalues > tolerance).sum().item())
+            raise ValueError(
+                "Nyström subset kernel has insufficient positive rank: "
+                f"requested n_eigenvalues={self.n_eigenvalues}, but only "
+                f"{usable_rank} of {len(eigenvalues)} sampled directions "
+                "exceed the numerical tolerance. Reduce n_eigenvalues, "
+                "increase subsample_size, or try a different seed."
+            )
         self.dual_directions = (
             rows.T @ (eigenvectors[:, order] / values.sqrt().unsqueeze(0))
         ).to(self._dtype)

@@ -1,9 +1,8 @@
 # VaLLA
 
 VaLLA fits a variational function-space approximation around a fixed pretrained
-network. This implementation follows [Ortega, Rodríguez Santana, and
-Hernández-Lobato](https://arxiv.org/abs/2302.12565) and adapts the earlier
-BayesiPy VaLLA port to Laplace's curvature backends.
+network, following [Ortega, Rodríguez Santana, and
+Hernández-Lobato](https://arxiv.org/abs/2302.12565).
 
 ```python
 from laplace import Laplace
@@ -24,14 +23,15 @@ mean, latent_covariance = valla(x)
 objective_history = valla.fit_history_["objective"]
 ```
 
-`fit` optimizes the alpha-divergence data term plus KL over minibatches while
-keeping network weights fixed. It returns `None`; objective and validation
-results are stored in `fit_history_`. Prior precision and, for regression,
-noise variance can change during fitting. Supply inducing inputs directly or
-initialize them with `"random"` or `"kmeans"`; k-means requires floating-point
-tensor inputs. Repeated `fit` calls reset inducing and variational state by
-default while carrying over learned prior precision and regression noise. Pass
-`override=False` to continue and append to `fit_history_`.
+`fit` optimizes the alpha-divergence data term and KL term over minibatches
+while keeping the network weights fixed. It returns `None`. Objective and
+validation results are stored in `fit_history_`. Prior precision and, for
+regression, observation noise can change during fitting. Supply inducing inputs
+directly or initialize them with `"random"` or `"kmeans"`; k-means requires
+floating-point tensor inputs. By default, repeated `fit` calls reset the
+inducing and variational state while retaining learned prior precision and
+regression noise. Pass `override=False` to continue fitting and append to
+`fit_history_`.
 
 VaLLA supports classification, regression, and reward modeling. For
 classification and reward modeling, `mc_softmax_samples > 0` estimates the
@@ -42,24 +42,21 @@ individual inputs. `valla(pair_inputs, fitting=True)` returns pairwise class
 probabilities.
 
 For classification, `valla(x)` returns probabilities. For regression, it
-returns the latent mean and covariance without observation noise; BayesiPy's
-`predict` adapter adds noise and reverses target normalization.
+returns the latent mean and covariance without observation noise.
 `predictive_moments(x, joint=True)` returns cross-input covariance.
-`functional_samples` and `predictive_samples` return
-`[samples, batch, outputs]`; pass `joint=True` to retain cross-input
-dependence. Weight-space `sample`, the subset-of-data GP marginal likelihood,
-and a tracked training log likelihood are unavailable.
+`functional_samples` and `predictive_samples` return tensors shaped
+`[samples, batch, outputs]`. Pass `joint=True` to retain cross-input
+dependence. VaLLA does not provide weight-space `sample`, the subset-of-data GP
+marginal likelihood, or a tracked training log likelihood.
 
-`state_dict` and `load_state_dict` restore the variational and inducing state
-with an equivalent pretrained model and matching input keys, curvature
-backend, backend options, and backpropagation setting. The checkpoint also
-restores the sampling seed and random-generator state.
+`state_dict` and `load_state_dict` restore the variational and inducing state.
+Restoring a checkpoint requires an equivalent pretrained model with matching
+input keys, curvature backend, backend options, and backpropagation setting.
+The checkpoint also restores the seed used to initialize inducing locations and
+the random-generator state used for Monte Carlo fitting.
 
-The seeded reference in `tests/test_valla.py` checks the earlier BayesiPy port's
-initial regression objective, latent mean, and covariance. Its old
-`noise_variance=0.25` corresponds to Laplace's `sigma_noise=0.5` because the
-latter is a standard deviation. Run `pytest tests/test_valla.py` for CPU
-coverage and `pytest -m cuda tests/test_valla_cuda.py` with CUDA PyTorch.
+Run `pytest tests/test_valla.py` for CPU coverage and
+`pytest -m cuda tests/test_valla_cuda.py` with CUDA PyTorch.
 
 See the [VaLLA API reference](api_reference/valla.md).
 The standalone runnable example is `examples/valla.py` in the repository.

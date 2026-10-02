@@ -969,8 +969,8 @@ def test_valla_random_mapping_inducing_accepts_row_metadata():
         assert token == f"row-{int(row[0])}"
 
 
-def test_seeded_legacy_valla_regression_reference():
-    """Match BayesiPy's VaLLA fit and latent moments at commit 5ee24ed."""
+def test_seeded_valla_regression_reference():
+    """Check a seeded VaLLA fit against fixed regression moments and objective."""
     torch.set_num_threads(1)
     inputs = torch.tensor([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
     targets = inputs.sum(dim=-1, keepdim=True)

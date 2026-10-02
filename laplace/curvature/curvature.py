@@ -172,20 +172,40 @@ class CurvatureInterface:
         outputs: torch.Tensor,
         enable_backprop: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return parameter Jacobians for selected output coordinates per input.
+        """Compute parameter Jacobians for selected output coordinates per input.
 
-        The default works with every backend that implements `jacobians`. Backends
-        may override it to avoid materializing all output coordinates.
+        The default computes all output Jacobians before selecting coordinates.
+        Backends may override it to avoid materializing the full Jacobian.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Input data on the model's device, with a leading batch dimension.
+        outputs : torch.Tensor
+            Output indices for each input, shaped `(batch,)` or
+            `(batch, selected_outputs)`.
+        enable_backprop : bool, default=False
+            Whether to retain gradients through the Jacobians and model outputs.
+
+        Returns
+        -------
+        Js : torch.Tensor
+            Selected Jacobians of shape `(batch, selected_outputs, parameters)`.
+        f : torch.Tensor
+            Model outputs of shape `(batch, outputs)`.
         """
         # Use the output shape observed at this input. Reward models return two
         # training logits but one output for an individual inference input.
         jacobians, values = CurvatureInterface.jacobians(
             self, x, enable_backprop=enable_backprop
         )
+
         if outputs.ndim == 1:
             outputs = outputs[:, None]
+
         if outputs.shape[0] != jacobians.shape[0]:
             raise ValueError("Output selectors must match the input batch size.")
+
         selected = torch.gather(
             jacobians,
             dim=1,
@@ -193,6 +213,7 @@ class CurvatureInterface:
             .unsqueeze(-1)
             .expand(-1, -1, jacobians.shape[-1]),
         )
+
         return selected, values
 
     def gradients(

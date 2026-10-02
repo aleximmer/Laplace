@@ -18,7 +18,21 @@ from torch.utils.data import (
 
 
 def preserve_model_gradients(fit: Callable[..., Any]) -> Callable[..., Any]:
-    """Keep fixed pretrained model gradient buffers unchanged during fitting."""
+    """Preserve model parameter gradients around a fitting method.
+
+    Existing gradient buffers, including `None` values, are restored whether
+    the fitting method returns or raises an exception.
+
+    Parameters
+    ----------
+    fit : Callable[..., Any]
+        Estimator fitting method to wrap.
+
+    Returns
+    -------
+    Callable[..., Any]
+        Wrapped method with the original return value.
+    """
 
     @wraps(fit)
     def wrapped(self: Any, *args: Any, **kwargs: Any) -> Any:

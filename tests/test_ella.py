@@ -817,12 +817,8 @@ def test_ella_replays_partial_random_sampler_epoch(drop_last):
     assert set(basis_indices) <= set(fitted_indices)
 
 
-def test_seeded_legacy_ella_map_mean_reference():
-    """Preserve the MAP mean from BayesiPy's ELLA at commit 5ee24ed.
-
-    The former basis kernel omitted diagonal blocks, so its uncertainty is
-    intentionally not a reference for this implementation.
-    """
+def test_seeded_ella_map_mean_reference():
+    """Check a seeded ELLA MAP mean against fixed expected logits."""
     torch.set_num_threads(1)
     inputs = torch.tensor([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
     targets = torch.tensor([0, 1, 1, 0])
