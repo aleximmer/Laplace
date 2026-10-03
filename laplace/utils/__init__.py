@@ -1,4 +1,5 @@
 from laplace.utils.enums import (
+    FunctionalApproximation,
     HessianStructure,
     Likelihood,
     LinkApprox,
@@ -67,6 +68,7 @@ __all__ = [
     "LastLayerSubnetMask",
     "RunningNLLMetric",
     "SubsetOfWeights",
+    "FunctionalApproximation",
     "HessianStructure",
     "Likelihood",
     "PredType",
