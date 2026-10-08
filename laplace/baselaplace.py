@@ -2034,7 +2034,13 @@ class LowRankLaplace(ParametricLaplace):
     def sample(
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        samples = torch.randn(self.n_params, n_samples, generator=generator)
+        samples = torch.randn(
+            self.n_params,
+            n_samples,
+            device=self._device,
+            dtype=self._dtype,
+            generator=generator,
+        )
         (U, eigvals), d = self.posterior_precision
         # The posterior covariance (U diag(eigvals) U^T + D)^-1 can be written as
         # D^-1/2 (I + W W^T)^-1 D^-1/2 with W = D^-1/2 U diag(eigvals)^1/2.
