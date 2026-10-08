@@ -2034,20 +2034,26 @@ class LowRankLaplace(ParametricLaplace):
     def sample(
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        samples = torch.randn(self.n_params, n_samples, generator=generator)
-        d = self.prior_precision_diag
-        Vs = self.V * d.sqrt().reshape(-1, 1)
-        VtV = Vs.T @ Vs
-        Ik = torch.eye(len(VtV))
-        A = torch.linalg.cholesky(VtV)
-        B = torch.linalg.cholesky(VtV + Ik)
-        A_inv = torch.inverse(A)
-        C = torch.inverse(A_inv.T @ (B - Ik) @ A_inv)
-        Kern_inv = torch.inverse(torch.inverse(C) + Vs.T @ Vs)
-        dinv_sqrt = (d).sqrt().reshape(-1, 1)
-        prior_sample = dinv_sqrt * samples
-        gain_sample = dinv_sqrt * Vs @ Kern_inv @ (Vs.T @ samples)
-        return self.mean + (prior_sample - gain_sample).T
+        samples = torch.randn(
+            self.n_params,
+            n_samples,
+            device=self._device,
+            dtype=self._dtype,
+            generator=generator,
+        )
+        (U, eigvals), d = self.posterior_precision
+        # The posterior covariance (U diag(eigvals) U^T + D)^-1 can be written as
+        # D^-1/2 (I + W W^T)^-1 D^-1/2 with W = D^-1/2 U diag(eigvals)^1/2.
+        # (I + W W^T)^-1/2 = I + W Q diag(c) Q^T W^T, where W^T W = Q diag(s) Q^T
+        # and c = ((1 + s)^-1/2 - 1) / s, written in a form that is stable at s = 0.
+        d_sqrt = d.sqrt().reshape(-1, 1)
+        W = U * eigvals.sqrt() / d_sqrt
+        s, Q = torch.linalg.eigh(W.T @ W)
+        s = s.clamp(min=0)
+        c = -1 / ((1 + s).sqrt() * (1 + (1 + s).sqrt()))
+        WQ = W @ Q
+        samples = samples + WQ @ (c.reshape(-1, 1) * (WQ.T @ samples))
+        return self.mean + (samples / d_sqrt).T
 
     @property
     def log_det_posterior_precision(self) -> torch.Tensor:
