@@ -65,6 +65,9 @@ class BackPackInterface(CurvatureInterface):
         if isinstance(x, MutableMapping):
             raise ValueError("BackPACK backend does not support dict-like inputs!")
 
+        input_grad = (
+            x.grad.detach().clone() if x.is_leaf and x.grad is not None else None
+        )
         model = extend(self.model)
         to_stack = []
         for i in range(model.output_size):
@@ -91,6 +94,8 @@ class BackPackInterface(CurvatureInterface):
                 f = out
 
         model.zero_grad()
+        if x.is_leaf and x.requires_grad:
+            x.grad = input_grad
         CTX.remove_hooks()
         _cleanup(model)
         if model.output_size > 1:
@@ -130,6 +135,93 @@ class BackPackInterface(CurvatureInterface):
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
+
+    def selected_output_jacobians(
+        self,
+        x: torch.Tensor | MutableMapping,
+        outputs: torch.Tensor,
+        enable_backprop: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute selected output Jacobians using BackPACK's BatchGrad.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input data of shape `(batch, input_shape)` on the model's device.
+        outputs : torch.Tensor
+            Output indices for each input, shaped `(batch,)` or
+            `(batch, selected_outputs)`.
+        enable_backprop : bool, default=False
+            Whether to retain gradients through the Jacobians and model outputs.
+
+        Returns
+        -------
+        Js : torch.Tensor
+            Selected Jacobians of shape `(batch, selected_outputs, parameters)`.
+        f : torch.Tensor
+            Model outputs of shape `(batch, outputs)`.
+        """
+        if isinstance(x, MutableMapping):
+            raise ValueError("BackPACK backend does not support dict-like inputs!")
+
+        if outputs.ndim == 1:
+            outputs = outputs[:, None]
+
+        if outputs.shape[0] != x.shape[0]:
+            raise ValueError("Output selectors must match the input batch size.")
+
+        input_grad = (
+            x.grad.detach().clone() if x.is_leaf and x.grad is not None else None
+        )
+        model = extend(self.model)
+        columns = []
+        first_output = None
+
+        for column in range(outputs.shape[1]):
+            model.zero_grad(set_to_none=True)
+            output = model(x)
+            if first_output is None:
+                first_output = output
+
+            selected = output.gather(
+                1, outputs[:, column : column + 1].to(output.device)
+            ).sum()
+
+            with backpack(BatchGrad()):
+                selected.backward(
+                    create_graph=enable_backprop, retain_graph=enable_backprop
+                )
+                columns.append(
+                    torch.cat(
+                        [
+                            parameter.grad_batch.reshape(x.shape[0], -1)
+                            for parameter in model.parameters()
+                            if parameter.requires_grad
+                        ],
+                        dim=1,
+                    )
+                )
+                for parameter in model.parameters():
+                    if hasattr(parameter, "grad_batch"):
+                        delattr(parameter, "grad_batch")
+
+        model.zero_grad(set_to_none=True)
+        if x.is_leaf and x.requires_grad:
+            x.grad = input_grad
+        CTX.remove_hooks()
+        _cleanup(model)
+
+        result = torch.stack(columns, dim=1)
+        assert first_output is not None
+
+        return (
+            (result, first_output)
+            if enable_backprop
+            else (
+                result.detach(),
+                first_output.detach(),
+            )
+        )
 
 
 class BackPackGGN(BackPackInterface, GGNInterface):

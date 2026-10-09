@@ -14,6 +14,10 @@
 
 The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
+It also includes function-space estimators selected through `Laplace` with
+`hessian_structure="gp"`: [ELLA](docs/ella.md) uses
+`functional_approximation="nystrom"`, while [VaLLA](docs/valla.md) uses
+`functional_approximation="variational"`.
 
 There is also a corresponding paper, [_Laplace Redux — Effortless Bayesian Deep Learning_](https://arxiv.org/abs/2106.14806), which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:
 
@@ -42,6 +46,13 @@ To install laplace with `pip`, run the following:
 
 ```bash
 pip install laplace-torch
+```
+
+To use changes in this repository before they appear in a published release,
+clone the repository and install it from the checkout:
+
+```bash
+pip install -e .
 ```
 
 Additionally, if you want to use the `asdfghjkl` backend, please install it via:

@@ -33,6 +33,14 @@ class HessianStructure(str, Enum):
     """Functional Laplace."""
 
 
+class FunctionalApproximation(str, Enum):
+    """Posterior approximation used for function-space Laplace."""
+
+    SOD = "sod"
+    NYSTROM = "nystrom"
+    VARIATIONAL = "variational"
+
+
 class Likelihood(str, Enum):
     """Valid options for `likelihood`."""
 

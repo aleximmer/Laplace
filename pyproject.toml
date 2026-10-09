@@ -24,6 +24,8 @@ dependencies = [
   "backpack-for-pytorch",
   "curvlinops-for-pytorch >= 3.0.1",
   "numpy",
+  "scipy >= 1.12",
+  "tqdm >= 4.66",
   "opt_einsum",
   "torch >= 2.0",
   "torchmetrics",
@@ -59,6 +61,7 @@ docs = [
 
 [tool.pytest.ini_options]
 testpaths = "tests"
+markers = ["cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU"]
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
