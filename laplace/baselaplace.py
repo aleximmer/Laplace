@@ -19,21 +19,6 @@ from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
 
-from laplace._functional_utils import (
-    check_model_fingerprint,
-    classification_targets,
-    concatenate_rows,
-    individual_reward_inputs,
-    model_fingerprint,
-    preserve_model_gradients,
-    regression_targets,
-    select_rows,
-    split_batch,
-    subset_loader,
-    to_device,
-    training_epoch,
-    training_indices,
-)
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.asdl import AsdlGGN, AsdlInterface
 from laplace.curvature.backpack import BackPackGGN, BackPackInterface
@@ -46,6 +31,22 @@ from laplace.utils.enums import (
     PredType,
     PriorStructure,
     TuningMethod,
+)
+from laplace.utils.functional_utils import (
+    _check_model_fingerprint,
+    _individual_reward_inputs,
+    _model_fingerprint,
+    classification_targets,
+    concatenate_rows,
+    draw_gaussian,
+    preserve_model_gradients,
+    regression_targets,
+    same_configuration,
+    select_rows,
+    split_batch,
+    subset_loader,
+    to_device,
+    training_indices,
 )
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.metrics import RunningNLLMetric
@@ -2177,29 +2178,21 @@ class DiagLaplace(ParametricLaplace):
 
 
 class BaseFunctionalLaplace(BaseLaplace):
-    """Shared prediction interface for function-space posterior approximations."""
+    """Provide prediction and sampling shared by function-space estimators.
 
-    @staticmethod
-    def _same_configuration(left: Any, right: Any) -> bool:
-        if isinstance(left, torch.Tensor) or isinstance(right, torch.Tensor):
-            return (
-                isinstance(left, torch.Tensor)
-                and isinstance(right, torch.Tensor)
-                and torch.equal(left, right)
-            )
-        if isinstance(left, MutableMapping) and isinstance(right, MutableMapping):
-            return left.keys() == right.keys() and all(
-                BaseFunctionalLaplace._same_configuration(left[key], right[key])
-                for key in left
-            )
-        if isinstance(left, (tuple, list)) and isinstance(right, type(left)):
-            return len(left) == len(right) and all(
-                BaseFunctionalLaplace._same_configuration(a, b)
-                for a, b in zip(left, right)
-            )
-        return left == right
+    Subclasses supply latent predictive moments and refresh their own posterior
+    state. This class handles output links, sampling, and checkpoint settings
+    for ``FunctionalLaplace``, ``ELLA``, and ``VaLLA``.
+    """
 
     def _checkpoint_configuration(self) -> dict[str, Any]:
+        """Record input keys and backend options required by a checkpoint.
+
+        Returns
+        -------
+        dict[str, Any]
+            Settings that must match when the checkpoint is restored.
+        """
         return {
             "dict_key_x": self.dict_key_x,
             "dict_key_y": self.dict_key_y,
@@ -2211,33 +2204,86 @@ class BaseFunctionalLaplace(BaseLaplace):
         }
 
     def _validate_checkpoint_configuration(self, state_dict: dict[str, Any]) -> None:
+        """Reject a checkpoint created with different input or backend settings.
+
+        Parameters
+        ----------
+        state_dict : dict[str, Any]
+            Saved functional posterior state.
+
+        Raises
+        ------
+        ValueError
+            If a required setting differs from the current estimator.
+        """
         for key, current in self._checkpoint_configuration().items():
-            if not self._same_configuration(state_dict.get(key), current):
+            if not same_configuration(state_dict.get(key), current):
                 raise ValueError(f"Checkpoint requires matching {key}.")
 
     @property
     def _uses_backpack_backend(self) -> bool:
+        """Whether the curvature backend extends modules using BackPACK."""
         return issubclass(self._backend_cls, BackPackInterface)
 
     @property
     def _uses_asdl_backend(self) -> bool:
+        """Whether the curvature backend computes Jacobians using ASDL."""
         return issubclass(self._backend_cls, AsdlInterface)
 
     def _glm_predictive_distribution(
         self, x: torch.Tensor | MutableMapping, joint: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Concrete function-space methods provide latent moments."""
+        """Provide latent moments from a concrete function-space estimator.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        joint : bool, default=False
+            Whether to retain covariance between input rows.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            Mean ``[B, O]`` and covariance ``[B, O, O]`` in model-output
+            units. With ``joint=True``, the mean is ``[B*O]`` and covariance
+            is ``[B*O, B*O]``. Observation noise is excluded.
+
+        Raises
+        ------
+        NotImplementedError
+            If the subclass does not implement latent predictive moments.
+        """
         raise NotImplementedError
 
     def _refresh_posterior(self) -> None:
         """Update cached posterior quantities after a hyperparameter change."""
 
     def _check_fitted(self) -> None:
+        """Refresh a fitted posterior or reject predictions before fitting.
+
+        Raises
+        ------
+        RuntimeError
+            If ``fit`` has not completed.
+        """
         if not getattr(self, "_fitted", False):
             raise RuntimeError("Call fit before making functional Laplace predictions.")
         self._refresh_posterior()
 
     def _check_nonempty_inputs(self, x: torch.Tensor | MutableMapping) -> None:
+        """Require at least one input row for a function-space prediction.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+
+        Raises
+        ------
+        ValueError
+            If the input batch is empty.
+        """
         inputs = x[self.dict_key_x] if isinstance(x, MutableMapping) else x
         if inputs.shape[0] == 0:
             raise ValueError("Function-space predictions require at least one input.")
@@ -2245,7 +2291,29 @@ class BaseFunctionalLaplace(BaseLaplace):
     def predictive_moments(
         self, x: torch.Tensor | MutableMapping, *, joint: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Return latent output mean and covariance in model-output units."""
+        """Return latent predictive moments without observation noise.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        joint : bool, default=False
+            Include covariance between input rows when ``True``.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            Mean ``[B, O]`` and covariance ``[B, O, O]`` by default. With
+            ``joint=True``, the mean is flattened and covariance has shape
+            ``[B*O, B*O]``.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior has not been fitted.
+        ValueError
+            If the input batch is empty.
+        """
         self._check_fitted()
         self._check_nonempty_inputs(x)
         return self._glm_predictive_distribution(x, joint=joint)
@@ -2253,7 +2321,20 @@ class BaseFunctionalLaplace(BaseLaplace):
     def _classification_validation_nll(
         self, x: torch.Tensor | MutableMapping, targets: torch.Tensor
     ) -> torch.Tensor:
-        """Evaluate the probit link without taking log of rounded probabilities."""
+        """Compute summed classification NLL using the probit logit scale.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Validation inputs.
+        targets : torch.Tensor
+            Class targets for those inputs.
+
+        Returns
+        -------
+        torch.Tensor
+            Summed negative log likelihood for the batch.
+        """
         mean, covariance = self.predictive_moments(x)
         scale = torch.sqrt(1 + torch.pi / 8 * covariance.diagonal(dim1=-2, dim2=-1))
         return torch.nn.functional.cross_entropy(
@@ -2274,14 +2355,48 @@ class BaseFunctionalLaplace(BaseLaplace):
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Predict from the fitted function-space posterior.
 
-        Classification returns probabilities `[B, C]`; regression and scalar
-        reward prediction return a latent mean `[B, O]` and covariance
-        `[B, O, O]` (or variance `[B, O]` with `diagonal_output=True`). With
-        `joint=True`, the mean is flattened and covariance has shape
-        `[B*O, B*O]`. `fitting=True` evaluates pairwise reward inputs
-        as classification. `link_approx` selects the classification link, and
-        `n_samples` controls Monte Carlo links. Only `pred_type='gp'` is
-        supported; use `functional_samples` for latent draws.
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        pred_type : PredType or str, default=PredType.GP
+            Prediction type. Function-space estimators support only ``"gp"``.
+        joint : bool, default=False
+            Retain cross-input covariance for regression predictions.
+        link_approx : LinkApprox or str, default=LinkApprox.PROBIT
+            Approximation for the classification probability link.
+        n_samples : int, default=100
+            Number of draws for a Monte Carlo classification link.
+        diagonal_output : bool, default=False
+            Return only output variances for regression when supported.
+        generator : torch.Generator or None, default=None
+            Random generator for Monte Carlo classification predictions.
+        fitting : bool, default=False
+            Evaluate reward-model preference pairs as classification inputs.
+        **model_kwargs : Any
+            Accepted for compatibility with the base prediction interface;
+            these arguments are not forwarded to the model.
+
+        Returns
+        -------
+        torch.Tensor or tuple[torch.Tensor, torch.Tensor]
+            Classification probabilities ``[B, C]``, or regression/reward
+            latent mean and covariance. With ``joint=True``, the regression
+            mean is flattened and covariance has shape ``[B*O, B*O]``.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior has not been fitted.
+        ValueError
+            If the input batch is empty, the prediction type or link is
+            unsupported, or the generator has an incompatible type or device.
+
+        Notes
+        -----
+        Regression and individual reward predictions exclude observation
+        noise. Their marginal mean is ``[B, O]`` and covariance is
+        ``[B, O, O]``, or variance ``[B, O]`` with ``diagonal_output=True``.
         """
         self._check_fitted()
         self._check_nonempty_inputs(x)
@@ -2309,74 +2424,6 @@ class BaseFunctionalLaplace(BaseLaplace):
             x, likelihood, joint, link_approx, n_samples, diagonal_output
         )
 
-    @staticmethod
-    def _draw_gaussian(
-        mean: torch.Tensor,
-        covariance: torch.Tensor,
-        n_samples: int,
-        generator: torch.Generator | None,
-    ) -> torch.Tensor:
-        covariance = (covariance + covariance.transpose(-1, -2)) / 2
-        try:
-            root = torch.linalg.cholesky(covariance)
-        except LinAlgError:
-            # A rank-limited function-space posterior can be singular.
-            values, vectors = torch.linalg.eigh(
-                covariance.detach() if covariance.requires_grad else covariance
-            )
-            # Low-rank PSD matrices can acquire negative eigenvalues from
-            # float32 rounding; judge them relative to the covariance scale.
-            tolerance = (
-                10
-                * torch.finfo(covariance.dtype).eps
-                * covariance.shape[-1]
-                * values.abs().amax(dim=-1, keepdim=True)
-            )
-            if torch.any(values < -tolerance):
-                raise
-            if covariance.requires_grad:
-                # Eigenvectors and sqrt have undefined derivatives at repeated
-                # zero eigenvalues. Keep MC objectives differentiable there.
-                scale = (
-                    covariance.diagonal(dim1=-2, dim2=-1).detach().abs().amax(dim=-1)
-                )
-                scale = torch.where(scale > 0, scale, 1)
-                identity = torch.eye(
-                    covariance.shape[-1],
-                    device=covariance.device,
-                    dtype=covariance.dtype,
-                )
-                negative_shift = -values.amin(dim=-1).clamp_max(0)
-                for multiplier in (1, 10, 100):
-                    jitter = (
-                        negative_shift
-                        + multiplier * torch.finfo(covariance.dtype).eps * scale
-                    )
-                    try:
-                        root = torch.linalg.cholesky(
-                            covariance + jitter[..., None, None] * identity
-                        )
-                        break
-                    except LinAlgError:
-                        continue
-                else:
-                    raise RuntimeError(
-                        "Could not factor a differentiable functional covariance."
-                    )
-            else:
-                root = vectors @ torch.diag_embed(values.clamp_min(0).sqrt())
-        noise = torch.randn(
-            (n_samples, *mean.shape),
-            device=mean.device,
-            dtype=mean.dtype,
-            generator=generator,
-        )
-        if mean.ndim == 1:
-            draws = noise @ root.T
-        else:
-            draws = torch.einsum("bij,sbj->sbi", root, noise)
-        return mean.unsqueeze(0) + draws
-
     def _glm_functional_samples(
         self,
         f_mu: torch.Tensor,
@@ -2385,12 +2432,32 @@ class BaseFunctionalLaplace(BaseLaplace):
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
+        """Draw per-input latent samples from supplied Gaussian moments.
+
+        Parameters
+        ----------
+        f_mu : torch.Tensor
+            Latent means shaped ``[B, O]``.
+        f_var : torch.Tensor
+            Per-input covariance shaped ``[B, O, O]``.
+        n_samples : int
+            Number of draws.
+        diagonal_output : bool, default=False
+            Drop covariance between output coordinates before sampling.
+        generator : torch.Generator or None, default=None
+            Random generator for the draws.
+
+        Returns
+        -------
+        torch.Tensor
+            Latent draws shaped ``[n_samples, B, O]``.
+        """
         covariance = (
             torch.diag_embed(f_var.diagonal(dim1=-2, dim2=-1))
             if diagonal_output
             else f_var
         )
-        return self._draw_gaussian(f_mu, covariance, n_samples, generator)
+        return draw_gaussian(f_mu, covariance, n_samples, generator)
 
     def functional_samples(
         self,
@@ -2403,9 +2470,34 @@ class BaseFunctionalLaplace(BaseLaplace):
     ) -> torch.Tensor:
         """Draw latent outputs; use `joint=True` to retain cross-input covariance.
 
-        The `pred_type` argument is retained for `FunctionalLaplace` API
-        compatibility. All accepted values draw from the function-space
-        posterior; `"nn"` does not sample model weights.
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        pred_type : PredType or str, default=PredType.GLM
+            Accepted for API compatibility. Every value draws from the
+            function-space posterior; ``"nn"`` does not draw model weights.
+        n_samples : int, default=100
+            Number of draws.
+        diagonal_output : bool, default=False
+            Drop cross-output covariance before sampling.
+        generator : torch.Generator or None, default=None
+            Random generator on the model device.
+        joint : bool, default=False
+            Retain covariance between input rows.
+
+        Returns
+        -------
+        torch.Tensor
+            Latent draws shaped ``[n_samples, B, O]``.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior has not been fitted.
+        ValueError
+            If the input batch is empty, the sampling type is unsupported,
+            or ``n_samples`` is not positive.
         """
         self._check_fitted()
         self._check_nonempty_inputs(x)
@@ -2424,7 +2516,7 @@ class BaseFunctionalLaplace(BaseLaplace):
             if diagonal_output:
                 output_ids = torch.arange(mean.numel(), device=mean.device) % n_outputs
                 covariance = covariance * (output_ids[:, None] == output_ids[None, :])
-            draws = self._draw_gaussian(mean, covariance, n_samples, generator)
+            draws = draw_gaussian(mean, covariance, n_samples, generator)
             return draws.reshape(n_samples, batch, n_outputs)
         return self._glm_functional_samples(
             mean, covariance, n_samples, diagonal_output, generator
@@ -2440,6 +2532,44 @@ class BaseFunctionalLaplace(BaseLaplace):
         fitting: bool = False,
         joint: bool = False,
     ) -> torch.Tensor:
+        """Draw outputs and apply the classification link when appropriate.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        pred_type : PredType or str, default=PredType.GLM
+            Accepted for function-space sampling API compatibility.
+        n_samples : int, default=100
+            Number of draws.
+        diagonal_output : bool, default=False
+            Drop cross-output covariance before sampling.
+        generator : torch.Generator or None, default=None
+            Random generator on the model device.
+        fitting : bool, default=False
+            Interpret reward-model inputs as preference pairs.
+        joint : bool, default=False
+            Retain covariance between input rows.
+
+        Returns
+        -------
+        torch.Tensor
+            Predictive draws shaped ``[n_samples, B, O]``.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior has not been fitted.
+        ValueError
+            If the input batch is empty, the sampling type is unsupported,
+            or ``n_samples`` is not positive.
+
+        Notes
+        -----
+        Classification draws are class probabilities obtained by applying
+        softmax to latent samples. Regression and individual reward draws are
+        latent function values without observation noise.
+        """
         samples = self.functional_samples(
             x, pred_type, n_samples, diagonal_output, generator, joint
         )
@@ -2867,6 +2997,14 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         )
 
     def _refresh_posterior(self) -> None:
+        """Rebuild the subset-of-data GP posterior after a prior change.
+
+        Warns
+        -----
+        UserWarning
+            If prior precision changed since fitting and the cached posterior
+            must be recomputed.
+        """
         if self._recompute_Sigma:
             warnings.warn(
                 "The prior precision has changed since fit; recomputing the GP posterior."
@@ -3463,11 +3601,61 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 class ELLA(BaseFunctionalLaplace):
     """Accelerated linearized Laplace using a rank-limited Nyström feature map.
 
-    `subsample_size` selects training inputs for the basis, while
-    `n_eigenvalues` is its retained rank. `fit` accumulates projected GGN
-    curvature and returns `None`. `fit_history_` records processed counts,
-    validation NLL, and optional prior-grid scores. The pretrained model is
-    evaluated without updating its parameters.
+    The pretrained model stays fixed. Fitting selects a subset of training
+    inputs, builds parameter-Jacobian features, and accumulates projected GGN
+    curvature. A numerically rank-deficient subset cannot supply the requested
+    number of features.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        Pretrained network to linearize.
+    likelihood : Likelihood or str
+        ``"classification"``, ``"regression"``, or ``"reward_modeling"``.
+    subsample_size : int
+        Number of training inputs used to construct the Nyström basis.
+    n_eigenvalues : int
+        Number of positive kernel directions retained, at most
+        ``subsample_size``.
+    sigma_noise : float or torch.Tensor, default=1.0
+        Observation standard deviation for regression.
+    prior_precision : float or torch.Tensor, default=1.0
+        Scalar parameter-prior precision.
+    prior_mean : float or torch.Tensor, default=0.0
+        Prior mean; only zero is supported.
+    temperature : float, default=1.0
+        Positive scale of the likelihood curvature.
+    enable_backprop : bool, default=False
+        Retain derivatives through predictive moments.
+    dict_key_x : str, default="input_ids"
+        Input key for mapping-style batches.
+    dict_key_y : str, default="labels"
+        Target key for mapping-style batches.
+    backend : type[CurvatureInterface] or None, default=None
+        Curvature backend used to compute parameter Jacobians.
+    backend_kwargs : dict[str, Any] or None, default=None
+        Additional curvature backend options.
+    seed : int, default=1234
+        Seed for selecting basis inputs and output coordinates.
+
+    Attributes
+    ----------
+    fit_history_ : dict[str, list[Any]]
+        ``processed_examples`` records cumulative curvature-pass counts,
+        ``val_nll`` records validation scores, and ``tuning`` records
+        candidate hyperparameters and their validation scores.
+    dual_directions : torch.Tensor or None
+        Fitted parameter-space basis shaped ``[parameters, n_eigenvalues]``.
+    feature_gram : torch.Tensor or None
+        Accumulated projected curvature shaped
+        ``[n_eigenvalues, n_eigenvalues]`` before noise and temperature scaling.
+    chol_precision : torch.Tensor or None
+        Lower Cholesky factor of the feature-space posterior precision.
+
+    Notes
+    -----
+    ``fit`` returns ``None``. ``fit_history_`` stores processed example counts,
+    validation NLL, and prior-grid scores when those options are used.
     """
 
     def __init__(
@@ -3487,6 +3675,7 @@ class ELLA(BaseFunctionalLaplace):
         backend_kwargs: dict[str, Any] | None = None,
         seed: int = 1234,
     ) -> None:
+        """Initialize ELLA from the pretrained model and basis configuration."""
         if (
             not isinstance(subsample_size, Integral)
             or isinstance(subsample_size, bool)
@@ -3532,10 +3721,12 @@ class ELLA(BaseFunctionalLaplace):
 
     @property
     def prior_precision(self) -> torch.Tensor:
+        """Return the scalar parameter-prior precision."""
         return self._prior_precision
 
     @prior_precision.setter
     def prior_precision(self, value: float | torch.Tensor) -> None:
+        """Set a positive scalar precision and invalidate the posterior factor."""
         candidate = torch.as_tensor(value, device=self._device, dtype=self._dtype)
         if candidate.numel() != 1 or not torch.all(
             torch.isfinite(candidate) & (candidate > 0)
@@ -3547,20 +3738,24 @@ class ELLA(BaseFunctionalLaplace):
 
     @property
     def prior_mean(self) -> torch.Tensor:
+        """Return the zero parameter-prior mean."""
         return self._prior_mean
 
     @prior_mean.setter
     def prior_mean(self, value: float | torch.Tensor) -> None:
+        """Set the parameter-prior mean, which must be zero."""
         if torch.any(torch.as_tensor(value) != 0):
             raise ValueError("ELLA currently requires prior_mean=0.")
         BaseLaplace.prior_mean.fset(self, value)  # type: ignore[attr-defined]
 
     @property
     def sigma_noise(self) -> torch.Tensor:
+        """Return the regression observation standard deviation."""
         return self._sigma_noise
 
     @sigma_noise.setter
     def sigma_noise(self, value: float | torch.Tensor) -> None:
+        """Set observation noise and invalidate the posterior factor."""
         candidate = torch.as_tensor(value, device=self._device, dtype=self._dtype)
         if not torch.all(torch.isfinite(candidate) & (candidate > 0)):
             raise ValueError("sigma_noise must be positive and finite.")
@@ -3574,10 +3769,12 @@ class ELLA(BaseFunctionalLaplace):
 
     @property
     def temperature(self) -> float:
+        """Return the positive likelihood temperature."""
         return self._temperature
 
     @temperature.setter
     def temperature(self, value: float) -> None:
+        """Set likelihood temperature and invalidate the posterior factor."""
         if not isfinite(value) or value <= 0:
             raise ValueError("temperature must be positive and finite.")
         self._temperature = value
@@ -3585,25 +3782,50 @@ class ELLA(BaseFunctionalLaplace):
             self._posterior_dirty = True
 
     def _batch(self, batch: Any) -> tuple[Any, torch.Tensor]:
+        """Move a training batch and its targets to the model device.
+
+        Parameters
+        ----------
+        batch : Any
+            ``(inputs, targets)`` or a mapping containing ``dict_key_y``.
+
+        Returns
+        -------
+        tuple[Any, torch.Tensor]
+            Model inputs and targets on the model device. Floating-point
+            inputs use the model dtype; target dtypes are preserved.
+        """
         x, y = split_batch(batch, self.dict_key_y)
         return to_device(x, self._device, self._dtype), y.to(self._device)
 
-    def _indices(
-        self,
-        loader: DataLoader,
-        balanced: bool,
-        available: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        available = training_indices(loader) if available is None else available
+    def _indices(self, loader: DataLoader, balanced: bool) -> torch.Tensor:
+        """Select reproducible basis rows, optionally balanced across classes.
+
+        Parameters
+        ----------
+        loader : DataLoader
+            Training data from which basis rows are selected.
+        balanced : bool
+            Round-robin sample classes when true.
+
+        Returns
+        -------
+        torch.Tensor
+            Selected dataset indices of length ``subsample_size``.
+        """
+        available = training_indices(loader)
         n = len(available)
         if self.subsample_size > n:
             raise ValueError("subsample_size cannot exceed the training set size.")
+
         generator = torch.Generator().manual_seed(self.seed)
         if not balanced:
             chosen = torch.randperm(n, generator=generator)[: self.subsample_size]
             return available[chosen]
+
         if self.likelihood == Likelihood.REGRESSION:
             raise ValueError("balanced sampling is only defined for classification.")
+
         labels = []
         for index in available:
             _, target = split_batch(loader.dataset[int(index)], self.dict_key_y)
@@ -3621,6 +3843,7 @@ class ELLA(BaseFunctionalLaplace):
             candidates = torch.where(labels == cls)[0]
             order = torch.randperm(len(candidates), generator=generator)
             queues.append(deque(candidates[order].tolist()))
+
         selected: list[int] = []
         while len(selected) < self.subsample_size and any(queues):
             for queue in queues:
@@ -3631,6 +3854,20 @@ class ELLA(BaseFunctionalLaplace):
         return available[torch.tensor(selected[: self.subsample_size])]
 
     def _build_basis(self, loader: DataLoader, indices: torch.Tensor) -> None:
+        """Build the Nyström directions from selected parameter Jacobians.
+
+        Parameters
+        ----------
+        loader : DataLoader
+            Training loader used to retrieve selected inputs.
+        indices : torch.Tensor
+            Dataset indices selected for the subset kernel.
+
+        Raises
+        ------
+        ValueError
+            If the subset kernel has fewer usable directions than requested.
+        """
         selected_rows = []
         generator = torch.Generator().manual_seed(self.seed + 1)
         for batch in subset_loader(loader, indices):
@@ -3648,6 +3885,7 @@ class ELLA(BaseFunctionalLaplace):
             selected_rows.append(
                 jacobians[torch.arange(len(choices), device=jacobians.device), choices]
             )
+
         rows = torch.cat(selected_rows).to(torch.float64)
         kernel = rows @ rows.T
         eigenvalues, eigenvectors = torch.linalg.eigh(kernel)
@@ -3656,6 +3894,7 @@ class ELLA(BaseFunctionalLaplace):
         tolerance = (
             torch.finfo(values.dtype).eps * max(rows.shape) * eigenvalues.abs().max()
         )
+
         if torch.any(values <= tolerance):
             usable_rank = int((eigenvalues > tolerance).sum().item())
             raise ValueError(
@@ -3665,6 +3904,7 @@ class ELLA(BaseFunctionalLaplace):
                 "exceed the numerical tolerance. Reduce n_eigenvalues, "
                 "increase subsample_size, or try a different seed."
             )
+
         self.dual_directions = (
             rows.T @ (eigenvectors[:, order] / values.sqrt().unsqueeze(0))
         ).to(self._dtype)
@@ -3672,6 +3912,31 @@ class ELLA(BaseFunctionalLaplace):
     def _features(
         self, x: torch.Tensor | MutableMapping
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Project model Jacobians onto the Nyström basis and return outputs.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched inputs on the model device.
+
+        Returns
+        -------
+        features : torch.Tensor
+            Projected Jacobians shaped ``[batch, outputs, n_eigenvalues]``.
+        outputs : torch.Tensor
+            Network outputs shaped ``[batch, outputs]``.
+
+        Raises
+        ------
+        RuntimeError
+            If the basis is uninitialized, or differentiable Jacobians are
+            requested but unavailable for the model and backend.
+
+        Notes
+        -----
+        Uses Jacobian-vector products when supported, otherwise projects
+        parameter Jacobians obtained from the curvature backend.
+        """
         if self.dual_directions is None:
             raise RuntimeError("Call fit before requesting ELLA features.")
         # BackPACK extends modules in-place and is incompatible with torch.func.jvp.
@@ -3746,10 +4011,12 @@ class ELLA(BaseFunctionalLaplace):
         return jacobians @ self.dual_directions, output
 
     def _refresh_posterior(self) -> None:
+        """Rebuild the posterior factor after a hyperparameter change."""
         if self._posterior_dirty:
             self._build_precision()
 
     def _build_precision(self) -> None:
+        """Factor the feature-space posterior precision."""
         if self.feature_gram is None:
             return
         precision = self.feature_gram / self.temperature
@@ -3771,39 +4038,67 @@ class ELLA(BaseFunctionalLaplace):
         balanced: bool = False,
         progress_bar: bool = False,
     ) -> None:
+        """Fit the ELLA posterior with projected training curvature.
+
+        Parameters
+        ----------
+        train_loader : DataLoader
+            Training batches for basis selection and curvature accumulation.
+        val_loader : DataLoader or None, default=None
+            Optional validation data for predictive negative log likelihood.
+        val_steps : int or None, default=None
+            Evaluate validation NLL every ``val_steps`` batches when given.
+        balanced : bool, default=False
+            Balance class labels in the Nyström subset.
+        progress_bar : bool, default=False
+            Show a fitting progress bar.
+
+        Raises
+        ------
+        ValueError
+            If sampling or validation-step settings are invalid, or the
+            curvature pass processes no examples.
+
+        Notes
+        -----
+        Basis selection and curvature accumulation sample the loader
+        independently. Stochastic samplers may select different rows for each
+        pass. ``n_data`` counts examples processed during curvature accumulation.
+        """
         if val_steps is not None and (
             not isinstance(val_steps, Integral)
             or isinstance(val_steps, bool)
             or val_steps <= 0
         ):
             raise ValueError("val_steps must be positive integer when provided.")
+
         self.model.eval()
         self.fit_history_ = {"processed_examples": [], "val_nll": [], "tuning": []}
         self._fitted = False
-        fit_loader, available = training_epoch(train_loader)
-        self.n_data = len(available)
-        first_x, _ = self._batch(next(iter(fit_loader)))
+        self.n_data = 0
+        indices = self._indices(train_loader, balanced)
+        first_x, _ = self._batch(next(iter(subset_loader(train_loader, indices))))
         if isinstance(first_x, MutableMapping) and self._uses_backpack_backend:
             raise ValueError(
                 "BackPACK does not support mapping-style inputs; use AsdlGGN or CurvlinopsGGN."
             )
+
         self.n_outputs = self.model(first_x).shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
-        self._build_basis(
-            train_loader, self._indices(train_loader, balanced, available)
-        )
+        self._build_basis(train_loader, indices)
         self.feature_gram = torch.zeros(
             self.n_eigenvalues,
             self.n_eigenvalues,
             device=self._device,
             dtype=self._dtype,
         )
-        iterator = fit_loader
+
+        iterator = train_loader
         if progress_bar:
             from tqdm import tqdm
 
-            iterator = tqdm(fit_loader, desc="Fitting ELLA")
-        processed = 0
+            iterator = tqdm(train_loader, desc="Fitting ELLA")
+
         for step, batch in enumerate(iterator, start=1):
             x, y = self._batch(batch)
             features, output = self._features(x)
@@ -3820,36 +4115,89 @@ class ELLA(BaseFunctionalLaplace):
                 self.feature_gram += torch.einsum(
                     "bck,bcd,bdl->kl", features, hessian, features
                 ).detach()
-            processed += output.shape[0]
-            self.fit_history_["processed_examples"].append(float(processed))
+            self.n_data += output.shape[0]
+            self.fit_history_["processed_examples"].append(float(self.n_data))
             if val_loader is not None and val_steps and step % val_steps == 0:
                 self._build_precision()
                 self._fitted = True
                 self.fit_history_["val_nll"].append(
                     float(self._validation_nll(val_loader))
                 )
+
+        if self.n_data == 0:
+            raise ValueError("ELLA fit requires a nonempty training loader.")
+
         self._build_precision()
         self._fitted = True
         if val_loader is not None and (not val_steps or step % val_steps):
             self.fit_history_["val_nll"].append(float(self._validation_nll(val_loader)))
 
     def _feature_variance(self, features: torch.Tensor) -> torch.Tensor:
+        """Return per-input output covariance from projected features.
+
+        Parameters
+        ----------
+        features : torch.Tensor
+            Projected Jacobians shaped ``[batch, outputs, n_eigenvalues]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Latent covariance shaped ``[batch, outputs, outputs]`` without
+            observation noise, using the current posterior precision factor.
+        """
         solved = torch.cholesky_solve(features.transpose(1, 2), self.chol_precision)
         return features @ solved
 
     def _feature_covariance(self, features: torch.Tensor) -> torch.Tensor:
+        """Return joint output covariance from projected features.
+
+        Parameters
+        ----------
+        features : torch.Tensor
+            Projected Jacobians shaped ``[batch, outputs, n_eigenvalues]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Latent covariance shaped ``[batch * outputs, batch * outputs]``
+            without observation noise. Coordinates are ordered by input,
+            then output.
+        """
         flat = features.reshape(-1, self.n_eigenvalues)
         solved = torch.cholesky_solve(flat.T, self.chol_precision)
         return flat @ solved
 
     def functional_variance(self, jacobians: torch.Tensor) -> torch.Tensor:
-        """Return per-input covariance from raw parameter Jacobians."""
+        """Return per-input latent covariance from parameter Jacobians.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor
+            Parameter Jacobians shaped ``[batch, outputs, parameters]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Per-input covariance shaped ``[batch, outputs, outputs]``.
+        """
         self._check_fitted()
         self._check_jacobians(jacobians)
         return self._feature_variance(jacobians @ self.dual_directions)
 
     def functional_covariance(self, jacobians: torch.Tensor) -> torch.Tensor:
-        """Return joint covariance from raw parameter Jacobians."""
+        """Return joint latent covariance from parameter Jacobians.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor
+            Parameter Jacobians shaped ``[batch, outputs, parameters]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Joint covariance shaped ``[batch * outputs, batch * outputs]``.
+        """
         self._check_fitted()
         self._check_jacobians(jacobians)
         return self._feature_covariance(jacobians @ self.dual_directions)
@@ -3859,6 +4207,25 @@ class ELLA(BaseFunctionalLaplace):
     def _glm_predictive_distribution(
         self, x: torch.Tensor | MutableMapping, joint: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute model outputs and ELLA latent covariance for inputs.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        joint : bool, default=False
+            Retain covariance between input rows.
+
+        Returns
+        -------
+        mean : torch.Tensor
+            Network outputs shaped ``[batch, outputs]``, flattened to
+            ``[batch * outputs]`` when ``joint=True``.
+        covariance : torch.Tensor
+            Latent covariance shaped ``[batch, outputs, outputs]``, or
+            ``[batch * outputs, batch * outputs]`` when ``joint=True``.
+            Observation noise is excluded.
+        """
         x = to_device(x, self._device, self._dtype)
         features, mean = self._features(x)
         covariance = (
@@ -3873,6 +4240,20 @@ class ELLA(BaseFunctionalLaplace):
         return mean, covariance
 
     def _validation_nll(self, loader: DataLoader) -> torch.Tensor:
+        """Return mean predictive negative log likelihood on a loader.
+
+        Parameters
+        ----------
+        loader : DataLoader
+            Nonempty validation loader with regression targets or class labels.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar NLL averaged over examples, summing over regression output
+            coordinates. Regression includes observation noise; classification
+            uses the probit approximation.
+        """
         total = torch.zeros((), device=self._device, dtype=self._dtype)
         count = 0
         for batch in loader:
@@ -3914,6 +4295,60 @@ class ELLA(BaseFunctionalLaplace):
         verbose: bool = False,
         progress_bar: bool = False,
     ) -> None:
+        """Choose scalar prior precision by validation grid search.
+
+        Parameters
+        ----------
+        pred_type : PredType or str, default=PredType.GP
+            Must be ``"gp"``.
+        method : TuningMethod or str, default=TuningMethod.GRIDSEARCH
+            Must be ``"gridsearch"``.
+        n_steps : int, default=100
+            Compatibility argument; only the default is supported and it does
+            not determine grid size.
+        lr : float, default=0.1
+            Compatibility argument; only the default is supported.
+        init_prior_prec : float or torch.Tensor, default=1.0
+            Compatibility argument; must be the scalar default. Grid search
+            evaluates the specified precision range instead.
+        prior_structure : PriorStructure or str, default=PriorStructure.SCALAR
+            Only scalar prior precision is supported.
+        val_loader : DataLoader or None, default=None
+            Validation data; required for grid search.
+        loss : Any, default=None
+            Must be ``None``; candidates are scored by predictive NLL.
+        log_prior_prec_min : float, default=-4
+            Base-10 logarithm of the smallest grid precision.
+        log_prior_prec_max : float, default=4
+            Base-10 logarithm of the largest grid precision.
+        grid_size : int, default=100
+            Number of candidate precisions.
+        link_approx : LinkApprox or str, default=LinkApprox.PROBIT
+            Classification validation link; only probit is supported.
+        n_samples : int, default=100
+            Compatibility argument; only the default is supported. Validation
+            scoring does not use Monte Carlo samples.
+        verbose : bool, default=False
+            Compatibility argument; must be false.
+        progress_bar : bool, default=False
+            Compatibility argument; must be false.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior has not been fitted.
+        ValueError
+            If the prediction type is not ``"gp"``, validation data are
+            missing, or the grid size or candidate precisions are invalid.
+        NotImplementedError
+            If marginal-likelihood tuning or nondefault compatibility
+            arguments are requested.
+
+        Notes
+        -----
+        Other arguments are accepted for interface compatibility but only
+        their defaults are supported by ELLA.
+        """
         self._check_fitted()
         if pred_type != PredType.GP:
             raise ValueError("ELLA supports only pred_type='gp'.")
@@ -3948,6 +4383,21 @@ class ELLA(BaseFunctionalLaplace):
         self.optimize_hyperparameters(val_loader, grid)
 
     def optimize_hyperparameters(self, val_loader: DataLoader, grid) -> None:
+        """Select the prior (and optionally noise) with lowest validation NLL.
+
+        Parameters
+        ----------
+        val_loader : DataLoader
+            Validation data used to score every candidate.
+        grid : iterable
+            Candidate prior precisions or ``(prior_precision, sigma_noise)``
+            pairs for regression.
+
+        Raises
+        ------
+        ValueError
+            If the grid is empty or all candidate scores are nonfinite.
+        """
         self._check_fitted()
         initial_prior = self.prior_precision.detach().clone()
         initial_noise = self.sigma_noise.detach().clone()
@@ -3983,20 +4433,63 @@ class ELLA(BaseFunctionalLaplace):
         self._refresh_posterior()
 
     def log_marginal_likelihood(self, *args, **kwargs):
+        """Reject marginal-likelihood evaluation for the ELLA approximation.
+
+        Parameters
+        ----------
+        *args : Any
+            Positional arguments accepted for compatibility with BaseLaplace.
+        **kwargs : Any
+            Keyword arguments accepted for compatibility with BaseLaplace.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised. ELLA does not define the subset-of-data GP
+            marginal likelihood; use validation-based hyperparameter tuning.
+        """
         raise NotImplementedError(
             "ELLA does not use FunctionalLaplace's subset-of-data marginal likelihood."
         )
 
     @property
     def log_likelihood(self) -> torch.Tensor:
+        """Reject access to an untracked training log likelihood.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised because ELLA accumulates curvature without tracking
+            the training log likelihood.
+        """
         raise NotImplementedError("ELLA does not accumulate a training log likelihood.")
 
     def state_dict(self) -> dict[str, Any]:
+        """Return a checkpoint containing the fitted ELLA posterior.
+
+        Returns
+        -------
+        dict[str, Any]
+            Basis directions, projected curvature, hyperparameters, fitting
+            history, seed, model fingerprint, and backend/input settings.
+            The posterior precision factor is rebuilt when loading.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior has not been fitted.
+
+        Notes
+        -----
+        Loading validates the pretrained model against the saved fingerprint;
+        it does not restore model parameters or buffers. Construct the
+        receiving estimator with the same pretrained model and configuration.
+        """
         self._check_fitted()
         return {
             "cls_name": type(self).__name__,
             "n_params": self.n_params,
-            "model_fingerprint": model_fingerprint(self.model),
+            "model_fingerprint": _model_fingerprint(self.model),
             "likelihood": self.likelihood,
             "subsample_size": self.subsample_size,
             "n_eigenvalues": self.n_eigenvalues,
@@ -4018,6 +4511,18 @@ class ELLA(BaseFunctionalLaplace):
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Restore a fitted ELLA checkpoint for the same pretrained model.
+
+        Parameters
+        ----------
+        state_dict : dict[str, Any]
+            State previously returned by :meth:`state_dict`.
+
+        Raises
+        ------
+        ValueError
+            If the checkpoint is unfitted or incompatible with this model.
+        """
         if not state_dict.get("fitted", False):
             raise ValueError("ELLA checkpoint must contain a fitted posterior.")
         if (
@@ -4030,7 +4535,7 @@ class ELLA(BaseFunctionalLaplace):
         if state_dict["likelihood"] != self.likelihood:
             raise ValueError("Checkpoint likelihood does not match.")
         self._validate_checkpoint_configuration(state_dict)
-        check_model_fingerprint(self.model, state_dict["model_fingerprint"])
+        _check_model_fingerprint(self.model, state_dict["model_fingerprint"])
         self.seed = state_dict["seed"]
         self.subsample_size = state_dict["subsample_size"]
         self.n_eigenvalues = state_dict["n_eigenvalues"]
@@ -4051,14 +4556,74 @@ class ELLA(BaseFunctionalLaplace):
 class VaLLA(BaseFunctionalLaplace):
     """Variational linearized Laplace with inducing outputs and a fixed MAP model.
 
-    `inducing_locations` accepts fixed tensor or mapping inputs, `"random"`,
-    or `"kmeans"`. A strategy requires `num_inducing`. `alpha` is the
-    alpha-divergence parameter in `[0, 1]`; zero uses the ELBO limit.
-    `mc_softmax_samples` enables Monte Carlo classification data terms when
-    positive. `fit` optimizes variational, inducing, prior, and regression
-    noise parameters, returns `None`, and records objective and validation
-    NLL values in `fit_history_`. Repeated fits reset variational and inducing
-    state by default; `fit(..., override=False)` continues optimization.
+    The network weights remain fixed while ``fit`` optimizes the variational
+    factor, inducing locations, prior precision, and regression noise.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        Pretrained network to linearize.
+    likelihood : Likelihood or str
+        ``"classification"``, ``"regression"``, or ``"reward_modeling"``.
+    inducing_locations : torch.Tensor, MutableMapping, or str
+        Initial inputs, or ``"random"`` or ``"kmeans"`` to select them from
+        the training loader. Floating-point tensor locations are optimized;
+        mapping-style and integer tensor locations remain fixed.
+    num_inducing : int or None, default=None
+        Number of locations required with a selection strategy. If explicit
+        locations are supplied, this must match their count when provided.
+    inducing_classes : torch.Tensor or None, default=None
+        Output coordinate selected at each inducing location, shaped
+        ``[num_inducing]``. Explicit inputs default to coordinate zero.
+        Strategies use training class labels for classification and coordinate
+        zero for regression and individual rewards.
+    sigma_noise : float or torch.Tensor, default=1.0
+        Initial observation standard deviation for regression.
+    prior_precision : float or torch.Tensor, default=1.0
+        Initial scalar parameter-prior precision.
+    prior_mean : float or torch.Tensor, default=0.0
+        Prior mean; only zero is supported.
+    temperature : float, default=1.0
+        Positive scale of the likelihood contribution.
+    enable_backprop : bool, default=False
+        Retain derivatives through predictive moments.
+    dict_key_x : str, default="input_ids"
+        Input key for mapping-style batches.
+    dict_key_y : str, default="labels"
+        Target key for mapping-style batches.
+    backend : type[CurvatureInterface] or None, default=None
+        Curvature backend used for parameter Jacobians.
+    backend_kwargs : dict[str, Any] or None, default=None
+        Additional curvature backend options.
+    seed : int, default=0
+        Seed for inducing-point selection and Monte Carlo fitting.
+    alpha : float, default=1.0
+        Alpha-divergence value in ``[0, 1]``; zero uses the ELBO limit.
+    mc_softmax_samples : int, default=0
+        Monte Carlo draws for classification data terms when positive.
+        Required for classification or reward modeling when ``alpha != 1``.
+
+    Attributes
+    ----------
+    fit_history_ : dict[str, list[float]]
+        ``objective`` records minibatch-scaled objective values computed
+        before each update; ``val_nll`` records validation negative log likelihood.
+    L : torch.nn.Parameter
+        Packed lower-triangular variational factor containing
+        ``num_inducing * (num_inducing + 1) // 2`` entries.
+    log_prior_precision : torch.nn.Parameter
+        Trainable logarithm of scalar parameter-prior precision.
+    log_noise_variance : torch.nn.Parameter or None
+        Trainable logarithm of observation variance for regression;
+        ``None`` for classification and reward modeling.
+    generator : torch.Generator
+        Random generator for Monte Carlo data terms on the model device.
+
+    Notes
+    -----
+    ``fit`` returns ``None`` and records objective and validation NLL in
+    ``fit_history_``. Repeated fits reset variational and inducing state by
+    default; ``fit(..., override=False)`` continues optimization.
     """
 
     def __init__(
@@ -4081,6 +4646,7 @@ class VaLLA(BaseFunctionalLaplace):
         alpha: float = 1.0,
         mc_softmax_samples: int = 0,
     ) -> None:
+        """Initialize VaLLA from a pretrained model and inducing setup."""
         if torch.as_tensor(prior_precision).numel() != 1:
             raise ValueError("VaLLA requires scalar prior_precision.")
         if torch.any(torch.as_tensor(prior_mean) != 0):
@@ -4184,12 +4750,14 @@ class VaLLA(BaseFunctionalLaplace):
 
     @property
     def prior_precision(self) -> torch.Tensor:
+        """Return the positive variational prior precision."""
         if hasattr(self, "log_prior_precision"):
             return self.log_prior_precision.exp()
         return self._prior_precision
 
     @prior_precision.setter
     def prior_precision(self, value: float | torch.Tensor) -> None:
+        """Set positive scalar precision and synchronize its log parameter."""
         candidate = torch.as_tensor(value, device=self._device, dtype=self._dtype)
         if candidate.numel() != 1 or not torch.all(
             torch.isfinite(candidate) & (candidate > 0)
@@ -4202,26 +4770,31 @@ class VaLLA(BaseFunctionalLaplace):
 
     @property
     def prior_mean(self) -> torch.Tensor:
+        """Return the zero parameter-prior mean."""
         return self._prior_mean
 
     @prior_mean.setter
     def prior_mean(self, value: float | torch.Tensor) -> None:
+        """Set the parameter-prior mean, which must be zero."""
         if torch.any(torch.as_tensor(value) != 0):
             raise ValueError("VaLLA currently requires prior_mean=0.")
         BaseLaplace.prior_mean.fset(self, value)  # type: ignore[attr-defined]
 
     @property
     def temperature(self) -> float:
+        """Return the positive likelihood temperature."""
         return self._temperature
 
     @temperature.setter
     def temperature(self, value: float) -> None:
+        """Set the positive likelihood temperature."""
         if not isfinite(value) or value <= 0:
             raise ValueError("temperature must be positive and finite.")
         self._temperature = value
 
     @property
     def sigma_noise(self) -> torch.Tensor:
+        """Return the regression observation standard deviation."""
         log_noise_variance = getattr(self, "log_noise_variance", None)
         if isinstance(log_noise_variance, torch.Tensor):
             return (0.5 * log_noise_variance).exp()
@@ -4229,6 +4802,7 @@ class VaLLA(BaseFunctionalLaplace):
 
     @sigma_noise.setter
     def sigma_noise(self, value: float | torch.Tensor) -> None:
+        """Set positive noise and synchronize its log-variance parameter."""
         candidate = torch.as_tensor(value, device=self._device, dtype=self._dtype)
         if not torch.all(torch.isfinite(candidate) & (candidate > 0)):
             raise ValueError("sigma_noise must be positive and finite.")
@@ -4244,6 +4818,18 @@ class VaLLA(BaseFunctionalLaplace):
 
     @staticmethod
     def _clone_fixed_inputs(value: Any) -> Any:
+        """Detach and recursively copy fixed inducing inputs.
+
+        Parameters
+        ----------
+        value : Any
+            Tensor, mapping, sequence, or metadata to copy.
+
+        Returns
+        -------
+        Any
+            Independent copy with detached tensors and the same nesting.
+        """
         if isinstance(value, torch.Tensor):
             return value.detach().clone()
         if isinstance(value, MutableMapping):
@@ -4253,6 +4839,21 @@ class VaLLA(BaseFunctionalLaplace):
         return deepcopy(value)
 
     def _make_inducing(self, inputs: Any) -> torch.Tensor | dict:
+        """Prepare inducing inputs and expose eligible locations for optimization.
+
+        Parameters
+        ----------
+        inputs : Any
+            Batched inducing tensor, mapping-style model input, or an
+            array-like input convertible to a floating-point tensor.
+
+        Returns
+        -------
+        torch.Tensor or dict
+            Copied inputs on the model device. Floating-point tensor inputs
+            become trainable parameters in the model dtype. Mappings and
+            integer tensors remain detached and fixed.
+        """
         converted = to_device(inputs, self._device, self._dtype)
         if isinstance(converted, MutableMapping):
             return self._clone_fixed_inputs(converted)
@@ -4265,11 +4866,20 @@ class VaLLA(BaseFunctionalLaplace):
         return converted.detach().clone()
 
     def _init_variational_factor(self) -> None:
+        """Initialize the packed lower-triangular variational factor."""
         rows, cols = torch.tril_indices(self.num_inducing, self.num_inducing)
         initial = torch.eye(self.num_inducing, device=self._device, dtype=self._dtype)
         self.L = torch.nn.Parameter(initial[rows, cols].clone())
 
     def _factor_matrix(self) -> torch.Tensor:
+        """Unpack the trainable lower-triangular variational factor.
+
+        Returns
+        -------
+        torch.Tensor
+            Lower-triangular matrix shaped ``[num_inducing, num_inducing]``
+            with gradients retained through its packed entries in ``L``.
+        """
         rows, cols = torch.tril_indices(
             self.num_inducing, self.num_inducing, device=self._device
         )
@@ -4280,10 +4890,35 @@ class VaLLA(BaseFunctionalLaplace):
         return matrix
 
     def _batch(self, batch: Any) -> tuple[Any, torch.Tensor]:
+        """Move a training batch and its targets to the model device.
+
+        Parameters
+        ----------
+        batch : Any
+            ``(inputs, targets)`` or a mapping containing ``dict_key_y``.
+
+        Returns
+        -------
+        tuple[Any, torch.Tensor]
+            Model inputs and targets on the model device. Floating-point
+            inputs use the model dtype; target dtypes are preserved.
+        """
         x, y = split_batch(batch, self.dict_key_y)
         return to_device(x, self._device, self._dtype), y.to(self._device)
 
     def _gather_inducing(self, loader: DataLoader) -> None:
+        """Choose inducing inputs and output coordinates from training data.
+
+        Parameters
+        ----------
+        loader : DataLoader
+            Training loader used for random or k-means selection.
+
+        Raises
+        ------
+        ValueError
+            If the loader is empty, too small, or incompatible with k-means.
+        """
         candidates = []
         classes = []
         source = loader
@@ -4302,10 +4937,11 @@ class VaLLA(BaseFunctionalLaplace):
             )[:count]
             indices = available_indices[choices]
             source = subset_loader(loader, indices)
+
         for batch in source:
             x, y = self._batch(batch)
             if self.likelihood == Likelihood.REWARD_MODELING:
-                x = individual_reward_inputs(x, self.dict_key_x)
+                x = _individual_reward_inputs(x, self.dict_key_x)
                 labels = torch.zeros(
                     x[self.dict_key_x].shape[0]
                     if isinstance(x, MutableMapping)
@@ -4319,8 +4955,10 @@ class VaLLA(BaseFunctionalLaplace):
                 labels = torch.zeros(y.shape[0], device=self._device, dtype=torch.long)
             candidates.append(x)
             classes.append(labels)
+
         if not candidates:
             raise ValueError("Cannot initialize inducing inputs from an empty loader.")
+
         inputs = concatenate_rows(candidates)
         labels = torch.cat(classes)
         available = labels.shape[0]
@@ -4339,6 +4977,7 @@ class VaLLA(BaseFunctionalLaplace):
             indices = torch.randperm(
                 available, generator=torch.Generator().manual_seed(self.seed)
             )[: self.num_inducing].to(self._device)
+
         self.inducing_locations = self._make_inducing(
             select_rows(inputs, indices, available)
         )
@@ -4347,6 +4986,21 @@ class VaLLA(BaseFunctionalLaplace):
     def _query_jacobians(
         self, x: torch.Tensor | MutableMapping, *, differentiable: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Return model Jacobians and outputs for query inputs.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched inputs.
+        differentiable : bool, default=False
+            Preserve gradients through Jacobian computation.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            Parameter Jacobians shaped ``[batch, outputs, parameters]`` and
+            network outputs shaped ``[batch, outputs]``.
+        """
         if self._uses_asdl_backend or (
             self.likelihood == Likelihood.REWARD_MODELING
             and not self._uses_backpack_backend
@@ -4366,6 +5020,20 @@ class VaLLA(BaseFunctionalLaplace):
                 setattr(self.model, "output_size", previous)
 
     def _inducing_jacobians(self) -> torch.Tensor:
+        """Return selected-output Jacobians at all inducing locations.
+
+        Returns
+        -------
+        torch.Tensor
+            Parameter Jacobians shaped ``[num_inducing, parameters]``, with
+            one output coordinate per location. Gradients through trainable
+            inducing locations are retained.
+
+        Raises
+        ------
+        RuntimeError
+            If inducing locations have not been initialized.
+        """
         if self.inducing_locations is None:
             raise RuntimeError("Inducing locations have not been initialized.")
         selected, _ = self.backend.selected_output_jacobians(
@@ -4378,7 +5046,30 @@ class VaLLA(BaseFunctionalLaplace):
     def _inducing_factor(
         self, jacobians: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Factor the inducing system without forming an ill-conditioned Gram matrix."""
+        """Factor the inducing system without forming its Gram matrix.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor
+            Selected-output inducing Jacobians shaped
+            ``[num_inducing, parameters]``.
+
+        Returns
+        -------
+        features : torch.Tensor
+            Variationally transformed inducing Jacobians divided by the
+            square root of prior precision, shaped
+            ``[num_inducing, parameters]``.
+        basis : torch.Tensor
+            Reduced QR basis of the vertically stacked feature transpose
+            and identity, shaped ``[parameters + num_inducing, num_inducing]``.
+        triangular : torch.Tensor
+            Upper-triangular QR factor shaped ``[num_inducing, num_inducing]``.
+
+        Notes
+        -----
+        The factorization uses float64 arithmetic for numerical stability.
+        """
         work_dtype = torch.float64
         prior_scale = self.prior_precision.to(work_dtype).sqrt()
         inducing = jacobians.to(work_dtype)
@@ -4400,7 +5091,29 @@ class VaLLA(BaseFunctionalLaplace):
         joint: bool,
         basis: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Form a PSD covariance using the orthogonal inducing complement."""
+        """Form latent covariance using the orthogonal inducing complement.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor
+            Query Jacobians shaped ``[batch, outputs, parameters]``.
+        inducing_jacobians : torch.Tensor
+            Selected-output inducing Jacobians shaped
+            ``[num_inducing, parameters]``.
+        joint : bool
+            Include covariance between query inputs when true.
+        basis : torch.Tensor or None, default=None
+            Precomputed orthonormal inducing basis shaped
+            ``[parameters + num_inducing, num_inducing]``. Computed from
+            ``inducing_jacobians`` when omitted.
+
+        Returns
+        -------
+        torch.Tensor
+            Latent covariance shaped ``[batch, outputs, outputs]``, or
+            ``[batch * outputs, batch * outputs]`` when ``joint=True``, in
+            the query Jacobian dtype. Observation noise is excluded.
+        """
         if basis is None:
             _, basis, _ = self._inducing_factor(inducing_jacobians)
         prior_scale = self.prior_precision.to(torch.float64).sqrt()
@@ -4419,6 +5132,31 @@ class VaLLA(BaseFunctionalLaplace):
     def _latent_distribution(
         self, x: torch.Tensor | MutableMapping, joint: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Return latent moments and factors for the variational objective.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        joint : bool, default=False
+            Retain covariance between input rows.
+
+        Returns
+        -------
+        mean : torch.Tensor
+            Network outputs shaped ``[batch, outputs]``, including when
+            ``joint=True``.
+        covariance : torch.Tensor
+            Latent covariance shaped ``[batch, outputs, outputs]``, or
+            ``[batch * outputs, batch * outputs]`` when ``joint=True``.
+            Observation noise is excluded.
+        features : torch.Tensor
+            Float64 scaled variational features shaped
+            ``[num_inducing, parameters]``.
+        triangular : torch.Tensor
+            Float64 upper-triangular inducing-system factor shaped
+            ``[num_inducing, num_inducing]``.
+        """
         x = to_device(x, self._device, self._dtype)
         jacobians, mean = self._query_jacobians(x, differentiable=self.enable_backprop)
         inducing_jacobians = self._inducing_jacobians()
@@ -4433,6 +5171,25 @@ class VaLLA(BaseFunctionalLaplace):
     def _glm_predictive_distribution(
         self, x: torch.Tensor | MutableMapping, joint: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute model outputs and VaLLA latent covariance for inputs.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            Batched model inputs.
+        joint : bool, default=False
+            Retain covariance between input rows.
+
+        Returns
+        -------
+        mean : torch.Tensor
+            Network outputs shaped ``[batch, outputs]``, flattened to
+            ``[batch * outputs]`` when ``joint=True``.
+        covariance : torch.Tensor
+            Latent covariance shaped ``[batch, outputs, outputs]``, or
+            ``[batch * outputs, batch * outputs]`` when ``joint=True``.
+            Observation noise is excluded.
+        """
         mean, covariance, _, _ = self._latent_distribution(x, joint)
         if joint:
             mean = mean.flatten()
@@ -4442,6 +5199,18 @@ class VaLLA(BaseFunctionalLaplace):
 
     @preserve_model_gradients
     def functional_variance(self, jacobians: torch.Tensor) -> torch.Tensor:
+        """Return per-input latent covariance from parameter Jacobians.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor
+            Parameter Jacobians shaped ``[batch, outputs, parameters]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Per-input covariance shaped ``[batch, outputs, outputs]``.
+        """
         self._check_fitted()
         self._check_jacobians(jacobians)
         inducing = self._inducing_jacobians()
@@ -4449,12 +5218,38 @@ class VaLLA(BaseFunctionalLaplace):
 
     @preserve_model_gradients
     def functional_covariance(self, jacobians: torch.Tensor) -> torch.Tensor:
+        """Return joint latent covariance from parameter Jacobians.
+
+        Parameters
+        ----------
+        jacobians : torch.Tensor
+            Parameter Jacobians shaped ``[batch, outputs, parameters]``.
+
+        Returns
+        -------
+        torch.Tensor
+            Joint covariance shaped ``[batch * outputs, batch * outputs]``.
+        """
         self._check_fitted()
         self._check_jacobians(jacobians)
         inducing = self._inducing_jacobians()
         return self._posterior_covariance(jacobians, inducing, joint=True)
 
     def _objective(self, x: Any, y: torch.Tensor) -> torch.Tensor:
+        """Return the minibatch-scaled alpha objective plus inducing KL.
+
+        Parameters
+        ----------
+        x : Any
+            Batched model inputs.
+        y : torch.Tensor
+            Regression targets or class labels.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar loss minimized during fitting.
+        """
         mean, covariance, features, triangular = self._latent_distribution(x)
         if self.likelihood == Likelihood.REGRESSION:
             y = regression_targets(y, mean)
@@ -4473,7 +5268,7 @@ class VaLLA(BaseFunctionalLaplace):
         else:
             y = classification_targets(y)
             if self.mc_softmax_samples:
-                draws = self._draw_gaussian(
+                draws = draw_gaussian(
                     mean, covariance, self.mc_softmax_samples, self.generator
                 )
                 log_probabilities = draws.log_softmax(dim=-1)
@@ -4501,11 +5296,26 @@ class VaLLA(BaseFunctionalLaplace):
                 log_term = -torch.nn.functional.cross_entropy(
                     scaled, y.long(), reduction="sum"
                 )
+
         solved = torch.linalg.solve_triangular(triangular.T, features, upper=False)
         kl = triangular.diagonal().abs().log().sum() - 0.5 * solved.square().sum()
         return -(self.n_data / y.shape[0]) * log_term / self.temperature + kl
 
     def _validation_nll(self, loader: DataLoader) -> torch.Tensor:
+        """Return mean predictive negative log likelihood on a loader.
+
+        Parameters
+        ----------
+        loader : DataLoader
+            Nonempty validation loader with regression targets or class labels.
+
+        Returns
+        -------
+        torch.Tensor
+            Scalar NLL averaged over examples, summing over regression output
+            coordinates. Regression includes observation noise; classification
+            uses the probit approximation.
+        """
         total = torch.zeros((), device=self._device, dtype=self._dtype)
         count = 0
         for batch in loader:
@@ -4541,6 +5351,30 @@ class VaLLA(BaseFunctionalLaplace):
         progress_bar: bool = False,
         override: bool = True,
     ) -> None:
+        """Optimize the VaLLA variational posterior and hyperparameters.
+
+        Parameters
+        ----------
+        train_loader : DataLoader
+            Training batches used for inducing selection and optimization.
+        iterations : int, default=100
+            Number of minibatch optimizer steps.
+        lr : float, default=1e-3
+            Adam learning rate.
+        val_loader : DataLoader or None, default=None
+            Optional data for predictive negative log likelihood.
+        val_steps : int or None, default=None
+            Evaluate validation NLL every ``val_steps`` iterations when given.
+        progress_bar : bool, default=False
+            Show an optimization progress bar.
+        override : bool, default=True
+            Reset inducing and variational state; false continues a prior fit.
+
+        Raises
+        ------
+        ValueError
+            If optimization settings or inducing classes are invalid.
+        """
         if (
             not isinstance(iterations, Integral)
             or isinstance(iterations, bool)
@@ -4571,6 +5405,7 @@ class VaLLA(BaseFunctionalLaplace):
             raise ValueError(
                 "Classification alpha != 1 requires mc_softmax_samples > 0."
             )
+
         self.model.eval()
         self.n_data = len(training_indices(train_loader))
         x_first, _ = self._batch(next(iter(train_loader)))
@@ -4578,6 +5413,7 @@ class VaLLA(BaseFunctionalLaplace):
             raise ValueError(
                 "BackPACK does not support mapping-style inputs; use AsdlGGN or CurvlinopsGGN."
             )
+
         self.n_outputs = self.model(x_first).shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
         if override or not self._fitted:
@@ -4590,6 +5426,7 @@ class VaLLA(BaseFunctionalLaplace):
                 self.inducing_classes = self._initial_inducing_classes.detach().clone()
             self._init_variational_factor()
             self.fit_history_ = {"objective": [], "val_nll": []}
+
         if (
             self.inducing_classes.shape != (self.num_inducing,)
             or torch.any(self.inducing_classes < 0)
@@ -4598,18 +5435,21 @@ class VaLLA(BaseFunctionalLaplace):
             raise ValueError(
                 "inducing_classes must contain one valid output per inducing input."
             )
+
         self._fitted = False
         parameters = [self.L, self.log_prior_precision]
         if self.log_noise_variance is not None:
             parameters.append(self.log_noise_variance)
         if isinstance(self.inducing_locations, torch.nn.Parameter):
             parameters.append(self.inducing_locations)
+
         optimizer = torch.optim.Adam(parameters, lr=lr)
         iterator = range(iterations)
         if progress_bar:
             from tqdm import trange
 
             iterator = trange(iterations, desc="Fitting VaLLA")
+
         batches = iter(train_loader)
         for step in iterator:
             try:
@@ -4629,6 +5469,7 @@ class VaLLA(BaseFunctionalLaplace):
                     self.fit_history_["val_nll"].append(
                         float(self._validation_nll(val_loader))
                     )
+
         self._fitted = True
         if val_loader is not None and (not val_steps or iterations % val_steps):
             with torch.no_grad():
@@ -4637,23 +5478,81 @@ class VaLLA(BaseFunctionalLaplace):
                 )
 
     def optimize_prior_precision(self, *args, **kwargs) -> None:
+        """Reject separate prior tuning because :meth:`fit` learns the precision.
+
+        Parameters
+        ----------
+        *args : Any
+            Positional arguments accepted for compatibility with BaseLaplace.
+        **kwargs : Any
+            Keyword arguments accepted for compatibility with BaseLaplace.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised. VaLLA optimizes prior precision jointly with the
+            variational parameters during fitting.
+        """
         raise NotImplementedError("VaLLA optimizes prior precision during fit.")
 
     def log_marginal_likelihood(self, *args, **kwargs):
+        """Reject marginal-likelihood evaluation for the VaLLA approximation.
+
+        Parameters
+        ----------
+        *args : Any
+            Positional arguments accepted for compatibility with BaseLaplace.
+        **kwargs : Any
+            Keyword arguments accepted for compatibility with BaseLaplace.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised. The optimized alpha-divergence objective is not a
+            Laplace marginal likelihood.
+        """
         raise NotImplementedError(
             "VaLLA's variational objective is not a Laplace marginal likelihood."
         )
 
     @property
     def log_likelihood(self) -> torch.Tensor:
+        """Reject access to an untracked training log likelihood.
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised because VaLLA records its alpha-divergence
+            objective rather than a training log likelihood.
+        """
         raise NotImplementedError("VaLLA optimizes an alpha-divergence objective.")
 
     def state_dict(self) -> dict[str, Any]:
+        """Return a checkpoint containing fitted variational and inducing state.
+
+        Returns
+        -------
+        dict[str, Any]
+            Variational factor, inducing locations and output coordinates,
+            hyperparameters, fitting history, initialization settings, random
+            generator state, model fingerprint, and backend/input settings.
+
+        Raises
+        ------
+        RuntimeError
+            If the posterior has not been fitted.
+
+        Notes
+        -----
+        Loading validates the pretrained model against the saved fingerprint;
+        it does not restore model parameters or buffers. Construct the
+        receiving estimator with the same pretrained model and configuration.
+        """
         self._check_fitted()
         return {
             "cls_name": type(self).__name__,
             "n_params": self.n_params,
-            "model_fingerprint": model_fingerprint(self.model),
+            "model_fingerprint": _model_fingerprint(self.model),
             "likelihood": self.likelihood,
             "inducing_locations": self.inducing_locations.detach().clone()
             if isinstance(self.inducing_locations, torch.Tensor)
@@ -4682,6 +5581,18 @@ class VaLLA(BaseFunctionalLaplace):
         }
 
     def load_state_dict(self, state_dict: dict[str, Any]) -> None:
+        """Restore a fitted VaLLA checkpoint for the same pretrained model.
+
+        Parameters
+        ----------
+        state_dict : dict[str, Any]
+            State previously returned by :meth:`state_dict`.
+
+        Raises
+        ------
+        ValueError
+            If the checkpoint is unfitted or incompatible with this model.
+        """
         if not state_dict.get("fitted", False):
             raise ValueError("VaLLA checkpoint must contain a fitted posterior.")
         if (
@@ -4694,7 +5605,7 @@ class VaLLA(BaseFunctionalLaplace):
         if state_dict["likelihood"] != self.likelihood:
             raise ValueError("Checkpoint likelihood does not match.")
         self._validate_checkpoint_configuration(state_dict)
-        check_model_fingerprint(self.model, state_dict["model_fingerprint"])
+        _check_model_fingerprint(self.model, state_dict["model_fingerprint"])
         self.seed = state_dict["seed"]
         self.generator.set_state(state_dict["generator_state"])
         self.inducing_locations = self._make_inducing(state_dict["inducing_locations"])

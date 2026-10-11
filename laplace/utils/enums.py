@@ -37,8 +37,13 @@ class FunctionalApproximation(str, Enum):
     """Posterior approximation used for function-space Laplace."""
 
     SOD = "sod"
+    """Subset-of-data GP posterior implemented by FunctionalLaplace."""
+
     NYSTROM = "nystrom"
+    """Nyström feature approximation implemented by ELLA."""
+
     VARIATIONAL = "variational"
+    """Variational inducing-output approximation implemented by VaLLA."""
 
 
 class Likelihood(str, Enum):

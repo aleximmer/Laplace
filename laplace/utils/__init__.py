@@ -9,6 +9,20 @@ from laplace.utils.enums import (
     TuningMethod,
 )
 from laplace.utils.feature_extractor import FeatureExtractor
+from laplace.utils.functional_utils import (
+    batch_size,
+    classification_targets,
+    concatenate_rows,
+    draw_gaussian,
+    preserve_model_gradients,
+    regression_targets,
+    same_configuration,
+    select_rows,
+    split_batch,
+    subset_loader,
+    to_device,
+    training_indices,
+)
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.metrics import RunningNLLMetric
 from laplace.utils.subnetmask import (
@@ -49,6 +63,18 @@ __all__ = [
     "symeig",
     "block_diag",
     "normal_samples",
+    "batch_size",
+    "classification_targets",
+    "concatenate_rows",
+    "draw_gaussian",
+    "preserve_model_gradients",
+    "regression_targets",
+    "same_configuration",
+    "select_rows",
+    "split_batch",
+    "subset_loader",
+    "to_device",
+    "training_indices",
     "SoDSampler",
     "_is_batchnorm",
     "_is_valid_scalar",

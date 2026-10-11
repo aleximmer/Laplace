@@ -26,22 +26,38 @@ def Laplace(
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : Likelihood or str in {'classification', 'regression'}
-    subset_of_weights : SubsetofWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER
+        Pretrained network around which to approximate the posterior.
+    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+        Likelihood used for fitting. Reward modeling requires an estimator
+        that supports pairwise preferences, such as ELLA or VaLLA.
+    subset_of_weights : SubsetOfWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER
         subset of weights to consider for inference
     hessian_structure : HessianStructure or str in {'diag', 'kron', 'full', 'lowrank', 'gp'}, default=HessianStructure.KRON
         structure of the Hessian approximation (note that in case of 'gp',
         we are not actually doing any Hessian approximation, the inference is instead done in the functional space)
-    functional_approximation : {'sod', 'nystrom', 'variational'}, default='sod'
-        Function-space method for `hessian_structure='gp'` and
-        `subset_of_weights='all'`. The default uses `FunctionalLaplace` and
-        requires `n_subset`. Nyström selects `ELLA` and requires
+    *args : Any
+        Additional positional arguments passed to the selected estimator.
+    functional_approximation : FunctionalApproximation or {'sod', 'nystrom', 'variational'}, default=FunctionalApproximation.SOD
+        Function-space method for `hessian_structure='gp'`. The default uses
+        `FunctionalLaplace` for all weights or `FunctionalLLLaplace` for the
+        last layer, and requires `n_subset`. Nyström selects `ELLA` and requires
         `subsample_size` and `n_eigenvalues`. Variational selects `VaLLA` and
         requires `inducing_locations`; a strategy also needs `num_inducing`.
+        Nyström and variational methods require `subset_of_weights='all'`.
+    **kwargs : Any
+        Additional keyword arguments passed to the selected estimator,
+        including its method-specific configuration.
+
     Returns
     -------
     laplace : BaseLaplace
         chosen subclass of BaseLaplace instantiated with additional arguments
+
+    Raises
+    ------
+    ValueError
+        If an approximation name or combination of weight subset, Hessian
+        structure, and function-space method is unsupported.
     """
     if subset_of_weights == "subnetwork" and hessian_structure not in ["full", "diag"]:
         raise ValueError(

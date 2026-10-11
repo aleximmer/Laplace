@@ -15,7 +15,7 @@
 The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
 It also includes function-space estimators selected through `Laplace` with
-`hessian_structure="gp"`: [ELLA](docs/ella.md) uses
+`subset_of_weights="all"` and `hessian_structure="gp"`: [ELLA](docs/ella.md) uses
 `functional_approximation="nystrom"`, while [VaLLA](docs/valla.md) uses
 `functional_approximation="variational"`.
 

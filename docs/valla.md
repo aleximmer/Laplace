@@ -33,6 +33,14 @@ inducing and variational state while retaining learned prior precision and
 regression noise. Pass `override=False` to continue fitting and append to
 `fit_history_`.
 
+The prior precision must be a positive scalar and the prior mean must be zero.
+Floating-point tensor inducing locations are optimized during fitting.
+Mapping-style inputs and integer tensor locations remain fixed, while the
+variational factor and hyperparameters are optimized. When locations are
+supplied directly, `inducing_classes` selects one output coordinate per location
+and defaults to zero. Selection strategies use training labels for
+classification and coordinate zero for regression and individual rewards.
+
 VaLLA supports classification, regression, and reward modeling. For
 classification and reward modeling, `mc_softmax_samples > 0` estimates the
 alpha data term using latent samples. The default uses a deterministic probit
@@ -54,9 +62,13 @@ Restoring a checkpoint requires an equivalent pretrained model with matching
 input keys, curvature backend, backend options, and backpropagation setting.
 The checkpoint also restores the seed used to initialize inducing locations and
 the random-generator state used for Monte Carlo fitting.
+Model weights and buffers are checked against the checkpoint and must already
+match; `load_state_dict` does not load them into the network.
 
 Run `pytest tests/test_valla.py` for CPU coverage and
 `pytest -m cuda tests/test_valla_cuda.py` with CUDA PyTorch.
 
 See the [VaLLA API reference](api_reference/valla.md).
-The standalone runnable example is `examples/valla.py` in the repository.
+Run the standalone API example with `python -m examples.valla` from the repository
+root. It uses an untrained linear network to demonstrate fitting and tensor
+shapes; applications should supply a pretrained model.

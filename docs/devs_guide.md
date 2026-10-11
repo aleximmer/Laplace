@@ -98,11 +98,25 @@ For `hessian_structure="gp"`, the factory also accepts
 `functional_approximation="sod" | "nystrom" | "variational"`. The latter two
 select [`ELLA`](ella.md) and [`VaLLA`](valla.md), respectively. These and
 `FunctionalLaplace` share
-`BaseFunctionalLaplace` prediction and sampling methods, while each estimator
+[`BaseFunctionalLaplace`](api_reference/functionallaplace.md#laplace.baselaplace.BaseFunctionalLaplace)
+prediction and sampling methods, while each estimator
 implements its own fitting and posterior covariance. New function-space methods
 should implement `_glm_predictive_distribution`, `fit`, and method-specific
 checkpoint state; they must not inherit another method's marginal-likelihood
 formula by default.
+
+The predictive-moment method returns a mean shaped `[batch, outputs]` and
+covariance shaped `[batch, outputs, outputs]`. With `joint=True`, flatten the
+mean to `[batch * outputs]` and return covariance shaped
+`[batch * outputs, batch * outputs]`, ordered by input and then output.
+These moments exclude observation noise. Implement `_refresh_posterior` if
+changing hyperparameters invalidates cached posterior factors.
+
+Reusable function-space helpers live in `laplace/utils/functional_utils.py`
+and are exported through `laplace.utils`. See the
+[utilities API reference](api_reference/utils.md) for sampling, batch handling,
+target shaping, and device conversion. Helpers prefixed with an underscore
+support specific estimator internals and are not part of the public API.
 
 Additionally, the package provides utilities for
 decomposing a neural network into feature extractor and last layer for `LLLaplace` subclasses ([`laplace.utils.feature_extractor`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/feature_extractor.py))

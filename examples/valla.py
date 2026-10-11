@@ -1,4 +1,9 @@
-"""Fit and query VaLLA through the Laplace factory on a small CPU dataset."""
+"""Demonstrate VaLLA posterior fitting and querying on a small CPU dataset.
+
+Run with ``python -m examples.valla`` from the repository root. The linear
+network is randomly initialized to illustrate the API; applications should
+supply a pretrained model because posterior fitting keeps its weights fixed.
+"""
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
@@ -7,6 +12,7 @@ from laplace import Laplace
 
 
 def main() -> None:
+    """Fit a regression posterior and print joint predictive tensor shapes."""
     torch.manual_seed(7)
     inputs = torch.tensor([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
     targets = inputs.sum(dim=-1, keepdim=True)

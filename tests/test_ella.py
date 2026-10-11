@@ -775,12 +775,13 @@ def test_functional_hyperparameters_remain_finite_in_model_dtype(option):
 
 
 @pytest.mark.parametrize("drop_last", [False, True])
-def test_ella_replays_partial_random_sampler_epoch(drop_last):
+def test_ella_samples_basis_and_training_independently(drop_last):
 
     class CountingRandomSampler(RandomSampler):
         def __iter__(self):
-            self.calls += 1
-            yield from super().__iter__()
+            indices = list(super().__iter__())
+            self.epochs.append(indices)
+            yield from indices
 
     row_ids = torch.arange(1, 13, dtype=torch.float32)
     inputs = torch.stack([row_ids, row_ids.square()], dim=-1)
@@ -791,7 +792,7 @@ def test_ella_replays_partial_random_sampler_epoch(drop_last):
         num_samples=5 if drop_last else 4,
         generator=torch.Generator().manual_seed(12),
     )
-    sampler.calls = 0
+    sampler.epochs = []
     loader = DataLoader(dataset, batch_size=2, sampler=sampler, drop_last=drop_last)
     estimator = make_ella(
         torch.nn.Linear(2, 1), "regression", subsample_size=2, n_eigenvalues=2
@@ -812,9 +813,41 @@ def test_ella_replays_partial_random_sampler_epoch(drop_last):
     estimator._build_basis = build_basis
     estimator._features = features
     estimator.fit(loader)
-    assert sampler.calls == 1
+    assert len(sampler.epochs) == 2
     assert estimator.n_data == len(fitted_indices) == 4
-    assert set(basis_indices) <= set(fitted_indices)
+    assert set(basis_indices) <= set(sampler.epochs[0])
+    assert fitted_indices == sampler.epochs[1][:4]
+
+
+@pytest.mark.parametrize("empty_fitting_pass", [False, True])
+def test_ella_counts_examples_from_fitting_pass(empty_fitting_pass):
+    class ChangingBatchSampler:
+        batch_size = 2
+
+        def __init__(self):
+            fitting_batches = [] if empty_fitting_pass else [[4, 5], [6, 7], [8, 9]]
+            self.epochs = iter(([[0, 1], [2, 3]], fitting_batches))
+
+        def __iter__(self):
+            return iter(next(self.epochs))
+
+    row_ids = torch.arange(1, 11, dtype=torch.float32)
+    inputs = torch.stack([row_ids, row_ids.square()], dim=-1)
+    loader = DataLoader(
+        TensorDataset(inputs, inputs.sum(dim=-1, keepdim=True)),
+        batch_sampler=ChangingBatchSampler(),
+    )
+    estimator = make_ella(torch.nn.Linear(2, 1), "regression")
+
+    if empty_fitting_pass:
+        with pytest.raises(ValueError, match="nonempty training loader"):
+            estimator.fit(loader)
+        assert estimator.n_data == 0
+        assert not estimator._fitted
+    else:
+        estimator.fit(loader)
+        assert estimator.n_data == 6
+        assert estimator.fit_history_["processed_examples"] == [2, 4, 6]
 
 
 def test_seeded_ella_map_mean_reference():

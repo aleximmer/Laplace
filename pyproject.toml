@@ -40,6 +40,9 @@ Homepage = "https://github.com/aleximmer/Laplace"
 requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
+[tool.pdm.build]
+source-includes = ["tests", "examples"]
+
 [tool.setuptools]
 py-modules = ["laplace"]
 
