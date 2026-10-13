@@ -571,6 +571,8 @@ class BaseLaplace:
 
         for prior_prec in pbar:
             self.prior_precision = prior_prec
+            if isinstance(loss, torchmetrics.Metric):
+                loss.reset()
 
             try:
                 result = validate(
