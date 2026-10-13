@@ -3,7 +3,9 @@ import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
+from torch.utils.data import DataLoader, TensorDataset
 
+from laplace import KronLaplace
 from laplace.curvature import AsdlGGN, BackPackGGN
 from laplace.utils import Kron, block_diag
 from laplace.utils import kron as kron_prod
@@ -294,3 +296,41 @@ def test_matrix_consistent():
     M_true.diagonal().add_(3.4)
     kron_decomp += torch.tensor(3.4)
     assert torch.allclose(M_true, kron_decomp.to_matrix(exponent=1))
+
+
+@pytest.mark.parametrize("n_params", [1, 3])
+@pytest.mark.parametrize("leading_shape", [(), (1,), (2,), (1, 1), (2, 1)])
+@pytest.mark.parametrize("decomposed", [False, True])
+@pytest.mark.parametrize("two_factors", [False, True])
+def test_bmm_preserves_singleton_shapes(
+    n_params, leading_shape, decomposed, two_factors
+):
+    factor = torch.diag(torch.arange(1, n_params + 1, dtype=torch.float64))
+    factors = [factor, torch.tensor([[2.0]])] if two_factors else [factor]
+    curvature = Kron([factors])
+    dense = curvature.to_matrix()
+    if decomposed:
+        curvature = curvature.decompose()
+        dense = torch.linalg.inv(dense)
+    weights = (
+        torch.arange(1, int(np.prod(leading_shape)) * n_params + 1, dtype=torch.float64)
+        .reshape(*leading_shape, n_params)
+        .requires_grad_()
+    )
+    result = curvature.bmm(weights)
+    expected = weights @ dense
+    torch.testing.assert_close(result, expected)
+    result_grad = torch.autograd.grad(result.sum(), weights, retain_graph=True)[0]
+    expected_grad = torch.autograd.grad(expected.sum(), weights)[0]
+    torch.testing.assert_close(result_grad, expected_grad)
+
+
+def test_kron_square_norm_single_parameter():
+    model = nn.Linear(1, 1, bias=False).double()
+    inputs = torch.tensor([[-1.0], [0.0], [1.0], [2.0]])
+    posterior = KronLaplace(model, "regression")
+    posterior.fit(DataLoader(TensorDataset(inputs, 0.5 * inputs), batch_size=2))
+    value = posterior.mean.detach() + 0.3
+    delta = value - posterior.mean
+    expected = delta @ posterior.posterior_precision.to_matrix() @ delta
+    torch.testing.assert_close(posterior.square_norm(value), expected)
