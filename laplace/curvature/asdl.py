@@ -196,15 +196,129 @@ class AsdlInterface(CurvatureInterface):
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
-        vec = list()
-        for module in self.model.modules():
+
+        # ASDL attaches Fisher statistics to modules, but Laplace indexes a single
+        # flattened parameter vector. In last-layer mode that vector belongs to
+        # `_model`, not to the feature extractor around it.
+        model = self._model
+
+        # `self.params` contains trainable parameters only. Frozen parameters must
+        # not consume index positions when we map module statistics into this vector.
+        n_params = sum(p.numel() for p in self.params)
+        selected = self.subnetwork_indices
+        if selected is not None:
+            # Validate against the full trainable vector before inspecting modules.
+            # Copy indices once so each module's `.any()` range check runs on CPU
+            # instead of synchronizing a GPU reduction for every module.
+            selected = selected.cpu()
+            if ((selected < 0) | (selected >= n_params)).any():
+                raise IndexError("Subnetwork indices exceed the model parameters.")
+
+        # Hold each module's values and destination until we know the Fisher
+        # device and dtype. Model outputs can have a different dtype from Fisher.
+        pieces = []
+        result_dtype = None
+        result_device = None
+        offset = 0
+        for module_name, module in model.named_modules():
+            # Direct parameters appear before child modules in PyTorch's flattened
+            # order. `recurse=False` prevents counting child parameters twice.
+            module_params = [
+                (name, p)
+                for name, p in module.named_parameters(recurse=False)
+                if p.requires_grad
+            ]
+            module_n_params = sum(p.numel() for _, p in module_params)
+            if not module_n_params:
+                continue
+
+            # These are positions in `selected`, not positions in the full vector.
+            # The half-open range identifies indices owned by this module.
+            in_module = (
+                None
+                if selected is None
+                else (selected >= offset) & (selected < offset + module_n_params)
+            )
+            if in_module is not None and not in_module.any():
+                # No requested entry needs this module's Fisher statistics, even
+                # if ASDL never computed them. Its parameters still shift offsets.
+                offset += module_n_params
+                continue
+
             stats = getattr(module, "fisher", None)
             if stats is None:
-                continue
-            vec.extend(stats.to_vector())
-        diag_ggn = torch.cat(vec)
-        if self.subnetwork_indices is not None:
-            diag_ggn = diag_ggn[self.subnetwork_indices]
+                # Missing stats can mean an unused module or one ASDL does not
+                # support. We cannot infer zero curvature for parameters we need.
+                raise ValueError(
+                    "ASDL produced no diagonal Fisher statistics for "
+                    f"parameters in module '{module_name}' "
+                    f"({type(module).__name__})."
+                )
+
+            module_vec_parts = []
+            for name, param in module_params:
+                # Read each statistic by parameter name: ASDL's fixed weight/bias
+                # order can differ from the module's registration order.
+                part = getattr(getattr(stats, "diag", None), name, None)
+                if part is None or part.numel() != param.numel():
+                    raise ValueError(
+                        "ASDL diagonal Fisher statistics do not match the parameters "
+                        f"in module '{module_name}' ({type(module).__name__})."
+                    )
+                module_vec_parts.append(part.reshape(-1))
+
+            module_vec = torch.cat(module_vec_parts)
+
+            if in_module is None:
+                # With no subnetwork, the module fills its contiguous full-vector
+                # range directly.
+                positions = slice(offset, offset + module_n_params)
+                values = module_vec
+            else:
+                # Subtract the module offset to index its local Fisher vector.
+                # `in_module` retains the caller's order, including scattered or
+                # repeated indices, when these values are written to the result.
+                positions = in_module
+                local_indices = (selected[in_module] - offset).to(module_vec.device)
+                values = module_vec[local_indices]
+
+            # Use the statistics' device and promote their dtypes across modules;
+            # allocating from `f` could silently downcast these values.
+            if result_device is None:
+                result_device = values.device
+            elif result_device != values.device:
+                raise ValueError("ASDL Fisher statistics span multiple devices.")
+
+            result_dtype = (
+                values.dtype
+                if result_dtype is None
+                else torch.promote_types(result_dtype, values.dtype)
+            )
+
+            pieces.append((positions, values))
+            offset += module_n_params
+
+        # A mismatch means module traversal did not describe Laplace's vector,
+        # for example because parameters are shared in an unsupported layout.
+        if offset != n_params:
+            raise ValueError("ASDL module parameters do not match model parameters.")
+
+        if pieces:
+            diag_ggn = torch.empty(
+                n_params if selected is None else selected.numel(),
+                device=result_device,
+                dtype=result_dtype,
+            )
+            for positions, values in pieces:
+                # A boolean mask locates destinations in subnetwork order. Move it
+                # to the Fisher device only for the final assignment.
+                if isinstance(positions, torch.Tensor):
+                    positions = positions.to(device=result_device)
+                diag_ggn[positions] = values
+        else:
+            # No Fisher values were gathered, as with an empty subnetwork.
+            diag_ggn = f.new_empty(0)
+
         if type(self) is AsdlEF and self.likelihood == "regression":
             curv_factor = 0.5  # correct scaling for diag ef
         else:

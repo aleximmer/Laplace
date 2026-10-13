@@ -10,6 +10,8 @@ nav:
   - Introduction: index.md
   - Developer's Guide: devs_guide.md
   - "Example: Regression": regression_example.md
+  - ELLA: ella.md
+  - VaLLA: valla.md
   - "Example: Calibration": calibration_example.md
   - "Example: GP Inference": calibration_gp_example.md
   - "Example: MC Acquistion Functions": expectation_example.md
@@ -17,6 +19,8 @@ nav:
   - "Example: Reward Modeling": reward_modeling_example.md
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
+      - ELLA: api_reference/ella.md
+      - VaLLA: api_reference/valla.md
       - Laplace Options: api_reference/enums.md
       - Base Laplace: api_reference/baselaplace.md
       - Parametric Laplace: api_reference/parametriclaplace.md

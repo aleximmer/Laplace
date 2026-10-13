@@ -151,6 +151,98 @@ def test_diag_ggn_stoch_cls_asdl(class_Xy, model):
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)
 
 
+def test_diag_ggn_asdl_subnetwork_index_order(class_Xy, model):
+    X, y = class_Xy
+    backend = AsdlGGN(model, "classification")
+    _, full_diag = backend.diag(X, y)
+    indices = torch.LongTensor([model.n_params - 1, 0, model.n_params // 2])
+
+    backend.subnetwork_indices = indices
+    _, subnet_diag = backend.diag(X, y)
+
+    assert torch.allclose(subnet_diag, full_diag[indices])
+
+
+@pytest.mark.parametrize("stochastic", [False, True])
+def test_diag_ggn_asdl_subnetwork_with_frozen_module(class_Xy, stochastic):
+    X, y = class_Xy
+    model = nn.Sequential(nn.Linear(3, 3), nn.Tanh(), nn.Linear(3, 2))
+    for param in model[0].parameters():
+        param.requires_grad_(False)
+    indices = torch.LongTensor([7, 0])
+
+    torch.manual_seed(711)
+    _, full_diag = AsdlGGN(model, "classification", stochastic=stochastic).diag(X, y)
+    torch.manual_seed(711)
+    _, subnet_diag = AsdlGGN(
+        model, "classification", subnetwork_indices=indices, stochastic=stochastic
+    ).diag(X, y)
+
+    assert full_diag.numel() == 8
+    assert torch.allclose(subnet_diag, full_diag[indices])
+
+
+@pytest.mark.parametrize("frozen_name", ["weight", "bias"])
+def test_diag_ggn_asdl_subnetwork_with_partially_frozen_module(class_Xy, frozen_name):
+    X, y = class_Xy
+    model = nn.Linear(3, 2)
+    getattr(model, frozen_name).requires_grad_(False)
+    n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    indices = torch.LongTensor([n_params - 1, 0])
+
+    _, full_diag = AsdlGGN(model, "classification").diag(X, y)
+    _, subnet_diag = AsdlGGN(model, "classification", subnetwork_indices=indices).diag(
+        X, y
+    )
+
+    assert full_diag.numel() == n_params
+    assert torch.allclose(subnet_diag, full_diag[indices])
+
+
+def test_diag_ggn_asdl_uses_fisher_dtype(class_Xy):
+    class CastOutput(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(3, 2, dtype=torch.float64)
+
+        def forward(self, x):
+            return self.linear(x).float()
+
+    X, y = class_Xy
+    model = CastOutput()
+    _, diag = AsdlGGN(model, "classification").diag(X.double(), y)
+    fisher_diag = torch.cat(list(model.linear.fisher.to_vector()))
+
+    assert diag.dtype == torch.float64
+    assert torch.equal(diag, fisher_diag)
+
+
+def test_diag_ggn_asdl_respects_parameter_registration_order(class_Xy):
+    class BiasFirstLinear(nn.Linear):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            weight = self.weight
+            del self._parameters["weight"]
+            self.register_parameter("weight", weight)
+
+    X, y = class_Xy
+    standard = nn.Linear(3, 2)
+    bias_first = BiasFirstLinear(3, 2)
+    bias_first.load_state_dict(standard.state_dict())
+    assert list(dict(bias_first.named_parameters())) == ["bias", "weight"]
+
+    _, standard_diag = AsdlGGN(standard, "classification").diag(X, y)
+    _, bias_first_diag = AsdlGGN(bias_first, "classification").diag(X, y)
+    expected = torch.cat([standard_diag[-2:], standard_diag[:-2]])
+    indices = torch.LongTensor([0, 2, 7])
+    _, subnet_diag = AsdlGGN(
+        bias_first, "classification", subnetwork_indices=indices
+    ).diag(X, y)
+
+    assert torch.allclose(bias_first_diag, expected)
+    assert torch.allclose(subnet_diag, expected[indices])
+
+
 def test_kron_ggn_cls_asdl_against_backpack(class_Xy, model):
     X, y = class_Xy
     model2 = deepcopy(model)

@@ -90,9 +90,33 @@ mkdocs serve
 
 The laplace package consists of two main components:
 
-1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'`, `'diag'` and `'gp'`). This results in _ten_ currently available options: `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, `laplace.FunctionalLaplace` the corresponding last-layer variations `laplace.FullLLLaplace`, `laplace.KronLLLaplace`, `laplace.DiagLLLaplace` and `laplace.FunctionalLLLaplace` (which are all subclasses of [`laplace.LLLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/lllaplace.py)), [`laplace.SubnetLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/subnetlaplace.py) (which only supports `'full'` and `'diag'` Hessian approximations) and `laplace.LowRankLaplace` (which only supports inference over `'all'` weights). All of these can be conveniently accessed via the [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
+1. The subclasses of [`laplace.BaseLaplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/baselaplace.py) that implement different sparsity structures: different subsets of weights (`'all'`, `'subnetwork'` and `'last_layer'`) and different structures of the Hessian approximation (`'full'`, `'kron'`, `'lowrank'`, `'diag'` and `'gp'`). The weight-space and subset-of-data GP estimators include `laplace.FullLaplace`, `laplace.KronLaplace`, `laplace.DiagLaplace`, `laplace.FunctionalLaplace`, their last-layer variations, the subnetwork variants, and `laplace.LowRankLaplace`. The function-space ELLA and VaLLA variants are selected through the same [`laplace.Laplace`](https://github.com/AlexImmer/Laplace/blob/main/laplace/laplace.py) function.
 2. The backends in [`laplace.curvature`](https://github.com/AlexImmer/Laplace/blob/main/laplace/curvature/) which provide access to Hessian approximations of
    the corresponding sparsity structures, for example, the diagonal GGN.
+
+For `hessian_structure="gp"`, the factory also accepts
+`functional_approximation="sod" | "nystrom" | "variational"`. The latter two
+select [`ELLA`](ella.md) and [`VaLLA`](valla.md), respectively. These and
+`FunctionalLaplace` share
+[`BaseFunctionalLaplace`](api_reference/functionallaplace.md#laplace.baselaplace.BaseFunctionalLaplace)
+prediction and sampling methods, while each estimator
+implements its own fitting and posterior covariance. New function-space methods
+should implement `_glm_predictive_distribution`, `fit`, and method-specific
+checkpoint state; they must not inherit another method's marginal-likelihood
+formula by default.
+
+The predictive-moment method returns a mean shaped `[batch, outputs]` and
+covariance shaped `[batch, outputs, outputs]`. With `joint=True`, flatten the
+mean to `[batch * outputs]` and return covariance shaped
+`[batch * outputs, batch * outputs]`, ordered by input and then output.
+These moments exclude observation noise. Implement `_refresh_posterior` if
+changing hyperparameters invalidates cached posterior factors.
+
+Reusable function-space helpers live in `laplace/utils/functional_utils.py`
+and are exported through `laplace.utils`. See the
+[utilities API reference](api_reference/utils.md) for sampling, batch handling,
+target shaping, and device conversion. Helpers prefixed with an underscore
+support specific estimator internals and are not part of the public API.
 
 Additionally, the package provides utilities for
 decomposing a neural network into feature extractor and last layer for `LLLaplace` subclasses ([`laplace.utils.feature_extractor`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/feature_extractor.py))

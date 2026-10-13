@@ -1,6 +1,6 @@
 [project]
 name = "laplace-torch"
-version = "0.2.3"
+version = "0.3"
 description = "laplace - Laplace approximations for deep learning"
 readme = "README.md"
 authors = [
@@ -13,18 +13,19 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
 license = { text = "MIT" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "asdfghjkl == 0.1a4",
   "backpack-for-pytorch",
-  "curvlinops-for-pytorch >= 2.0",
+  "curvlinops-for-pytorch >= 3.0.1",
   "numpy",
+  "scipy >= 1.12",
+  "tqdm >= 4.66",
   "opt_einsum",
   "torch >= 2.0",
   "torchmetrics",
@@ -36,11 +37,13 @@ Homepage = "https://github.com/aleximmer/Laplace"
 "Bug Tracker" = "https://github.com/aleximmer/Laplace/issues"
 
 [build-system]
-requires = ["pdm-backend"]
-build-backend = "pdm.backend"
+requires = ["uv_build>=0.13.0,<0.14"]
+build-backend = "uv_build"
 
-[tool.setuptools]
-py-modules = ["laplace"]
+[tool.uv.build-backend]
+module-root = ""
+module-name = "laplace"
+source-include = ["tests", "examples"]
 
 [tool.uv]
 default-groups = ["docs"]

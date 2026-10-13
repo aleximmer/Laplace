@@ -8,6 +8,8 @@
 """
 
 from laplace.baselaplace import (
+    ELLA,
+    BaseFunctionalLaplace,
     BaseLaplace,
     DiagLaplace,
     FullLaplace,
@@ -15,6 +17,7 @@ from laplace.baselaplace import (
     KronLaplace,
     LowRankLaplace,
     ParametricLaplace,
+    VaLLA,
 )
 from laplace.laplace import Laplace
 from laplace.lllaplace import (
@@ -27,6 +30,7 @@ from laplace.lllaplace import (
 from laplace.marglik_training import marglik_training
 from laplace.subnetlaplace import DiagSubnetLaplace, FullSubnetLaplace, SubnetLaplace
 from laplace.utils.enums import (
+    FunctionalApproximation,
     HessianStructure,
     Likelihood,
     LinkApprox,
@@ -37,8 +41,11 @@ from laplace.utils.enums import (
 )
 
 __all__ = [
+    "ELLA",
+    "VaLLA",
     "Laplace",  # direct access to all Laplace classes via unified interface
     "BaseLaplace",
+    "BaseFunctionalLaplace",
     "ParametricLaplace",  # base-class and its (first-level) subclasses
     "FullLaplace",
     "KronLaplace",
@@ -56,6 +63,7 @@ __all__ = [
     "marglik_training",
     # Enums
     "SubsetOfWeights",
+    "FunctionalApproximation",
     "HessianStructure",
     "Likelihood",
     "PredType",
