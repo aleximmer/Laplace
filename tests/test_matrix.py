@@ -3,7 +3,9 @@ import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
+from torch.utils.data import DataLoader, TensorDataset
 
+from laplace import KronLaplace
 from laplace.curvature import AsdlGGN, BackPackGGN
 from laplace.utils import Kron, block_diag
 from laplace.utils import kron as kron_prod
@@ -294,3 +296,67 @@ def test_matrix_consistent():
     M_true.diagonal().add_(3.4)
     kron_decomp += torch.tensor(3.4)
     assert torch.allclose(M_true, kron_decomp.to_matrix(exponent=1))
+
+
+@pytest.mark.parametrize("damping", [False, True])
+@pytest.mark.parametrize("two_factors", [False, True])
+@pytest.mark.parametrize(
+    "operation", ["add_zero", "add", "radd", "mul_one", "mul", "rmul"]
+)
+def test_decomposed_arithmetic_preserves_damping(damping, two_factors, operation):
+    factor = torch.diag(torch.tensor([2.0, 3.0]))
+    factors = (
+        [factor, torch.diag(torch.tensor([4.0, 5.0]))] if two_factors else [factor]
+    )
+    curvature = Kron([factors]).decompose(damping=damping)
+    delta = torch.tensor([0.25], requires_grad=True)
+    curvature.deltas = delta
+    scale = 1.0
+    expected_delta = delta
+    if operation in ("add_zero", "add", "radd"):
+        increment = torch.tensor(0.0 if operation == "add_zero" else 0.75)
+        result = increment + curvature if operation == "radd" else curvature + increment
+        expected_delta = delta + increment
+    else:
+        scale = 1.0 if operation == "mul_one" else 2.0
+        result = scale * curvature if operation == "rmul" else curvature * scale
+    if two_factors and damping:
+        shifted = [
+            scale**0.5 * f + expected_delta.sqrt() * torch.eye(2) for f in factors
+        ]
+        expected = torch.kron(*shifted)
+    else:
+        expected = scale * (torch.kron(*factors) if two_factors else factor)
+        expected = expected + expected_delta * torch.eye(expected.shape[0])
+    torch.testing.assert_close(result.to_matrix(), expected)
+    assert result.damping is damping
+    result_grad = torch.autograd.grad(
+        result.to_matrix().sum(), delta, retain_graph=True
+    )[0]
+    expected_grad = torch.autograd.grad(expected.sum(), delta)[0]
+    torch.testing.assert_close(result_grad, expected_grad)
+
+
+@pytest.mark.parametrize("damping", [False, True])
+def test_kron_posterior_precision_preserves_damping(damping):
+    model = nn.Linear(2, 1, bias=False).double()
+    inputs = torch.tensor([[-1.0, 0.0], [0.0, 1.0], [1.0, 2.0], [2.0, -1.0]])
+    posterior = KronLaplace(
+        model,
+        "regression",
+        damping=damping,
+        sigma_noise=0.8,
+        temperature=1.3,
+        prior_precision=0.25,
+    )
+    posterior.fit(DataLoader(TensorDataset(inputs, inputs[:, :1] * 0.5), batch_size=2))
+    scale = 1 / (0.8**2 * 1.3)
+    factors = posterior.H_facs.kfacs[0]
+    if damping:
+        shifted = [scale**0.5 * f + 0.5 * torch.eye(f.shape[0]) for f in factors]
+        expected = torch.kron(*shifted)
+    else:
+        expected = scale * torch.kron(*factors) + 0.25 * torch.eye(2)
+    precision = posterior.posterior_precision
+    torch.testing.assert_close(precision.to_matrix(), expected)
+    assert precision.damping is damping

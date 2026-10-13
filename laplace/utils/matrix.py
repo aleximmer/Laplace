@@ -352,7 +352,12 @@ class KronDecomposed:
         kron : KronDecomposed
         """
         self._check_deltas(deltas)
-        return KronDecomposed(self.eigenvectors, self.eigenvalues, self.deltas + deltas)
+        return KronDecomposed(
+            self.eigenvectors,
+            self.eigenvalues,
+            self.deltas + deltas,
+            damping=self.damping,
+        )
 
     def __mul__(self, scalar: torch.Tensor | float) -> KronDecomposed:
         """Multiply by a scalar by changing the eigenvalues.
@@ -373,7 +378,9 @@ class KronDecomposed:
             [pow(scalar, 1 / len(ls)) * eigval for eigval in ls]
             for ls in self.eigenvalues
         ]
-        return KronDecomposed(self.eigenvectors, eigenvalues, self.deltas)
+        return KronDecomposed(
+            self.eigenvectors, eigenvalues, self.deltas, damping=self.damping
+        )
 
     def __len__(self) -> int:
         return len(self.eigenvalues)
