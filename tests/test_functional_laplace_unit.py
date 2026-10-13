@@ -154,9 +154,8 @@ def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=
             assert torch.allclose(expected_K_MM[c], func_la.K_MM[c])
 
     func_la._init_K_MM()
-    # Right now K_MM is initialized with torch.empty. To run this tests we
-    #  must set it to zero.
-    func_la.K_MM = [0 * func_la.K_MM[i] for i in range(func_la.n_outputs)]
+    # K_MM uses uninitialized storage; multiplying it by zero can preserve NaNs.
+    func_la.K_MM = [torch.zeros_like(matrix) for matrix in func_la.K_MM]
 
     expected = [torch.zeros(size=(M, M)) for _ in range(C)]
     _check(expected)
@@ -319,6 +318,24 @@ def test_gp_kernel(
         expected_block_diagonal_kernel,
         block_diag_kernel.to(expected_block_diagonal_kernel.dtype),
     )
+
+
+def test_joint_independent_outputs_predictive_moments(model, reg_loader):
+    func_la = FunctionalLaplace(model, "regression", 5, independent_outputs=True)
+    with pytest.warns(UserWarning, match="multivariate regression"):
+        func_la.fit(reg_loader)
+
+    x, _ = reg_loader.dataset.tensors
+    mean, covariance = func_la.predictive_moments(x[:2], joint=True)
+    _, variance = func_la.predictive_moments(x[:2])
+
+    assert mean.shape == (4,)
+    assert covariance.shape == (4, 4)
+    torch.testing.assert_close(
+        covariance.diagonal().reshape(2, 2), variance.diagonal(dim1=-2, dim2=-1)
+    )
+    torch.testing.assert_close(covariance[0::2, 1::2], torch.zeros(2, 2))
+    torch.testing.assert_close(covariance[1::2, 0::2], torch.zeros(2, 2))
 
 
 def test_functional_samples(model, reg_loader):
