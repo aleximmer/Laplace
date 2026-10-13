@@ -143,6 +143,7 @@ def test_bridge_finite_float64_covariance_scale_invariance(link):
     assert all(torch.isfinite(gradient).all() for gradient in gradients)
 
 
+@pytest.mark.cuda
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA unavailable")
 @pytest.mark.parametrize("device_index", range(max(torch.cuda.device_count(), 1)))
 @pytest.mark.parametrize("link", ["bridge", "bridge_norm"])

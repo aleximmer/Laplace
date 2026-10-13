@@ -60,6 +60,7 @@ docs = [
 
 [tool.pytest.ini_options]
 testpaths = "tests"
+markers = ["cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU"]
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.

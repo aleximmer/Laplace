@@ -642,6 +642,15 @@ class BaseLaplace:
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+
+        Notes
+        -----
+        The ``"bridge"`` and ``"bridge_norm"`` links use float64 intermediate
+        calculations and return probabilities in the predictive mean's dtype.
+        If corrected variances or the optional normalization scale are
+        nonpositive, or the Bridge probabilities are nonfinite, prediction uses
+        the probit approximation on centered moments before variance
+        normalization. Corrected variances are clamped at zero for this fallback.
         """
         f_mu, f_var = self._glm_predictive_distribution(
             x, joint=joint and likelihood == Likelihood.REGRESSION
@@ -666,6 +675,7 @@ class BaseLaplace:
             _, K = f_mu.shape
             if K == 1:
                 return torch.ones_like(f_mu)
+
             # Float32 reductions can overflow even when every input is finite.
             # Keep the link calculation in double precision, then restore the
             # predictive dtype at the return boundary.
@@ -694,6 +704,7 @@ class BaseLaplace:
             ratio = torch.where(
                 centered.squeeze(-1), 0, row_sums / safe_variance.squeeze(-1)
             )
+
             # Divide before summing so a finite common logit offset cannot
             # overflow the reduction in float64.
             mean_logit = (f_mu / K).sum(dim=-1, keepdim=True)
@@ -735,6 +746,7 @@ class BaseLaplace:
                 - f_var_diag.clamp_min(torch.finfo(f_var_diag.dtype).tiny).log()
             )
             probabilities = torch.softmax(log_alpha, dim=-1)
+
             # A common shift of every logit has no effect on softmax. The
             # fallback therefore uses the centered moments before Bridge's
             # optional variance normalization.
@@ -1229,6 +1241,15 @@ class ParametricLaplace(BaseLaplace):
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+
+        Notes
+        -----
+        The ``"bridge"`` and ``"bridge_norm"`` links use float64 intermediate
+        calculations and return probabilities in the predictive mean's dtype.
+        If corrected variances or the optional normalization scale are
+        nonpositive, or the Bridge probabilities are nonfinite, prediction uses
+        the probit approximation on centered moments before variance
+        normalization. Corrected variances are clamped at zero for this fallback.
         """
         if pred_type not in [pred for pred in PredType]:
             raise ValueError("Only glm and nn supported as prediction types.")
@@ -2664,6 +2685,15 @@ class FunctionalLaplace(BaseLaplace):
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+
+        Notes
+        -----
+        The ``"bridge"`` and ``"bridge_norm"`` links use float64 intermediate
+        calculations and return probabilities in the predictive mean's dtype.
+        If corrected variances or the optional normalization scale are
+        nonpositive, or the Bridge probabilities are nonfinite, prediction uses
+        the probit approximation on centered moments before variance
+        normalization. Corrected variances are clamped at zero for this fallback.
         """
         if self._fitted is False:
             raise RuntimeError(
