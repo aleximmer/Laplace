@@ -211,9 +211,9 @@ class Kron:
         if exponent != 1:
             raise ValueError("Only supported after decomposition.")
         if W.ndim == 1:
-            return self._bmm(W.unsqueeze(0).unsqueeze(0)).squeeze()
+            return self._bmm(W.unsqueeze(0).unsqueeze(0)).reshape(W.shape)
         elif W.ndim == 2:
-            return self._bmm(W.unsqueeze(1)).squeeze()
+            return self._bmm(W.unsqueeze(1)).reshape(W.shape)
         elif W.ndim == 3:
             return self._bmm(W)
         else:
@@ -479,9 +479,9 @@ class KronDecomposed:
             result `(batch, classes, params)`
         """
         if W.ndim == 1:
-            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).squeeze()
+            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).reshape(W.shape)
         elif W.ndim == 2:
-            return self._bmm(W.unsqueeze(1), exponent).squeeze()
+            return self._bmm(W.unsqueeze(1), exponent).reshape(W.shape)
         elif W.ndim == 3:
             return self._bmm(W, exponent)
         else:
