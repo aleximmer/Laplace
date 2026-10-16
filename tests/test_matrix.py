@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import KronLaplace
 from laplace.curvature import AsdlGGN, BackPackGGN
-from laplace.utils import Kron, block_diag
+from laplace.utils import Kron, KronDecomposed, block_diag
 from laplace.utils import kron as kron_prod
 from tests.utils import get_diag_psd_matrix, get_psd_matrix, jacobians_naive
 
@@ -334,3 +334,99 @@ def test_kron_square_norm_single_parameter():
     delta = value - posterior.mean
     expected = delta @ posterior.posterior_precision.to_matrix() @ delta
     torch.testing.assert_close(posterior.square_norm(value), expected)
+
+
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("delta_shape", [(), (1,), (2,)])
+@pytest.mark.parametrize("damping", [False, True])
+@pytest.mark.parametrize(
+    "operation,exponent",
+    [
+        ("logdet", 1),
+        ("diag", 1),
+        ("diag", -1),
+        ("bmm", 1),
+        ("bmm", -1),
+        ("to_matrix", 1),
+        ("to_matrix", -1),
+    ],
+)
+def test_decomposed_constructor_broadcasts_deltas(
+    dtype, delta_shape, damping, operation, exponent
+):
+    factors = [
+        [torch.tensor([[2.0, 0.5], [0.5, 1.5]], dtype=dtype)],
+        [
+            torch.diag(torch.tensor([1.0, 3.0], dtype=dtype)),
+            torch.diag(torch.tensor([2.0, 4.0], dtype=dtype)),
+        ],
+    ]
+    decomposed = Kron(factors).decompose()
+    values = torch.tensor([0.4, 0.9], dtype=dtype)
+    delta = (
+        values if delta_shape == (2,) else values[:1].reshape(delta_shape)
+    ).requires_grad_()
+    reference_delta = delta.detach().clone().requires_grad_()
+    result = KronDecomposed(
+        decomposed.eigenvectors, decomposed.eigenvalues, delta, damping=damping
+    )
+    shifts = reference_delta.expand(2)
+    first = factors[0][0] + shifts[0] * torch.eye(2, dtype=dtype)
+    if damping:
+        root = shifts[1].sqrt()
+        second = torch.kron(
+            factors[1][0] + root * torch.eye(2, dtype=dtype),
+            factors[1][1] + root * torch.eye(2, dtype=dtype),
+        )
+    else:
+        second = torch.kron(*factors[1]) + shifts[1] * torch.eye(4, dtype=dtype)
+    reference = torch.block_diag(first, second)
+    if operation == "logdet":
+        actual = result.logdet()
+        expected = torch.linalg.slogdet(reference).logabsdet
+    else:
+        reference = torch.linalg.matrix_power(reference, exponent)
+        if operation == "diag":
+            actual, expected = result.diag(exponent), reference.diag()
+        elif operation == "bmm":
+            inputs = torch.arange(36, dtype=dtype).reshape(2, 3, 6) / 10
+            actual, expected = result.bmm(inputs, exponent), inputs @ reference.T
+        else:
+            actual, expected = result.to_matrix(exponent), reference
+    torch.testing.assert_close(actual, expected)
+    (actual_gradient,) = torch.autograd.grad(actual.sum(), delta)
+    (expected_gradient,) = torch.autograd.grad(expected.sum(), reference_delta)
+    torch.testing.assert_close(actual_gradient, expected_gradient)
+
+
+@pytest.mark.parametrize("delta_shape", [(), (1,), (2,)])
+@pytest.mark.parametrize("damping", [False, True])
+def test_decomposed_constructor_zero_deltas(delta_shape, damping):
+    kron = Kron(
+        [
+            [torch.diag(torch.tensor([2.0, 3.0]))],
+            [torch.diag(torch.tensor([1.0, 4.0])), torch.eye(2)],
+        ]
+    )
+    decomposed = kron.decompose()
+    result = KronDecomposed(
+        decomposed.eigenvectors,
+        decomposed.eigenvalues,
+        torch.zeros(delta_shape),
+        damping=damping,
+    )
+    expected = kron.to_matrix()
+    torch.testing.assert_close(result.to_matrix(), expected)
+    torch.testing.assert_close(result.diag(), expected.diag())
+    torch.testing.assert_close(
+        result.logdet(), torch.linalg.slogdet(expected).logabsdet
+    )
+    inputs = torch.ones(6)
+    torch.testing.assert_close(result.bmm(inputs, exponent=1), expected @ inputs)
+
+
+@pytest.mark.parametrize("deltas", [0.4, torch.ones(3), torch.ones(2, 1)])
+def test_decomposed_constructor_rejects_invalid_deltas(deltas):
+    decomposed = Kron([[torch.eye(2)], [torch.eye(3)]]).decompose()
+    with pytest.raises(ValueError):
+        KronDecomposed(decomposed.eigenvectors, decomposed.eigenvalues, deltas)

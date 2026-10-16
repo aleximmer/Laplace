@@ -295,8 +295,8 @@ class KronDecomposed:
     eigenvalues : list[Tuple[torch.Tensor]]
         eigenvalues corresponding to matrices in a corresponding `Kron`
     deltas : torch.Tensor
-        addend for each group of Kronecker factors representing, for example,
-        a prior precision
+        scalar or one addend per group of Kronecker factors representing,
+        for example, a prior precision
     damping : bool, default=False
         use dampen approximation mixing prior and Kron partially multiplicatively
     """
@@ -320,7 +320,7 @@ class KronDecomposed:
             )
         else:
             self._check_deltas(deltas)
-            self.deltas: torch.Tensor = deltas
+            self.deltas: torch.Tensor = deltas.expand(len(self))
         self.damping: bool = damping
 
     def detach(self) -> KronDecomposed:
