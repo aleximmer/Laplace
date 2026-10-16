@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections.abc import MutableMapping
 from copy import deepcopy
 from importlib.util import find_spec
@@ -21,8 +22,10 @@ from laplace import (
     FullLaplace,
     FunctionalLaplace,
     KronLaplace,
+    Laplace,
     LowRankLaplace,
 )
+from laplace.baselaplace import BaseLaplace
 from laplace.curvature import AsdlEF, AsdlGGN, BackPackGGN
 from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
@@ -37,6 +40,526 @@ if find_spec("asdfghjkl") is not None:
     flavors.append(LowRankLaplace)
 
 online_flavors = [FullLaplace, KronLaplace, DiagLaplace]
+
+
+def _bridge_from_moments(mean, covariance, link):
+    class FixedMoments:
+        def _glm_predictive_distribution(self, x, joint=False):
+            return mean, covariance
+
+    return BaseLaplace._glm_forward_call(
+        FixedMoments(), mean, "classification", link_approx=link
+    )
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+@pytest.mark.parametrize(
+    "case, dtype, device, n_classes, magnitude",
+    [
+        pytest.param(
+            "diagonal",
+            torch.float32,
+            "cpu",
+            n,
+            scale,
+            id=f"cpu-float32-diagonal-{n}-{scale}",
+        )
+        for n, scale in product([2, 5], [1e20, 1e38])
+    ]
+    + [
+        ("dense", torch.float32, "cpu", 5, 9e37),
+        ("opposed", torch.float32, "cpu", 3, 3e38),
+        ("opposed", torch.float64, "cpu", 2, 1e308),
+        ("tied", torch.float64, "cpu", 2, 1e308),
+        ("opposed", torch.float64, "cpu", 3, 1e308),
+        ("tied", torch.float64, "cpu", 3, 1e308),
+    ]
+    + [
+        pytest.param(
+            case,
+            dtype,
+            f"cuda:{index}",
+            3,
+            magnitude,
+            marks=[
+                pytest.mark.cuda,
+                pytest.mark.skipif(
+                    not torch.cuda.is_available(), reason="CUDA unavailable"
+                ),
+            ],
+            id=f"cuda-{index}-{dtype}-{case}",
+        )
+        for index in range(max(torch.cuda.device_count(), 1))
+        for case, dtype, magnitude in [
+            ("opposed", torch.float32, 3e38),
+            ("opposed", torch.float64, 1e308),
+            ("unequal_diagonal", torch.float32, 1e38),
+            ("unequal_diagonal", torch.float64, 1e308),
+        ]
+    ],
+)
+def test_bridge_extreme_finite_inputs_have_finite_gradients(
+    link, case, dtype, device, n_classes, magnitude
+):
+    if case in ("diagonal", "dense"):
+        mean = torch.linspace(0.2, 0.3, n_classes, dtype=dtype, device=device)
+        covariance = magnitude * torch.eye(n_classes, dtype=dtype, device=device)
+        if case == "dense":
+            covariance = magnitude * torch.ones_like(covariance) + covariance / 10
+    elif case == "unequal_diagonal":
+        mean = torch.tensor([3.0, 0.0, -1.0], dtype=dtype, device=device)
+        covariance = torch.diag(
+            torch.tensor(
+                [magnitude, magnitude, magnitude / 2], dtype=dtype, device=device
+            )
+        )
+    else:
+        logits = (
+            [magnitude, -magnitude] + [0.0] * (n_classes - 2)
+            if case == "opposed"
+            else [magnitude] * n_classes
+        )
+        mean = torch.tensor(logits, dtype=dtype, device=device)
+        covariance = torch.eye(n_classes, dtype=dtype, device=device)
+    mean = mean.unsqueeze(0).requires_grad_()
+    covariance = covariance.unsqueeze(0).requires_grad_()
+    probability = _bridge_from_moments(mean, covariance, link)
+    assert torch.isfinite(probability).all()
+    torch.testing.assert_close(
+        probability.sum(dim=-1), torch.ones_like(probability.sum(dim=-1))
+    )
+    gradients = torch.autograd.grad(probability[0, 0], (mean, covariance))
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+def test_bridge_common_mode_covariance_does_not_change_probabilities(link, dtype):
+    mean = torch.tensor([[3.0, 0.0]], dtype=dtype, requires_grad=True)
+    amplitude = torch.tensor(100.0, dtype=dtype, requires_grad=True)
+    covariance = amplitude * torch.ones(1, 2, 2, dtype=dtype)
+    probability = _bridge_from_moments(mean, covariance, link)
+    torch.testing.assert_close(probability, torch.softmax(mean, dim=-1))
+    gradient = torch.autograd.grad(probability[0, 0], amplitude)[0]
+    torch.testing.assert_close(gradient, torch.zeros_like(gradient), atol=1e-7, rtol=0)
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+@pytest.mark.parametrize("reference", ["float64", "smaller_scale"])
+def test_bridge_extreme_covariance_matches_reference(link, reference):
+    dtype = torch.float32 if reference == "float64" else torch.float64
+    mean = torch.tensor([[3.0, 0.0, -1.0]], dtype=dtype, requires_grad=True)
+    diagonal = [2e38, 1e38, 1e38] if reference == "float64" else [1e308, 1e308, 5e307]
+    covariance = torch.diag(torch.tensor(diagonal, dtype=dtype)).unsqueeze(0)
+    covariance.requires_grad_()
+    actual = _bridge_from_moments(mean, covariance, link)
+    if reference == "float64":
+        expected = _bridge_from_moments(mean.double(), covariance.double(), link)
+        tolerance = 1e-6
+    else:
+        moderate = torch.diag(
+            torch.tensor([1e100, 1e100, 5e99], dtype=dtype)
+        ).unsqueeze(0)
+        expected = _bridge_from_moments(mean, moderate, link)
+        tolerance = 1e-12
+    torch.testing.assert_close(
+        actual.double(), expected, rtol=tolerance, atol=tolerance
+    )
+    gradients = torch.autograd.grad(actual[0, 0], (mean, covariance))
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+@pytest.fixture(params=["cpu", pytest.param("cuda", marks=pytest.mark.cuda)])
+def bridge_device(request):
+    if request.param == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA unavailable")
+    return torch.device(request.param)
+
+
+@pytest.fixture
+def bridge_default_dtype(request):
+    previous = torch.get_default_dtype()
+    torch.set_default_dtype(request.param)
+    try:
+        yield
+    finally:
+        torch.set_default_dtype(previous)
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+@pytest.mark.parametrize("covariance_scale", [1e-310, 1e-308, 1e-300])
+@pytest.mark.parametrize(
+    "logits, diagonal",
+    [
+        pytest.param([0.5, -0.5], [1.0, 1.0], id="zero-sum-identity"),
+        pytest.param([0.5, 0.2], [1.0, 1.0], id="nonzero-sum-identity"),
+        pytest.param([0.5, 0.2], [1.0, 2.0], id="nonzero-sum-diagonal"),
+    ],
+)
+@pytest.mark.parametrize(
+    "bridge_default_dtype", [torch.float32, torch.float64], indirect=True
+)
+def test_bridge_tiny_covariance_warns_about_gradient_limit(
+    bridge_device, bridge_default_dtype, link, covariance_scale, logits, diagonal
+):
+    mean = torch.tensor(
+        [logits],
+        dtype=torch.float64,
+        device=bridge_device,
+        requires_grad=True,
+    )
+    shape = mean.new_tensor(diagonal)
+    scale = mean.new_tensor(covariance_scale, requires_grad=True)
+    covariance = (scale * shape.diag()).unsqueeze(0)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        probability = _bridge_from_moments(mean, covariance, link)
+    subnormal = covariance_scale < torch.finfo(covariance.dtype).tiny
+    assert len(caught) == int(subnormal)
+    if subnormal:
+        assert caught[0].category is RuntimeWarning
+        assert "subnormal covariance" in str(caught[0].message)
+    # Binary conditional variances are equal, so their common scale cancels
+    # from Bridge. The covariance-dependent mean correction also preserves
+    # scaling; normalized Bridge saturates at these tiny scales.
+    ratio = (shape[0] - shape[1]) / shape.sum()
+    gap = mean.detach()[0, 0] - mean.detach()[0, 1] - ratio * mean.detach().sum()
+    first_probability = gap.sigmoid() if link == "bridge" else mean.new_tensor(1.0)
+    expected = torch.stack((first_probability, 1 - first_probability)).unsqueeze(0)
+    torch.testing.assert_close(probability, expected, rtol=1e-12, atol=1e-12)
+    mean_gradient, scale_gradient = torch.autograd.grad(
+        probability[0, 0], (mean, scale)
+    )
+    slope = expected[:, 0] * expected[:, 1]
+    expected_mean_gradient = torch.stack(
+        (slope * (1 - ratio), slope * (-1 - ratio)), dim=-1
+    )
+    torch.testing.assert_close(
+        mean_gradient, expected_mean_gradient, rtol=1e-12, atol=1e-12
+    )
+    unsupported_scale_gradient = (
+        link == "bridge" and covariance_scale == 1e-310 and sum(logits) != 0
+    )
+    # Subnormal nonzero-sum inputs can overflow individual covariance derivatives
+    # before their cancellation. The warning exposes this limit without promising
+    # a representable scale gradient, or requiring any particular failure value.
+    if not unsupported_scale_gradient:
+        torch.testing.assert_close(
+            scale_gradient, torch.zeros_like(scale_gradient), rtol=0, atol=0
+        )
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+@pytest.mark.parametrize(
+    "case, dtype, magnitude, requires_grad, grad_enabled, should_warn",
+    [
+        ("no-grad", torch.float64, 1e-310, True, False, False),
+        ("detached-covariance", torch.float64, 1e-310, False, True, False),
+        ("zero", torch.float64, 0.0, True, True, False),
+        ("normal", torch.float64, 1e-300, True, True, False),
+        (
+            "normal-boundary",
+            torch.float64,
+            torch.finfo(torch.float64).tiny,
+            True,
+            True,
+            False,
+        ),
+        ("single-class", torch.float64, 1e-310, True, True, False),
+        ("mixed-batch", torch.float64, 1e-310, True, True, True),
+        ("float32-subnormal", torch.float32, 1e-40, True, True, True),
+    ],
+)
+def test_bridge_subnormal_covariance_warning_policy(
+    bridge_device,
+    link,
+    case,
+    dtype,
+    magnitude,
+    requires_grad,
+    grad_enabled,
+    should_warn,
+):
+    scales = [0.0, 1e-300, magnitude] if case == "mixed-batch" else [magnitude]
+    logits = [0.5] if case == "single-class" else [0.5, 0.2]
+    mean = torch.tensor(
+        [logits] * len(scales),
+        dtype=torch.float64,
+        device=bridge_device,
+        requires_grad=True,
+    )
+    covariance = torch.stack(
+        [
+            scale * torch.eye(len(logits), dtype=dtype, device=bridge_device)
+            for scale in scales
+        ]
+    ).requires_grad_(requires_grad)
+    mean_before, covariance_before = mean.detach().clone(), covariance.detach().clone()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        with torch.set_grad_enabled(grad_enabled):
+            probability = _bridge_from_moments(mean, covariance, link)
+    assert len(caught) == int(should_warn)
+    if should_warn:
+        assert caught[0].category is RuntimeWarning
+        assert "subnormal covariance" in str(caught[0].message)
+    assert torch.isfinite(probability).all()
+    torch.testing.assert_close(probability.sum(dim=-1), torch.ones_like(mean[:, 0]))
+    torch.testing.assert_close(mean.detach(), mean_before)
+    torch.testing.assert_close(covariance.detach(), covariance_before)
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+@pytest.mark.parametrize(
+    "logits, diagonal, bridge_default_dtype",
+    [
+        ([1.7e308, -1.7e308, -1.7e308], [1.0, 1.0, 1.0], torch.float64),
+        ([-1e308, -1e308], [10.0, 1.0], torch.float64),
+    ]
+    + [
+        pytest.param(
+            [magnitude, -magnitude],
+            [1.0, 1.0],
+            default,
+            id=f"float64-means-{magnitude}-default-{default}",
+        )
+        for magnitude, default in product([1e40, 1e308], [torch.float32, torch.float64])
+    ],
+    indirect=["bridge_default_dtype"],
+)
+def test_bridge_mean_correction_overflow(
+    bridge_device, bridge_default_dtype, link, logits, diagonal
+):
+    mean = torch.tensor(
+        [logits], dtype=torch.float64, device=bridge_device, requires_grad=True
+    )
+    covariance = torch.diag(
+        torch.tensor(diagonal, dtype=torch.float64, device=bridge_device)
+    ).unsqueeze(0)
+    covariance.requires_grad_()
+    probability = _bridge_from_moments(mean, covariance, link)
+    expected = torch.zeros_like(mean)
+    expected[:, 0] = 1
+    torch.testing.assert_close(probability, expected)
+    gradients = torch.autograd.grad(probability[0, 0], (mean, covariance))
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+@pytest.mark.parametrize(
+    "link, dtype, logits, diagonal, expected, compare_gradients",
+    [
+        (link, dtype, logits, diagonal, expected, False)
+        for link, dtype in product(
+            ["bridge", "bridge_norm"], [torch.float32, torch.float64]
+        )
+        for logits, diagonal, expected in [
+            ([1e20, 1e20, -1e20, -1e20], [1.0, 2.0, 3.0, 4.0], [0.64, 0.36, 0.0, 0.0]),
+            ([1e20, 1e20, -2e20], [1.0, 2.0, 3.0], [8 / 13, 5 / 13, 0.0]),
+        ]
+    ]
+    + [
+        pytest.param(
+            "bridge_norm",
+            torch.float64,
+            [1e308, 1e308, -1e308, -1e308],
+            [0.01, 0.02, 0.03, 0.04],
+            [0.64, 0.36, 0.0, 0.0],
+            True,
+            id="normalized-extreme-ties-analytical-gradients",
+        )
+    ],
+)
+def test_bridge_large_tied_logits_preserve_variance_weights(
+    bridge_device, link, dtype, logits, diagonal, expected, compare_gradients
+):
+    mean = torch.tensor([logits], dtype=dtype, device=bridge_device, requires_grad=True)
+    covariance = torch.diag(
+        torch.tensor(diagonal, dtype=dtype, device=bridge_device)
+    ).unsqueeze(0)
+    covariance.requires_grad_()
+    probability = _bridge_from_moments(mean, covariance, link)
+    expected = torch.tensor([expected], dtype=dtype, device=bridge_device)
+    torch.testing.assert_close(probability, expected)
+    gradients = torch.autograd.grad(probability[0, 0], (mean, covariance))
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+    if compare_gradients:
+        # The two dominant classes have corrected variances 0.009 and 0.016.
+        # Differentiate sigmoid((mu0 - mu1) / sqrt(c) + log(v1 / v0)),
+        # including the covariance-dependent mean correction; c = 0.0175 / sqrt(2).
+        mean_gradient = (0.64 * 0.36 / sqrt(0.0175 / sqrt(2))) * mean.new_tensor(
+            [[1.1, -0.9, 0.1, 0.1]]
+        )
+        covariance_gradient = covariance.new_tensor(
+            [
+                [
+                    [-20.16, 5.44, 5.44, 5.44],
+                    [-5.44, 8.96, -5.44, -5.44],
+                    [0.32, 0.32, 0.32, 0.32],
+                    [0.32, 0.32, 0.32, 0.32],
+                ]
+            ]
+        )
+        for actual, expected_gradient in zip(
+            gradients, (mean_gradient, covariance_gradient)
+        ):
+            torch.testing.assert_close(
+                actual, expected_gradient, rtol=1e-12, atol=1e-12
+            )
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+def test_bridge_extreme_normalization_and_fallback_gradients(bridge_device, link):
+    mean = torch.tensor(
+        [[1e308, -1e308], [0.5, -0.5]],
+        dtype=torch.float64,
+        device=bridge_device,
+        requires_grad=True,
+    )
+    covariance = torch.stack(
+        (
+            0.01 * torch.eye(2, dtype=torch.float64, device=bridge_device),
+            torch.ones(2, 2, dtype=torch.float64, device=bridge_device),
+        )
+    )
+    covariance.requires_grad_()
+    probability = _bridge_from_moments(mean, covariance, link)
+    expected = torch.softmax(mean.detach(), dim=-1)
+    torch.testing.assert_close(probability, expected)
+    mean_gradient, covariance_gradient = torch.autograd.grad(
+        probability[:, 0].sum(), (mean, covariance)
+    )
+    assert torch.isfinite(mean_gradient).all()
+    assert torch.isfinite(covariance_gradient).all()
+
+    # The second row has only common-mode uncertainty, so its fallback is
+    # softmax(mean). Its nonzero gradients must survive the extreme first row.
+    slope = expected[:, 0] * expected[:, 1]
+    expected_gradient = torch.stack((slope, -slope), dim=-1)
+    torch.testing.assert_close(mean_gradient, expected_gradient)
+    torch.testing.assert_close(
+        covariance_gradient[1].sum(),
+        torch.zeros((), dtype=torch.float64, device=bridge_device),
+        atol=1e-12,
+        rtol=0,
+    )
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+def test_bridge_large_common_offset_preserves_logit_differences(bridge_device, link):
+    mean = torch.tensor(
+        [[1e15 + 0.125, 1e15 - 0.125]],
+        dtype=torch.float64,
+        device=bridge_device,
+        requires_grad=True,
+    )
+    covariance = torch.eye(2, dtype=torch.float64, device=bridge_device).unsqueeze(0)
+    covariance.requires_grad_()
+    probability = _bridge_from_moments(mean, covariance, link)
+    difference = 0.25 / sqrt(0.5) if link == "bridge_norm" else 0.25
+    p0 = torch.tensor(difference, dtype=torch.float64, device=bridge_device).sigmoid()
+    expected = torch.stack((p0, 1 - p0)).unsqueeze(0)
+    torch.testing.assert_close(probability, expected)
+    gradients = torch.autograd.grad(probability[0, 0], (mean, covariance))
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+
+
+@pytest.mark.parametrize(
+    "magnitude, covariance_scale",
+    [(1e154, 1e308), (1e308, 1e308), (0.5, 1e-308), (0.5, 1e-310)],
+)
+def test_bridge_norm_variance_scaling_preserves_logit_differences(
+    bridge_device, magnitude, covariance_scale
+):
+    mean = torch.tensor(
+        [[magnitude, -magnitude]],
+        dtype=torch.float64,
+        device=bridge_device,
+        requires_grad=True,
+    )
+    covariance = (
+        covariance_scale * torch.eye(2, dtype=torch.float64, device=bridge_device)
+    ).unsqueeze(0)
+    covariance.requires_grad_()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        probability = _bridge_from_moments(mean, covariance, "bridge_norm")
+    assert len(caught) == int(covariance_scale < torch.finfo(covariance.dtype).tiny)
+    if caught:
+        assert caught[0].category is RuntimeWarning
+        assert "subnormal covariance" in str(caught[0].message)
+    # For two equally uncertain centered logits, normalized Bridge is sigmoid
+    # of the mean difference divided by the centered standard deviation.
+    difference = torch.tensor(
+        2 * (magnitude / sqrt(covariance_scale / 2)),
+        dtype=torch.float64,
+        device=bridge_device,
+    )
+    p0 = difference.sigmoid()
+    expected = torch.stack((p0, 1 - p0)).unsqueeze(0)
+    torch.testing.assert_close(probability, expected)
+    gradients = torch.autograd.grad(probability[0, 0], (mean, covariance))
+    assert all(torch.isfinite(gradient).all() for gradient in gradients)
+    if covariance_scale < 1:
+        for gradient in gradients:
+            torch.testing.assert_close(
+                gradient, torch.zeros_like(gradient), rtol=0, atol=0
+            )
+
+
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+def test_bridge_gradcheck(bridge_device, link):
+    mean = torch.tensor(
+        [[0.2, -0.4, 0.8]],
+        dtype=torch.float64,
+        device=bridge_device,
+        requires_grad=True,
+    )
+    covariance = torch.tensor(
+        [[[2.0, 0.25, 0.1], [0.25, 1.0, 0.05], [0.1, 0.05, 3.0]]],
+        dtype=torch.float64,
+        device=bridge_device,
+        requires_grad=True,
+    )
+    assert torch.autograd.gradcheck(
+        lambda mu, cov: _bridge_from_moments(mu, cov, link), (mean, covariance)
+    )
+
+
+@pytest.mark.parametrize("method", ["sod", "diag"])
+@pytest.mark.parametrize("link", ["bridge", "bridge_norm"])
+def test_bridge_probabilities_with_zero_sum_logit_covariance(method, link):
+    class ContrastModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.tensor([0.5]))
+
+        def forward(self, inputs):
+            logit = inputs * self.weight
+            return torch.cat((logit, -logit), dim=-1)
+
+    inputs = torch.tensor([[1.0], [2.0], [3.0]])
+    loader = DataLoader(TensorDataset(inputs, torch.tensor([0, 1, 0])), batch_size=3)
+    if method == "diag":
+        estimator = Laplace(
+            ContrastModel(), "classification", "all", "diag", backend=CurvlinopsGGN
+        )
+    else:
+        estimator = Laplace(
+            ContrastModel(),
+            "classification",
+            "all",
+            "gp",
+            backend=CurvlinopsGGN,
+            n_subset=2,
+        )
+    estimator.fit(loader)
+    probabilities = estimator(
+        inputs[:1], pred_type="glm" if method == "diag" else "gp", link_approx=link
+    )
+    assert torch.isfinite(probabilities).all()
+    assert torch.all(probabilities >= 0)
+    torch.testing.assert_close(probabilities.sum(dim=-1), torch.ones(1))
 
 
 @pytest.fixture

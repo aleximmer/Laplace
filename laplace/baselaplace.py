@@ -5,7 +5,7 @@ from collections import deque
 from collections.abc import MutableMapping
 from copy import deepcopy
 from importlib.util import find_spec
-from math import isfinite, log, pi, sqrt
+from math import frexp, isfinite, log, pi, sqrt
 from numbers import Integral
 from typing import Any, Callable
 
@@ -682,6 +682,32 @@ class BaseLaplace:
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+
+        Warns
+        -----
+        RuntimeWarning
+            For ``"bridge"`` and ``"bridge_norm"`` when gradient tracking is
+            enabled and a covariance requiring gradients has subnormal,
+            nonzero magnitude for an input row. Magnitude is the largest
+            absolute covariance entry, compared with the smallest positive
+            normal value of the covariance dtype.
+
+        Notes
+        -----
+        The ``"bridge"`` and ``"bridge_norm"`` links use float64 intermediate
+        calculations and return probabilities in the predictive mean's dtype.
+        Mean corrections and normalization use scaled logit differences to
+        avoid overflow.
+        If corrected variances or the optional normalization scale are
+        nonpositive, or the Bridge probabilities are nonfinite, prediction uses
+        the probit approximation on centered moments before variance
+        normalization. Corrected variances are clamped at zero for this fallback.
+
+        For subnormal covariance magnitudes, covariance-entry derivatives can
+        exceed their dtype's range. Covariance or upstream parameter gradients
+        may therefore contain inf or NaN even when probabilities remain finite.
+        Covariance backpropagation is not reliable in this regime. A
+        RuntimeWarning is emitted when covariance gradients are tracked.
         """
         f_mu, f_var = self._glm_predictive_distribution(
             x, joint=joint and likelihood == Likelihood.REGRESSION
@@ -703,32 +729,143 @@ class BaseLaplace:
             kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
             return torch.softmax(kappa * f_mu, dim=-1)
         elif "bridge" in link_approx:
-            # zero mean correction
-            f_mu -= (
-                f_var.sum(-1)
-                * f_mu.sum(-1).reshape(-1, 1)
-                / f_var.sum(dim=(1, 2)).reshape(-1, 1)
+            _, K = f_mu.shape
+            if K == 1:
+                return torch.ones_like(f_mu)
+
+            # Float32 reductions can overflow even when every input is finite.
+            # Keep the link calculation in double precision, then restore the
+            # predictive dtype at the return boundary.
+            output_dtype, covariance_dtype = f_mu.dtype, f_var.dtype
+            work_dtype = torch.promote_types(output_dtype, covariance_dtype)
+            if work_dtype in (torch.float16, torch.bfloat16, torch.float32):
+                work_dtype = torch.float64
+            f_mu, f_var = f_mu.to(work_dtype), f_var.to(work_dtype)
+
+            # Normalize covariance before reductions: even float64 sums can
+            # overflow when each covariance entry is finite. The scale
+            # cancels in the ratio, so detach it to avoid unstable gradients
+            # through the normalization itself.
+            covariance_scale = f_var.detach().abs().amax(dim=(1, 2), keepdim=True)
+            if (
+                torch.is_grad_enabled()
+                and f_var.requires_grad
+                and (
+                    (covariance_scale > 0)
+                    & (covariance_scale < torch.finfo(covariance_dtype).tiny)
+                ).any()
+            ):
+                warnings.warn(
+                    "Bridge covariance gradients may overflow for subnormal covariance, "
+                    "even when probabilities are finite. Covariance and upstream "
+                    "parameter gradients may contain inf or NaN; covariance "
+                    "backpropagation is not reliable at this scale.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            safe_covariance_scale = torch.where(
+                covariance_scale > 0, covariance_scale, 1
             )
-            f_var -= torch.einsum(
-                "bi,bj->bij", f_var.sum(-1), f_var.sum(-2)
-            ) / f_var.sum(dim=(1, 2)).reshape(-1, 1, 1)
+            scaled_covariance = f_var / safe_covariance_scale
+            row_sums = scaled_covariance.sum(dim=-1)
+            sum_variance = row_sums.sum(dim=-1, keepdim=True).unsqueeze(-1)
+            centered = sum_variance.abs() <= (
+                torch.finfo(covariance_dtype).eps
+                * scaled_covariance.abs().sum(dim=(1, 2), keepdim=True)
+            )
+            safe_variance = torch.where(centered, 1, sum_variance)
+            ratio = torch.where(
+                centered.squeeze(-1), 0, row_sums / safe_variance.squeeze(-1)
+            )
 
-            # Laplace Bridge
-            _, K = f_mu.size(0), f_mu.size(-1)
-            f_var_diag = torch.diagonal(f_var, dim1=1, dim2=2)
+            # Keep the mean correction scaled: even subtracting two finite
+            # float64 means can overflow. Only restore the scale after removing
+            # a common shift, since Bridge depends on logit differences.
+            mean_magnitude = f_mu.detach().abs().amax(dim=-1, keepdim=True)
+            _, mean_exponent = torch.frexp(mean_magnitude)
+            # Bound both scales to leave headroom for normalization gradients.
+            # A power of two preserves representable logit differences; exp2
+            # with an explicit dtype is independent of the global default.
+            logit_limit = sqrt(sqrt(torch.finfo(work_dtype).max))
+            max_mean_exponent = frexp(logit_limit)[1] - 1
+            mean_scale = torch.exp2(
+                (mean_exponent - 1).clamp(0, max_mean_exponent).to(work_dtype)
+            )
+            scaled_mean = f_mu / mean_scale
+            mean_logit = (scaled_mean / K).sum(dim=-1, keepdim=True)
+            scaled_mean = scaled_mean - torch.where(
+                centered.squeeze(-1),
+                mean_logit,
+                (K * ratio) * mean_logit,
+            )
+            f_mu = scaled_mean - scaled_mean.amax(dim=-1, keepdim=True)
+            centered_covariance = scaled_covariance - ratio.unsqueeze(
+                -1
+            ) * row_sums.unsqueeze(-2)
+            scaled_var_diag = centered_covariance.diagonal(dim1=-2, dim2=-1)
+            centered_var_diag = scaled_var_diag * safe_covariance_scale.squeeze(-1)
+            valid_variance = (centered_var_diag > 0).all(dim=-1, keepdim=True)
+            normalization = torch.ones_like(mean_scale)
 
-            # optional: variance correction
             if link_approx == LinkApprox.BRIDGE_NORM:
-                f_var_diag_mean = f_var_diag.mean(dim=1)
-                f_var_diag_mean /= torch.as_tensor(
-                    [K / 2], device=self._device, dtype=self._dtype
-                ).sqrt()
-                f_mu /= f_var_diag_mean.sqrt().unsqueeze(-1)
-                f_var_diag /= f_var_diag_mean.unsqueeze(-1)
+                variance_scale = (centered_var_diag / K).sum(
+                    dim=-1, keepdim=True
+                ) / sqrt(K / 2)
+                valid_variance = valid_variance & (variance_scale > 0)
+                normalization = torch.where(valid_variance, variance_scale, 1).sqrt()
 
-            sum_exp = torch.exp(-f_mu).sum(dim=1).unsqueeze(-1)
-            alpha = (1 - 2 / K + f_mu.exp() / K**2 * sum_exp) / f_var_diag
-            return torch.nan_to_num(alpha / alpha.sum(dim=1).unsqueeze(-1), nan=1.0)
+            # Bound normalized differences before division, so saturated
+            # branches cannot overflow in either forward or backward passes.
+            # The detached bound is far beyond exponential underflow; large
+            # variances still bring extreme gaps back into a meaningful range.
+            minimum_logit = -(logit_limit / mean_scale) * normalization.detach()
+            f_mu = (f_mu.clamp_min(minimum_logit) / normalization) * mean_scale
+
+            # Normalize the Bridge's Dirichlet parameters in log space.
+            # The log-sum-exp term is common to every class and cancels in
+            # the final softmax. Remove it before combining the numerator
+            # terms, avoiding overflow when finite logit gaps are enormous.
+            log_sum_negative = torch.logsumexp(-f_mu, dim=-1, keepdim=True)
+            log_base = log(1 - 2 / K) if K > 2 else -float("inf")
+            log_numerator = torch.logaddexp(
+                torch.full_like(f_mu, log_base) - log_sum_negative,
+                f_mu - 2 * log(K),
+            )
+            # Remove the common offset before subtracting log-variance,
+            # preserving variance-dependent weights for tied large logits.
+            log_numerator = log_numerator - log_numerator.amax(dim=-1, keepdim=True)
+            if K == 2:
+                # Binary corrected variances are equal for symmetric covariance.
+                # Cancel their common term before differentiation to avoid
+                # overflowing gradients for subnormal covariance.
+                log_alpha = log_numerator
+            else:
+                # Common covariance and optional variance scales cancel in alpha
+                # normalization. Logging the scaled diagonal avoids reciprocals
+                # of subnormal variances in backpropagation.
+                log_alpha = (
+                    log_numerator
+                    - scaled_var_diag.clamp_min(torch.finfo(work_dtype).tiny).log()
+                )
+            probabilities = torch.softmax(log_alpha, dim=-1)
+
+            # A common shift of every logit has no effect on softmax. The
+            # fallback therefore uses the centered moments before Bridge's
+            # optional variance normalization.
+            fallback_logits = scaled_mean / torch.sqrt(
+                1 + np.pi / 8 * centered_var_diag.clamp_min(0)
+            )
+            fallback_logits = fallback_logits - fallback_logits.amax(
+                dim=-1, keepdim=True
+            )
+            fallback_logits = (
+                fallback_logits.clamp_min(-logit_limit / mean_scale) * mean_scale
+            )
+            fallback = torch.softmax(fallback_logits, dim=-1)
+            valid_variance = valid_variance & torch.isfinite(probabilities).all(
+                dim=-1, keepdim=True
+            )
+            return torch.where(valid_variance, probabilities, fallback).to(output_dtype)
         else:
             raise ValueError(
                 "Prediction path invalid. Check the likelihood, pred_type, link_approx combination!"
@@ -1213,6 +1350,32 @@ class ParametricLaplace(BaseLaplace):
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+
+        Warns
+        -----
+        RuntimeWarning
+            For ``"bridge"`` and ``"bridge_norm"`` when gradient tracking is
+            enabled and a covariance requiring gradients has subnormal,
+            nonzero magnitude for an input row. Magnitude is the largest
+            absolute covariance entry, compared with the smallest positive
+            normal value of the covariance dtype.
+
+        Notes
+        -----
+        The ``"bridge"`` and ``"bridge_norm"`` links use float64 intermediate
+        calculations and return probabilities in the predictive mean's dtype.
+        Mean corrections and normalization use scaled logit differences to
+        avoid overflow.
+        If corrected variances or the optional normalization scale are
+        nonpositive, or the Bridge probabilities are nonfinite, prediction uses
+        the probit approximation on centered moments before variance
+        normalization. Corrected variances are clamped at zero for this fallback.
+
+        For subnormal covariance magnitudes, covariance-entry derivatives can
+        exceed their dtype's range. Covariance or upstream parameter gradients
+        may therefore contain inf or NaN even when probabilities remain finite.
+        Covariance backpropagation is not reliable in this regime. A
+        RuntimeWarning is emitted when covariance gradients are tracked.
         """
         if pred_type not in [pred for pred in PredType]:
             raise ValueError("Only glm and nn supported as prediction types.")
@@ -2398,11 +2561,35 @@ class BaseFunctionalLaplace(BaseLaplace):
             If the input batch is empty, the prediction type or link is
             unsupported, or the generator has an incompatible type or device.
 
+        Warns
+        -----
+        RuntimeWarning
+            For ``"bridge"`` and ``"bridge_norm"`` when gradient tracking is
+            enabled and a covariance requiring gradients has subnormal,
+            nonzero magnitude for an input row. Magnitude is the largest
+            absolute covariance entry, compared with the smallest positive
+            normal value of the covariance dtype.
+
         Notes
         -----
         Regression and individual reward predictions exclude observation
         noise. Their marginal mean is ``[B, O]`` and covariance is
         ``[B, O, O]``, or variance ``[B, O]`` with ``diagonal_output=True``.
+
+        The ``"bridge"`` and ``"bridge_norm"`` links use float64 intermediate
+        calculations and return probabilities in the predictive mean's dtype.
+        Mean corrections and normalization use scaled logit differences to
+        avoid overflow.
+        If corrected variances or the optional normalization scale are
+        nonpositive, or the Bridge probabilities are nonfinite, prediction uses
+        the probit approximation on centered moments before variance
+        normalization. Corrected variances are clamped at zero for this fallback.
+
+        For subnormal covariance magnitudes, covariance-entry derivatives can
+        exceed their dtype's range. Covariance or upstream parameter gradients
+        may therefore contain inf or NaN even when probabilities remain finite.
+        Covariance backpropagation is not reliable in this regime. A
+        RuntimeWarning is emitted when covariance gradients are tracked.
         """
         self._check_fitted()
         self._check_nonempty_inputs(x)
