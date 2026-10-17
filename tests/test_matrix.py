@@ -398,3 +398,117 @@ def test_kron_square_norm_single_parameter():
     delta = value - posterior.mean
     expected = delta @ posterior.posterior_precision.to_matrix() @ delta
     torch.testing.assert_close(posterior.square_norm(value), expected)
+
+
+@pytest.mark.parametrize("decomposed", [False, True])
+@pytest.mark.parametrize("two_factors", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("scalar_dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize("scalar_shape", [(), (1,)])
+@pytest.mark.parametrize("scale", [0.25, 1.7])
+def test_positive_tensor_scale_gradients(
+    decomposed, two_factors, dtype, scalar_dtype, scalar_shape, scale
+):
+    factor = torch.tensor([[2.0, 0.5], [0.5, 3.0]], dtype=dtype, requires_grad=True)
+    factors = (
+        [factor, torch.diag(torch.tensor([1.0, 4.0], dtype=dtype))]
+        if two_factors
+        else [factor]
+    )
+    curvature = Kron([factors])
+    dense = curvature.to_matrix()
+    if decomposed:
+        curvature = curvature.decompose()
+    scalar = torch.full(scalar_shape, scale, dtype=scalar_dtype, requires_grad=True)
+    actual = (curvature * scalar).to_matrix()
+    expected = dense * scalar.reshape(())
+    rtol, atol = (2e-5, 2e-6) if dtype == torch.float32 else (1e-7, 1e-8)
+    torch.testing.assert_close(actual, expected, rtol=rtol, atol=atol)
+    assert actual.dtype == dtype
+    actual_grads = torch.autograd.grad(
+        actual.sum(), (scalar, factor), retain_graph=True
+    )
+    expected_grads = torch.autograd.grad(expected.sum(), (scalar, factor))
+    for actual_grad, expected_grad in zip(actual_grads, expected_grads):
+        torch.testing.assert_close(actual_grad, expected_grad, rtol=rtol, atol=atol)
+
+
+@pytest.mark.parametrize("decomposed", [False, True])
+@pytest.mark.parametrize("two_factors", [False, True])
+@pytest.mark.parametrize("dtype", [torch.float32, torch.float64])
+@pytest.mark.parametrize(
+    "kind", ["python", "scalar", "one_element", "scalar_grad", "one_element_grad"]
+)
+@pytest.mark.parametrize("scale", [0.0, -2.0, 2.0])
+def test_scalar_scale_value_domain_controls(
+    decomposed, two_factors, dtype, kind, scale
+):
+    factor = torch.diag(torch.tensor([2.0, 3.0], dtype=dtype))
+    factors = (
+        [factor, torch.diag(torch.tensor([1.0, 4.0], dtype=dtype))]
+        if two_factors
+        else [factor]
+    )
+    curvature = Kron([factors])
+    dense = curvature.to_matrix()
+    if decomposed:
+        curvature = curvature.decompose()
+    scalar = scale
+    if kind != "python":
+        shape = () if kind.startswith("scalar") else (1,)
+        scalar = torch.full(
+            shape, scale, dtype=dtype, requires_grad=kind.endswith("grad")
+        )
+    if two_factors and scale < 0:
+        with pytest.raises(ValueError):
+            curvature * scalar
+    else:
+        actual = (curvature * scalar).to_matrix()
+        torch.testing.assert_close(actual, dense * scale)
+        assert actual.dtype == dtype
+
+
+@pytest.mark.parametrize("damping", [False, True])
+@pytest.mark.parametrize("sigma_shape", [(), (1,)])
+@pytest.mark.parametrize("log_parameter", [False, True])
+def test_kron_marglik_noise_gradient(damping, sigma_shape, log_parameter):
+    model = nn.Linear(2, 1, bias=True).double()
+    with torch.no_grad():
+        model.weight.copy_(torch.tensor([[0.3, -0.2]]))
+        model.bias.fill_(0.1)
+    inputs = torch.tensor([[-1.0, 0.0], [0.0, 1.0], [1.0, 2.0], [2.0, -1.0]])
+    targets = torch.tensor([[-0.2], [0.2], [0.5], [0.8]])
+    posterior = KronLaplace(
+        model, "regression", damping=damping, prior_precision=0.7, temperature=1.3
+    )
+    posterior.fit(DataLoader(TensorDataset(inputs, targets), batch_size=2))
+    initial = np.log(0.8) if log_parameter else 0.8
+    parameter = torch.full(sigma_shape, initial, requires_grad=True)
+    sigma = parameter.exp() if log_parameter else parameter
+    value = posterior.log_marginal_likelihood(sigma_noise=sigma)
+    actual_gradient = torch.autograd.grad(value, parameter)[0]
+
+    def evaluate(parameter_value):
+        noise = parameter_value.exp() if log_parameter else parameter_value
+        return posterior.log_marginal_likelihood(sigma_noise=noise).detach()
+
+    step = 1e-5
+    expected_gradient = (
+        evaluate(parameter.detach() + step) - evaluate(parameter.detach() - step)
+    ) / (2 * step)
+    torch.testing.assert_close(
+        actual_gradient, expected_gradient.expand(sigma_shape), rtol=1e-5, atol=1e-7
+    )
+
+
+@pytest.mark.parametrize("scalar_shape", [(), (1,)])
+@pytest.mark.parametrize("scale", [1e-60, 1e40])
+def test_positive_tensor_scale_keeps_representable_factor_roots(scalar_shape, scale):
+    factor = torch.diag(torch.tensor([2.0, 3.0], dtype=torch.float32))
+    scalar = torch.full(scalar_shape, scale, dtype=torch.float64, requires_grad=True)
+    scaled = Kron([[factor, factor]]) * scalar
+    for actual_factor in scaled.kfacs[0]:
+        assert actual_factor.dtype == factor.dtype
+        assert torch.isfinite(actual_factor).all()
+        assert torch.diagonal(actual_factor).gt(0).all()
+        torch.testing.assert_close(actual_factor, factor * np.sqrt(scale))

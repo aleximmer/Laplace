@@ -13,6 +13,25 @@ from laplace.utils.utils import _is_valid_scalar, block_diag, kron, symeig
 __all__ = ["Kron", "KronDecomposed"]
 
 
+def _scalar_power(
+    scalar: float | torch.Tensor, exponent: float, reference: torch.Tensor
+) -> float | torch.Tensor:
+    """Keep positive tensor powers differentiable without narrowing before the root."""
+    if (
+        isinstance(scalar, torch.Tensor)
+        and scalar.is_floating_point()
+        and scalar.item() > 0
+    ):
+        dtype = (
+            torch.promote_types(scalar.dtype, reference.dtype)
+            if reference.is_floating_point() or reference.is_complex()
+            else torch.promote_types(scalar.dtype, torch.get_default_dtype())
+        )
+        return scalar.reshape(()).to(device=reference.device, dtype=dtype).pow(exponent)
+    # Preserve the existing values/domain for zero, negative and non-float scales.
+    return pow(scalar, exponent)
+
+
 class Kron:
     """Kronecker factored approximate curvature representation for a corresponding
     neural network.
@@ -101,6 +120,8 @@ class Kron:
         """Multiply all Kronecker factors by scalar.
         The multiplication is distributed across the number of factors
         using `pow(scalar, 1 / len(F))`. `len(F)` is either `1` or `2`.
+        Positive floating-point tensor scales remain differentiable.
+        Nonpositive scales retain their existing scalar-power behavior.
 
         Parameters
         ----------
@@ -114,7 +135,9 @@ class Kron:
             raise ValueError("Input not valid python or torch scalar.")
 
         # distribute factors evenly so that each group is multiplied by factor
-        kfacs = [[pow(scalar, 1 / len(F)) * Hi for Hi in F] for F in self.kfacs]
+        kfacs = [
+            [_scalar_power(scalar, 1 / len(F), Hi) * Hi for Hi in F] for F in self.kfacs
+        ]
         return Kron(kfacs)
 
     def __len__(self) -> int:
@@ -375,7 +398,7 @@ class KronDecomposed:
             raise ValueError("Invalid argument, can only multiply Kron with scalar.")
 
         eigenvalues = [
-            [pow(scalar, 1 / len(ls)) * eigval for eigval in ls]
+            [_scalar_power(scalar, 1 / len(ls), eigval) * eigval for eigval in ls]
             for ls in self.eigenvalues
         ]
         return KronDecomposed(
