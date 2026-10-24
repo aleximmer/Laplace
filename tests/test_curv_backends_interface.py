@@ -1,4 +1,5 @@
 from contextlib import nullcontext
+from importlib.util import find_spec
 
 import numpy as np
 import pytest
@@ -7,9 +8,6 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import (
-    AsdfghjklEF,
-    AsdfghjklGGN,
-    AsdfghjklHessian,
     AsdlEF,
     AsdlGGN,
     AsdlHessian,
@@ -22,6 +20,22 @@ from laplace.curvature import (
     EFInterface,
     GGNInterface,
 )
+
+logit_class_dim_backends = [
+    CurvlinopsGGN,
+    CurvlinopsEF,
+    CurvlinopsHessian,
+    AsdlGGN,
+    AsdlEF,
+    AsdlHessian,
+    BackPackGGN,
+    BackPackEF,
+]
+
+if find_spec("asdfghjkl") is not None:
+    from laplace.curvature import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
+
+    logit_class_dim_backends.extend([AsdfghjklGGN, AsdfghjklEF, AsdfghjklHessian])
 
 
 @pytest.fixture
@@ -410,22 +424,7 @@ def test_full_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     assert torch.allclose(fggn, H_ggn, atol=0.0001)
 
 
-@pytest.mark.parametrize(
-    "backend_cls",
-    [
-        CurvlinopsGGN,
-        CurvlinopsEF,
-        CurvlinopsHessian,
-        AsdlGGN,
-        AsdlEF,
-        AsdlHessian,
-        AsdfghjklGGN,
-        AsdfghjklEF,
-        AsdfghjklHessian,
-        BackPackGGN,
-        BackPackEF,
-    ],
-)
+@pytest.mark.parametrize("backend_cls", logit_class_dim_backends)
 @pytest.mark.parametrize("method", ["full", "kron", "diag"])
 @pytest.mark.parametrize("logit_class_dim", [-1, 1000])
 def test_logit_class_dim_class(backend_cls, method, logit_class_dim, model, class_Xy):
