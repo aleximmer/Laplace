@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader, Dataset
 
 from laplace import Laplace
 from laplace.curvature import CurvlinopsGGN
+from laplace.utils import RandomSubnetMask
 
 torch.manual_seed(0)
 
@@ -131,6 +132,31 @@ la.optimize_prior_precision()
 
 f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
 print(f"[Head-only Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+
+
+# Subnetwork Laplace over a random subset of the weights, as in FLARE
+model = ChannelsLast(Denoiser())
+model.eval()
+
+subnetwork_mask = RandomSubnetMask(model, n_params_subnet=500)
+subnetwork_indices = subnetwork_mask.select()
+
+la = Laplace(
+    model,
+    "regression",
+    subset_of_weights="subnetwork",
+    hessian_structure="full",
+    subnetwork_indices=subnetwork_indices,
+    backend=CurvlinopsGGN,
+    dict_key_x="x_t",
+    dict_key_y="eps",
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
+print(f"[Subnetwork Laplace] Hessian: {tuple(la.H.shape)}")
+print(f"[Subnetwork Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
 
 
 # K-FAC Laplace over all weights, with the sampling predictive

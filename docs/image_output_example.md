@@ -131,9 +131,10 @@ column per parameter in the Laplace approximation. For a 64x64 RGB image, that i
 - Fewer parameters. Applying Laplace to the last layer, or to another small subset of
   weights, shrinks both the Hessian and the Jacobians. The
   [BayesDiff](https://arxiv.org/abs/2310.11142) paper, for example, uses a diagonal
-  last-layer Laplace on the denoiser.
+  last-layer Laplace on the denoiser, while [FLARE](https://arxiv.org/abs/2602.09170)
+  uses a full Hessian over a random subset of the weights.
 
-Below we show three options that work with image outputs. All of them use the
+Below we show four options that work with image outputs. All of them use the
 Curvlinops backend; see the caveats at the end for why.
 
 ### Diagonal Laplace over all weights
@@ -210,8 +211,51 @@ print(f"[Head-only Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.sh
 [Head-only Laplace] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
 ```
 
-The same trick gives you a subnetwork Laplace: enable the gradients of whichever layers
+The same trick works for any set of layers: enable the gradients of whichever layers
 you want to include.
+
+### Subnetwork Laplace over a random subset of weights
+
+To pick individual weights instead of whole layers, use subnetwork Laplace
+(`subset_of_weights="subnetwork"`). It takes the indices of the chosen weights in the
+flattened parameter vector, i.e., `torch.nn.utils.parameters_to_vector(model.parameters())`.
+`RandomSubnetMask` picks them uniformly at random, as in FLARE. Other masks in
+`laplace.utils`, such as `LargestMagnitudeSubnetMask`, pick them by a score instead.
+With a few hundred weights, a full Hessian is cheap.
+
+```python
+from laplace.utils import RandomSubnetMask
+
+model = ChannelsLast(Denoiser())
+model.eval()
+
+subnetwork_mask = RandomSubnetMask(model, n_params_subnet=500)
+subnetwork_indices = subnetwork_mask.select()
+
+la = Laplace(
+    model,
+    "regression",
+    subset_of_weights="subnetwork",
+    hessian_structure="full",
+    subnetwork_indices=subnetwork_indices,
+    backend=CurvlinopsGGN,
+    dict_key_x="x_t",
+    dict_key_y="eps",
+)
+la.fit(dataloader)
+la.optimize_prior_precision()
+
+f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
+print(f"[Subnetwork Laplace] Hessian: {tuple(la.H.shape)}")
+print(f"[Subnetwork Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+```
+
+```
+[Subnetwork Laplace] Hessian: (500, 500)
+[Subnetwork Laplace] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
+```
+
+`hessian_structure="diag"` also works if you want a larger subset.
 
 ### K-FAC Laplace with the sampling predictive
 
@@ -263,7 +307,8 @@ layout. Diagonal and full Hessians work as above. K-FAC currently does not suppo
   backends raise an error for image outputs.
 - `CurvlinopsEF` does not support `hessian_structure="diag"` with dict-like inputs. Use
   `CurvlinopsGGN` instead, or write the model's `forward` to take a single tensor. See
-  the [Huggingface example](huggingface_example.md#caveats).
+  the [Huggingface example](huggingface_example.md#caveats). Subnetwork Laplace with
+  `CurvlinopsEF` also fails with dict-like inputs, for both Hessian structures.
 - `subset_of_weights="last_layer"` requires an `nn.Linear` last layer. Use the
   `requires_grad` approach above for convolutional heads.
 - `hessian_structure="kron"` does not support the GLM predictive for image outputs. Use
