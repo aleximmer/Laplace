@@ -68,6 +68,8 @@ docs = [
   "mkdocs-material == 9.7.7",
   "mkdocstrings == 0.26.1",
   "mkdocstrings-python == 1.11.1",
+  # 12.x is incompatible with mkdocstrings 0.26; >= 11.0.1 for GHSA-gm37-52c6-37mw
+  "pymdown-extensions == 11.0.2",
 ]
 
 [tool.pytest.ini_options]
