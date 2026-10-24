@@ -644,7 +644,7 @@ def multidim_model():
     class Model(nn.Module):
         def __init__(self):
             super().__init__()
-            self.attn = nn.MultiheadAttention(8, num_heads=1)
+            self.attn = nn.MultiheadAttention(8, num_heads=1, batch_first=True)
             self.final_layer = nn.Linear(8, 2)
 
         def forward(self, x):
@@ -1265,6 +1265,35 @@ def test_reward_modeling_full_asdl_ggn_matches_curvlinops(reward_model, reward_l
     la_curvlinops.fit(reward_loader)
 
     assert torch.allclose(la_asdl.H, la_curvlinops.H)
+
+
+@pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("seq_len", [1, 5])
+def test_asdl_jacobians_token_ids(backend, seq_len):
+    # Token ids `(B, L)` -> outputs `(B, L, K)`: the token axis must be kept, even if L=1
+    B, V, D, K = 4, 11, 6, 3
+
+    class TokenModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.emb = nn.Embedding(V, D)
+            self.emb.weight.requires_grad = False
+            self.lin = nn.Linear(D, K)
+
+        def forward(self, ids):
+            return self.lin(self.emb(ids))
+
+    model = TokenModel()
+    setattr(model, "output_size", K)
+    ids = torch.randint(V, (B, seq_len))
+    interface = backend(model, "regression")
+
+    Js, f = interface.jacobians(ids)
+    Js_ref, f_ref = interface.functorch_jacobians(ids)
+
+    assert Js.shape == (B, seq_len, K, K * D + K)
+    assert torch.allclose(f, f_ref)
+    assert torch.allclose(Js, Js_ref)
 
 
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])

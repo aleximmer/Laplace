@@ -28,7 +28,7 @@ OUTPUT_KEY = "output"
 class Model(nn.Module):
     def __init__(self):
         super().__init__()
-        self.attn = nn.MultiheadAttention(EMBED_DIM, num_heads=1)
+        self.attn = nn.MultiheadAttention(EMBED_DIM, num_heads=1, batch_first=True)
         self.final_layer = nn.Linear(EMBED_DIM, OUTPUT_SIZE)
 
     def forward(self, x):
