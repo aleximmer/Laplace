@@ -128,8 +128,11 @@ column per parameter in the Laplace approximation. For a 64x64 RGB image, that i
 - A light Hessian structure. `"diag"` scales to large models. `"kron"` is also cheap to
   fit, but it does not support the GLM predictive for image outputs, so you need the
   sampling (`"nn"`) predictive with it.
-- Fewer parameters. Applying Laplace to the last layer, or to another small subset of
-  weights, shrinks both the Hessian and the Jacobians. The
+- Fewer trainable parameters. Freezing all but the desired layers shrinks both the
+  Hessian and the Jacobians. Selecting individual subnetwork weights shrinks the
+  Hessian and the retained Jacobian, but Curvlinops still constructs the full
+  trainable-parameter Jacobian during fitting and GLM prediction, so this can still
+  exceed memory limits. The
   [BayesDiff](https://arxiv.org/abs/2310.11142) paper, for example, uses a diagonal
   last-layer Laplace on the denoiser, while [FLARE](https://arxiv.org/abs/2602.09170)
   uses a full Hessian over a random subset of the weights.
