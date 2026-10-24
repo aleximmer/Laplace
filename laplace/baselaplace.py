@@ -1578,15 +1578,19 @@ class ParametricLaplace(BaseLaplace):
         joint: bool = False,
         diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        if "asdl" in self._backend_cls.__name__.lower() and self.enable_backprop:
-            # Asdl's doesn't support backprop over Jacobians
-            # falling back to functorch
-            warnings.warn(
-                "ASDL backend is used which does not support backprop through "
-                "the functional variance, but `self.enable_backprop = True`. "
-                "Falling back to using `self.backend.functorch_jacobians` "
-                "which can be memory intensive for large models."
-            )
+        # In reward modeling, the output size differs between fitting (pairwise) and
+        # prediction (single items), which ASDL's Jacobian can't handle
+        if "asdl" in self._backend_cls.__name__.lower() and (
+            self.enable_backprop or self.likelihood == Likelihood.REWARD_MODELING
+        ):
+            if self.enable_backprop:
+                # Asdl's doesn't support backprop over Jacobians
+                warnings.warn(
+                    "ASDL backend is used which does not support backprop through "
+                    "the functional variance, but `self.enable_backprop = True`. "
+                    "Falling back to using `self.backend.functorch_jacobians` "
+                    "which can be memory intensive for large models."
+                )
 
             Js, f_mu = self.backend.functorch_jacobians(
                 X, enable_backprop=self.enable_backprop

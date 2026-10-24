@@ -1218,6 +1218,25 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     assert len(f_mu) == len(reward_test_X)
 
 
+@pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("enable_backprop", [True, False])
+def test_reward_modeling_asdl_glm(
+    backend, enable_backprop, reward_model, reward_loader, reward_test_X
+):
+    # Pairwise fitting and single-item prediction have different output sizes
+    lap = DiagLaplace(
+        reward_model,
+        "reward_modeling",
+        backend=backend,
+        enable_backprop=enable_backprop,
+    )
+    lap.fit(reward_loader)
+
+    f_mu, f_var = lap(reward_test_X, pred_type="glm")
+    assert torch.allclose(f_mu, reward_model(reward_test_X))
+    assert f_var.shape == (len(reward_test_X), 1, 1)
+
+
 @pytest.mark.parametrize("laplace", [KronLaplace, DiagLaplace])
 @pytest.mark.parametrize(
     "backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN, BackPackGGN, BackPackEF]
