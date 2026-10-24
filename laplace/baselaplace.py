@@ -999,10 +999,10 @@ class BaseLaplace:
         Parameters
         ----------
         f_mu : torch.Tensor or MutableMapping
-            glm predictive mean `(batch_size, output_shape)`
+            glm predictive mean `([batch_dims], output_shape)`
 
         f_var : torch.Tensor or MutableMapping
-            glm predictive covariances `(batch_size, output_shape, output_shape)`
+            glm predictive covariances `([batch_dims], output_shape, output_shape)`
 
         n_samples : int
             number of samples
@@ -1016,14 +1016,19 @@ class BaseLaplace:
         Returns
         -------
         samples : torch.Tensor
-            samples `(n_samples, batch_size, output_shape)`
+            samples `(n_samples, [batch_dims], output_shape)`
         """
+        # Flatten the batch dims (e.g. batch and sequence), sample, then restore them
+        batch_shape = f_mu.shape[:-1]
+        f_mu = f_mu.reshape(-1, f_mu.shape[-1])
+        f_var = f_var.reshape(-1, *f_var.shape[-2:])
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
 
         if diagonal_output:
-            f_var = torch.diagonal(f_var, dim1=1, dim2=2)
+            f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
 
-        return normal_samples(f_mu, f_var, n_samples, generator)
+        samples = normal_samples(f_mu, f_var, n_samples, generator)
+        return samples.reshape(n_samples, *batch_shape, f_mu.shape[-1])
 
     def _glm_predictive_samples(
         self,
@@ -1040,10 +1045,10 @@ class BaseLaplace:
         Parameters
         ----------
         f_mu : torch.Tensor or MutableMapping
-            glm predictive mean `(batch_size, output_shape)`
+            glm predictive mean `([batch_dims], output_shape)`
 
         f_var : torch.Tensor or MutableMapping
-            glm predictive covariances `(batch_size, output_shape, output_shape)`
+            glm predictive covariances `([batch_dims], output_shape, output_shape)`
 
         n_samples : int
             number of samples
@@ -1057,7 +1062,7 @@ class BaseLaplace:
         Returns
         -------
         samples : torch.Tensor
-            samples `(n_samples, batch_size, output_shape)`
+            samples `(n_samples, [batch_dims], output_shape)`
         """
         f_samples = self._glm_functional_samples(
             f_mu, f_var, n_samples, diagonal_output, generator

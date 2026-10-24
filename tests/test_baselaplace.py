@@ -1267,6 +1267,33 @@ def test_reward_modeling_full_asdl_ggn_matches_curvlinops(reward_model, reward_l
     assert torch.allclose(la_asdl.H, la_curvlinops.H)
 
 
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
+@pytest.mark.parametrize("diagonal_output", [True, False])
+@pytest.mark.parametrize("method", ["functional_samples", "predictive_samples"])
+def test_multidim_glm_samples(laplace, diagonal_output, method):
+    N, L, D, K, n_samples = 12, 3, 4, 2, 7
+    X, Y = torch.randn(N, D), torch.randn(N, K)
+    X_multidim, Y_multidim = X.reshape(N // L, L, D), Y.reshape(N // L, L, K)
+
+    model_flat = nn.Linear(D, K)
+    model_multidim = deepcopy(model_flat)
+    la_flat = laplace(model_flat, "regression", backend=CurvlinopsGGN)
+    la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=N))
+    la_multidim = laplace(model_multidim, "regression", backend=CurvlinopsGGN)
+    la_multidim.fit(DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=N))
+
+    kwargs = dict(pred_type="glm", n_samples=n_samples, diagonal_output=diagonal_output)
+    samples_flat = getattr(la_flat, method)(
+        X, generator=torch.Generator().manual_seed(0), **kwargs
+    )
+    samples_multidim = getattr(la_multidim, method)(
+        X_multidim, generator=torch.Generator().manual_seed(0), **kwargs
+    )
+
+    assert samples_multidim.shape == (n_samples, N // L, L, K)
+    assert torch.allclose(samples_flat, samples_multidim.reshape(n_samples, N, K))
+
+
 @pytest.mark.parametrize("backend", [AsdlGGN, CurvlinopsGGN])
 def test_multidim_variable_length_batches(backend):
     # Sequence lengths differ between batches, e.g. when padding to the longest sequence
