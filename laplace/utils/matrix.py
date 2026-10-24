@@ -211,9 +211,9 @@ class Kron:
         if exponent != 1:
             raise ValueError("Only supported after decomposition.")
         if W.ndim == 1:
-            return self._bmm(W.unsqueeze(0).unsqueeze(0)).squeeze()
+            return self._bmm(W.unsqueeze(0).unsqueeze(0)).reshape(W.shape)
         elif W.ndim == 2:
-            return self._bmm(W.unsqueeze(1)).squeeze()
+            return self._bmm(W.unsqueeze(1)).reshape(W.shape)
         elif W.ndim == 3:
             return self._bmm(W)
         else:
@@ -352,7 +352,12 @@ class KronDecomposed:
         kron : KronDecomposed
         """
         self._check_deltas(deltas)
-        return KronDecomposed(self.eigenvectors, self.eigenvalues, self.deltas + deltas)
+        return KronDecomposed(
+            self.eigenvectors,
+            self.eigenvalues,
+            self.deltas + deltas,
+            damping=self.damping,
+        )
 
     def __mul__(self, scalar: torch.Tensor | float) -> KronDecomposed:
         """Multiply by a scalar by changing the eigenvalues.
@@ -373,7 +378,9 @@ class KronDecomposed:
             [pow(scalar, 1 / len(ls)) * eigval for eigval in ls]
             for ls in self.eigenvalues
         ]
-        return KronDecomposed(self.eigenvectors, eigenvalues, self.deltas)
+        return KronDecomposed(
+            self.eigenvectors, eigenvalues, self.deltas, damping=self.damping
+        )
 
     def __len__(self) -> int:
         return len(self.eigenvalues)
@@ -479,9 +486,9 @@ class KronDecomposed:
             result `(batch, classes, params)`
         """
         if W.ndim == 1:
-            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).squeeze()
+            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).reshape(W.shape)
         elif W.ndim == 2:
-            return self._bmm(W.unsqueeze(1), exponent).squeeze()
+            return self._bmm(W.unsqueeze(1), exponent).reshape(W.shape)
         elif W.ndim == 3:
             return self._bmm(W, exponent)
         else:

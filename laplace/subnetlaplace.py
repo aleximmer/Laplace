@@ -200,7 +200,7 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
             dtype=self._dtype,
             generator=generator,
         )
-        subnet_samples = self.mean_subnet[None, ...] + samples @ self.posterior_scale
+        subnet_samples = self.mean_subnet[None, ...] + samples @ self.posterior_scale.T
         return self.assemble_full_samples(subnet_samples)
 
 

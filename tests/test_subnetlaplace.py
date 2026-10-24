@@ -1,3 +1,4 @@
+from copy import deepcopy
 from itertools import product
 
 import pytest
@@ -78,6 +79,77 @@ def reg_loader():
     X = torch.randn(10, 3)
     y = torch.randn(10, 2)
     return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.mark.parametrize("stochastic", [False, True])
+def test_asdl_diag_with_unused_module(class_loader, stochastic):
+    class PartiallyUsedModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.first = nn.Linear(3, 3)
+            self.unused = nn.Linear(3, 3)
+            self.last = nn.Linear(3, 2)
+
+        def forward(self, x):
+            return self.last(torch.tanh(self.first(x)))
+
+    model = PartiallyUsedModel()
+    reference = nn.Sequential(deepcopy(model.first), nn.Tanh(), deepcopy(model.last))
+    first_size = sum(p.numel() for p in model.first.parameters())
+    unused_size = sum(p.numel() for p in model.unused.parameters())
+    indices = torch.LongTensor([0, first_size + unused_size])
+    lap = DiagSubnetLaplace(
+        model,
+        "classification",
+        subnetwork_indices=indices,
+        backend=AsdlGGN,
+        backend_kwargs={"stochastic": stochastic},
+    )
+
+    lap.fit(class_loader)
+
+    reference_backend = AsdlGGN(reference, "classification", stochastic=stochastic)
+    reference_indices = torch.LongTensor([0, first_size])
+    X, y = next(iter(class_loader))
+    torch.manual_seed(711)
+    _, selected_diag = lap.backend.diag(X, y)
+    torch.manual_seed(711)
+    _, full_diag = reference_backend.diag(X, y)
+
+    assert lap.H.shape == (2,)
+    assert lap.H[0] > 0
+    assert lap.H[1] > 0
+    assert torch.allclose(selected_diag, full_diag[reference_indices])
+
+
+def test_asdl_diag_rejects_selected_parameters_without_fisher(class_loader):
+    class Scale(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.ones(1))
+
+        def forward(self, x):
+            return x * self.weight
+
+    model = nn.Sequential(Scale(), nn.Linear(3, 2))
+    supported_lap = DiagSubnetLaplace(
+        model,
+        "classification",
+        subnetwork_indices=torch.LongTensor([1]),
+        backend=AsdlGGN,
+    )
+    supported_lap.fit(class_loader)
+    assert supported_lap.H[0] > 0
+
+    lap = DiagSubnetLaplace(
+        model,
+        "classification",
+        subnetwork_indices=torch.LongTensor([0]),
+        backend=AsdlGGN,
+    )
+
+    with pytest.raises(ValueError, match="no diagonal Fisher statistics"):
+        lap.fit(class_loader)
 
 
 @pytest.mark.parametrize("likelihood", likelihoods)
@@ -869,7 +941,8 @@ def test_subnet_marginal_likelihood(
 def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     loader = class_loader if likelihood == "classification" else reg_loader
 
-    subnetmask = RandomSubnetMask(model=model, n_params_subnet=10)
+    n_params_subnet = 10
+    subnetmask = RandomSubnetMask(model=model, n_params_subnet=n_params_subnet)
     subnetmask.select()
 
     lap = Laplace(
@@ -914,6 +987,28 @@ def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     assert not (
         samples_1[:, ~fixed_mask] == model_params[~fixed_mask].repeat(n_samples, 1)
     ).all()
+
+    # Make sure empirical cov/var of samples matches posterior_covariance
+    # (full) / posterior_variance (diag). Since the internal posterior_*
+    # quantities are of shape (n_params_subnet, n_params_subnet) /
+    # (n_params_subnet,), we calculate the (co)variance of the active
+    # parameters only.
+    n_samples = int(1e6)
+    samples = lap.sample(n_samples=n_samples)[:, ~fixed_mask]
+    if hessian_structure == "full":
+        assert lap.posterior_scale.shape == (n_params_subnet, n_params_subnet)
+        assert lap.posterior_covariance.shape == (n_params_subnet, n_params_subnet)
+        assert torch.allclose(
+            lap.posterior_covariance, samples.T.cov(), rtol=0, atol=1e-2
+        )
+    elif hessian_structure == "diag":
+        assert lap.posterior_scale.shape == (n_params_subnet,)
+        assert lap.posterior_variance.shape == (n_params_subnet,)
+        assert torch.allclose(
+            lap.posterior_variance, samples.var(axis=0), rtol=0, atol=1e-2
+        )
+    else:
+        raise ValueError(f"{hessian_structure=} not supported")
 
 
 @pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
