@@ -103,9 +103,9 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `([batch_dims], outputs, parameters)`
         f : torch.Tensor
-            output function `(batch, outputs)`
+            output function `([batch_dims], outputs)`
         """
 
         def model_fn_params_only(params_dict, buffers_dict):
@@ -124,7 +124,7 @@ class CurvatureInterface:
         Js = torch.cat(Js, dim=-1)
 
         if self.subnetwork_indices is not None:
-            Js = Js[:, :, self.subnetwork_indices]
+            Js = Js[..., self.subnetwork_indices]
 
         return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
@@ -149,6 +149,11 @@ class CurvatureInterface:
             output function `(batch, outputs)`
         """
         f, phi = self.model.forward_with_features(x)
+        if phi.ndim > 2:
+            raise NotImplementedError(
+                "Last-layer Laplace does not support inputs/outputs with more than "
+                "one batch dimension (e.g. sequences) yet."
+            )
         bsize = phi.shape[0]
         output_size = int(f.numel() / bsize)
 
@@ -231,26 +236,37 @@ class CurvatureInterface:
         Returns
         -------
         Gs : torch.Tensor
-            gradients `(batch, parameters)`
+            gradients `(batch * tokens, parameters)`, where `tokens` is the number
+            of leading output dims per datum (1 if there are none)
         loss : torch.Tensor
         """
 
-        def loss_single(x, y, params_dict, buffers_dict):
-            """Compute the gradient for a single sample."""
+        def loss_single(params_dict, buffers_dict, x, y):
+            """Compute the loss of each token of a single sample."""
             x, y = x.unsqueeze(0), y.unsqueeze(0)  # vmap removes the batch dimension
             output = torch.func.functional_call(
                 self.model, (params_dict, buffers_dict), x
             )
-            loss = torch.func.functional_call(self.lossfunc, {}, (output, y))
-            return loss, loss
+            # Every leading dim of the output is a "token" with its own loss
+            n_lead = output.ndim - 1
+            output = output.flatten(end_dim=n_lead - 1)
+            y = y.reshape(output.shape[0], *y.shape[n_lead:])
 
-        grad_fn = torch.func.grad(loss_single, argnums=2, has_aux=True)
-        batch_grad_fn = torch.func.vmap(grad_fn, in_dims=(0, 0, None, None))
+            def loss_token(output_t, y_t):
+                return torch.func.functional_call(
+                    self.lossfunc, {}, (output_t.unsqueeze(0), y_t.unsqueeze(0))
+                )
 
-        batch_grad, batch_loss = batch_grad_fn(
-            x, y, self.params_dict, self.buffers_dict
-        )
-        Gs = torch.cat([bg.flatten(start_dim=1) for bg in batch_grad.values()], dim=1)
+            losses = torch.func.vmap(loss_token)(output, y)
+            return losses, losses.sum()
+
+        jac_fn = torch.func.jacrev(loss_single, argnums=0, has_aux=True)
+        batch_jac_fn = torch.func.vmap(jac_fn, in_dims=(None, None, 0, 0))
+
+        batch_grad, batch_loss = batch_jac_fn(self.params_dict, self.buffers_dict, x, y)
+        # (batch * tokens, parameters)
+        Gs = torch.cat([bg.flatten(start_dim=2) for bg in batch_grad.values()], dim=2)
+        Gs = Gs.flatten(end_dim=1)
 
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
@@ -408,7 +424,7 @@ class GGNInterface(CurvatureInterface):
             F += (
                 1
                 / self.num_samples
-                * torch.einsum("bc,bk->bck", grad_sample, grad_sample)
+                * torch.einsum("...c,...k->...ck", grad_sample, grad_sample)
             )
 
         return F
@@ -453,9 +469,9 @@ class GGNInterface(CurvatureInterface):
         )
 
         if H_lik is not None:
-            H = torch.einsum("bcp,bck,bkq->pq", Js, H_lik, Js)
+            H = torch.einsum("...cp,...ck,...kq->pq", Js, H_lik, Js)
         else:  # The case of exact GGN for regression
-            H = torch.einsum("bcp,bcq->pq", Js, Js)
+            H = torch.einsum("...cp,...cq->pq", Js, Js)
         loss = self.factor * self.lossfunc(f, y)
 
         return loss.detach(), H.detach()
@@ -476,9 +492,9 @@ class GGNInterface(CurvatureInterface):
         )
 
         if H_lik is not None:
-            H = torch.einsum("bcp,bck,bkp->p", Js, H_lik, Js)
+            H = torch.einsum("...cp,...ck,...kp->p", Js, H_lik, Js)
         else:  # The case of exact GGN for regression
-            H = torch.einsum("bcp,bcp->p", Js, Js)
+            H = torch.einsum("...cp,...cp->p", Js, Js)
 
         return loss.detach(), H.detach()
 
@@ -548,8 +564,8 @@ class EFInterface(CurvatureInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        # Gs is (batchsize, n_params)
+        # Gs is (..., n_params)
         Gs, loss = self.gradients(x, y)
         Gs, loss = Gs.detach(), loss.detach()
-        diag_ef = torch.einsum("bp,bp->p", Gs, Gs)
+        diag_ef = torch.einsum("...p,...p->p", Gs, Gs)
         return self.factor * loss, self.factor * diag_ef

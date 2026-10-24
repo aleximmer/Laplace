@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from asdl.fisher import FisherConfig, get_fisher_maker
@@ -67,32 +67,47 @@ class AsdlInterface(CurvatureInterface):
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `([batch_dims], outputs, parameters)`
         f : torch.Tensor
-            output function `(batch, outputs)`
+            output function `([batch_dims], outputs)`
         """
         Js = list()
-        for i in range(self.model.output_size):
+        # `self.model.output_size` can be stale, e.g. in reward modeling where the
+        # output size differs between fitting and prediction. So, get the number of
+        # outputs from the first forward pass instead.
+        n_outputs = 1
+        i = 0
+        while i < n_outputs:
 
             def closure():
                 self.model.zero_grad()
                 f = self.model(x)
-                loss = f[:, i].sum()
+                loss = f[..., i].sum()
                 loss.backward(
                     create_graph=enable_backprop, retain_graph=enable_backprop
                 )
                 return f
 
-            Ji, f = batch_gradient(
-                self.model,
-                closure,
-                return_outputs=True,
-                batch_size=self._get_batch_size(x),
-            )
+            Ji, f = self._batch_gradient(closure)
+            n_outputs = f.shape[-1]
+
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]
+
             Js.append(Ji)
-        Js = torch.stack(Js, dim=1)
+            i += 1
+
+        Js = torch.stack(Js, dim=1)  # (n_rows, n_outputs, n_params)
+
+        # ASDL returns one row per row of the layers' inputs, e.g. per token. Sum those
+        # belonging to the same observation, e.g. when the outputs are pooled over tokens.
+        n_obs = f.shape[:-1].numel()
+        Js = self._sum_rows_per_observation(Js, n_obs)
+
+        if Js.shape[0] == n_obs:
+            # Restore the individual batch dims of the outputs
+            Js = Js.reshape(*f.shape[:-1], *Js.shape[-2:])
+
         return Js, f
 
     def gradients(
@@ -111,7 +126,7 @@ class AsdlInterface(CurvatureInterface):
         -------
         loss : torch.Tensor
         Gs : torch.Tensor
-            gradients `(batch, parameters)`
+            gradients `(n_observations, parameters)`
         """
 
         def closure():
@@ -120,12 +135,66 @@ class AsdlInterface(CurvatureInterface):
             loss.backward()
             return loss
 
-        Gs, loss = batch_gradient(
-            self.model, closure, return_outputs=True, batch_size=self._get_batch_size(x)
-        )
+        Gs, loss = self._batch_gradient(closure)
+
+        # The last dim of regression targets is the output dim
+        n_obs = (
+            y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+        ).numel()
+        Gs = self._sum_rows_per_observation(Gs, n_obs)
+
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
+
+    def _batch_gradient(self, closure: Callable[[], Any]) -> tuple[torch.Tensor, Any]:
+        """ASDL's `batch_gradient` with a clearer error for models whose layers have
+        different numbers of gradient rows, e.g., token-wise layers followed by a
+        head applied after pooling over tokens.
+        """
+        try:
+            return batch_gradient(self.model, closure, return_outputs=True)
+        except RuntimeError as e:
+            if "Sizes of tensors must match" not in str(e):
+                raise
+            raise RuntimeError(
+                "ASDL returned different numbers of gradient rows for different layers, "
+                "e.g., for outputs pooled over tokens. Use a Curvlinops backend "
+                "(`CurvlinopsGGN` or `CurvlinopsEF`) for such models."
+            ) from e
+
+    @staticmethod
+    def _sum_rows_per_observation(A: torch.Tensor, n_obs: int) -> torch.Tensor:
+        """ASDL returns one row per row of the layers' inputs (e.g. per token), but
+        an observation can span several of them (e.g. pooled outputs, or pairs in
+        reward modeling). Sum the rows that belong to the same observation.
+
+        Parameters
+        ----------
+        A : torch.Tensor
+            `(n_rows, ...)`, where rows of the same observation are consecutive.
+        n_obs : int
+            number of observations, i.e., product of the leading dims of the outputs.
+
+        Returns
+        -------
+        A : torch.Tensor
+            `(n_obs, ...)`
+
+        Raises
+        ------
+        ValueError
+            if `n_rows` is not a multiple of `n_obs`.
+        """
+        n_rows = A.shape[0]
+        if n_rows == n_obs:
+            return A
+        if n_obs == 0 or n_rows % n_obs != 0:
+            raise ValueError(
+                f"ASDL returned {n_rows} per-example rows, which cannot be grouped "
+                f"into {n_obs} observations (the leading dims of the outputs)."
+            )
+        return A.reshape(n_obs, n_rows // n_obs, *A.shape[1:]).sum(1)
 
     @property
     def _ggn_type(self) -> str:
@@ -171,6 +240,11 @@ class AsdlInterface(CurvatureInterface):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if "N" in kwargs:
             del kwargs["N"]
+
+        if self.loss_type == LOSS_MSE and self._ggn_type == FISHER_EXACT and y.ndim > 2:
+            # ASDL's exact MSE Fisher loops over `logits[:, i]`, which assumes 2D
+            # outputs. With multidim outputs, use the Jacobian-based GGN instead.
+            return super(AsdlInterface, self).diag(x, y, **kwargs)
 
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
@@ -332,6 +406,13 @@ class AsdlInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        if self.likelihood == Likelihood.REGRESSION and y.ndim > 2:
+            raise NotImplementedError(
+                "Kronecker-factored curvature with ASDL does not support regression "
+                "targets with more than one batch dimension (e.g. sequences). "
+                "Use a Curvlinops backend instead."
+            )
+
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
         cfg = FisherConfig(
@@ -363,20 +444,6 @@ class AsdlInterface(CurvatureInterface):
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
-
-    def _get_batch_size(
-        self,
-        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-    ) -> int | None:
-        """
-        ASDL assumes that all leading dimensions are the batch size by default (batch_size = None).
-        Here, we want to specify that only the first dimension is the actual batch size.
-        This is the case for LLMs.
-        """
-        if isinstance(x, MutableMapping):
-            return x[self.dict_key_x].shape[0]
-        else:
-            return None  # Use ASDL default behavior
 
 
 class AsdlHessian(AsdlInterface):

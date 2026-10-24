@@ -181,9 +181,12 @@ class BaseLaplace:
         )
 
         # log likelihood = g(loss)
-        self.loss: float = 0.0
+        self.loss: float | torch.Tensor = 0.0
         self.n_outputs: int = 0
         self.n_data: int = 0
+        # Number of observations in the likelihood. Differs from `n_data` only when
+        # each datum has extra (e.g. sequence) dims: then it counts all tokens.
+        self.n_obs: int = 0
 
         # Declare attributes
         self._prior_mean: torch.Tensor
@@ -249,7 +252,7 @@ class BaseLaplace:
         if self.likelihood == "regression":
             # loss used is just MSE, need to add normalizer for gaussian likelihood
             c = (
-                self.n_data
+                (self.n_obs or self.n_data)
                 * self.n_outputs
                 * torch.log(
                     torch.as_tensor(
@@ -266,7 +269,7 @@ class BaseLaplace:
     def __call__(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-        pred_type: PredType | str,
+        pred_type: PredType | str = PredType.GLM,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
@@ -275,6 +278,60 @@ class BaseLaplace:
         fitting: bool = False,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """Compute the posterior predictive on input data `x`.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            `(batch_size, input_shape)` if tensor. If MutableMapping, must contain
+            the said tensor.
+
+        pred_type : {'glm', 'nn'}, default='glm'
+            type of posterior predictive, linearized GLM predictive or neural
+            network sampling predictive. The GLM predictive is consistent with
+            the curvature approximations used here. When Laplace is done only
+            on subset of parameters (i.e. some grad are disabled),
+            only `nn` predictive is supported.
+
+        link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
+            how to approximate the classification link function for the `'glm'`.
+            For `pred_type='nn'`, only 'mc' is possible.
+
+        joint : bool
+            Whether to output a joint predictive distribution in regression with
+            `pred_type='glm'`. If set to `True`, the predictive distribution
+            has the same form as GP posterior, i.e. N([f(x1), ...,f(xm)], Cov[f(x1), ..., f(xm)]).
+            If `False`, then only outputs the marginal predictive distribution.
+            Only available for regression and GLM predictive.
+
+        n_samples : int, default=100
+            number of samples for `link_approx='mc'`.
+
+        diagonal_output : bool
+            whether to use a diagonalized posterior predictive on the outputs.
+            Only works for `pred_type='glm'` when `joint=False` in regression.
+            In the case of last-layer Laplace with a diagonal or Kron Hessian,
+            setting this to `True` makes computation much(!) faster for large
+            number of outputs.
+
+        generator : torch.Generator, optional
+            random number generator to control the samples (if sampling used).
+
+        fitting : bool, default=False
+            whether or not this predictive call is done during fitting. Only useful for
+            reward modeling: the likelihood is set to `"regression"` when `False` and
+            `"classification"` when `True`.
+
+        Returns
+        -------
+        predictive: torch.Tensor or tuple[torch.Tensor]
+            For `likelihood='classification'`, a torch.Tensor is returned with
+            a distribution over classes (similar to a Softmax).
+            For `likelihood='regression'`, a tuple of torch.Tensor is returned
+            with the mean and the predictive variance.
+            For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
+            is returned with the mean and the predictive covariance.
+        """
         raise NotImplementedError
 
     def predictive(
@@ -293,8 +350,7 @@ class BaseLaplace:
             raise ValueError("Jacobians have to be torch.Tensor.")
         if not Js.device == self._device:
             raise ValueError("Jacobians need to be on the same device as Laplace.")
-        m, k, p = Js.size()
-        if p != self.n_params:
+        if Js.ndim < 3 or Js.shape[-1] != self.n_params:
             raise ValueError("Invalid Jacobians shape for Laplace posterior approx.")
 
     @property
@@ -555,7 +611,9 @@ class BaseLaplace:
 
     def _gridsearch(
         self,
-        loss: torchmetrics.Metric | Callable[[torch.Tensor], torch.Tensor | float],
+        loss: torchmetrics.Metric
+        | Callable[[torch.Tensor, torch.Tensor], torch.Tensor]
+        | Callable[[torch.Tensor, torch.Tensor, torch.Tensor], torch.Tensor],
         interval: torch.Tensor,
         val_loader: DataLoader,
         pred_type: PredType | str,
@@ -941,10 +999,10 @@ class BaseLaplace:
         Parameters
         ----------
         f_mu : torch.Tensor or MutableMapping
-            glm predictive mean `(batch_size, output_shape)`
+            glm predictive mean `([batch_dims], output_shape)`
 
         f_var : torch.Tensor or MutableMapping
-            glm predictive covariances `(batch_size, output_shape, output_shape)`
+            glm predictive covariances `([batch_dims], output_shape, output_shape)`
 
         n_samples : int
             number of samples
@@ -958,14 +1016,19 @@ class BaseLaplace:
         Returns
         -------
         samples : torch.Tensor
-            samples `(n_samples, batch_size, output_shape)`
+            samples `(n_samples, [batch_dims], output_shape)`
         """
+        # Flatten the batch dims (e.g. batch and sequence), sample, then restore them
+        batch_shape = f_mu.shape[:-1]
+        f_mu = f_mu.reshape(-1, f_mu.shape[-1])
+        f_var = f_var.reshape(-1, *f_var.shape[-2:])
         assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1], f_mu.shape[1]])
 
         if diagonal_output:
-            f_var = torch.diagonal(f_var, dim1=1, dim2=2)
+            f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
 
-        return normal_samples(f_mu, f_var, n_samples, generator)
+        samples = normal_samples(f_mu, f_var, n_samples, generator)
+        return samples.reshape(n_samples, *batch_shape, f_mu.shape[-1])
 
     def _glm_predictive_samples(
         self,
@@ -982,10 +1045,10 @@ class BaseLaplace:
         Parameters
         ----------
         f_mu : torch.Tensor or MutableMapping
-            glm predictive mean `(batch_size, output_shape)`
+            glm predictive mean `([batch_dims], output_shape)`
 
         f_var : torch.Tensor or MutableMapping
-            glm predictive covariances `(batch_size, output_shape, output_shape)`
+            glm predictive covariances `([batch_dims], output_shape, output_shape)`
 
         n_samples : int
             number of samples
@@ -999,7 +1062,7 @@ class BaseLaplace:
         Returns
         -------
         samples : torch.Tensor
-            samples `(n_samples, batch_size, output_shape)`
+            samples `(n_samples, [batch_dims], output_shape)`
         """
         f_samples = self._glm_functional_samples(
             f_mu, f_var, n_samples, diagonal_output, generator
@@ -1104,6 +1167,7 @@ class ParametricLaplace(BaseLaplace):
             self._init_H()
             self.loss: float | torch.Tensor = 0
             self.n_data: int = 0
+            self.n_obs: int = 0
 
         self.model.eval()
 
@@ -1156,10 +1220,28 @@ class ParametricLaplace(BaseLaplace):
                     f"the target has {y.ndim} dims."
                 )
 
+            if (
+                self.likelihood == Likelihood.REGRESSION
+                and y.ndim > 2
+                and "backpack" in self._backend_cls.__name__.lower()
+            ):
+                raise NotImplementedError(
+                    "BackPack backends do not support regression targets with more "
+                    "than one batch dimension (e.g. sequences) yet."
+                )
+
             self.model.zero_grad()
             loss_batch, H_batch = self._curv_closure(X, y, N=N)
             self.loss += loss_batch
             self.H += H_batch
+
+            # Every token (extra dims between the batch and output dims) is an
+            # observation. Count per batch since the sequence length can vary.
+            # The last dim of regression targets is the output dim.
+            y_obs_shape = (
+                y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+            )
+            self.n_obs += y_obs_shape.numel()
 
         self.n_data += N
 
@@ -1513,21 +1595,31 @@ class ParametricLaplace(BaseLaplace):
         joint: bool = False,
         diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        if "asdl" in self._backend_cls.__name__.lower():
-            # Asdl's doesn't support backprop over Jacobians
-            # falling back to functorch
-            warnings.warn(
-                "ASDL backend is used which does not support backprop through "
-                "the functional variance, but `self.enable_backprop = True`. "
-                "Falling back to using `self.backend.functorch_jacobians` "
-                "which can be memory intensive for large models."
-            )
+        # In reward modeling, the output size differs between fitting (pairwise) and
+        # prediction (single items), which ASDL's Jacobian can't handle
+        if "asdl" in self._backend_cls.__name__.lower() and (
+            self.enable_backprop or self.likelihood == Likelihood.REWARD_MODELING
+        ):
+            if self.enable_backprop:
+                # Asdl's doesn't support backprop over Jacobians
+                warnings.warn(
+                    "ASDL backend is used which does not support backprop through "
+                    "the functional variance, but `self.enable_backprop = True`. "
+                    "Falling back to using `self.backend.functorch_jacobians` "
+                    "which can be memory intensive for large models."
+                )
 
             Js, f_mu = self.backend.functorch_jacobians(
                 X, enable_backprop=self.enable_backprop
             )
         else:
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
+
+        if self.likelihood == Likelihood.CLASSIFICATION and f_mu.ndim > 2:
+            raise NotImplementedError(
+                "The GLM predictive for classification with more than one batch "
+                "dimension (e.g. sequences) is not supported yet."
+            )
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
@@ -1594,7 +1686,7 @@ class ParametricLaplace(BaseLaplace):
 
         vector_to_parameters(self.mean, self.params)
 
-        return py
+        return torch.as_tensor(py)
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         """Compute functional variance for the `'glm'` predictive:
@@ -1630,7 +1722,7 @@ class ParametricLaplace(BaseLaplace):
         ----------
         Js : torch.Tensor
             Jacobians of model output wrt parameters
-            `(batch*outputs, parameters)`
+            `([batch_dims], outputs, parameters)`
 
         Returns
         -------
@@ -1721,6 +1813,7 @@ class ParametricLaplace(BaseLaplace):
             "prior_precision": self.prior_precision,
             "sigma_noise": self.sigma_noise,
             "n_data": self.n_data,
+            "n_obs": self.n_obs,
             "n_outputs": self.n_outputs,
             "likelihood": self.likelihood,
             "temperature": self.temperature,
@@ -1767,6 +1860,7 @@ class ParametricLaplace(BaseLaplace):
         self.prior_precision = state_dict["prior_precision"]
         self.sigma_noise = state_dict["sigma_noise"]
         self.n_data = state_dict["n_data"]
+        self.n_obs = state_dict.get("n_obs", self.n_data)
         self.n_outputs = state_dict["n_outputs"]
         setattr(self.model, "output_size", self.n_outputs)
         self.likelihood = state_dict["likelihood"]
@@ -1886,11 +1980,10 @@ class FullLaplace(ParametricLaplace):
         return delta @ self.posterior_precision @ delta
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
-        return torch.einsum("ncp,pq,nkq->nck", Js, self.posterior_covariance, Js)
+        return torch.einsum("...cp,pq,...kq->...ck", Js, self.posterior_covariance, Js)
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
+        Js = Js.reshape(-1, Js.shape[-1])
         return torch.einsum("np,pq,mq->nm", Js, self.posterior_covariance, Js)
 
     def sample(
@@ -2037,10 +2130,20 @@ class KronLaplace(ParametricLaplace):
         return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
+        self._check_multidim_jacobians(Js)
         return self.posterior_precision.inv_square_form(Js)
+
+    @staticmethod
+    def _check_multidim_jacobians(Js: torch.Tensor) -> None:
+        if Js.ndim > 3:
+            raise NotImplementedError(
+                "KronLaplace does not support the GLM predictive for inputs/outputs "
+                "with more than one batch dimension (e.g. sequences) yet."
+            )
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
+        self._check_multidim_jacobians(Js)
         n_batch, n_outs, n_params = Js.shape
         Js = Js.reshape(n_batch * n_outs, n_params).unsqueeze(0)
         cov = self.posterior_precision.inv_square_form(Js).squeeze(0)
@@ -2209,19 +2312,19 @@ class LowRankLaplace(ParametricLaplace):
         return (self.H[0], self._H_factor * self.H[1]), self.prior_precision_diag
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
-        prior_var = torch.einsum("ncp,nkp->nck", Js / self.prior_precision_diag, Js)
-        Js_V = torch.einsum("ncp,pl->ncl", Js, self.V)
-        info_gain = torch.einsum("ncl,nkl->nck", Js_V @ self.Kinv, Js_V)
+        prior_var = torch.einsum(
+            "...cp,...kp->...ck", Js / self.prior_precision_diag, Js
+        )
+        Js_V = torch.einsum("...cp,pl->...cl", Js, self.V)
+        info_gain = torch.einsum("...cl,...kl->...ck", Js_V @ self.Kinv, Js_V)
         return prior_var - info_gain
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
+        Js = Js.reshape(-1, Js.shape[-1])
         prior_cov = torch.einsum("np,mp->nm", Js / self.prior_precision_diag, Js)
         Js_V = torch.einsum("np,pl->nl", Js, self.V)
         info_gain = torch.einsum("nl,ml->nm", Js_V @ self.Kinv, Js_V)
         cov = prior_cov - info_gain
-        assert cov.shape == (n_batch * n_outs, n_batch * n_outs)
         return cov
 
     def sample(
@@ -2323,12 +2426,13 @@ class DiagLaplace(ParametricLaplace):
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
-        return torch.einsum("ncp,p,nkp->nck", Js, self.posterior_variance, Js)
+        return torch.einsum("...cp,p,...kp->...ck", Js, self.posterior_variance, Js)
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params)
+        # (prod(batch_dims) * out_dim, n_params)
+        Js = Js.reshape(-1, Js.shape[-1])
+        # (prod(batch_dims) * out_dim, prod(batch_dims) * out_dim)
         cov = torch.einsum("np,p,mp->nm", Js, self.posterior_variance, Js)
         return cov
 
@@ -3014,18 +3118,14 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
     def _build_Sigma_inv(self):
         """Computes the cholesky decomposition of
-                \\[
-                    K_{MM} + \\Lambda_{MM}^{-1}.
-                \\]
-                See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
-                Equation 15 for more information.
+        \\[
+            K_{MM} + \\Lambda_{MM}^{-1}.
+        \\]
+        See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
+        Equation 15 for more information.
 
-        <<<<<<< HEAD
-                As the diagonal approximation is performed with \\Lambda_{MM} (which is stored in self.L),
-        =======
-                As the diagonal approximation is performed with \\(\\Lambda_{MM}\\) (which is stored in self.L),
-        >>>>>>> main
-                the code is greatly simplified.
+        As the diagonal approximation is performed with \\(\\Lambda_{MM}\\) (which is stored in self.L),
+        the code is greatly simplified.
         """
         if self.independent_outputs:
             self.Sigma_inv = [
