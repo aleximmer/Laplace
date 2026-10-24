@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, Callable
 
 import torch
 from asdl.fisher import FisherConfig, get_fisher_maker
@@ -88,7 +88,7 @@ class AsdlInterface(CurvatureInterface):
                 )
                 return f
 
-            Ji, f = batch_gradient(self.model, closure, return_outputs=True)
+            Ji, f = self._batch_gradient(closure)
             n_outputs = f.shape[-1]
 
             if self.subnetwork_indices is not None:
@@ -135,7 +135,7 @@ class AsdlInterface(CurvatureInterface):
             loss.backward()
             return loss
 
-        Gs, loss = batch_gradient(self.model, closure, return_outputs=True)
+        Gs, loss = self._batch_gradient(closure)
 
         # The last dim of regression targets is the output dim
         n_obs = (
@@ -146,6 +146,22 @@ class AsdlInterface(CurvatureInterface):
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
+
+    def _batch_gradient(self, closure: Callable[[], Any]) -> tuple[torch.Tensor, Any]:
+        """ASDL's `batch_gradient` with a clearer error for models whose layers have
+        different numbers of gradient rows, e.g., token-wise layers followed by a
+        head applied after pooling over tokens.
+        """
+        try:
+            return batch_gradient(self.model, closure, return_outputs=True)
+        except RuntimeError as e:
+            if "Sizes of tensors must match" not in str(e):
+                raise
+            raise RuntimeError(
+                "ASDL returned different numbers of gradient rows for different layers, "
+                "e.g., for outputs pooled over tokens. Use a Curvlinops backend "
+                "(`CurvlinopsGGN` or `CurvlinopsEF`) for such models."
+            ) from e
 
     @staticmethod
     def _sum_rows_per_observation(A: torch.Tensor, n_obs: int) -> torch.Tensor:

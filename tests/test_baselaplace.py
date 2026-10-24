@@ -1219,6 +1219,28 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     assert len(f_mu) == len(reward_test_X)
 
 
+@pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
+def test_asdl_different_numbers_of_rows_raises(backend):
+    # Token-wise layer (B * L rows), then a head after pooling over tokens (B rows)
+    B, L, D, K = 4, 3, 5, 2
+
+    class PooledModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.first = nn.Linear(D, 6)
+            self.head = nn.Linear(6, K)
+
+        def forward(self, x):
+            return self.head(torch.tanh(self.first(x)).mean(1))
+
+    model = PooledModel()
+    setattr(model, "output_size", K)
+    x, y = torch.randn(B, L, D), torch.randn(B, K)
+
+    with pytest.raises(RuntimeError, match="Curvlinops"):
+        backend(model, "regression").full(x, y, N=B)
+
+
 @pytest.mark.parametrize(
     "asdl_backend, curvlinops_backend",
     [(AsdlGGN, CurvlinopsGGN), (AsdlEF, CurvlinopsEF)],
