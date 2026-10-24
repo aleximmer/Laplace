@@ -90,11 +90,12 @@ class SubnetLaplace(ParametricLaplace):
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
         temperature: float = 1.0,
-        dict_key_x: str = "input_ids",
-        dict_key_y: str = "labels",
         backend: Type[CurvatureInterface] | None = None,
         backend_kwargs: dict | None = None,
         asdl_fisher_kwargs: dict | None = None,
+        *,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
     ) -> None:
         if asdl_fisher_kwargs is not None:
             raise ValueError("Subnetwork Laplace does not support asdl_fisher_kwargs.")
