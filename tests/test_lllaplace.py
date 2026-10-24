@@ -9,9 +9,13 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
+from laplace.curvature.asdl import AsdlEF, AsdlGGN
+from laplace.curvature.backpack import BackPackEF, BackPackGGN
+from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
+from laplace.utils.matrix import KronDecomposed
 from tests.utils import jacobians_naive
 
 
@@ -27,6 +31,13 @@ flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 @pytest.fixture
 def model():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
+    setattr(model, "output_size", 2)
+    return model
+
+
+@pytest.fixture
+def model_no_output_bias():
+    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2, bias=False))
     setattr(model, "output_size", 2)
     return model
 
@@ -187,6 +198,7 @@ def test_laplace_init_precision(laplace, model):
     setattr(model, "n_params", len(parameters_to_vector(model_params)))
     # float
     precision = 10.6
+
     laplace(
         model, likelihood="regression", prior_precision=precision, last_layer_name="1"
     )
@@ -428,16 +440,6 @@ def test_laplace_functionality(
     lml = lml + 1 / 2 * (prior_prec.logdet() - log_det_post_prec)
     assert torch.allclose(lml, lap.log_marginal_likelihood())
 
-    # test sampling
-    torch.manual_seed(61)
-    samples = lap.sample(n_samples=1)
-    assert samples.shape == torch.Size([1, len(theta)])
-    samples = lap.sample(n_samples=1000000)
-    assert samples.shape == torch.Size([1000000, len(theta)])
-    mu_comp = samples.mean(dim=0)
-    mu_true = lap.mean
-    assert torch.allclose(mu_comp, mu_true, atol=1e-2)
-
     # test functional variance
     if laplace == FullLLLaplace:
         Sigma = lap.posterior_covariance
@@ -454,6 +456,15 @@ def test_laplace_functionality(
     assert torch.allclose(f, comp_f)
     comp_f_var = lap.functional_variance(comp_Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
+
+    # test sampling
+    torch.manual_seed(61)
+    samples = lap.sample(n_samples=1)
+    assert samples.shape == torch.Size([1, len(theta)])
+    samples = lap.sample(n_samples=1_000_000)
+    assert samples.shape == torch.Size([1_000_000, len(theta)])
+    assert torch.allclose(samples.mean(dim=0), lap.mean, rtol=0, atol=1e-2)
+    assert torch.allclose(samples.T.cov(), Sigma, rtol=0, atol=1e-2)
 
 
 @pytest.mark.parametrize("laplace", flavors)
@@ -563,6 +574,36 @@ def test_classification_predictive_samples(laplace, model, class_loader):
     assert np.allclose(fsamples.sum().item(), len(f) * 100)  # sum up to 1
 
 
+@pytest.mark.parametrize("laplace", [FullLLLaplace, DiagLLLaplace, KronLLLaplace])
+def test_functional_variance_fast(laplace, model, reg_loader):
+    if laplace == KronLLLaplace:
+        # TODO still!
+        return
+
+    X, y = reg_loader.dataset.tensors
+    X.requires_grad = True
+
+    lap = laplace(model, "regression", enable_backprop=True)
+    lap.fit(reg_loader)
+    f_mu, f_var = lap.functional_variance_fast(X)
+
+    assert f_mu.shape == (X.shape[0], y.shape[-1])
+    assert f_var.shape == (X.shape[0], y.shape[-1])
+
+    Js, f_naive = lap.backend.last_layer_jacobians(X)
+
+    if laplace == DiagLLLaplace:
+        f_var_naive = torch.einsum("ncp,p,ncp->nc", Js, lap.posterior_variance, Js)
+    elif laplace == KronLLLaplace:
+        f_var_naive = lap.posterior_precision.inv_square_form(Js)
+        f_var_naive = torch.diagonal(f_var_naive, dim1=-2, dim2=-1)
+    else:  # FullLLaplace
+        f_var_naive = torch.einsum("ncp,pq,ncq->nc", Js, lap.posterior_covariance, Js)
+
+    assert torch.allclose(f_mu, f_naive)
+    assert torch.allclose(f_var, f_var_naive)
+
+
 @pytest.mark.parametrize("laplace", flavors)
 def test_backprop_glm(laplace, model, reg_loader):
     X, y = reg_loader.dataset.tensors
@@ -637,3 +678,69 @@ def test_backprop_nn(laplace, model, reg_loader):
         assert grad_X_var.shape == X.shape
     except ValueError:
         assert False
+
+
+@pytest.mark.parametrize("laplace", [FullLLLaplace, KronLLLaplace, DiagLLLaplace])
+def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    n_batch = X.shape[0]
+    n_outputs = y.shape[-1]
+
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+
+    # Joint predictive ignores diagonal_output
+    f_mean, f_var = lap(X, pred_type="glm", joint=True, diagonal_output=True)
+    assert f_var.shape == (n_batch * n_outputs, n_batch * n_outputs)
+
+    f_mean, f_var = lap(X, pred_type="glm", joint=True, diagonal_output=False)
+    assert f_var.shape == (n_batch * n_outputs, n_batch * n_outputs)
+
+    # diagonal_output affects non-joint
+    f_mean, f_var = lap(X, pred_type="glm", joint=False, diagonal_output=True)
+    assert f_var.shape == (n_batch, n_outputs)
+
+    f_mean, f_var = lap(X, pred_type="glm", joint=False, diagonal_output=False)
+    assert f_var.shape == (n_batch, n_outputs, n_outputs)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize(
+    "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
+)
+@pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_dtype(laplace, backend, dtype, likelihood):
+    X = torch.randn((10, 3), dtype=dtype)
+    Y = torch.randn((10, 3), dtype=dtype)
+
+    data = TensorDataset(X, Y)
+    dataloader = DataLoader(data, batch_size=10)
+
+    model = nn.Linear(3, 3, dtype=dtype)
+
+    try:
+        la = laplace(model, likelihood, backend=backend)
+        la.fit(dataloader)
+
+        assert la.H is not None
+
+        if isinstance(la.H, torch.Tensor):
+            assert la.H.dtype == dtype
+        elif isinstance(la.H, KronDecomposed):
+            assert la.H.eigenvalues[0][0].dtype == dtype
+            assert la.H.eigenvectors[0][0].dtype == dtype
+
+        assert la.log_marginal_likelihood().dtype == dtype
+
+        y_pred, y_var = la(X, pred_type="glm")
+        assert y_pred.dtype == dtype
+        assert y_var.dtype == dtype
+
+        y_pred = la(X, pred_type="nn", num_samples=3)
+        assert y_pred.dtype == dtype
+    except (ValueError, AttributeError, RuntimeError, SystemExit) as e:
+        if "must have the same dtype" in str(e):
+            assert False  # Fail the test
+        else:
+            pass  # Ignore

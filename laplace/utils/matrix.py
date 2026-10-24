@@ -32,14 +32,18 @@ class Kron:
 
     @classmethod
     def init_from_model(
-        cls, model: nn.Module | Iterable[nn.Parameter], device: torch.device
+        cls,
+        model: nn.Module | Iterable[nn.Parameter],
+        device: torch.device,
+        dtype: torch.dtype,
     ) -> Kron:
         """Initialize Kronecker factors based on a models architecture.
 
         Parameters
         ----------
-        model : nn.Module or iterable of parameters, e.g. model.parameters()
-        device : torch.device
+        model: `nn.Module` or iterable of parameters, e.g. `model.parameters()`
+        device: The device where each of the Kronecker factor lives in.
+        dtype: The data type of each Kronecker factor.
 
         Returns
         -------
@@ -54,7 +58,7 @@ class Kron:
         for p in params:
             if p.ndim == 1:  # bias
                 P = p.size(0)
-                kfacs.append([torch.zeros(P, P, device=device)])
+                kfacs.append([torch.zeros(P, P, device=device, dtype=dtype)])
             elif 4 >= p.ndim >= 2:  # fully connected or conv
                 if p.ndim == 2:  # fully connected
                     P_in, P_out = p.size()
@@ -63,12 +67,13 @@ class Kron:
 
                 kfacs.append(
                     [
-                        torch.zeros(P_in, P_in, device=device),
-                        torch.zeros(P_out, P_out, device=device),
+                        torch.zeros(P_in, P_in, device=device, dtype=dtype),
+                        torch.zeros(P_out, P_out, device=device, dtype=dtype),
                     ]
                 )
             else:
                 raise ValueError("Invalid parameter shape in network.")
+
         return cls(kfacs)
 
     def __add__(self, other: Kron) -> Kron:
@@ -206,9 +211,9 @@ class Kron:
         if exponent != 1:
             raise ValueError("Only supported after decomposition.")
         if W.ndim == 1:
-            return self._bmm(W.unsqueeze(0).unsqueeze(0)).squeeze()
+            return self._bmm(W.unsqueeze(0).unsqueeze(0)).reshape(W.shape)
         elif W.ndim == 2:
-            return self._bmm(W.unsqueeze(1)).squeeze()
+            return self._bmm(W.unsqueeze(1)).reshape(W.shape)
         elif W.ndim == 3:
             return self._bmm(W)
         else:
@@ -292,7 +297,7 @@ class KronDecomposed:
     deltas : torch.Tensor
         addend for each group of Kronecker factors representing, for example,
         a prior precision
-    dampen : bool, default=False
+    damping : bool, default=False
         use dampen approximation mixing prior and Kron partially multiplicatively
     """
 
@@ -305,9 +310,14 @@ class KronDecomposed:
     ):
         self.eigenvectors: list[tuple[torch.Tensor]] = eigenvectors
         self.eigenvalues: list[tuple[torch.Tensor]] = eigenvalues
+
         device: torch.device = eigenvectors[0][0].device
+        dtype: torch.dtype = eigenvectors[0][0].dtype
+
         if deltas is None:
-            self.deltas: torch.Tensor = torch.zeros(len(self), device=device)
+            self.deltas: torch.Tensor = torch.zeros(
+                len(self), device=device, dtype=dtype
+            )
         else:
             self._check_deltas(deltas)
             self.deltas: torch.Tensor = deltas
@@ -342,7 +352,12 @@ class KronDecomposed:
         kron : KronDecomposed
         """
         self._check_deltas(deltas)
-        return KronDecomposed(self.eigenvectors, self.eigenvalues, self.deltas + deltas)
+        return KronDecomposed(
+            self.eigenvectors,
+            self.eigenvalues,
+            self.deltas + deltas,
+            damping=self.damping,
+        )
 
     def __mul__(self, scalar: torch.Tensor | float) -> KronDecomposed:
         """Multiply by a scalar by changing the eigenvalues.
@@ -363,7 +378,9 @@ class KronDecomposed:
             [pow(scalar, 1 / len(ls)) * eigval for eigval in ls]
             for ls in self.eigenvalues
         ]
-        return KronDecomposed(self.eigenvectors, eigenvalues, self.deltas)
+        return KronDecomposed(
+            self.eigenvectors, eigenvalues, self.deltas, damping=self.damping
+        )
 
     def __len__(self) -> int:
         return len(self.eigenvalues)
@@ -469,9 +486,9 @@ class KronDecomposed:
             result `(batch, classes, params)`
         """
         if W.ndim == 1:
-            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).squeeze()
+            return self._bmm(W.unsqueeze(0).unsqueeze(0), exponent).reshape(W.shape)
         elif W.ndim == 2:
-            return self._bmm(W.unsqueeze(1), exponent).squeeze()
+            return self._bmm(W.unsqueeze(1), exponent).reshape(W.shape)
         elif W.ndim == 3:
             return self._bmm(W, exponent)
         else:

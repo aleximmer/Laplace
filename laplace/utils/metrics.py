@@ -31,8 +31,8 @@ class RunningNLLMetric(Metric):
         targets: torch.Tensor
             integer tensor of shape (...)
         """
-        probs = probs.view(-1, probs.shape[-1])
-        targets = targets.view(-1)
+        probs = probs.reshape(-1, probs.shape[-1])
+        targets = targets.reshape(-1)
 
         self.nll_sum += F.nll_loss(
             probs.log(), targets, ignore_index=self.ignore_index, reduction="sum"

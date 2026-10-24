@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
-from typing import Any
+from typing import Any, TypeAlias
 
 import torch
 from curvlinops import (
@@ -12,11 +12,17 @@ from curvlinops import (
     HessianLinearOperator,
     KFACLinearOperator,
 )
-from curvlinops._base import _LinearOperator
 from torch import nn
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, Likelihood
+
+_FullLinearOperator: TypeAlias = (
+    EFLinearOperator
+    | FisherMCLinearOperator
+    | GGNLinearOperator
+    | HessianLinearOperator
+)
 
 
 class CurvlinopsInterface(CurvatureInterface):
@@ -43,11 +49,11 @@ class CurvlinopsInterface(CurvatureInterface):
         )
 
     @property
-    def _kron_fisher_type(self) -> str:
+    def _kron_fisher_type(self) -> FisherType:
         raise NotImplementedError
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[_FullLinearOperator]:
         raise NotImplementedError
 
     @staticmethod
@@ -104,7 +110,7 @@ class CurvlinopsInterface(CurvatureInterface):
             # Defaults to `mc_samples=1` and `kfac_approx='expand'.
             **kwargs,
         )
-        linop._compute_kfac()
+        linop.compute_kronecker_factors()
 
         kron = self._get_kron_factors(linop)
         kron = self._rescale_kron_factors(kron, len(y), N)
@@ -136,9 +142,10 @@ class CurvlinopsInterface(CurvatureInterface):
             check_deterministic=False,
             **curvlinops_kwargs,
         )
+
+        p = next(self.model.parameters())
         H = torch.as_tensor(
-            linop @ torch.eye(linop.shape[0]),
-            device=next(self.model.parameters()).device,
+            linop @ torch.eye(linop.shape[0]), device=p.device, dtype=p.dtype
         )
 
         f = self.model(x)
@@ -177,7 +184,7 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
         return FisherType.MC if self.stochastic else FisherType.TYPE2
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[GGNLinearOperator | FisherMCLinearOperator]:
         return FisherMCLinearOperator if self.stochastic else GGNLinearOperator
 
 
@@ -189,7 +196,7 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
         return FisherType.EMPIRICAL
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[EFLinearOperator]:
         return EFLinearOperator
 
 
@@ -197,5 +204,5 @@ class CurvlinopsHessian(CurvlinopsInterface):
     """Implementation of the full Hessian using Curvlinops."""
 
     @property
-    def _linop_context(self) -> type[_LinearOperator]:
+    def _linop_context(self) -> type[HessianLinearOperator]:
         return HessianLinearOperator

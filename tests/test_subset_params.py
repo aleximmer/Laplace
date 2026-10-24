@@ -12,7 +12,7 @@ from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHess
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 
 torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_dtype(torch.double)
 flavors = [KronLaplace, DiagLaplace, FullLaplace]
 valid_backends = [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
 

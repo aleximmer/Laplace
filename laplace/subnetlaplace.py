@@ -4,7 +4,6 @@ from typing import Type
 
 import torch
 from torch import nn
-from torch.distributions import MultivariateNormal
 
 from laplace.baselaplace import DiagLaplace, FullLaplace, Likelihood, ParametricLaplace
 from laplace.curvature import EFInterface, GGNInterface
@@ -25,10 +24,12 @@ class SubnetLaplace(ParametricLaplace):
     neural network) are treated probabilistically.
     The goal of this class is to compute the posterior precision \\(P\\)
     which sums as
-    \\[
+
+    $$
         P = \\sum_{n=1}^N \\nabla^2_\\theta \\log p(\\mathcal{D}_n \\mid \\theta)
         \\vert_{\\theta_{MAP}} + \\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}}.
-    \\]
+    $$
+
     The prior is assumed to be Gaussian and therefore we have a simple form for
     \\(\\nabla^2_\\theta \\log p(\\theta) \\vert_{\\theta_{MAP}} = P_0 \\).
     In particular, we assume a scalar or diagonal prior precision so that in
@@ -67,7 +68,7 @@ class SubnetLaplace(ParametricLaplace):
         concentrated posterior and vice versa.
     logit_class_dim: int, default=-1
         the dim of the model's logit tensor that corresponds to the class/output
-    backend : subclasses of `laplace.curvature.CurvatureInterface`
+    backend : subclasses of `laplace.curvature.{GGNInterface,EFInterface}`
         backend for access to curvature/Hessian approximations
     backend_kwargs : dict, default=None
         arguments passed to the backend on initialization, for example to
@@ -104,11 +105,8 @@ class SubnetLaplace(ParametricLaplace):
             backend_kwargs=backend_kwargs,
         )
 
-        if backend is not None:
-            if not isinstance(backend, GGNInterface) and not isinstance(
-                backend, EFInterface
-            ):
-                raise ValueError("SubnetLaplace can only be used with GGN and EF.")
+        if backend is not None and not issubclass(backend, (GGNInterface, EFInterface)):
+            raise ValueError("SubnetLaplace can only be used with GGN and EF.")
 
         # check validity of subnetwork indices and pass them to backend
         self._check_subnetwork_indices(subnetwork_indices)
@@ -190,15 +188,23 @@ class FullSubnetLaplace(SubnetLaplace, FullLaplace):
 
     def _init_H(self) -> None:
         self.H = torch.zeros(
-            self.n_params_subnet, self.n_params_subnet, device=self._device
+            self.n_params_subnet,
+            self.n_params_subnet,
+            device=self._device,
+            dtype=self._dtype,
         )
 
     def sample(
         self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        # sample only subnetwork parameters and set all other parameters to their MAP estimates
-        dist = MultivariateNormal(loc=self.mean_subnet, scale_tril=self.posterior_scale)
-        subnet_samples = dist.sample((n_samples,))
+        samples = torch.randn(
+            n_samples,
+            self.n_params_subnet,
+            device=self._device,
+            dtype=self._dtype,
+            generator=generator,
+        )
+        subnet_samples = self.mean_subnet[None, ...] + samples @ self.posterior_scale.T
         return self.assemble_full_samples(subnet_samples)
 
 
@@ -213,7 +219,9 @@ class DiagSubnetLaplace(SubnetLaplace, DiagLaplace):
     _key = ("subnetwork", "diag")
 
     def _init_H(self):
-        self.H = torch.zeros(self.n_params_subnet, device=self._device)
+        self.H = torch.zeros(
+            self.n_params_subnet, device=self._device, dtype=self._dtype
+        )
 
     def _check_jacobians(self, Js: torch.Tensor) -> None:
         if not isinstance(Js, torch.Tensor):

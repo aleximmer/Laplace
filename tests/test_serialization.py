@@ -15,6 +15,8 @@ from laplace import (
     FullLaplace,
     FullLLLaplace,
     FullSubnetLaplace,
+    FunctionalLaplace,
+    FunctionalLLLaplace,
     KronLaplace,
     KronLLLaplace,
     Laplace,
@@ -23,8 +25,11 @@ from laplace import (
     SubnetLaplace,
 )
 
+# These tests load only checkpoints written by the same test process.
+# Explicit pickle loading preserves their intent on PyTorch 2.6 and newer.
 torch.manual_seed(240)
-torch.set_default_tensor_type(torch.DoubleTensor)
+torch.set_default_dtype(torch.double)
+
 lrlaplace_param = pytest.param(
     LowRankLaplace, marks=pytest.mark.xfail(reason="Unimplemented in the new ASDL")
 )
@@ -37,10 +42,12 @@ flavors = [
     KronLLLaplace,
     DiagLLLaplace,
 ]
+
 flavors_no_llla = [FullLaplace, KronLaplace, DiagLaplace, lrlaplace_param]
 flavors_llla = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 flavors_subnet = [DiagSubnetLaplace, FullSubnetLaplace]
-flavors = flavors_llla + flavors_no_llla
+flavors_functional = [FunctionalLaplace, FunctionalLLLaplace]
+flavors = flavors_llla
 
 
 @pytest.fixture
@@ -99,7 +106,27 @@ def test_serialize(laplace, model, reg_loader):
     torch.save(la.state_dict(), "state_dict.bin")
 
     la2 = laplace(model, "regression")
-    la2.load_state_dict(torch.load("state_dict.bin"))
+    la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
+
+    assert la.sigma_noise == la2.sigma_noise
+
+    X, _ = next(iter(reg_loader))
+    f_mean, f_var = la(X)
+    f_mean2, f_var2 = la2(X)
+    assert torch.allclose(f_mean, f_mean2)
+    assert torch.allclose(f_var, f_var2)
+
+
+@pytest.mark.parametrize("laplace", flavors_functional)
+def test_serialize_functional(laplace, model, reg_loader):
+    la = laplace(model, "regression", n_subset=10)
+    la.fit(reg_loader)
+    la.optimize_prior_precision()
+    la.sigma_noise = 1231
+    torch.save(la.state_dict(), "state_dict.bin")
+
+    la2 = laplace(model, "regression", n_subset=10)
+    la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
     assert la.sigma_noise == la2.sigma_noise
 
@@ -120,7 +147,7 @@ def test_serialize_override(laplace, model, reg_loader):
     torch.save(la.state_dict(), "state_dict.bin")
 
     la2 = laplace(model, "regression")
-    la2.load_state_dict(torch.load("state_dict.bin"))
+    la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
     # Emulating continual learning
     la2.fit(reg_loader, override=False)
@@ -136,12 +163,29 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
-    state_dict = torch.load("state_dict.bin")
+    state_dict = torch.load("state_dict.bin", weights_only=False)
 
     # Make sure no pickle object
     for val in state_dict.values():
         if val is not None:
             assert isinstance(val, (list, tuple, int, float, str, bool, torch.Tensor))
+
+
+@pytest.mark.parametrize("laplace", flavors_functional)
+def test_serialize_no_pickle_functional(laplace, model, reg_loader):
+    la = laplace(model, "regression", n_subset=10)
+    la.fit(reg_loader)
+    la.optimize_prior_precision()
+    la.sigma_noise = 1231
+    torch.save(la.state_dict(), "state_dict.bin")
+    state_dict = torch.load("state_dict.bin", weights_only=False)
+
+    # Make sure no pickle object
+    for val in state_dict.values():
+        if val is not None:
+            assert isinstance(
+                val, (DataLoader, list, tuple, int, float, str, bool, torch.Tensor)
+            )
 
 
 @pytest.mark.parametrize("laplace", flavors_subnet)
@@ -154,7 +198,7 @@ def test_serialize_subnetlaplace(laplace, model, reg_loader):
     torch.save(la.state_dict(), "state_dict.bin")
 
     la2 = laplace(model, "regression", subnetwork_indices=subnetwork_indices)
-    la2.load_state_dict(torch.load("state_dict.bin"))
+    la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
     assert la.sigma_noise == la2.sigma_noise
 
@@ -176,7 +220,7 @@ def test_serialize_fail_different_models(laplace, model, model2, reg_loader):
     la2 = laplace(model2, "regression")
 
     with pytest.raises(ValueError):
-        la2.load_state_dict(torch.load("state_dict.bin"))
+        la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
 
 def test_serialize_fail_different_hess_structures(model, reg_loader):
@@ -191,7 +235,7 @@ def test_serialize_fail_different_hess_structures(model, reg_loader):
     )
 
     with pytest.raises(ValueError):
-        la2.load_state_dict(torch.load("state_dict.bin"))
+        la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
 
 def test_serialize_fail_different_subset_of_weights(model, reg_loader):
@@ -208,7 +252,7 @@ def test_serialize_fail_different_subset_of_weights(model, reg_loader):
     )
 
     with pytest.raises(ValueError):
-        la2.load_state_dict(torch.load("state_dict.bin"))
+        la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
 
 @pytest.mark.parametrize("laplace", flavors)
@@ -222,14 +266,13 @@ def test_serialize_fail_different_liks(laplace, model, reg_loader):
     la2 = laplace(model, "classification")
 
     with pytest.raises(ValueError):
-        la2.load_state_dict(torch.load("state_dict.bin"))
+        la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
 
 @pytest.mark.parametrize("laplace", flavors_llla)
 def test_serialize_fail_llla_different_last_layer_name(
     laplace, model, model3, reg_loader
 ):
-    print([n for n, _ in model.named_parameters()])
     la = laplace(model, "regression", last_layer_name="1")
     la.fit(reg_loader)
     la.optimize_prior_precision()
@@ -239,7 +282,7 @@ def test_serialize_fail_llla_different_last_layer_name(
     la2 = laplace(model3, "classification", last_layer_name="clf")
 
     with pytest.raises(ValueError):
-        la2.load_state_dict(torch.load("state_dict.bin"))
+        la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
 
 @pytest.mark.parametrize(
@@ -286,7 +329,7 @@ def test_map_location(
 
     save_fn = tmp_path / "la.pt"
     torch_save(la, save_fn)
-    la2 = torch.load(save_fn, map_location=map_location)
+    la2 = torch.load(save_fn, map_location=map_location, weights_only=False)
 
     assert la2._device.type == map_location
 

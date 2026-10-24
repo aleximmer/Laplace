@@ -1,4 +1,13 @@
 import pytest
+
+pytestmark = pytest.mark.skipif(
+    pytest.importorskip(
+        "asdfghjkl", reason="The old asdfghjkl dependency is not installed"
+    )
+    is None,
+    reason="The old asdfghjkl dependency is not installed",
+)
+
 import torch
 from asdfghjkl.operations import Bias, Scale
 from torch import nn

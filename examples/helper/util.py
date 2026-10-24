@@ -47,4 +47,4 @@ def plot_regression(
     if plot:
         plt.show()
     else:
-        plt.savefig(f"docs/{file_name}.png")
+        plt.savefig(f"docs/assets/{file_name}.png")

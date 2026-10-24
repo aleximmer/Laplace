@@ -12,7 +12,7 @@ from torch import nn
 from torch.distributions.multivariate_normal import _precision_to_scale_tril
 from torch.nn import BatchNorm1d, BatchNorm2d, BatchNorm3d
 from torch.nn.utils import parameters_to_vector
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 from torchmetrics import Metric
 
 import laplace
@@ -28,6 +28,7 @@ __all__ = [
     "symeig",
     "block_diag",
     "expand_prior_precision",
+    "SoDSampler",
 ]
 
 
@@ -70,7 +71,7 @@ def validate(
             fitting=True,
         )
 
-        if type(out) == tuple:
+        if type(out) is tuple:
             if is_offline:
                 output_means.append(out[0])
                 output_vars.append(out[1])
@@ -209,15 +210,17 @@ def symeig(M: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     except RuntimeError:  # did not converge
         logging.info("SYMEIG: adding jitter, did not converge.")
         # use W L W^T + I = W (L + I) W^T
-        M = M + torch.eye(M.shape[0], device=M.device)
+        M = M + torch.eye(M.shape[0], device=M.device, dtype=M.dtype)
+
         try:
             L, W = torch.linalg.eigh(M, UPLO="U")
             L -= 1.0
-        except RuntimeError:
+        except RuntimeError as e:
             stats = f"diag: {M.diagonal()}, max: {M.abs().max()}, "
             stats = stats + f"min: {M.abs().min()}, mean: {M.abs().mean()}"
             logging.info(f"SYMEIG: adding jitter failed. Stats: {stats}")
-            exit()
+            raise RuntimeError(f"Adding jitter failed. Stats: {stats}") from e
+
     # eigenvalues of symeig at least 0
     L = L.clamp(min=0.0)
     L = torch.nan_to_num(L)
@@ -246,6 +249,18 @@ def block_diag(blocks: list[torch.Tensor]) -> torch.Tensor:
     return M
 
 
+class SoDSampler(Sampler):
+    def __init__(self, N, M, seed: int = 0):
+        rng = np.random.default_rng(seed)
+        self.indices = torch.tensor(rng.choice(list(range(N)), M, replace=False))
+
+    def __iter__(self):
+        return (i for i in self.indices)
+
+    def __len__(self):
+        return len(self.indices)
+
+
 def expand_prior_precision(prior_prec: torch.Tensor, model: nn.Module) -> torch.Tensor:
     """Expand prior precision to match the shape of the model parameters.
 
@@ -263,10 +278,10 @@ def expand_prior_precision(prior_prec: torch.Tensor, model: nn.Module) -> torch.
     """
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     theta = parameters_to_vector(trainable_params)
-    device, P = theta.device, len(theta)
+    device, dtype, P = theta.device, theta.dtype, len(theta)
     assert prior_prec.ndim == 1
     if len(prior_prec) == 1:  # scalar
-        return torch.ones(P, device=device) * prior_prec
+        return torch.ones(P, device=device, dtype=dtype) * prior_prec
     elif len(prior_prec) == P:  # full diagonal
         return prior_prec.to(device)
     else:
@@ -284,6 +299,7 @@ def fix_prior_prec_structure(
     n_layers: int,
     n_params: int,
     device: torch.device,
+    dtype: torch.dtype,
 ) -> torch.Tensor:
     """Create a tensor of prior precision with the correct shape, depending on the
     choice of the prior structure type.
@@ -297,17 +313,22 @@ def fix_prior_prec_structure(
     n_layers: int
     n_params: int
     device: torch.device
+    dtype: torch.dtype
 
     Returns
     -------
     correct_prior_precision: torch.Tensor
     """
     if prior_structure == PriorStructure.SCALAR:
-        prior_prec_init = torch.full((1,), prior_prec_init, device=device)
+        prior_prec_init = torch.full((1,), prior_prec_init, device=device, dtype=dtype)
     elif prior_structure == PriorStructure.LAYERWISE:
-        prior_prec_init = torch.full((n_layers,), prior_prec_init, device=device)
+        prior_prec_init = torch.full(
+            (n_layers,), prior_prec_init, device=device, dtype=dtype
+        )
     elif prior_structure == PriorStructure.DIAG:
-        prior_prec_init = torch.full((n_params,), prior_prec_init, device=device)
+        prior_prec_init = torch.full(
+            (n_params,), prior_prec_init, device=device, dtype=dtype
+        )
     else:
         raise ValueError(f"Invalid prior structure {prior_structure}.")
     return prior_prec_init

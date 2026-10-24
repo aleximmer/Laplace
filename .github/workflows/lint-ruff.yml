@@ -1,12 +1,17 @@
 name: ruff-lint
 
-on: pull_request
+on:
+  pull_request:
+  push:
+    branches: [main]
 
 jobs:
   ruff-lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: chartboost/ruff-action@v1
+      - uses: astral-sh/ruff-action@v3
         with:
-          args: 'check'
+          # Keep in sync with the ruff pin in pyproject.toml
+          version: "0.17.2"
+          args: "check"
