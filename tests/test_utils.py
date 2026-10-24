@@ -1,5 +1,6 @@
 import math
 
+import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -47,6 +48,23 @@ def test_symeig_custom_low_rank():
     assert not torch.all(l1 >= 0.0)
     # test clamping to zeros
     assert torch.all(l2 >= 0.0)
+
+
+def test_symeig_jitter_failed(monkeypatch):
+    # Make eigh fail always, both before and after adding jitter
+    def eigh_fail(*args, **kwargs):
+        raise RuntimeError("did not converge")
+
+    monkeypatch.setattr(torch.linalg, "eigh", eigh_fail)
+
+    X = torch.randn(20, 100)
+    M = X @ X.T
+
+    with pytest.raises(RuntimeError, match="Adding jitter failed") as exc_info:
+        symeig(M)
+
+    # The original eigh error should be preserved as the cause
+    assert isinstance(exc_info.value.__cause__, RuntimeError)
 
 
 def test_diagonal_normal_samples():
