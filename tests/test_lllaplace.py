@@ -440,16 +440,6 @@ def test_laplace_functionality(
     lml = lml + 1 / 2 * (prior_prec.logdet() - log_det_post_prec)
     assert torch.allclose(lml, lap.log_marginal_likelihood())
 
-    # test sampling
-    torch.manual_seed(61)
-    samples = lap.sample(n_samples=1)
-    assert samples.shape == torch.Size([1, len(theta)])
-    samples = lap.sample(n_samples=1000000)
-    assert samples.shape == torch.Size([1000000, len(theta)])
-    mu_comp = samples.mean(dim=0)
-    mu_true = lap.mean
-    assert torch.allclose(mu_comp, mu_true, atol=1e-2)
-
     # test functional variance
     if laplace == FullLLLaplace:
         Sigma = lap.posterior_covariance
@@ -466,6 +456,15 @@ def test_laplace_functionality(
     assert torch.allclose(f, comp_f)
     comp_f_var = lap.functional_variance(comp_Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
+
+    # test sampling
+    torch.manual_seed(61)
+    samples = lap.sample(n_samples=1)
+    assert samples.shape == torch.Size([1, len(theta)])
+    samples = lap.sample(n_samples=1_000_000)
+    assert samples.shape == torch.Size([1_000_000, len(theta)])
+    assert torch.allclose(samples.mean(dim=0), lap.mean, rtol=0, atol=1e-2)
+    assert torch.allclose(samples.T.cov(), Sigma, rtol=0, atol=1e-2)
 
 
 @pytest.mark.parametrize("laplace", flavors)

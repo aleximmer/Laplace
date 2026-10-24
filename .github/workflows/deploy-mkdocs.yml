@@ -1,8 +1,7 @@
 name: deploy-docs
 on:
   release:
-    branches:
-      - main
+    types: [published]
 permissions:
   contents: write
 jobs:
@@ -10,15 +9,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up uv
-        run: curl -LsSf https://astral.sh/uv/0.5.4/install.sh | sh
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
       - name: Configure Git Credentials
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.9
       - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:

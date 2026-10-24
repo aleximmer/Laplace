@@ -1,7 +1,7 @@
 <div align="center">
  <img src="https://raw.githubusercontent.com/AlexImmer/Laplace/main/logo/laplace_logo.png" alt="Laplace" width="300"/>
 
-![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest-default.yml/badge.svg)
+![pytest](https://github.com/aleximmer/laplace/actions/workflows/pytest.yml/badge.svg)
 ![lint](https://github.com/aleximmer/laplace/actions/workflows/lint-ruff.yml/badge.svg)
 ![format](https://github.com/aleximmer/laplace/actions/workflows/format-ruff.yml/badge.svg)
 
@@ -12,8 +12,9 @@
 <br />
 </div>
 
-The laplace package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
+The `laplace` package facilitates the application of Laplace approximations for entire neural networks, subnetworks of neural networks, or just their last layer.
 The package enables posterior approximations, marginal-likelihood estimation, and various posterior predictive computations.
+It includes both weight-space and function-space Laplace approximations.
 
 There is also a corresponding paper, [_Laplace Redux — Effortless Bayesian Deep Learning_](https://arxiv.org/abs/2106.14806), which introduces the library, provides an introduction to the Laplace approximation, reviews its use in deep learning, and empirically demonstrates its versatility and competitiveness. Please consider referring to the paper when using our library:
 
@@ -38,14 +39,17 @@ The [code](https://github.com/runame/laplace-redux) to reproduce the experiments
 
 ## Installation
 
-> [!IMPORTANT]
-> We assume Python >= 3.9 since lower versions are [(soon to be) deprecated](https://devguide.python.org/versions/).
-> PyTorch version 2.0 and up is also required for full compatibility.
-
 To install laplace with `pip`, run the following:
 
 ```bash
 pip install laplace-torch
+```
+
+To use changes in this repository before they appear in a published release,
+clone the repository and install it from the checkout:
+
+```bash
+pip install -e .
 ```
 
 Additionally, if you want to use the `asdfghjkl` backend, please install it via:

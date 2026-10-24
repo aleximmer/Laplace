@@ -201,7 +201,7 @@ class LLLaplace(ParametricLaplace):
             self.prior_mean: float | torch.Tensor = self._prior_mean
             self._init_H()
 
-        super().fit(train_loader, override=override)
+        super().fit(train_loader, override=override, progress_bar=progress_bar)
         self.mean: torch.Tensor = parameters_to_vector(
             self.model.last_layer.parameters()
         )
@@ -574,7 +574,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
             self.prior_mean = prior_mean
         self._backend_kwargs["last_layer"] = True
 
-    def fit(self, train_loader: DataLoader) -> None:
+    def fit(self, train_loader: DataLoader, progress_bar: bool = False) -> None:
         """Fit the Laplace approximation of a GP posterior.
 
         Parameters
@@ -582,6 +582,8 @@ class FunctionalLLLaplace(FunctionalLaplace):
         train_loader : torch.data.utils.DataLoader
             `train_loader.dataset` needs to be set to access \\(N\\), size of the data set
             `train_loader.batch_size` needs to be set to access \\(b\\) batch_size
+        progress_bar : bool
+            whether to show a progress bar during the fitting process.
         """
         self.model.eval()
 
@@ -598,7 +600,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
             self.prior_precision = self._prior_precision
             self.prior_mean = self._prior_mean
 
-        super().fit(train_loader)
+        super().fit(train_loader, progress_bar=progress_bar)
 
     def _jacobians(self, X: torch.Tensor, enable_backprop: bool = None) -> torch.Tensor:
         """
