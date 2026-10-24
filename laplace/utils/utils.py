@@ -219,7 +219,7 @@ def symeig(M: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
             stats = f"diag: {M.diagonal()}, max: {M.abs().max()}, "
             stats = stats + f"min: {M.abs().min()}, mean: {M.abs().mean()}"
             logging.info(f"SYMEIG: adding jitter failed. Stats: {stats}")
-            raise
+            raise RuntimeError(f"Adding jitter failed. Stats: {stats}") from e
 
     # eigenvalues of symeig at least 0
     L = L.clamp(min=0.0)
