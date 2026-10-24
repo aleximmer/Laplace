@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
-from typing import Any, Sequence
+from typing import Any
 
 import torch
 from asdl.fisher import FisherConfig, get_fisher_maker
@@ -97,15 +97,19 @@ class AsdlInterface(CurvatureInterface):
             Js.append(Ji)
             i += 1
 
-        Js = torch.stack(Js, dim=1)  # (prod_batch_dim, n_outputs, n_params)
+        Js = torch.stack(Js, dim=1)  # (n_rows, n_outputs, n_params)
 
         if Js.ndim != 3:
             raise AttributeError("ASDL Jacobian must be a 3-dim tensor.")
 
-        if Js.shape[0] != self._get_batch_size(x)[0]:
-            # There are intermediate "weight-sharing" dimensions.
-            # So, reshape `prod_batch_dim` into the original, individual batch dims.
-            Js = Js.reshape(*self._get_batch_size(x), *Js.shape[-2:])
+        # ASDL returns one row per row of the layers' inputs, e.g. per token. Sum those
+        # belonging to the same observation, e.g. when the outputs are pooled over tokens.
+        n_obs = f.shape[:-1].numel()
+        Js = self._sum_rows_per_observation(Js, n_obs)
+
+        if Js.shape[0] == n_obs:
+            # Restore the individual batch dims of the outputs
+            Js = Js.reshape(*f.shape[:-1], *Js.shape[-2:])
 
         return Js, f
 
@@ -125,7 +129,7 @@ class AsdlInterface(CurvatureInterface):
         -------
         loss : torch.Tensor
         Gs : torch.Tensor
-            gradients `(batch, parameters)`
+            gradients `(n_observations, parameters)`
         """
 
         def closure():
@@ -135,9 +139,39 @@ class AsdlInterface(CurvatureInterface):
             return loss
 
         Gs, loss = batch_gradient(self.model, closure, return_outputs=True)
+
+        # The last dim of regression targets is the output dim
+        n_obs = (
+            y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+        ).numel()
+        Gs = self._sum_rows_per_observation(Gs, n_obs)
+
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
+
+    @staticmethod
+    def _sum_rows_per_observation(A: torch.Tensor, n_obs: int) -> torch.Tensor:
+        """ASDL returns one row per row of the layers' inputs (e.g. per token), but
+        an observation can span several of them (e.g. pooled outputs, or pairs in
+        reward modeling). Sum the rows that belong to the same observation.
+
+        Parameters
+        ----------
+        A : torch.Tensor
+            `(n_rows, ...)`, where rows of the same observation are consecutive.
+        n_obs : int
+            number of observations, i.e., product of the leading dims of the outputs.
+
+        Returns
+        -------
+        A : torch.Tensor
+            `(n_obs, ...)` if `n_rows` is a multiple of `n_obs`, else unchanged.
+        """
+        n_rows = A.shape[0]
+        if n_rows == n_obs or n_obs == 0 or n_rows % n_obs != 0:
+            return A
+        return A.reshape(n_obs, n_rows // n_obs, *A.shape[1:]).sum(1)
 
     @property
     def _ggn_type(self) -> str:
@@ -380,20 +414,6 @@ class AsdlInterface(CurvatureInterface):
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
-
-    def _get_batch_size(
-        self,
-        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-    ) -> Sequence[int]:
-        """
-        ASDL assumes that all leading dimensions are the batch size by default (batch_size = None).
-        Here, we want to specify that only the first dimension is the actual batch size.
-        This is the case for LLMs.
-        """
-        if isinstance(x, MutableMapping):
-            return x[self.dict_key_x].shape[:-1]
-        else:
-            return x.shape[:-1]
 
 
 class AsdlHessian(AsdlInterface):

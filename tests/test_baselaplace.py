@@ -1218,6 +1218,55 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     assert len(f_mu) == len(reward_test_X)
 
 
+@pytest.mark.parametrize(
+    "asdl_backend, curvlinops_backend",
+    [(AsdlGGN, CurvlinopsGGN), (AsdlEF, CurvlinopsEF)],
+)
+def test_asdl_pooled_outputs_match_curvlinops(asdl_backend, curvlinops_backend):
+    # Tokens `(B, L, D)` -> shared layer -> pooled over tokens `(B, K)`: the
+    # observations are the sequences, not the tokens
+    B, L, D, K = 4, 3, 5, 2
+
+    class PooledModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lin = nn.Linear(D, K)
+
+        def forward(self, x):
+            return self.lin(x["input"]).mean(1)
+
+    model = PooledModel()
+    setattr(model, "output_size", K)
+    data = {"input": torch.randn(B, L, D), "output": torch.randn(B, K)}
+    kwargs = dict(dict_key_x="input", dict_key_y="output")
+
+    asdl = asdl_backend(model, "regression", **kwargs)
+    curvlinops = curvlinops_backend(model, "regression", **kwargs)
+
+    loss_asdl, H_asdl = asdl.full(data, data["output"], N=B)
+    loss_curvlinops, H_curvlinops = curvlinops.full(data, data["output"], N=B)
+    assert torch.allclose(loss_asdl, loss_curvlinops)
+    assert torch.allclose(H_asdl, H_curvlinops)
+
+    Js, f = asdl.jacobians(data)
+    Js_ref, f_ref = asdl.functorch_jacobians(data)
+    assert Js.shape == (B, K, model.lin.weight.numel() + K)
+    assert torch.allclose(f, f_ref)
+    assert torch.allclose(Js, Js_ref)
+
+
+def test_reward_modeling_full_asdl_ggn_matches_curvlinops(reward_model, reward_loader):
+    # Pairs are fed as `2B` rows to the layers, but each pair is one observation
+    la_asdl = FullLaplace(reward_model, "reward_modeling", backend=AsdlGGN)
+    la_asdl.fit(reward_loader)
+    la_curvlinops = FullLaplace(
+        deepcopy(reward_model), "reward_modeling", backend=CurvlinopsGGN
+    )
+    la_curvlinops.fit(reward_loader)
+
+    assert torch.allclose(la_asdl.H, la_curvlinops.H)
+
+
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
 def test_asdl_jacobians_stale_output_size(backend, reward_model, reward_test_X):
     # E.g. after pairwise fitting in reward modeling, `output_size` is 2 but
