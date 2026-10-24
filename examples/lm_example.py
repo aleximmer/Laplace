@@ -1,3 +1,4 @@
+# Requires `tensordict` (not a dependency of laplace-torch): `pip install tensordict`
 import torch
 import torch.nn as nn
 from tensordict import TensorDict
@@ -60,7 +61,7 @@ la = Laplace(
 la.fit(dl)
 
 data = next(iter(dl))  # data[INPUT_KEY].shape = (B, L, D)
-pred_map = model(data)  # (B, L, D)
+pred_map = model(data)  # (B, L, K)
 
 pred_la_mean, pred_la_var = la(data, pred_type=PredType.GLM)
 # torch.Size([B, L, K]) torch.Size([B, L, K, K])

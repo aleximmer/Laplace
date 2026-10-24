@@ -21,6 +21,7 @@ from torchvision.models import wide_resnet50_2
 from laplace import (
     DiagLaplace,
     FullLaplace,
+    FullSubnetLaplace,
     FunctionalLaplace,
     KronLaplace,
     Laplace,
@@ -1294,6 +1295,98 @@ def test_multidim_glm_samples(laplace, diagonal_output, method):
     assert torch.allclose(samples_flat, samples_multidim.reshape(n_samples, N, K))
 
 
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN])
+def test_multidim_kron_asdl_raises(multidim_model, reg_loader_multidim, backend):
+    lap = KronLaplace(multidim_model, "regression", backend=backend)
+    with pytest.raises(NotImplementedError, match="Curvlinops"):
+        lap.fit(reg_loader_multidim)
+
+
+@pytest.mark.parametrize("backend", [CurvlinopsEF, CurvlinopsGGN])
+def test_multidim_kron_glm_raises(multidim_model, reg_loader_multidim, backend):
+    lap = KronLaplace(multidim_model, "regression", backend=backend)
+    lap.fit(reg_loader_multidim)
+    x, _ = next(iter(reg_loader_multidim))
+
+    with pytest.raises(NotImplementedError, match="KronLaplace"):
+        lap(x, pred_type="glm")
+
+    with pytest.raises(NotImplementedError, match="KronLaplace"):
+        lap(x, pred_type="glm", joint=True)
+
+
+@pytest.mark.parametrize("backend", [BackPackGGN, BackPackEF])
+def test_multidim_backpack_raises(reg_loader_multidim, backend):
+    lap = FullLaplace(nn.Linear(8, 2), "regression", backend=backend)
+    with pytest.raises(NotImplementedError, match="BackPack"):
+        lap.fit(reg_loader_multidim)
+
+
+def test_multidim_last_layer_glm_raises(reg_loader_multidim):
+    model = nn.Sequential(nn.Linear(8, 5), nn.Tanh(), nn.Linear(5, 2))
+    lap = Laplace(
+        model,
+        "regression",
+        subset_of_weights="last_layer",
+        hessian_structure="full",
+        backend=CurvlinopsGGN,
+    )
+    lap.fit(reg_loader_multidim)
+    x, _ = next(iter(reg_loader_multidim))
+
+    with pytest.raises(NotImplementedError, match="Last-layer"):
+        lap(x, pred_type="glm")
+
+
+def test_multidim_classification_glm_raises():
+    N, L, D, C = 8, 3, 4, 5
+    X, y = torch.randn(N, L, D), torch.randint(C, (N, L))
+    lap = DiagLaplace(nn.Linear(D, C), "classification", backend=CurvlinopsEF)
+    lap.fit(DataLoader(TensorDataset(X, y), batch_size=N))
+
+    with pytest.raises(NotImplementedError, match="classification"):
+        lap(X, pred_type="glm")
+
+
+def test_asdl_sum_rows_per_observation():
+    A = torch.arange(12.0).reshape(6, 2)
+    assert torch.equal(AsdlGGN._sum_rows_per_observation(A, 6), A)
+    assert torch.equal(
+        AsdlGGN._sum_rows_per_observation(A, 3), A.reshape(3, 2, 2).sum(1)
+    )
+
+    with pytest.raises(ValueError):
+        AsdlGGN._sum_rows_per_observation(A, 4)  # not a multiple
+    with pytest.raises(ValueError):
+        AsdlGGN._sum_rows_per_observation(A, 12)  # fewer rows than observations
+
+
+@pytest.mark.parametrize("backend", [CurvlinopsGGN, AsdlGGN])
+def test_multidim_subnetwork_equivalent_to_flat(backend):
+    N, L, D, K = 12, 3, 4, 2
+    X, Y = torch.randn(N, D), torch.randn(N, K)
+    X_multidim, Y_multidim = X.reshape(N // L, L, D), Y.reshape(N // L, L, K)
+    indices = torch.LongTensor([0, 3, 5, 8])
+
+    model_flat = nn.Linear(D, K)
+    model_multidim = deepcopy(model_flat)
+    la_flat = FullSubnetLaplace(
+        model_flat, "regression", subnetwork_indices=indices, backend=backend
+    )
+    la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=N))
+    la_multidim = FullSubnetLaplace(
+        model_multidim, "regression", subnetwork_indices=indices, backend=backend
+    )
+    la_multidim.fit(DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=N))
+
+    assert torch.allclose(la_flat.H, la_multidim.H)
+
+    mean_flat, var_flat = la_flat(X, pred_type="glm")
+    mean_multidim, var_multidim = la_multidim(X_multidim, pred_type="glm")
+    assert torch.allclose(mean_flat, mean_multidim.reshape(N, K))
+    assert torch.allclose(var_flat, var_multidim.reshape(N, K, K))
+
+
 @pytest.mark.parametrize("backend", [AsdlGGN, CurvlinopsGGN])
 def test_multidim_variable_length_batches(backend):
     # Sequence lengths differ between batches, e.g. when padding to the longest sequence
@@ -1709,6 +1802,9 @@ def test_functional_variance_multidim_nn(
 ):
     if laplace in [LowRankLaplace]:
         pytest.skip("LowRankLaplace doesn't support multidim batch yet.")
+
+    if laplace is KronLaplace and backend in [AsdlEF, AsdlGGN]:
+        pytest.skip("Kron with ASDL doesn't support multidim batch (tested below).")
 
     lap = laplace(
         multidim_model, "regression", backend=backend, enable_backprop=enable_backprop

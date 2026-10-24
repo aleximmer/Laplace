@@ -8,6 +8,7 @@ dictionary.
 See the following [explanation](huggingface_example.md).
 
 ```python
+# `tensordict` is only needed for this toy dataset: `pip install tensordict`
 import torch
 import torch.nn as nn
 from tensordict import TensorDict
@@ -112,8 +113,17 @@ When `diagonal_output=True`, the variance tensor will instead be `(B, L, K)` as 
 
 !!! caution
 
-    Currently, `hessian_factorization="kron"` is not supported for inputs/outputs with
-    more than 2 axes with the GLM predictive.
+    Inputs/outputs with more than 2 axes are currently supported for regression only,
+    with the following limitations:
+
+    - `hessian_structure="kron"` does not support the GLM predictive. The Kronecker-factored
+      curvature itself is only available with the Curvlinops backends; the ASDL backends
+      raise an error.
+    - Classification (e.g. the GLM predictive with a sequence of class logits), last-layer
+      Laplace, and the BackPack backends are not supported yet.
+    - Every token is treated as an independent observation in the likelihood, i.e.,
+      the log-likelihood sums over all `B * L` tokens (not only over the `B` sequences).
+      Padding tokens are not masked.
 
 For the NN/sampled predictive:
 

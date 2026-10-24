@@ -103,9 +103,9 @@ class CurvatureInterface:
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `([batch_dims], outputs, parameters)`
         f : torch.Tensor
-            output function `(batch, outputs)`
+            output function `([batch_dims], outputs)`
         """
 
         def model_fn_params_only(params_dict, buffers_dict):
@@ -124,7 +124,7 @@ class CurvatureInterface:
         Js = torch.cat(Js, dim=-1)
 
         if self.subnetwork_indices is not None:
-            Js = Js[:, :, self.subnetwork_indices]
+            Js = Js[..., self.subnetwork_indices]
 
         return (Js, f) if enable_backprop else (Js.detach(), f.detach())
 
@@ -149,6 +149,11 @@ class CurvatureInterface:
             output function `(batch, outputs)`
         """
         f, phi = self.model.forward_with_features(x)
+        if phi.ndim > 2:
+            raise NotImplementedError(
+                "Last-layer Laplace does not support inputs/outputs with more than "
+                "one batch dimension (e.g. sequences) yet."
+            )
         bsize = phi.shape[0]
         output_size = int(f.numel() / bsize)
 

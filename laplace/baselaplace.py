@@ -272,7 +272,7 @@ class BaseLaplace:
         pred_type: PredType | str = PredType.GLM,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 10,
+        n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
         fitting: bool = False,
@@ -304,7 +304,7 @@ class BaseLaplace:
             If `False`, then only outputs the marginal predictive distribution.
             Only available for regression and GLM predictive.
 
-        n_samples : int
+        n_samples : int, default=100
             number of samples for `link_approx='mc'`.
 
         diagonal_output : bool
@@ -462,7 +462,7 @@ class BaseLaplace:
         log_prior_prec_max: float = 4,
         grid_size: int = 100,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 10,
+        n_samples: int = 100,
         verbose: bool = False,
         progress_bar: bool = False,
         log_prior_prec_base: float = 10.0,
@@ -503,7 +503,7 @@ class BaseLaplace:
         link_approx : LinkApprox or str in {'mc', 'probit', 'bridge'}, default=LinkApprox.PROBIT
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only `'mc'` is possible.
-        n_samples : int
+        n_samples : int, default=100
             number of samples for `link_approx='mc'`.
         verbose : bool, default=False
             if true, the optimized prior precision will be printed
@@ -618,7 +618,7 @@ class BaseLaplace:
         val_loader: DataLoader,
         pred_type: PredType | str,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 10,
+        n_samples: int = 100,
         progress_bar: bool = False,
     ) -> torch.Tensor:
         assert callable(loss) or isinstance(loss, torchmetrics.Metric)
@@ -699,7 +699,7 @@ class BaseLaplace:
         likelihood: Likelihood | str,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 10,
+        n_samples: int = 100,
         diagonal_output: bool = False,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute the posterior predictive on input data `x` for "glm" pred type.
@@ -1220,6 +1220,16 @@ class ParametricLaplace(BaseLaplace):
                     f"the target has {y.ndim} dims."
                 )
 
+            if (
+                self.likelihood == Likelihood.REGRESSION
+                and y.ndim > 2
+                and "backpack" in self._backend_cls.__name__.lower()
+            ):
+                raise NotImplementedError(
+                    "BackPack backends do not support regression targets with more "
+                    "than one batch dimension (e.g. sequences) yet."
+                )
+
             self.model.zero_grad()
             loss_batch, H_batch = self._curv_closure(X, y, N=N)
             self.loss += loss_batch
@@ -1363,7 +1373,7 @@ class ParametricLaplace(BaseLaplace):
         pred_type: PredType | str = PredType.GLM,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 10,
+        n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
         fitting: bool = False,
@@ -1486,7 +1496,7 @@ class ParametricLaplace(BaseLaplace):
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         pred_type: PredType | str = PredType.GLM,
-        n_samples: int = 10,
+        n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
@@ -1534,7 +1544,7 @@ class ParametricLaplace(BaseLaplace):
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         pred_type: PredType | str = PredType.GLM,
-        n_samples: int = 10,
+        n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
@@ -1605,6 +1615,12 @@ class ParametricLaplace(BaseLaplace):
         else:
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
 
+        if self.likelihood == Likelihood.CLASSIFICATION and f_mu.ndim > 2:
+            raise NotImplementedError(
+                "The GLM predictive for classification with more than one batch "
+                "dimension (e.g. sequences) is not supported yet."
+            )
+
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
@@ -1623,7 +1639,7 @@ class ParametricLaplace(BaseLaplace):
     def _nn_functional_samples(
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-        n_samples: int = 10,
+        n_samples: int = 100,
         generator: torch.Generator | None = None,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
@@ -1643,7 +1659,7 @@ class ParametricLaplace(BaseLaplace):
     def _nn_predictive_samples(
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-        n_samples: int = 10,
+        n_samples: int = 100,
         generator: torch.Generator | None = None,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
@@ -1657,7 +1673,7 @@ class ParametricLaplace(BaseLaplace):
     def _nn_predictive_classification(
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
-        n_samples: int = 10,
+        n_samples: int = 100,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
         py = 0.0
@@ -1716,14 +1732,14 @@ class ParametricLaplace(BaseLaplace):
         raise NotImplementedError
 
     def sample(
-        self, n_samples: int = 10, generator: torch.Generator | None = None
+        self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         """Sample from the Laplace posterior approximation, i.e.,
         \\( \\theta \\sim \\mathcal{N}(\\theta_{MAP}, P^{-1})\\).
 
         Parameters
         ----------
-        n_samples : int
+        n_samples : int, default=100
             number of samples
 
         generator : torch.Generator, optional
@@ -1751,7 +1767,7 @@ class ParametricLaplace(BaseLaplace):
         log_prior_prec_max: float = 4,
         grid_size: int = 100,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 10,
+        n_samples: int = 100,
         verbose: bool = False,
         progress_bar: bool = False,
         log_prior_prec_base: float = 10.0,
@@ -1971,7 +1987,7 @@ class FullLaplace(ParametricLaplace):
         return torch.einsum("np,pq,mq->nm", Js, self.posterior_covariance, Js)
 
     def sample(
-        self, n_samples: int = 10, generator: torch.Generator | None = None
+        self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
             n_samples,
@@ -2114,10 +2130,20 @@ class KronLaplace(ParametricLaplace):
         return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
+        self._check_multidim_jacobians(Js)
         return self.posterior_precision.inv_square_form(Js)
+
+    @staticmethod
+    def _check_multidim_jacobians(Js: torch.Tensor) -> None:
+        if Js.ndim > 3:
+            raise NotImplementedError(
+                "KronLaplace does not support the GLM predictive for inputs/outputs "
+                "with more than one batch dimension (e.g. sequences) yet."
+            )
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
+        self._check_multidim_jacobians(Js)
         n_batch, n_outs, n_params = Js.shape
         Js = Js.reshape(n_batch * n_outs, n_params).unsqueeze(0)
         cov = self.posterior_precision.inv_square_form(Js).squeeze(0)
@@ -2125,7 +2151,7 @@ class KronLaplace(ParametricLaplace):
         return cov
 
     def sample(
-        self, n_samples: int = 10, generator: torch.Generator | None = None
+        self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
             n_samples,
@@ -2302,7 +2328,7 @@ class LowRankLaplace(ParametricLaplace):
         return cov
 
     def sample(
-        self, n_samples: int = 10, generator: torch.Generator | None = None
+        self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
             self.n_params,
@@ -2400,7 +2426,6 @@ class DiagLaplace(ParametricLaplace):
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
-        # print(Js)
         return torch.einsum("...cp,p,...kp->...ck", Js, self.posterior_variance, Js)
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
@@ -2412,7 +2437,7 @@ class DiagLaplace(ParametricLaplace):
         return cov
 
     def sample(
-        self, n_samples: int = 10, generator: torch.Generator | None = None
+        self, n_samples: int = 100, generator: torch.Generator | None = None
     ) -> torch.Tensor:
         samples = torch.randn(
             n_samples,
@@ -3544,7 +3569,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         log_prior_prec_max: float = 4,
         grid_size: int = 100,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
-        n_samples: int = 10,
+        n_samples: int = 100,
         verbose: bool = False,
         progress_bar: bool = False,
         log_prior_prec_base: float = 10.0,

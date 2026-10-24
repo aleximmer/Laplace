@@ -67,9 +67,9 @@ class AsdlInterface(CurvatureInterface):
         Returns
         -------
         Js : torch.Tensor
-            Jacobians `(batch, parameters, outputs)`
+            Jacobians `([batch_dims], outputs, parameters)`
         f : torch.Tensor
-            output function `(batch, outputs)`
+            output function `([batch_dims], outputs)`
         """
         Js = list()
         # `self.model.output_size` can be stale, e.g. in reward modeling where the
@@ -98,9 +98,6 @@ class AsdlInterface(CurvatureInterface):
             i += 1
 
         Js = torch.stack(Js, dim=1)  # (n_rows, n_outputs, n_params)
-
-        if Js.ndim != 3:
-            raise AttributeError("ASDL Jacobian must be a 3-dim tensor.")
 
         # ASDL returns one row per row of the layers' inputs, e.g. per token. Sum those
         # belonging to the same observation, e.g. when the outputs are pooled over tokens.
@@ -166,11 +163,21 @@ class AsdlInterface(CurvatureInterface):
         Returns
         -------
         A : torch.Tensor
-            `(n_obs, ...)` if `n_rows` is a multiple of `n_obs`, else unchanged.
+            `(n_obs, ...)`
+
+        Raises
+        ------
+        ValueError
+            if `n_rows` is not a multiple of `n_obs`.
         """
         n_rows = A.shape[0]
-        if n_rows == n_obs or n_obs == 0 or n_rows % n_obs != 0:
+        if n_rows == n_obs:
             return A
+        if n_obs == 0 or n_rows % n_obs != 0:
+            raise ValueError(
+                f"ASDL returned {n_rows} per-example rows, which cannot be grouped "
+                f"into {n_obs} observations (the leading dims of the outputs)."
+            )
         return A.reshape(n_obs, n_rows // n_obs, *A.shape[1:]).sum(1)
 
     @property
@@ -383,6 +390,13 @@ class AsdlInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        if self.likelihood == Likelihood.REGRESSION and y.ndim > 2:
+            raise NotImplementedError(
+                "Kronecker-factored curvature with ASDL does not support regression "
+                "targets with more than one batch dimension (e.g. sequences). "
+                "Use a Curvlinops backend instead."
+            )
+
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
         cfg = FisherConfig(
