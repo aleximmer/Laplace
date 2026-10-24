@@ -10,7 +10,6 @@ Both methods leave the network weights alone. You train a MAP network as usual
 and fit the posterior afterwards.
 
 ```python
-import numpy as np
 import torch
 
 from laplace import Laplace
@@ -23,9 +22,11 @@ X_train, y_train, train_loader, X_test = get_sinusoid_example(sigma_noise=0.3)
 
 ## Training a MAP
 
-Nothing new here. We train a single-hidden-layer Tanh network:
+Nothing new here. We train a single-hidden-layer Tanh network, reseeding first
+so the initialization doesn't depend on the data sampling above:
 
 ```python
+torch.manual_seed(711)
 model = torch.nn.Sequential(
     torch.nn.Linear(1, 50), torch.nn.Tanh(), torch.nn.Linear(50, 1)
 )
@@ -45,8 +46,20 @@ for i in range(1000):
 As a reference, we fit a full-GGN Laplace approximation. The network has only
 151 parameters, so this is cheap.
 
+We generated the data with noise \(\sigma = 0.3\), so we pass that value as
+`sigma_noise` and only tune the prior precision. This assumes the aleatoric
+noise is known. If it isn't, optimize the noise together with the prior
+precision through the marginal likelihood, as in the
+[regression example](regression_example.md).
+
 ```python
-la = Laplace(model, "regression", subset_of_weights="all", hessian_structure="full")
+la = Laplace(
+    model,
+    "regression",
+    subset_of_weights="all",
+    hessian_structure="full",
+    sigma_noise=0.3,
+)
 la.fit(train_loader)
 la.optimize_prior_precision(method="marglik")
 ```
@@ -119,7 +132,7 @@ optimized.
 
 `alpha` picks the divergence that VaLLA minimizes. The default `alpha=1.0` is
 the alpha-divergence objective from the paper, and `alpha=0.0` gives the usual
-ELBO. Here we use 32 random inducing points and the default `alpha`:
+ELBO. Here we place 30 inducing points with k-means and fit the ELBO:
 
 ```python
 valla = Laplace(
@@ -128,12 +141,13 @@ valla = Laplace(
     subset_of_weights="all",
     hessian_structure="gp",
     functional_approximation="variational",
-    inducing_locations="random",
-    num_inducing=32,
+    inducing_locations="kmeans",
+    num_inducing=30,
+    alpha=0.0,
     sigma_noise=la.sigma_noise.item(),
     prior_precision=la.prior_precision.item(),
 )
-valla.fit(train_loader, iterations=1000, lr=1e-2)
+valla.fit(train_loader, iterations=3000, lr=1e-3)
 ```
 
 Unlike ELLA, `fit` runs an optimizer over minibatches for `iterations` steps
@@ -144,10 +158,11 @@ optimizer tunes them too, which is why VaLLA doesn't need a separate
 `optimize_prior_precision` call.
 
 The objective at each step is in `valla.fit_history_["objective"]`. If the
-curve hasn't flattened, keep going from where you stopped:
+curve hasn't flattened, keep going from where you stopped (the figure below
+doesn't do this):
 
 ```python
-valla.fit(train_loader, iterations=500, lr=1e-2, override=False)
+valla.fit(train_loader, iterations=500, lr=1e-3, override=False)
 ```
 
 Without `override=False`, a second `fit` starts the inducing points and
@@ -157,18 +172,37 @@ variational factor over, but keeps the learned prior precision and noise.
 
 All three objects are called the same way. For regression they return the MAP
 mean and the latent variance. Add the observation noise to get the predictive
-variance of \(y\):
+variance of \(y\). For VaLLA, that is the noise it learned during fitting. The
+figure shows the mean with a band of two predictive standard deviations:
 
 ```python
-def predictive_std(posterior):
-    f_mu, f_var = posterior(X_test)
-    f_mu = f_mu.squeeze().detach().cpu().numpy()
-    f_var = f_var.squeeze().detach().cpu().numpy()
-    return f_mu, np.sqrt(f_var + posterior.sigma_noise.item() ** 2)
+import matplotlib.pyplot as plt
 
-for name, posterior in [("Exact LA", la), ("ELLA", ella), ("VaLLA", valla)]:
-    f_mu, pred_std = predictive_std(posterior)
-    ...  # plot f_mu ± 2 * pred_std
+x = X_test.flatten()
+fig, axes = plt.subplots(1, 4, sharey=True, figsize=(11, 2.8))
+
+def panel(ax, title, f_mu, f_var=None, sigma_noise=None):
+    ax.set_title(title)
+    ax.scatter(X_train.flatten(), y_train.flatten(), alpha=0.3, color="tab:orange", s=8)
+    f_mu = f_mu.detach().flatten()
+    ax.plot(x, f_mu, color="black", lw=1)
+    if f_var is not None:
+        std = (f_var.detach().flatten() + sigma_noise**2).sqrt()
+        ax.fill_between(x, f_mu - 2 * std, f_mu + 2 * std, alpha=0.3, color="tab:blue")
+    ax.set_xlim(x.min(), x.max())
+    ax.set_xlabel("$x$")
+
+with torch.no_grad():
+    panel(axes[0], "MAP", model(X_test))
+
+for ax, (name, posterior) in zip(
+    axes[1:], [("Exact LA", la), ("ELLA", ella), ("VaLLA", valla)]
+):
+    panel(ax, name, *posterior(X_test), sigma_noise=posterior.sigma_noise.item())
+
+axes[0].set_ylim([-4, 6])
+axes[0].set_ylabel("$y$")
+plt.tight_layout()
 ```
 
 ![ELLA and VaLLA](assets/ella_valla_example.png)
@@ -177,7 +211,7 @@ ELLA is very close to exact LA here. For a 1D problem and 151 parameters, a
 rank-20 basis is apparently enough. Inside the data region, all three bands
 stay close to the observation noise. Away from the data, VaLLA's bands are
 wider than exact LA on the left and narrower on the right. It learned its own
-prior precision and noise and works through 32 inducing points, so some
+prior precision and noise and works through 30 inducing points, so some
 difference from exact LA is expected.
 
 ELLA fits in a single pass with no optimizer, but you have to choose
@@ -187,8 +221,10 @@ and adds an optimization loop, and it learns its hyperparameters as it goes.
 ## Beyond regression
 
 Both methods also handle classification and reward modeling, and the call
-pattern stays the same: `posterior(x)` returns class probabilities for
-classification, and a scalar reward per input for reward modeling. VaLLA has
+pattern stays the same. For classification, `posterior(x)` returns class
+probabilities. For reward modeling, it returns a `(mean, covariance)` tuple for
+the rewards of individual inputs, shaped `[batch, 1]` and `[batch, 1, 1]`, so
+unpack it as you would in regression. VaLLA has
 two classification-specific knobs. When you pass inducing locations yourself,
 `inducing_classes` says which output each one belongs to (class 0 by default).
 `mc_softmax_samples` switches the data term from the default probit
