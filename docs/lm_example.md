@@ -7,6 +7,14 @@ Notice that `laplace-torch` requires the model to take a single input, which can
 dictionary.
 See the following [explanation](huggingface_example.md).
 
+!!! important "Intended usage"
+
+    The model is assumed to take batch-first inputs with one output per token, i.e., inputs are
+    `(B, L, D)` and outputs are `(B, L, K)`. Each of the `B * L` tokens is an observation
+    in the likelihood. The ASDL backends (`AsdlEF`, `AsdlGGN`) rely on this layout. For other
+    layouts, e.g., outputs pooled over tokens `(B, K)` or sequence-first layers `(L, B, D)`,
+    use the Curvlinops backends (`CurvlinopsEF`, `CurvlinopsGGN`) instead.
+
 ```python
 # `tensordict` is only needed for this toy dataset: `pip install tensordict`
 import torch
@@ -29,6 +37,8 @@ OUTPUT_KEY = "output"
 class Model(nn.Module):
     def __init__(self):
         super().__init__()
+
+        # Batch first to follow the intended usage, otherwise MultiheadAttention will take `(L, B, D)`
         self.attn = nn.MultiheadAttention(EMBED_DIM, num_heads=1, batch_first=True)
         self.final_layer = nn.Linear(EMBED_DIM, OUTPUT_SIZE)
 

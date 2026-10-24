@@ -16,6 +16,11 @@ INPUT_KEY = "input"
 OUTPUT_KEY = "output"
 
 
+# Intended usage: the model is batch-first with one output per token, i.e., inputs are
+# `(B, L, D)` and outputs are `(B, L, K)`. Each of the `B * L` tokens is an observation
+# in the likelihood. The ASDL backends (`AsdlEF`, `AsdlGGN`) rely on this layout. For other
+# layouts, e.g., outputs pooled over tokens `(B, K)` or sequence-first layers `(L, B, D)`,
+# use the Curvlinops backends (`CurvlinopsEF`, `CurvlinopsGGN`) instead.
 class Model(nn.Module):
     def __init__(self):
         super().__init__()
