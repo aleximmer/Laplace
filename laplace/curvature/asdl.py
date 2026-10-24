@@ -77,15 +77,13 @@ class AsdlInterface(CurvatureInterface):
             def closure():
                 self.model.zero_grad()
                 f = self.model(x)
-                loss = f[:, i].sum()
+                loss = f[..., i].sum()
                 loss.backward(
                     create_graph=enable_backprop, retain_graph=enable_backprop
                 )
                 return f
 
             Ji, f = batch_gradient(self.model, closure, return_outputs=True)
-            print("Jac")
-            print(Ji)
 
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]
@@ -178,6 +176,11 @@ class AsdlInterface(CurvatureInterface):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if "N" in kwargs:
             del kwargs["N"]
+
+        if self.loss_type == LOSS_MSE and self._ggn_type == FISHER_EXACT and y.ndim > 2:
+            # ASDL's exact MSE Fisher loops over `logits[:, i]`, which assumes 2D
+            # outputs. With multidim outputs, use the Jacobian-based GGN instead.
+            return super(AsdlInterface, self).diag(x, y, **kwargs)
 
         if self.last_layer:
             _, x = self.model.forward_with_features(x)

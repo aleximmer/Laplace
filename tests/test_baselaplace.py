@@ -1581,39 +1581,68 @@ def test_functional_covariance_multidim(
     )
 
 
-@pytest.mark.skip("WIP")
-@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
-def test_predictive_multidim(laplace, backend):
-    if laplace in [KronLaplace, LowRankLaplace]:
-        pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet.")
+@pytest.mark.parametrize("model_type", ["linear", "mlp"])
+def test_multidim_equivalent_to_flat(laplace, backend, model_type):
+    """A pointwise model on a reshaped data set must give the same posterior and
+    predictive as on the original flat data set."""
+    N, L, D, K = 12, 3, 4, 2
+    X, Y = torch.randn(N, D), torch.randn(N, K)
+    X_multidim, Y_multidim = X.reshape(N // L, L, D), Y.reshape(N // L, L, K)
 
-    X, Y = torch.randn(10, 3), torch.randn(10, 1)
-    X_multidim, Y_multidim = X.reshape(5, 2, 3), Y.reshape(5, 2, 1)
+    loader_flat = DataLoader(TensorDataset(X, Y), batch_size=N)
+    loader_multidim = DataLoader(
+        TensorDataset(X_multidim, Y_multidim), batch_size=N // L
+    )
 
-    loader_std = DataLoader(TensorDataset(X, Y), batch_size=10)
-    loader_multidim = DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=5)
+    if model_type == "linear":
+        model_flat = nn.Linear(D, K)
+    else:
+        model_flat = nn.Sequential(nn.Linear(D, 5), nn.Tanh(), nn.Linear(5, K))
 
-    model_std = nn.Linear(3, 1)
-    model_multidim = deepcopy(model_std)
+    model_multidim = deepcopy(model_flat)
 
-    la_std = laplace(model_std, "regression", backend=backend)
-    la_std.fit(loader_std)
-    mean_std, var_std = la_std(X)
+    la_flat = laplace(model_flat, "regression", backend=backend)
+    la_flat.fit(loader_flat)
 
     la_multidim = laplace(model_multidim, "regression", backend=backend)
     la_multidim.fit(loader_multidim)
-    mean_multidim, var_multidim = la_std(X_multidim)
 
-    # assert torch.allclose(la_std.H, la_multidim.H)
+    # Posterior: `n_data` counts sequences, but the likelihood counts all "tokens"
+    # Count `n_obs` instead, i.e., in the case of `(N, L, D)` data, `n_obs = N*L`.
+    assert la_multidim.n_data == N // L
+    assert la_flat.n_obs == la_multidim.n_obs
+    assert torch.allclose(la_flat.loss, la_multidim.loss)
+    assert torch.allclose(la_flat.log_likelihood, la_multidim.log_likelihood)
+    assert torch.allclose(la_flat.H, la_multidim.H)
+    assert torch.allclose(
+        la_flat.log_marginal_likelihood(), la_multidim.log_marginal_likelihood()
+    )
 
-    # # print(mean_std.flatten(), mean_multidim.flatten())
-    # print(var_std.shape, var_multidim.shape)
-    print(la_std.H, la_multidim.H)
-    print(var_std.flatten(), var_multidim.flatten())
+    # GLM predictive (marginal)
+    mean_flat, var_flat = la_flat(X, pred_type="glm")
+    mean_multidim, var_multidim = la_multidim(X_multidim, pred_type="glm")
+    assert mean_multidim.shape == (N // L, L, K)
+    assert var_multidim.shape == (N // L, L, K, K)
+    assert torch.allclose(mean_flat, mean_multidim.reshape(N, K))
+    assert torch.allclose(var_flat, var_multidim.reshape(N, K, K))
 
-    # assert torch.allclose(mean_std.flatten(), mean_multidim.flatten())
-    assert torch.allclose(var_std.flatten(), var_multidim.flatten())
+    # GLM predictive (joint)
+    mean_flat, cov_flat = la_flat(X, pred_type="glm", joint=True)
+    mean_multidim, cov_multidim = la_multidim(X_multidim, pred_type="glm", joint=True)
+    assert torch.allclose(mean_flat, mean_multidim)
+    assert torch.allclose(cov_flat, cov_multidim)
+
+    # NN predictive: same seed, same posterior samples
+    torch.manual_seed(0)
+    mean_flat, var_flat = la_flat(X, pred_type="nn", link_approx="mc")
+    torch.manual_seed(0)
+    mean_multidim, var_multidim = la_multidim(
+        X_multidim, pred_type="nn", link_approx="mc"
+    )
+    assert torch.allclose(mean_flat, mean_multidim.reshape(N, K))
+    assert torch.allclose(var_flat, var_multidim.reshape(N, K))
 
 
 @pytest.mark.parametrize("laplace", flavors)

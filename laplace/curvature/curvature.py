@@ -231,26 +231,37 @@ class CurvatureInterface:
         Returns
         -------
         Gs : torch.Tensor
-            gradients `(batch, parameters)`
+            gradients `(batch * tokens, parameters)`, where `tokens` is the number
+            of leading output dims per datum (1 if there are none)
         loss : torch.Tensor
         """
 
-        def loss_single(x, y, params_dict, buffers_dict):
-            """Compute the gradient for a single sample."""
+        def loss_single(params_dict, buffers_dict, x, y):
+            """Compute the loss of each token of a single sample."""
             x, y = x.unsqueeze(0), y.unsqueeze(0)  # vmap removes the batch dimension
             output = torch.func.functional_call(
                 self.model, (params_dict, buffers_dict), x
             )
-            loss = torch.func.functional_call(self.lossfunc, {}, (output, y))
-            return loss, loss
+            # Every leading dim of the output is a "token" with its own loss
+            n_lead = output.ndim - 1
+            output = output.flatten(end_dim=n_lead - 1)
+            y = y.reshape(output.shape[0], *y.shape[n_lead:])
 
-        grad_fn = torch.func.grad(loss_single, argnums=2, has_aux=True)
-        batch_grad_fn = torch.func.vmap(grad_fn, in_dims=(0, 0, None, None))
+            def loss_token(output_t, y_t):
+                return torch.func.functional_call(
+                    self.lossfunc, {}, (output_t.unsqueeze(0), y_t.unsqueeze(0))
+                )
 
-        batch_grad, batch_loss = batch_grad_fn(
-            x, y, self.params_dict, self.buffers_dict
-        )
-        Gs = torch.cat([bg.flatten(start_dim=1) for bg in batch_grad.values()], dim=1)
+            losses = torch.func.vmap(loss_token)(output, y)
+            return losses, losses.sum()
+
+        jac_fn = torch.func.jacrev(loss_single, argnums=0, has_aux=True)
+        batch_jac_fn = torch.func.vmap(jac_fn, in_dims=(None, None, 0, 0))
+
+        batch_grad, batch_loss = batch_jac_fn(self.params_dict, self.buffers_dict, x, y)
+        # (batch * tokens, parameters)
+        Gs = torch.cat([bg.flatten(start_dim=2) for bg in batch_grad.values()], dim=2)
+        Gs = Gs.flatten(end_dim=1)
 
         if self.subnetwork_indices is not None:
             Gs = Gs[:, self.subnetwork_indices]

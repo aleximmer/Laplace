@@ -5,7 +5,7 @@ from collections import deque
 from collections.abc import MutableMapping
 from copy import deepcopy
 from importlib.util import find_spec
-from math import frexp, isfinite, log, pi, sqrt
+from math import frexp, isfinite, log, pi, prod, sqrt
 from numbers import Integral
 from typing import Any, Callable
 
@@ -184,6 +184,9 @@ class BaseLaplace:
         self.loss: float | torch.Tensor = 0.0
         self.n_outputs: int = 0
         self.n_data: int = 0
+        # Number of observations in the likelihood. Differs from `n_data` only when
+        # each datum has extra (e.g. sequence) dims: then it counts all tokens.
+        self.n_obs: int = 0
 
         # Declare attributes
         self._prior_mean: torch.Tensor
@@ -249,7 +252,7 @@ class BaseLaplace:
         if self.likelihood == "regression":
             # loss used is just MSE, need to add normalizer for gaussian likelihood
             c = (
-                self.n_data
+                (self.n_obs or self.n_data)
                 * self.n_outputs
                 * torch.log(
                     torch.as_tensor(
@@ -1159,6 +1162,7 @@ class ParametricLaplace(BaseLaplace):
             self._init_H()
             self.loss: float | torch.Tensor = 0
             self.n_data: int = 0
+            self.n_obs: int = 0
 
         self.model.eval()
 
@@ -1194,6 +1198,7 @@ class ParametricLaplace(BaseLaplace):
         setattr(self.model, "output_size", self.n_outputs)
 
         N = len(train_loader.dataset)
+        obs_per_datum = 1
 
         pbar = tqdm.tqdm(train_loader, disable=not progress_bar)
         pbar.set_description("[Computing Hessian]")
@@ -1211,12 +1216,17 @@ class ParametricLaplace(BaseLaplace):
                     f"the target has {y.ndim} dims."
                 )
 
+            if self.likelihood == Likelihood.REGRESSION:
+                # Every token (extra dims between batch and output) is an observation
+                obs_per_datum = prod(y.shape[1:-1])
+
             self.model.zero_grad()
             loss_batch, H_batch = self._curv_closure(X, y, N=N)
             self.loss += loss_batch
             self.H += H_batch
 
         self.n_data += N
+        self.n_obs += N * obs_per_datum
 
     @property
     def scatter(self) -> torch.Tensor:
@@ -1776,6 +1786,7 @@ class ParametricLaplace(BaseLaplace):
             "prior_precision": self.prior_precision,
             "sigma_noise": self.sigma_noise,
             "n_data": self.n_data,
+            "n_obs": self.n_obs,
             "n_outputs": self.n_outputs,
             "likelihood": self.likelihood,
             "temperature": self.temperature,
@@ -1822,6 +1833,7 @@ class ParametricLaplace(BaseLaplace):
         self.prior_precision = state_dict["prior_precision"]
         self.sigma_noise = state_dict["sigma_noise"]
         self.n_data = state_dict["n_data"]
+        self.n_obs = state_dict.get("n_obs", self.n_data)
         self.n_outputs = state_dict["n_outputs"]
         setattr(self.model, "output_size", self.n_outputs)
         self.likelihood = state_dict["likelihood"]
