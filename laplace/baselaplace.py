@@ -3070,14 +3070,14 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
     def _build_Sigma_inv(self):
         """Computes the cholesky decomposition of
-                \\[
-                    K_{MM} + \\Lambda_{MM}^{-1}.
-                \\]
-                See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
-                Equation 15 for more information.
+        \\[
+            K_{MM} + \\Lambda_{MM}^{-1}.
+        \\]
+        See See [Improving predictions of Bayesian neural nets via local linearization (Immer et al., 2021)](https://arxiv.org/abs/2008.08400)
+        Equation 15 for more information.
 
-                As the diagonal approximation is performed with \\(\\Lambda_{MM}\\) (which is stored in self.L),
-                the code is greatly simplified.
+        As the diagonal approximation is performed with \\(\\Lambda_{MM}\\) (which is stored in self.L),
+        the code is greatly simplified.
         """
         if self.independent_outputs:
             self.Sigma_inv = [
