@@ -55,7 +55,7 @@ dev = [
   "pytest",
   "pytest-cov",
   "pytest-mock",
-  "ruff",
+  "ruff==0.17.2",
   "scipy",
   "tensordict",
 ]

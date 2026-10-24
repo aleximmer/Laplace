@@ -1057,7 +1057,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-mock", marker = "extra == 'dev'" },
-    { name = "ruff", marker = "extra == 'dev'" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = "==0.17.2" },
     { name = "scipy", specifier = ">=1.12" },
     { name = "scipy", marker = "extra == 'dev'" },
     { name = "tensordict", marker = "extra == 'dev'" },
