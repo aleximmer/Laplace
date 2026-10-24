@@ -5,7 +5,7 @@ from collections import deque
 from collections.abc import MutableMapping
 from copy import deepcopy
 from importlib.util import find_spec
-from math import frexp, isfinite, log, pi, prod, sqrt
+from math import frexp, isfinite, log, pi, sqrt
 from numbers import Integral
 from typing import Any, Callable
 
@@ -1198,7 +1198,6 @@ class ParametricLaplace(BaseLaplace):
         setattr(self.model, "output_size", self.n_outputs)
 
         N = len(train_loader.dataset)
-        obs_per_datum = 1
 
         pbar = tqdm.tqdm(train_loader, disable=not progress_bar)
         pbar.set_description("[Computing Hessian]")
@@ -1216,17 +1215,20 @@ class ParametricLaplace(BaseLaplace):
                     f"the target has {y.ndim} dims."
                 )
 
-            if self.likelihood == Likelihood.REGRESSION:
-                # Every token (extra dims between batch and output) is an observation
-                obs_per_datum = prod(y.shape[1:-1])
-
             self.model.zero_grad()
             loss_batch, H_batch = self._curv_closure(X, y, N=N)
             self.loss += loss_batch
             self.H += H_batch
 
+            # Every token (extra dims between the batch and output dims) is an
+            # observation. Count per batch since the sequence length can vary.
+            # The last dim of regression targets is the output dim.
+            y_obs_shape = (
+                y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+            )
+            self.n_obs += y_obs_shape.numel()
+
         self.n_data += N
-        self.n_obs += N * obs_per_datum
 
     @property
     def scatter(self) -> torch.Tensor:

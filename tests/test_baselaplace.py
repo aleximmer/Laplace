@@ -1267,6 +1267,32 @@ def test_reward_modeling_full_asdl_ggn_matches_curvlinops(reward_model, reward_l
     assert torch.allclose(la_asdl.H, la_curvlinops.H)
 
 
+@pytest.mark.parametrize("backend", [AsdlGGN, CurvlinopsGGN])
+def test_multidim_variable_length_batches(backend):
+    # Sequence lengths differ between batches, e.g. when padding to the longest sequence
+    D, K = 4, 2
+    lengths = [(2, 3), (3, 1), (1, 5)]  # (n_sequences, sequence_length) per batch
+    batches = [(torch.randn(b, L, D), torch.randn(b, L, K)) for b, L in lengths]
+    X = torch.cat([x.reshape(-1, D) for x, _ in batches])
+    Y = torch.cat([y.reshape(-1, K) for _, y in batches])
+
+    model_flat = nn.Linear(D, K)
+    model_multidim = deepcopy(model_flat)
+
+    la_flat = FullLaplace(model_flat, "regression", backend=backend)
+    la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=len(X)))
+    la_multidim = FullLaplace(model_multidim, "regression", backend=backend)
+    la_multidim.fit(DataLoader(batches, batch_size=None))
+
+    assert la_multidim.n_obs == la_flat.n_obs == len(X)
+    assert torch.allclose(la_flat.loss, la_multidim.loss)
+    assert torch.allclose(la_flat.H, la_multidim.H)
+    assert torch.allclose(la_flat.log_likelihood, la_multidim.log_likelihood)
+    assert torch.allclose(
+        la_flat.log_marginal_likelihood(), la_multidim.log_marginal_likelihood()
+    )
+
+
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
 @pytest.mark.parametrize("seq_len", [1, 5])
 def test_asdl_jacobians_token_ids(backend, seq_len):
