@@ -229,8 +229,9 @@ class CurvatureInterface:
 
         Parameters
         ----------
-        x : torch.Tensor
-            input data `(batch, input_shape)` on compatible device with model.
+        x : torch.Tensor or MutableMapping
+            input data `(batch, input_shape)` on compatible device with model. If
+            MutableMapping, every tensor in it must have the batch as its first dim.
         y : torch.Tensor
 
         Returns
@@ -240,10 +241,25 @@ class CurvatureInterface:
             of leading output dims per datum (1 if there are none)
         loss : torch.Tensor
         """
+        if isinstance(x, MutableMapping):
+            # vmap only maps over tensors in plain containers, e.g. not `UserDict`.
+            # The model then gets a plain dict; non-tensor entries are passed as is.
+            x = dict(x)
+            in_dims_x = {k: 0 if torch.is_tensor(v) else None for k, v in x.items()}
+        else:
+            in_dims_x = 0
+
+        def unsqueeze(x):
+            if isinstance(x, dict):
+                return {
+                    k: v.unsqueeze(0) if torch.is_tensor(v) else v for k, v in x.items()
+                }
+
+            return x.unsqueeze(0)
 
         def loss_single(params_dict, buffers_dict, x, y):
             """Compute the loss of each token of a single sample."""
-            x, y = x.unsqueeze(0), y.unsqueeze(0)  # vmap removes the batch dimension
+            x, y = unsqueeze(x), y.unsqueeze(0)  # vmap removes the batch dimension
             output = torch.func.functional_call(
                 self.model, (params_dict, buffers_dict), x
             )
@@ -261,9 +277,23 @@ class CurvatureInterface:
             return losses, losses.sum()
 
         jac_fn = torch.func.jacrev(loss_single, argnums=0, has_aux=True)
-        batch_jac_fn = torch.func.vmap(jac_fn, in_dims=(None, None, 0, 0))
+        batch_jac_fn = torch.func.vmap(jac_fn, in_dims=(None, None, in_dims_x, 0))
 
-        batch_grad, batch_loss = batch_jac_fn(self.params_dict, self.buffers_dict, x, y)
+        try:
+            batch_grad, batch_loss = batch_jac_fn(
+                self.params_dict, self.buffers_dict, x, y
+            )
+        except RuntimeError as e:
+            if "data-dependent control flow" not in str(e):
+                raise
+
+            raise ValueError(
+                "Per-sample gradients for the empirical Fisher are computed with "
+                + "`torch.func.vmap`, which does not support models with "
+                + "data-dependent control flow (e.g. Huggingface transformers). "
+                + "Consider using a GGN backend, e.g. `CurvlinopsGGN`, instead."
+            ) from e
+
         # (batch * tokens, parameters)
         Gs = torch.cat([bg.flatten(start_dim=2) for bg in batch_grad.values()], dim=2)
         Gs = Gs.flatten(end_dim=1)

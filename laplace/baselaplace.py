@@ -23,7 +23,7 @@ from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.asdl import AsdlGGN, AsdlInterface
 from laplace.curvature.backpack import BackPackGGN, BackPackInterface
 from laplace.curvature.curvature import CurvatureInterface
-from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
+from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.utils import SoDSampler
 from laplace.utils.enums import (
     Likelihood,
@@ -1181,15 +1181,11 @@ class ParametricLaplace(BaseLaplace):
 
         with torch.no_grad():
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
-                if "backpack" in self._backend_cls.__name__.lower() or (
-                    isinstance(self, DiagLaplace) and self._backend_cls == CurvlinopsEF
-                ):
+                if "backpack" in self._backend_cls.__name__.lower():
                     raise ValueError(
-                        "Currently DiagEF is not supported under CurvlinopsEF backend "
-                        + "for custom models with non-tensor inputs "
-                        + "(https://github.com/pytorch/functorch/issues/159). Consider "
-                        + "using AsdlEF backend instead. The same limitation applies "
-                        + "to all BackPACK backend"
+                        "The BackPACK backends do not support custom models with "
+                        + "non-tensor inputs. Consider using the Curvlinops or ASDL "
+                        + "backends instead."
                     )
 
                 out = self.model(data)

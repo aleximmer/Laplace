@@ -1,3 +1,4 @@
+from collections.abc import MutableMapping
 from copy import deepcopy
 from itertools import product
 
@@ -24,6 +25,7 @@ from laplace.utils import (
     RandomSubnetMask,
     SubnetMask,
 )
+from tests.utils import ListDataset, dict_data_collator
 
 torch.manual_seed(240)
 torch.set_default_dtype(torch.double)
@@ -1053,3 +1055,51 @@ def test_dtype(laplace, backend, dtype, likelihood):
             assert False  # Fail the test
         else:
             pass  # Ignore
+
+
+class DictModel(nn.Module):
+    def __init__(self, net: nn.Module) -> None:
+        super().__init__()
+        self.net = net
+
+    def forward(self, data: MutableMapping) -> torch.Tensor:
+        return self.net(data["input_ids"])
+
+
+@pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_ef_dict_inputs(laplace, likelihood):
+    X = torch.randn(10, 3)
+    y = (
+        torch.randint(2, (10,))
+        if likelihood == "classification"
+        else torch.randn(10, 2)
+    )
+    data = [{"input_ids": x_i, "labels": y_i} for x_i, y_i in zip(X, y)]
+    dict_loader = DataLoader(
+        ListDataset(data), batch_size=5, collate_fn=dict_data_collator
+    )
+
+    net = nn.Linear(3, 2)
+    subnetmask = RandomSubnetMask(model=net, n_params_subnet=5)
+    subnetmask.select()
+
+    # The EF of the subnetwork comes from torch.func per-sample gradients
+    la = laplace(
+        DictModel(deepcopy(net)),
+        likelihood,
+        subnetwork_indices=subnetmask.indices,
+        backend=CurvlinopsEF,
+    )
+    la.fit(dict_loader)
+
+    la_tensor = laplace(
+        deepcopy(net),
+        likelihood,
+        subnetwork_indices=subnetmask.indices,
+        backend=CurvlinopsEF,
+    )
+    la_tensor.fit(DataLoader(TensorDataset(X, y), batch_size=5))
+
+    assert torch.allclose(la.H, la_tensor.H)
+    assert torch.allclose(la.loss, la_tensor.loss)
