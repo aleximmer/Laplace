@@ -72,7 +72,12 @@ class AsdlInterface(CurvatureInterface):
             output function `(batch, outputs)`
         """
         Js = list()
-        for i in range(self.model.output_size):
+        # `self.model.output_size` can be stale, e.g. in reward modeling where the
+        # output size differs between fitting and prediction. So, get the number of
+        # outputs from the first forward pass instead.
+        n_outputs = 1
+        i = 0
+        while i < n_outputs:
 
             def closure():
                 self.model.zero_grad()
@@ -84,11 +89,13 @@ class AsdlInterface(CurvatureInterface):
                 return f
 
             Ji, f = batch_gradient(self.model, closure, return_outputs=True)
+            n_outputs = f.shape[-1]
 
             if self.subnetwork_indices is not None:
                 Ji = Ji[:, self.subnetwork_indices]
 
             Js.append(Ji)
+            i += 1
 
         Js = torch.stack(Js, dim=1)  # (prod_batch_dim, n_outputs, n_params)
 

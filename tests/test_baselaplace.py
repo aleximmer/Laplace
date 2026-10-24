@@ -1219,6 +1219,21 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
 
 
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
+def test_asdl_jacobians_stale_output_size(backend, reward_model, reward_test_X):
+    # E.g. after pairwise fitting in reward modeling, `output_size` is 2 but
+    # the model outputs 1 value per item at prediction time
+    setattr(reward_model, "output_size", 2)
+    interface = backend(reward_model, "regression")
+
+    Js, f = interface.jacobians(reward_test_X)
+    Js_ref, f_ref = interface.functorch_jacobians(reward_test_X)
+
+    assert Js.shape == Js_ref.shape
+    assert torch.allclose(f, f_ref)
+    assert torch.allclose(Js, Js_ref)
+
+
+@pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
 @pytest.mark.parametrize("enable_backprop", [True, False])
 def test_reward_modeling_asdl_glm(
     backend, enable_backprop, reward_model, reward_loader, reward_test_X
