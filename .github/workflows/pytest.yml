@@ -1,0 +1,51 @@
+name: pytest
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pytest:
+    name: pytest (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            python: "3.11"
+          - name: old-asdfghjkl
+            python: "3.11"
+            old_asdfghjkl: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+      - name: Install the project
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu ${{ matrix.torch }} -r pyproject.toml --extra dev
+      - name: Install the old asdfghjkl
+        if: matrix.old_asdfghjkl
+        run: uv pip install git+https://github.com/wiseodd/asdl@9c7640f8a870e82d5b439e6da59d753b207003b0
+      - name: Test with pytest
+        run: .venv/bin/python -m pytest tests
+
+  docs:
+    name: build docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install the project and the docs dependencies
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu -r pyproject.toml --group docs
+      - name: Build documentation with strict checks
+        run: PYTHONPATH=. .venv/bin/mkdocs build --strict
