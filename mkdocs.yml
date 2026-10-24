@@ -10,8 +10,7 @@ nav:
   - Introduction: index.md
   - Developer's Guide: devs_guide.md
   - "Example: Regression": regression_example.md
-  - ELLA: ella.md
-  - VaLLA: valla.md
+  - "Example: ELLA and VaLLA": ella_valla_example.md
   - "Example: Calibration": calibration_example.md
   - "Example: GP Inference": calibration_gp_example.md
   - "Example: MC Acquistion Functions": expectation_example.md
