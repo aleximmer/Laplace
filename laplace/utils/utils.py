@@ -215,7 +215,7 @@ def symeig(M: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         try:
             L, W = torch.linalg.eigh(M, UPLO="U")
             L -= 1.0
-        except RuntimeError:
+        except RuntimeError as e:
             stats = f"diag: {M.diagonal()}, max: {M.abs().max()}, "
             stats = stats + f"min: {M.abs().min()}, mean: {M.abs().mean()}"
             logging.info(f"SYMEIG: adding jitter failed. Stats: {stats}")
