@@ -18,8 +18,12 @@ For a CPU-only install (as in CI):
 
 ```bash
 uv venv
-uv pip install --torch-backend cpu -r pyproject.toml --extra dev
+uv pip install --torch-backend cpu -e ".[dev]"
+uv run --no-sync pytest ...      # or: export UV_NO_SYNC=1
 ```
+
+`uv.lock` pins the CUDA build, so in this setup never run `uv sync`, and pass `--no-sync`
+to every `uv run`. Otherwise uv reinstalls the CUDA packages.
 
 Optional `asdfghjkl` backend: `pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl`.
 

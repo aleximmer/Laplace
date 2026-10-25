@@ -44,11 +44,24 @@ without an NVIDIA GPU. To get the much smaller CPU build instead (this is what C
 ```bash
 # With uv
 uv venv
-uv pip install --torch-backend cpu -r pyproject.toml --extra dev
+uv pip install --torch-backend cpu -e ".[dev]"
+uv run --no-sync python examples/regression_example.py
 
 # With pip, install the CPU build of torch first
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
 pip install -e ".[dev]"
+```
+
+`uv.lock` pins the CUDA build of PyTorch. In the CPU-only uv setup, don't run `uv sync`,
+and pass `--no-sync` to every `uv run` (or set `UV_NO_SYNC=1`). Otherwise uv
+reinstalls the CUDA packages.
+
+Simpler still, activate the virtualenv once and skip `uv run` altogether:
+
+```bash
+source .venv/bin/activate
+python examples/regression_example.py
+pytest tests/test_lllaplace.py
 ```
 
 ## Contributing
