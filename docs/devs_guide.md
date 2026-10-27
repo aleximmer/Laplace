@@ -82,6 +82,11 @@ Pull requests are very welcome. Please follow these guidelines:
     When opening a PR, you **must** write the description yourself.
     First-time contributors must disclose their AI usage and confirm that they understand the changes.
 
+Maintainers can ask Claude for a review of any pull request, including one from a fork,
+by commenting `@claude review` on it. The review runs as a GitHub Actions workflow and
+posts its findings as inline comments. It checks for bugs and for compliance with
+`AGENTS.md`, and never approves or blocks a pull request.
+
 Issues, bug reports, and ideas are also very welcome!
 
 ## Documentation
