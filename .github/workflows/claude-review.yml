@@ -3,7 +3,11 @@ name: Claude review
 # A maintainer requests a review by commenting "@claude review" on a pull request.
 # The job runs in this repository with its secrets, so it also works for pull
 # requests from forks. Claude fetches the diff through `gh` and reads the review
-# guidance (CLAUDE.md, AGENTS.md) from the main branch, not from the PR.
+# instructions (.claude/skills/pr-review/SKILL.md) and the guidance it checks
+# against (CLAUDE.md, AGENTS.md) from the main branch, not from the PR.
+#
+# Both actions are pinned to a commit. To update one, resolve the new release
+# tag to its commit SHA and change the trailing version comment with it.
 
 on:
   issue_comment:
@@ -26,17 +30,12 @@ jobs:
       issues: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 1
 
-      - uses: anthropics/claude-code-action@v1
+      - uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
-          plugins: "code-review@claude-code-plugins"
-          prompt: >-
-            /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.issue.number }}
-            A maintainer requested this review explicitly, so review the pull
-            request even if Claude has already commented on it.
+          prompt: "/pr-review ${{ github.repository }}/pull/${{ github.event.issue.number }}"
           claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'

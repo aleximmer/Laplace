@@ -84,8 +84,10 @@ Pull requests are very welcome. Please follow these guidelines:
 
 Maintainers can ask Claude for a review of any pull request, including one from a fork,
 by commenting `@claude review` on it. The review runs as a GitHub Actions workflow and
-posts its findings as inline comments. It checks for bugs and for compliance with
-`AGENTS.md`, and never approves or blocks a pull request.
+posts its findings as inline comments, followed by a summary that names the reviewed
+commit. It checks for bugs and for compliance with `AGENTS.md`, and never approves or
+blocks a pull request. Commenting again after new commits runs a fresh review. The
+review instructions live in `.claude/skills/pr-review/SKILL.md`.
 
 Issues, bug reports, and ideas are also very welcome!
 
