@@ -437,6 +437,41 @@ def test_batchgrad_nested_dict_inputs(dict_cls, likelihood, multidim, model):
     assert torch.allclose(loss, loss_ref)
 
 
+@pytest.mark.parametrize("backend_cls", [GGNInterface, EFInterface])
+@pytest.mark.parametrize("structure", ["full", "diag"])
+def test_multidim_classification_equivalent_to_flat(backend_cls, structure):
+    # Logits `(B, L, C)` with the class axis last and targets `(B, L)`: every token is
+    # an observation, so the curvature must equal that of the flat `(B * L, C)` data
+    torch.manual_seed(711)
+    B, L, D, C = 4, 3, 5, 6
+    X, y = torch.randn(B, L, D), torch.randint(C, (B, L))
+    net = nn.Sequential(nn.Linear(D, 4), nn.Tanh(), nn.Linear(4, C))
+
+    loss_flat, H_flat = getattr(backend_cls(net, "classification"), structure)(
+        X.reshape(-1, D), y.reshape(-1)
+    )
+    loss, H = getattr(backend_cls(net, "classification"), structure)(X, y)
+
+    assert torch.allclose(loss, loss_flat)
+    assert torch.allclose(H, H_flat)
+
+
+def test_loss_multidim_classification_targets():
+    B, L, C = 4, 3, 5
+    f = torch.randn(B, L, C)
+    y = torch.randint(C, (B, L))
+    y_prob = nn.functional.one_hot(y, C).to(f.dtype)
+    backend = GGNInterface(nn.Linear(2, C), "classification")
+
+    loss_flat = nn.CrossEntropyLoss(reduction="sum")(f.reshape(-1, C), y.reshape(-1))
+    assert torch.allclose(backend._loss(f, y), loss_flat)
+    # Class probabilities keep their class axis
+    assert torch.allclose(backend._loss(f, y_prob), loss_flat)
+
+    with pytest.raises(ValueError, match="targets have shape"):
+        backend._loss(f, y.T)  # `(L, B)` instead of `(B, L)`
+
+
 def test_batchgrad_data_dependent_control_flow(class_Xy, model):
     class BranchingModel(nn.Module):
         def __init__(self, net: nn.Module) -> None:

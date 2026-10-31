@@ -46,7 +46,10 @@ online_flavors = [FullLaplace, KronLaplace, DiagLaplace]
 
 
 def _bridge_from_moments(mean, covariance, link):
-    class FixedMoments:
+    class FixedMoments(BaseLaplace):
+        def __init__(self):
+            pass  # Only the link approximations are used
+
         def _glm_predictive_distribution(self, x, joint=False):
             return mean, covariance
 
@@ -1325,24 +1328,19 @@ def test_multidim_kron_asdl_raises(multidim_model, reg_loader_multidim, backend)
         lap.fit(reg_loader_multidim)
 
 
-@pytest.mark.parametrize("backend", [CurvlinopsEF, CurvlinopsGGN])
-def test_multidim_kron_glm_raises(multidim_model, reg_loader_multidim, backend):
-    lap = KronLaplace(multidim_model, "regression", backend=backend)
-    lap.fit(reg_loader_multidim)
-    x, _ = next(iter(reg_loader_multidim))
-
-    with pytest.raises(NotImplementedError, match="KronLaplace"):
-        lap(x, pred_type="glm")
-
-    with pytest.raises(NotImplementedError, match="KronLaplace"):
-        lap(x, pred_type="glm", joint=True)
-
-
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
 @pytest.mark.parametrize("backend", [BackPackGGN, BackPackEF])
-def test_multidim_backpack_raises(reg_loader_multidim, backend):
-    lap = FullLaplace(nn.Linear(8, 2), "regression", backend=backend)
+@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+def test_multidim_backpack_raises(laplace, backend, likelihood):
+    X = torch.randn(10, 6, 8)
+    y = (
+        torch.randn(10, 6, 2)
+        if likelihood == "regression"
+        else torch.randint(2, (10, 6))
+    )
+    lap = laplace(nn.Linear(8, 2), likelihood, backend=backend)
     with pytest.raises(NotImplementedError, match="BackPack"):
-        lap.fit(reg_loader_multidim)
+        lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
 
 
 def test_multidim_last_layer_glm_raises(reg_loader_multidim):
@@ -1361,14 +1359,198 @@ def test_multidim_last_layer_glm_raises(reg_loader_multidim):
         lap(x, pred_type="glm")
 
 
-def test_multidim_classification_glm_raises():
-    N, L, D, C = 8, 3, 4, 5
-    X, y = torch.randn(N, L, D), torch.randint(C, (N, L))
-    lap = DiagLaplace(nn.Linear(D, C), "classification", backend=CurvlinopsEF)
-    lap.fit(DataLoader(TensorDataset(X, y), batch_size=N))
+def _dense(H: torch.Tensor | KronDecomposed) -> torch.Tensor:
+    return H.to_matrix() if isinstance(H, KronDecomposed) else H
 
-    with pytest.raises(NotImplementedError, match="classification"):
-        lap(X, pred_type="glm")
+
+@pytest.mark.parametrize(
+    "laplace",
+    [FullLaplace, DiagLaplace, KronLaplace, FullSubnetLaplace, DiagSubnetLaplace],
+)
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+@pytest.mark.parametrize("model_type", ["linear", "mlp"])
+def test_multidim_classification_equivalent_to_flat(laplace, backend, model_type):
+    """Classification with logits `(B, L, C)` and targets `(B, L)`, e.g. next-token
+    prediction, must give the same posterior and predictive as the flat data set with
+    logits `(B * L, C)`, since every token is an observation."""
+    N, L, D, C = 12, 3, 4, 5
+    X, y = torch.randn(N, D), torch.randint(C, (N,))
+    X_multidim, y_multidim = X.reshape(N // L, L, D), y.reshape(N // L, L)
+
+    loader_flat = DataLoader(TensorDataset(X, y), batch_size=N)
+    loader_multidim = DataLoader(
+        TensorDataset(X_multidim, y_multidim), batch_size=N // L
+    )
+
+    if model_type == "linear":
+        model_flat = nn.Linear(D, C)
+    else:
+        model_flat = nn.Sequential(nn.Linear(D, 5), nn.Tanh(), nn.Linear(5, C))
+
+    model_multidim = deepcopy(model_flat)
+
+    kwargs = {}
+    if laplace in (FullSubnetLaplace, DiagSubnetLaplace):
+        # Include the output bias, so that the predictive covariance has full rank
+        n_params = sum(p.numel() for p in model_flat.parameters())
+        kwargs["subnetwork_indices"] = torch.LongTensor(
+            [0, 3, 8, *range(n_params - C, n_params)]
+        )
+
+    la_flat = laplace(model_flat, "classification", backend=backend, **kwargs)
+    la_flat.fit(loader_flat)
+
+    la_multidim = laplace(model_multidim, "classification", backend=backend, **kwargs)
+    la_multidim.fit(loader_multidim)
+
+    # Posterior
+    assert la_multidim.n_data == N // L
+    assert la_flat.n_obs == la_multidim.n_obs == N
+    assert torch.allclose(la_flat.loss, la_multidim.loss)
+    assert torch.allclose(la_flat.log_likelihood, la_multidim.log_likelihood)
+    assert torch.allclose(_dense(la_flat.H), _dense(la_multidim.H))
+    assert torch.allclose(
+        la_flat.log_marginal_likelihood(), la_multidim.log_marginal_likelihood()
+    )
+
+    # GLM predictive
+    for link_approx in ["probit", "bridge", "bridge_norm", "mc"]:
+        torch.manual_seed(0)
+        probs_flat = la_flat(X, pred_type="glm", link_approx=link_approx)
+        torch.manual_seed(0)
+        probs_multidim = la_multidim(
+            X_multidim, pred_type="glm", link_approx=link_approx
+        )
+        assert probs_multidim.shape == (N // L, L, C)
+        assert torch.allclose(probs_flat, probs_multidim.reshape(N, C))
+
+    # NN predictive: same seed, same posterior samples
+    torch.manual_seed(0)
+    probs_flat = la_flat(X, pred_type="nn", link_approx="mc")
+    torch.manual_seed(0)
+    probs_multidim = la_multidim(X_multidim, pred_type="nn", link_approx="mc")
+    assert torch.allclose(probs_flat, probs_multidim.reshape(N, C))
+
+
+@pytest.mark.parametrize("method", ["marglik", "gridsearch"])
+def test_multidim_classification_prior_precision_equivalent_to_flat(method):
+    N, L, D, C = 12, 3, 4, 5
+    X, y = torch.randn(N, D), torch.randint(C, (N,))
+    X_multidim, y_multidim = X.reshape(N // L, L, D), y.reshape(N // L, L)
+
+    loader_flat = DataLoader(TensorDataset(X, y), batch_size=N)
+    loader_multidim = DataLoader(
+        TensorDataset(X_multidim, y_multidim), batch_size=N // L
+    )
+
+    model_flat = nn.Linear(D, C)
+    la_flat = DiagLaplace(model_flat, "classification", backend=CurvlinopsGGN)
+    la_flat.fit(loader_flat)
+    la_multidim = DiagLaplace(
+        deepcopy(model_flat), "classification", backend=CurvlinopsGGN
+    )
+    la_multidim.fit(loader_multidim)
+
+    kwargs = {"method": method}
+    if method == "gridsearch":
+        kwargs["n_steps"] = 10
+    la_flat.optimize_prior_precision(val_loader=loader_flat, **kwargs)
+    la_multidim.optimize_prior_precision(val_loader=loader_multidim, **kwargs)
+
+    assert torch.allclose(la_flat.prior_precision, la_multidim.prior_precision)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, KronLaplace])
+@pytest.mark.parametrize("y_shape", [(8,), (8, 3, 1), (8, 3, 4)])
+def test_multidim_classification_wrong_target_shape_raises(laplace, y_shape):
+    X = torch.randn(8, 3, 4)
+    y = torch.randint(5, y_shape)
+    lap = laplace(nn.Linear(4, 5), "classification", backend=CurvlinopsGGN)
+
+    with pytest.raises(ValueError, match="targets"):
+        lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+
+@pytest.mark.parametrize(
+    "laplace",
+    [FullLaplace, DiagLaplace, KronLaplace, FullSubnetLaplace, DiagSubnetLaplace],
+)
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+def test_multidim_classification_misaligned_targets_raise(laplace, backend):
+    # Targets `(B, M, L)` for logits `(B, L, M, C)` have the right number of dims and
+    # elements, so flattening both would silently misalign them
+    X, y = torch.randn(4, 3, 2, 5), torch.randint(6, (4, 2, 3))
+    kwargs = {}
+    if laplace in (FullSubnetLaplace, DiagSubnetLaplace):
+        kwargs["subnetwork_indices"] = torch.LongTensor([0, 3, 30, 31, 32])
+
+    lap = laplace(nn.Linear(5, 6), "classification", backend=backend, **kwargs)
+
+    with pytest.raises(ValueError, match="targets have shape"):
+        lap.fit(DataLoader(TensorDataset(X, y), batch_size=2))
+
+
+def test_multidim_classification_probability_targets_raise():
+    X = torch.randn(8, 3, 4)
+    y = nn.functional.one_hot(torch.randint(5, (8, 3)), 5).float()
+    lap = DiagLaplace(nn.Linear(4, 5), "classification", backend=CurvlinopsGGN)
+
+    with pytest.raises(ValueError, match="class indices"):
+        lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+
+@pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
+def test_multidim_classification_kron_online_equivalent_to_flat(backend):
+    # Two online fits with different sequence lengths must give the factors of a
+    # single fit on all tokens
+    D, C = 4, 3
+    X1, y1 = torch.randn(4, 2, D), torch.randint(C, (4, 2))
+    X2, y2 = torch.randn(2, 5, D), torch.randint(C, (2, 5))
+    X = torch.cat([X1.reshape(-1, D), X2.reshape(-1, D)])
+    y = torch.cat([y1.reshape(-1), y2.reshape(-1)])
+
+    model_flat = nn.Linear(D, C)
+    la_flat = KronLaplace(model_flat, "classification", backend=backend)
+    la_flat.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
+
+    la_online = KronLaplace(deepcopy(model_flat), "classification", backend=backend)
+    la_online.fit(DataLoader(TensorDataset(X1, y1), batch_size=4))
+    la_online.fit(DataLoader(TensorDataset(X2, y2), batch_size=2), override=False)
+
+    assert la_online.n_obs == la_flat.n_obs == len(X)
+    assert torch.allclose(la_flat.H_facs.to_matrix(), la_online.H_facs.to_matrix())
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, KronLaplace])
+def test_probability_targets_count_observations(laplace):
+    # One-hot targets `(N, C)` are `N` observations, not `N * C`
+    N, D, C = 12, 4, 5
+    X, y = torch.randn(N, D), torch.randint(C, (N,))
+    y_prob = nn.functional.one_hot(y, C).to(X.dtype)
+
+    model = nn.Linear(D, C)
+    la_index = laplace(model, "classification", backend=CurvlinopsGGN)
+    la_index.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+    la_prob = laplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_prob.fit(DataLoader(TensorDataset(X, y_prob), batch_size=4))
+
+    assert la_prob.n_obs == la_index.n_obs == N
+    assert torch.allclose(la_index.loss, la_prob.loss)
+    assert torch.allclose(_dense(la_index.H), _dense(la_prob.H))
+
+
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_multidim_functional_laplace_raises(likelihood):
+    X = torch.randn(8, 3, 4)
+    y = (
+        torch.randint(2, (8, 3))
+        if likelihood == "classification"
+        else torch.randn(8, 3, 2)
+    )
+    lap = FunctionalLaplace(nn.Linear(4, 2), likelihood, n_subset=4)
+
+    with pytest.raises(NotImplementedError, match="FunctionalLaplace"):
+        lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
 
 
 def test_asdl_sum_rows_per_observation():
@@ -1411,9 +1593,13 @@ def test_multidim_subnetwork_equivalent_to_flat(laplace, backend):
     assert torch.allclose(var_flat, var_multidim.reshape(N, K, K))
 
 
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace])
 @pytest.mark.parametrize("backend", [AsdlGGN, CurvlinopsGGN])
-def test_multidim_variable_length_batches(backend):
+def test_multidim_variable_length_batches(laplace, backend):
     # Sequence lengths differ between batches, e.g. when padding to the longest sequence
+    if laplace is KronLaplace and backend is AsdlGGN:
+        pytest.skip("ASDL Kron raises for multidim regression")
+
     D, K = 4, 2
     lengths = [(2, 3), (3, 1), (1, 5)]  # (n_sequences, sequence_length) per batch
     batches = [(torch.randn(b, L, D), torch.randn(b, L, K)) for b, L in lengths]
@@ -1423,15 +1609,40 @@ def test_multidim_variable_length_batches(backend):
     model_flat = nn.Linear(D, K)
     model_multidim = deepcopy(model_flat)
 
-    la_flat = FullLaplace(model_flat, "regression", backend=backend)
+    la_flat = laplace(model_flat, "regression", backend=backend)
     la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=len(X)))
-    la_multidim = FullLaplace(model_multidim, "regression", backend=backend)
+    la_multidim = laplace(model_multidim, "regression", backend=backend)
     la_multidim.fit(DataLoader(batches, batch_size=None))
 
     assert la_multidim.n_obs == la_flat.n_obs == len(X)
     assert torch.allclose(la_flat.loss, la_multidim.loss)
-    assert torch.allclose(la_flat.H, la_multidim.H)
+    assert torch.allclose(_dense(la_flat.H), _dense(la_multidim.H))
     assert torch.allclose(la_flat.log_likelihood, la_multidim.log_likelihood)
+    assert torch.allclose(
+        la_flat.log_marginal_likelihood(), la_multidim.log_marginal_likelihood()
+    )
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, KronLaplace])
+@pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF, CurvlinopsGGN, CurvlinopsEF])
+def test_multidim_classification_variable_length_batches(laplace, backend):
+    D, C = 4, 3
+    lengths = [(2, 3), (3, 1), (1, 5)]  # (n_sequences, sequence_length) per batch
+    batches = [(torch.randn(b, L, D), torch.randint(C, (b, L))) for b, L in lengths]
+    X = torch.cat([x.reshape(-1, D) for x, _ in batches])
+    y = torch.cat([y.reshape(-1) for _, y in batches])
+
+    model_flat = nn.Linear(D, C)
+    model_multidim = deepcopy(model_flat)
+
+    la_flat = laplace(model_flat, "classification", backend=backend)
+    la_flat.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
+    la_multidim = laplace(model_multidim, "classification", backend=backend)
+    la_multidim.fit(DataLoader(batches, batch_size=None))
+
+    assert la_multidim.n_obs == la_flat.n_obs == len(X)
+    assert torch.allclose(la_flat.loss, la_multidim.loss)
+    assert torch.allclose(_dense(la_flat.H), _dense(la_multidim.H))
     assert torch.allclose(
         la_flat.log_marginal_likelihood(), la_multidim.log_marginal_likelihood()
     )
@@ -1875,12 +2086,15 @@ def test_functional_covariance_multidim(
     )
 
 
-@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, KronLaplace])
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
 @pytest.mark.parametrize("model_type", ["linear", "mlp"])
 def test_multidim_equivalent_to_flat(laplace, backend, model_type):
     """A pointwise model on a reshaped data set must give the same posterior and
     predictive as on the original flat data set."""
+    if laplace is KronLaplace and backend in (AsdlEF, AsdlGGN):
+        pytest.skip("ASDL Kron raises for multidim regression")
+
     N, L, D, K = 12, 3, 4, 2
     X, Y = torch.randn(N, D), torch.randn(N, K)
     X_multidim, Y_multidim = X.reshape(N // L, L, D), Y.reshape(N // L, L, K)
@@ -1909,7 +2123,7 @@ def test_multidim_equivalent_to_flat(laplace, backend, model_type):
     assert la_flat.n_obs == la_multidim.n_obs
     assert torch.allclose(la_flat.loss, la_multidim.loss)
     assert torch.allclose(la_flat.log_likelihood, la_multidim.log_likelihood)
-    assert torch.allclose(la_flat.H, la_multidim.H)
+    assert torch.allclose(_dense(la_flat.H), _dense(la_multidim.H))
     assert torch.allclose(
         la_flat.log_marginal_likelihood(), la_multidim.log_marginal_likelihood()
     )

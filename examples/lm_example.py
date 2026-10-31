@@ -6,6 +6,7 @@ from torch.utils.data import DataLoader
 
 from laplace import Laplace
 from laplace.curvature.asdl import AsdlEF, AsdlGGN
+from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.utils.enums import LinkApprox, PredType
 
 BATCH_SIZE = 4  # B
@@ -95,3 +96,64 @@ pred_la_mean, pred_la_var = la(
 
 # torch.Size([B, L, K]) torch.Size([B, L, K])
 print(pred_la_mean.shape, pred_la_var.shape)
+
+
+# Next-token prediction: classification with logits `(B, L, V)` and targets `(B, L)`,
+# where `V` is the vocabulary size. As in regression, each of the `B * L` tokens is an
+# observation in the likelihood.
+VOCAB_SIZE = 20  # V
+IDS_KEY = "input_ids"
+LABELS_KEY = "labels"
+
+
+class CausalLM(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embedding = nn.Embedding(VOCAB_SIZE, EMBED_DIM)
+        self.attn = nn.MultiheadAttention(EMBED_DIM, num_heads=1, batch_first=True)
+        self.lm_head = nn.Linear(EMBED_DIM, VOCAB_SIZE)
+
+    def forward(self, x):
+        x = self.embedding(x[IDS_KEY])  # (B, L, D)
+        L = x.shape[1]
+        causal_mask = torch.triu(torch.ones(L, L, dtype=torch.bool), diagonal=1)
+        out = self.attn(x, x, x, attn_mask=causal_mask, need_weights=False)[0]
+        return self.lm_head(out)  # (B, L, V)
+
+
+# The label of each token is the next token
+tokens = torch.randint(VOCAB_SIZE, (100, SEQ_LENGTH + 1))
+ds = TensorDict(
+    {IDS_KEY: tokens[:, :-1], LABELS_KEY: tokens[:, 1:]},
+    batch_size=[100],
+)
+dl = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False, collate_fn=lambda x: x)
+
+model = CausalLM()
+
+# Laplace over the LM head only
+for mod_name, mod in model.named_modules():
+    for p in mod.parameters(recurse=False):
+        p.requires_grad = mod_name == "lm_head"
+
+la = Laplace(
+    model,
+    "classification",
+    hessian_structure="kron",
+    subset_of_weights="all",
+    backend=CurvlinopsGGN,
+    dict_key_x=IDS_KEY,
+    dict_key_y=LABELS_KEY,
+)
+la.fit(dl)
+la.optimize_prior_precision()
+
+data = next(iter(dl))  # data[IDS_KEY].shape = (B, L)
+
+probs = la(data, pred_type=PredType.GLM, link_approx=LinkApprox.PROBIT)
+# torch.Size([B, L, V])
+print(probs.shape)
+
+probs = la(data, pred_type=PredType.NN, link_approx=LinkApprox.MC, n_samples=10)
+# torch.Size([B, L, V])
+print(probs.shape)
