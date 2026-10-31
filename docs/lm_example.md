@@ -152,7 +152,9 @@ we get two `(B, L, K)` tensors.
 For language modeling, the model returns logits of shape `(B, L, V)`, where `V` is the
 vocabulary size, and the targets are the token ids of shape `(B, L)`. This is
 classification, and, as before, each of the `B * L` tokens is an observation in the
-likelihood. The class axis must be the last one, as is usual for language models.
+likelihood. The class axis must be the last one, as is usual for language models, and
+the targets must be class indices. Class probabilities as targets are only supported
+for logits of shape `(B, C)`.
 
 Below is a toy causal language model. It takes the token ids under `"input_ids"` and
 predicts the next token at every position.

@@ -114,6 +114,10 @@ class CurvlinopsInterface(CurvatureInterface):
         if isinstance(x, (dict, MutableMapping)):
             kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
+        # Computed first, so that the targets are checked before the curvature
+        f = self.model(x)
+        loss = self._loss(f, y)
+
         model = self._linop_model
         linop = KFACLinearOperator(
             model,
@@ -131,10 +135,11 @@ class CurvlinopsInterface(CurvatureInterface):
         linop.compute_kronecker_factors()
 
         kron = self._get_kron_factors(linop, model)
-        kron = self._rescale_kron_factors(kron, len(y), N)
+        # Curvlinops averages the input factors over the tokens of the batch, e.g.
+        # `B * L` for outputs `(B, L, K)`. Undo it, so that they sum over the tokens
+        # like with ASDL. `KronLaplace.fit` normalizes by the number of tokens.
+        kron = self._rescale_kron_factors(kron, f.shape[:-1].numel(), N)
         kron *= self.factor
-
-        loss = self._loss(self.model(x), y)
 
         return self.factor * loss.detach(), kron
 
@@ -152,6 +157,10 @@ class CurvlinopsInterface(CurvatureInterface):
         if isinstance(x, (dict, MutableMapping)):
             curvlinops_kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
+        # Computed first, so that the targets are checked before the curvature
+        f = self.model(x)
+        loss = self._loss(f, y)
+
         linop = self._linop_context(
             self._linop_model,
             self.lossfunc,
@@ -165,9 +174,6 @@ class CurvlinopsInterface(CurvatureInterface):
         H = torch.as_tensor(
             linop @ torch.eye(linop.shape[0]), device=p.device, dtype=p.dtype
         )
-
-        f = self.model(x)
-        loss = self._loss(f, y)
 
         return self.factor * loss.detach(), self.factor * H
 

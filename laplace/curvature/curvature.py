@@ -86,6 +86,24 @@ class CurvatureInterface:
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
 
+    def _check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
+        """For classification, check that the targets `y` match the logits `f`
+        `(batch, ..., classes)`: class indices `(batch, ...)` or class probabilities
+        with the same shape as `f`.
+
+        Flattening the batch dims would silently misalign targets of the wrong shape
+        with the same number of elements, e.g. `(B, L, M)` instead of `(B, M, L)`.
+        """
+        if self.likelihood != Likelihood.CLASSIFICATION:
+            return
+
+        if y.shape != f.shape[:-1] and y.shape != f.shape:
+            raise ValueError(
+                f"The targets have shape {tuple(y.shape)}, which matches neither the "
+                f"class indices {tuple(f.shape[:-1])} nor the class probabilities "
+                f"{tuple(f.shape)} expected from the logits."
+            )
+
     def _loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Compute `self.lossfunc(f, y)`, where every leading dim of `f` but the last
         is a batch dim.
@@ -94,8 +112,12 @@ class CurvatureInterface:
         e.g. logits `(B, L, C)` with targets `(B, L)`. So, for classification, flatten
         the batch dims, which makes every token an observation.
         """
+        self._check_targets(f, y)
+
         if self.likelihood == Likelihood.CLASSIFICATION and f.ndim > 2:
-            f, y = f.reshape(-1, f.shape[-1]), y.reshape(-1)
+            # Class probabilities keep their class axis
+            y = y.reshape(-1, f.shape[-1]) if y.ndim == f.ndim else y.reshape(-1)
+            f = f.reshape(-1, f.shape[-1])
 
         return self.lossfunc(f, y)
 
@@ -279,6 +301,8 @@ class CurvatureInterface:
             output = torch.func.functional_call(
                 self.model, (params_dict, buffers_dict), x
             )
+            self._check_targets(output, y)
+
             # Every leading dim of the output is a "token" with its own loss
             n_lead = output.ndim - 1
             output = output.flatten(end_dim=n_lead - 1)

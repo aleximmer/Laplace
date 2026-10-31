@@ -257,6 +257,7 @@ class AsdlInterface(CurvatureInterface):
             **kwargs,
         )
         fisher_maker = get_fisher_maker(self.model, cfg)
+        y_orig = y
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, x)
@@ -270,6 +271,7 @@ class AsdlInterface(CurvatureInterface):
                 # ASDL's exact and MC cross-entropy Fishers assume 2D logits
                 fisher_maker.setup_logits_repr(dummy.view(-1, dummy.size(-1)))
         f, _ = fisher_maker.forward_and_backward()
+        self._check_targets(f, y_orig)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
@@ -426,6 +428,7 @@ class AsdlInterface(CurvatureInterface):
             **kwargs,
         )
         fisher_maker = get_fisher_maker(self.model, cfg)
+        y_orig = y
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
         if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, x)
@@ -439,15 +442,15 @@ class AsdlInterface(CurvatureInterface):
                 # ASDL's exact and MC cross-entropy Fishers assume 2D logits
                 fisher_maker.setup_logits_repr(dummy.view(-1, dummy.size(-1)))
         f, _ = fisher_maker.forward_and_backward()
-        # ASDL sums the input factors over all tokens, e.g. `B * L` rows for logits
-        # `(B, L, C)`, so normalize by the number of tokens, not of sequences
-        n_tokens_per_datum = f.shape[1:-1].numel()
+        self._check_targets(f, y_orig)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
-        kron = self._rescale_kron_factors(kron, N * n_tokens_per_datum)
+        # ASDL sums the input factors over all tokens, e.g. `B * L` rows for logits
+        # `(B, L, C)`. `KronLaplace.fit` normalizes by the number of tokens.
+        kron = self._rescale_kron_factors(kron, N)
         if type(self) is AsdlEF and self.likelihood == "regression":
             curv_factor = 0.5  # correct scaling for diag ef
         else:

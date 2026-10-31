@@ -456,6 +456,22 @@ def test_multidim_classification_equivalent_to_flat(backend_cls, structure):
     assert torch.allclose(H, H_flat)
 
 
+def test_loss_multidim_classification_targets():
+    B, L, C = 4, 3, 5
+    f = torch.randn(B, L, C)
+    y = torch.randint(C, (B, L))
+    y_prob = nn.functional.one_hot(y, C).to(f.dtype)
+    backend = GGNInterface(nn.Linear(2, C), "classification")
+
+    loss_flat = nn.CrossEntropyLoss(reduction="sum")(f.reshape(-1, C), y.reshape(-1))
+    assert torch.allclose(backend._loss(f, y), loss_flat)
+    # Class probabilities keep their class axis
+    assert torch.allclose(backend._loss(f, y_prob), loss_flat)
+
+    with pytest.raises(ValueError, match="targets have shape"):
+        backend._loss(f, y.T)  # `(L, B)` instead of `(B, L)`
+
+
 def test_batchgrad_data_dependent_control_flow(class_Xy, model):
     class BranchingModel(nn.Module):
         def __init__(self, net: nn.Module) -> None:

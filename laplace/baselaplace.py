@@ -1261,10 +1261,12 @@ class ParametricLaplace(BaseLaplace):
 
             # Every token (extra dims between the batch and output dims) is an
             # observation. Count per batch since the sequence length can vary.
-            # The last dim of regression targets is the output dim.
-            y_obs_shape = (
-                y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+            # The last dim of regression targets and of class probabilities is the
+            # output dim.
+            has_output_dim = self.likelihood == Likelihood.REGRESSION or (
+                self.likelihood == Likelihood.CLASSIFICATION and y.ndim == out.ndim
             )
+            y_obs_shape = y.shape[:-1] if has_output_dim else y.shape
             self.n_obs += y_obs_shape.numel()
 
         self.n_data += N
@@ -1272,17 +1274,31 @@ class ParametricLaplace(BaseLaplace):
     @staticmethod
     def _check_classification_targets(out: torch.Tensor, y: torch.Tensor) -> None:
         """Check that the targets match the logits `out` `(batch, ..., classes)`:
-        either class indices `(batch, ...)` or class probabilities with the same
-        shape as the logits.
+        either class indices `(batch, ...)` or, for logits `(batch, classes)`, class
+        probabilities with the same shape as the logits.
+
+        Only the number of dims is checked, since `out` is computed on a single
+        datum and the sequence length can vary between batches. The backends check
+        the exact shapes against the logits of each batch.
         """
+        if out.ndim > 2:
+            if y.ndim != out.ndim - 1:
+                raise ValueError(
+                    f"The model's logits have shape (batch, ..., classes) with "
+                    f"{out.ndim} dims, so the targets must be class indices with "
+                    f"{out.ndim - 1} dims, but they have {y.ndim} dims. Class "
+                    "probabilities as targets are only supported for logits "
+                    "(batch, classes)."
+                )
+            return
+
         is_index = y.ndim == out.ndim - 1
         is_prob = y.ndim == out.ndim and y.shape[-1] == out.shape[-1]
         if not (is_index or is_prob):
             raise ValueError(
-                f"The model's logits have shape (batch, ..., classes) with {out.ndim} "
-                f"dims, but the targets have {y.ndim} dims. The targets must be "
-                "class indices with one dim fewer than the logits, or class "
-                "probabilities with the same shape as the logits."
+                f"The model's logits have shape (batch, classes), but the targets "
+                f"have {y.ndim} dims. The targets must be class indices (batch,) or "
+                "class probabilities (batch, classes)."
             )
 
     @property
@@ -2118,25 +2134,28 @@ class KronLaplace(ParametricLaplace):
         if override:
             self.H_facs = None
 
+        n_obs_old: int = 0 if self.H_facs is None else self.n_obs
+        n_data_new: int = len(train_loader.dataset)
         if self.H_facs is not None:
-            n_data_old: int = self.n_data
-            n_data_new: int = len(train_loader.dataset)
             self._init_H()  # re-init H non-decomposed
-            # discount previous Kronecker factors to sum up properly together with new ones
-            self.H_facs = self._rescale_factors(
-                self.H_facs, n_data_old / (n_data_old + n_data_new)
-            )
 
         super().fit(train_loader, override=override, progress_bar=progress_bar)
+
+        # The backends sum the input factors over all tokens, e.g. `B * L` for
+        # outputs `(B, L, K)`, and divide by `n_data_new`. Every token is an
+        # observation, so divide by the number of tokens instead. This also holds
+        # when the sequence length varies between batches.
+        n_obs_new: int = self.n_obs - n_obs_old
+        if n_obs_new > 0:
+            self.H = self._rescale_factors(self.H, n_data_new / n_obs_new)
 
         if self.H_facs is None:
             self.H_facs = self.H
         else:
-            # discount new factors that were computed assuming N = n_data_new
-            self.H = self._rescale_factors(
-                self.H, n_data_new / (n_data_new + n_data_old)
-            )
-            self.H_facs += self.H
+            # Weight previous and new Kronecker factors by their number of observations
+            n_obs_total = n_obs_old + n_obs_new
+            self.H_facs = self._rescale_factors(self.H_facs, n_obs_old / n_obs_total)
+            self.H_facs += self._rescale_factors(self.H, n_obs_new / n_obs_total)
 
         # Decompose to self.H for all required quantities but keep H_facs for further inference
         self.H = self.H_facs.decompose(damping=self.damping)
