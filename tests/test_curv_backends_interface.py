@@ -372,6 +372,7 @@ class DictModel(nn.Module):
         self.net = net
 
     def forward(self, data: MutableMapping) -> torch.Tensor:
+        assert data["note"] == "not a tensor"
         return self.net(data["input_ids"])
 
 
