@@ -244,9 +244,15 @@ class CurvatureInterface:
         """
         if isinstance(x, MutableMapping):
             # vmap only maps over tensors in plain containers, e.g. not `UserDict`.
-            # The model then gets a plain dict; non-tensor entries are passed as is.
-            # Tensors in nested containers are mapped over too.
-            x = dict(x)
+            # The model then gets plain dicts, also for nested mappings; non-tensor
+            # entries are passed as is. Tensors in nested containers are mapped over.
+            def to_dict(x):
+                if isinstance(x, MutableMapping):
+                    return {k: to_dict(v) for k, v in x.items()}
+
+                return x
+
+            x = to_dict(x)
             in_dims_x = tree_map(lambda v: 0 if torch.is_tensor(v) else None, x)
         else:
             in_dims_x = 0

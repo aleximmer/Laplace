@@ -402,9 +402,10 @@ def test_batchgrad_dict_inputs(dict_cls, likelihood, multidim, model):
     assert torch.allclose(loss, loss_ref)
 
 
+@pytest.mark.parametrize("dict_cls", [dict, UserDict])
 @pytest.mark.parametrize("likelihood", ["classification", "regression"])
 @pytest.mark.parametrize("multidim", [False, True])
-def test_batchgrad_nested_dict_inputs(likelihood, multidim, model):
+def test_batchgrad_nested_dict_inputs(dict_cls, likelihood, multidim, model):
     class NestedDictModel(nn.Module):
         def __init__(self, net: nn.Module) -> None:
             super().__init__()
@@ -424,7 +425,7 @@ def test_batchgrad_nested_dict_inputs(likelihood, multidim, model):
     )
 
     # Tensors in nested containers must be mapped over as well
-    data = {"payload": {"input_ids": X, "note": "not a tensor"}}
+    data = {"payload": dict_cls({"input_ids": X, "note": "not a tensor"})}
 
     backend = CurvatureInterface(model, likelihood)
     batchgrads_ref, loss_ref = backend.gradients(X, y)
