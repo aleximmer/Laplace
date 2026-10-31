@@ -1,6 +1,9 @@
-In this example, we will see how to apply Laplace for language modeling where the
-input tensors have 3 axes (batch size, sequence length, and input dimensionality)
-and the output tensors also have 3 axes (batch size, sequence length, and output dimensionality).
+In this example, we apply Laplace to sequence models, where the inputs have 3 axes
+(batch size, sequence length, and input dimensionality) and so do the outputs (batch
+size, sequence length, and output dimensionality). We start with a model that outputs a
+vector per token, trained with a Gaussian likelihood. Then we turn to
+[next-token prediction](#next-token-prediction), i.e., language modeling, which is
+classification with one set of logits per token.
 
 Let's start with defining a toy model.
 Notice that `laplace-torch` requires the model to take a single input, which can be a
@@ -121,20 +124,6 @@ we will get shapes `(B, L, K)` for the mean tensor and `(B, L, K, K)` for the va
 tensor by default.
 When `diagonal_output=True`, the variance tensor will instead be `(B, L, K)` as expected.
 
-!!! caution
-
-    Inputs/outputs with more than 2 axes are currently supported for regression only,
-    with the following limitations:
-
-    - `hessian_structure="kron"` does not support the GLM predictive. The Kronecker-factored
-      curvature itself is only available with the Curvlinops backends; the ASDL backends
-      raise an error.
-    - Classification (e.g. the GLM predictive with a sequence of class logits), last-layer
-      Laplace, and the BackPack backends are not supported yet.
-    - Every token is treated as an independent observation in the likelihood, i.e.,
-      the log-likelihood sums over all `B * L` tokens (not only over the `B` sequences).
-      Padding tokens are not masked.
-
 For the NN/sampled predictive:
 
 ```python
@@ -157,3 +146,104 @@ print(pred_la_mean.shape, pred_la_var.shape)
 ```
 
 we get two `(B, L, K)` tensors.
+
+## Next-token prediction
+
+For language modeling, the model returns logits of shape `(B, L, V)`, where `V` is the
+vocabulary size, and the targets are the token ids of shape `(B, L)`. This is
+classification, and, as before, each of the `B * L` tokens is an observation in the
+likelihood. The class axis must be the last one, as is usual for language models.
+
+Below is a toy causal language model. It takes the token ids under `"input_ids"` and
+predicts the next token at every position.
+
+```python
+from laplace.curvature.curvlinops import CurvlinopsGGN
+
+VOCAB_SIZE = 20  # V
+IDS_KEY = "input_ids"
+LABELS_KEY = "labels"
+
+
+class CausalLM(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.embedding = nn.Embedding(VOCAB_SIZE, EMBED_DIM)
+        self.attn = nn.MultiheadAttention(EMBED_DIM, num_heads=1, batch_first=True)
+        self.lm_head = nn.Linear(EMBED_DIM, VOCAB_SIZE)
+
+    def forward(self, x):
+        x = self.embedding(x[IDS_KEY])  # (B, L, D)
+        L = x.shape[1]
+        causal_mask = torch.triu(torch.ones(L, L, dtype=torch.bool), diagonal=1)
+        out = self.attn(x, x, x, attn_mask=causal_mask, need_weights=False)[0]
+        return self.lm_head(out)  # (B, L, V)
+```
+
+The label of each token is the token that follows it:
+
+```python
+tokens = torch.randint(VOCAB_SIZE, (100, SEQ_LENGTH + 1))
+ds = TensorDict(
+    {IDS_KEY: tokens[:, :-1], LABELS_KEY: tokens[:, 1:]},
+    batch_size=[100],
+)
+dl = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False, collate_fn=lambda x: x)
+```
+
+The LM head of a real model has `V * D` weights, so we use a Kronecker-factored Hessian
+over the head only:
+
+```python
+model = CausalLM()
+
+for mod_name, mod in model.named_modules():
+    for p in mod.parameters(recurse=False):
+        p.requires_grad = mod_name == "lm_head"
+
+la = Laplace(
+    model,
+    "classification",
+    hessian_structure="kron",
+    subset_of_weights="all",
+    backend=CurvlinopsGGN,
+    dict_key_x=IDS_KEY,
+    dict_key_y=LABELS_KEY,
+)
+la.fit(dl)
+la.optimize_prior_precision()
+```
+
+Both predictives return the next-token probabilities at every position, i.e., a
+`(B, L, V)` tensor:
+
+```python
+data = next(iter(dl))
+
+probs = la(data, pred_type=PredType.GLM, link_approx=LinkApprox.PROBIT)
+print(probs.shape)
+
+probs = la(data, pred_type=PredType.NN, link_approx=LinkApprox.MC, n_samples=10)
+print(probs.shape)
+```
+
+```
+torch.Size([4, 6, 20])
+torch.Size([4, 6, 20])
+```
+
+The GLM predictive needs the Jacobian of all `V` logits at every token. For a real
+vocabulary, with tens of thousands of tokens, that does not fit in memory, so use the
+sampling predictive (`pred_type="nn"`) there.
+
+!!! caution
+
+    Every token is treated as an independent observation in the likelihood, i.e., the
+    log-likelihood sums over all `B * L` tokens, not only over the `B` sequences.
+    Padding tokens are not masked yet. They count toward the number of observations
+    and, for most backends, toward the Hessian.
+
+    Last-layer Laplace (`subset_of_weights="last_layer"`), the BackPack backends, and
+    `FunctionalLaplace`, `ELLA`, and `VaLLA` do not support outputs with more than 2 axes
+    yet. For regression, the Kronecker-factored Hessian is only available with the
+    Curvlinops backends; the ASDL backends raise an error.

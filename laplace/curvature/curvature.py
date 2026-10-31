@@ -86,6 +86,19 @@ class CurvatureInterface:
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
 
+    def _loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Compute `self.lossfunc(f, y)`, where every leading dim of `f` but the last
+        is a batch dim.
+
+        `CrossEntropyLoss` expects the class axis at dim 1, while Laplace puts it last,
+        e.g. logits `(B, L, C)` with targets `(B, L)`. So, for classification, flatten
+        the batch dims, which makes every token an observation.
+        """
+        if self.likelihood == Likelihood.CLASSIFICATION and f.ndim > 2:
+            f, y = f.reshape(-1, f.shape[-1]), y.reshape(-1)
+
+        return self.lossfunc(f, y)
+
     def jacobians(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -468,7 +481,7 @@ class GGNInterface(CurvatureInterface):
         else:
             # second derivative of log lik is diag(p) - pp^T
             ps = torch.softmax(f, dim=-1)
-            G = torch.diag_embed(ps) - torch.einsum("mk,mc->mck", ps, ps)
+            G = torch.diag_embed(ps) - torch.einsum("...k,...c->...kc", ps, ps)
             return G
 
     def full(
@@ -505,7 +518,7 @@ class GGNInterface(CurvatureInterface):
             H = torch.einsum("...cp,...ck,...kq->pq", Js, H_lik, Js)
         else:  # The case of exact GGN for regression
             H = torch.einsum("...cp,...cq->pq", Js, Js)
-        loss = self.factor * self.lossfunc(f, y)
+        loss = self.factor * self._loss(f, y)
 
         return loss.detach(), H.detach()
 
@@ -516,7 +529,7 @@ class GGNInterface(CurvatureInterface):
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
-        loss = self.factor * self.lossfunc(f, y)
+        loss = self.factor * self._loss(f, y)
 
         H_lik = (
             self._get_mc_functional_fisher(f)

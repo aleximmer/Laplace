@@ -131,7 +131,7 @@ class AsdlInterface(CurvatureInterface):
 
         def closure():
             self.model.zero_grad()
-            loss = self.lossfunc(self.model(x), y)
+            loss = self._loss(self.model(x), y)
             loss.backward()
             return loss
 
@@ -265,7 +265,10 @@ class AsdlInterface(CurvatureInterface):
             )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
-            fisher_maker.setup_model_call(self._model, x)
+            dummy = fisher_maker.setup_model_call(self._model, x)
+            if self.loss_type != LOSS_MSE:
+                # ASDL's exact and MC cross-entropy Fishers assume 2D logits
+                fisher_maker.setup_logits_repr(dummy.view(-1, dummy.size(-1)))
         f, _ = fisher_maker.forward_and_backward()
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
@@ -431,14 +434,20 @@ class AsdlInterface(CurvatureInterface):
             )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
-            fisher_maker.setup_model_call(self._model, x)
+            dummy = fisher_maker.setup_model_call(self._model, x)
+            if self.loss_type != LOSS_MSE:
+                # ASDL's exact and MC cross-entropy Fishers assume 2D logits
+                fisher_maker.setup_logits_repr(dummy.view(-1, dummy.size(-1)))
         f, _ = fisher_maker.forward_and_backward()
+        # ASDL sums the input factors over all tokens, e.g. `B * L` rows for logits
+        # `(B, L, C)`, so normalize by the number of tokens, not of sequences
+        n_tokens_per_datum = f.shape[1:-1].numel()
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
-        kron = self._rescale_kron_factors(kron, N)
+        kron = self._rescale_kron_factors(kron, N * n_tokens_per_datum)
         if type(self) is AsdlEF and self.likelihood == "regression":
             curv_factor = 0.5  # correct scaling for diag ef
         else:

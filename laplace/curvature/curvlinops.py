@@ -25,6 +25,21 @@ _FullLinearOperator: TypeAlias = (
 )
 
 
+class _ClassDimFirst(nn.Module):
+    """Move the class axis of the model's logits from last to dim 1, e.g.
+    `(B, L, C)` -> `(B, C, L)`, which is the layout Curvlinops expects for
+    `CrossEntropyLoss` with extra dims.
+    """
+
+    def __init__(self, model: nn.Module) -> None:
+        super().__init__()
+        self.model = model
+
+    def forward(self, x: Any) -> torch.Tensor:
+        out = self.model(x)
+        return out.movedim(-1, 1) if out.ndim > 2 else out
+
+
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
@@ -40,6 +55,14 @@ class CurvlinopsInterface(CurvatureInterface):
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
+
+    @property
+    def _linop_model(self) -> nn.Module:
+        """The model that is passed to the Curvlinops linear operators."""
+        if self.likelihood == Likelihood.CLASSIFICATION:
+            return _ClassDimFirst(self.model)
+
+        return self.model
 
     @property
     def _kron_fisher_type(self) -> FisherType:
@@ -58,9 +81,10 @@ class CurvlinopsInterface(CurvatureInterface):
                 F[1] *= M / N
         return kron
 
-    def _get_kron_factors(self, linop: KFACLinearOperator) -> Kron:
+    def _get_kron_factors(self, linop: KFACLinearOperator, model: nn.Module) -> Kron:
         kfacs = list()
-        for name, module in self.model.named_modules():
+        # `model` must be the one passed to `linop`, so that the module names match
+        for name, module in model.named_modules():
             if name not in linop._mapping.keys():
                 continue
 
@@ -90,8 +114,9 @@ class CurvlinopsInterface(CurvatureInterface):
         if isinstance(x, (dict, MutableMapping)):
             kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
+        model = self._linop_model
         linop = KFACLinearOperator(
-            self.model,
+            model,
             self.lossfunc,
             self.params,
             [(x, y)],
@@ -105,11 +130,11 @@ class CurvlinopsInterface(CurvatureInterface):
         )
         linop.compute_kronecker_factors()
 
-        kron = self._get_kron_factors(linop)
+        kron = self._get_kron_factors(linop, model)
         kron = self._rescale_kron_factors(kron, len(y), N)
         kron *= self.factor
 
-        loss = self.lossfunc(self.model(x), y)
+        loss = self._loss(self.model(x), y)
 
         return self.factor * loss.detach(), kron
 
@@ -128,7 +153,7 @@ class CurvlinopsInterface(CurvatureInterface):
             curvlinops_kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
         linop = self._linop_context(
-            self.model,
+            self._linop_model,
             self.lossfunc,
             self.params,
             [(x, y)],
@@ -142,7 +167,7 @@ class CurvlinopsInterface(CurvatureInterface):
         )
 
         f = self.model(x)
-        loss = self.lossfunc(f, y)
+        loss = self._loss(f, y)
 
         return self.factor * loss.detach(), self.factor * H
 
