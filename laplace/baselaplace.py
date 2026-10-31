@@ -326,7 +326,8 @@ class BaseLaplace:
         -------
         predictive: torch.Tensor or tuple[torch.Tensor]
             For `likelihood='classification'`, a torch.Tensor is returned with
-            a distribution over classes (similar to a Softmax).
+            a distribution over classes (similar to a Softmax), with the same shape
+            as the logits, e.g. `(batch, classes)` or `(batch, seq_len, classes)`.
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
@@ -735,7 +736,8 @@ class BaseLaplace:
         -------
         predictive: torch.Tensor or tuple[torch.Tensor]
             For `likelihood='classification'`, a torch.Tensor is returned with
-            a distribution over classes (similar to a Softmax).
+            a distribution over classes (similar to a Softmax), with the same shape
+            as the logits, e.g. `(batch, classes)` or `(batch, seq_len, classes)`.
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
@@ -776,6 +778,29 @@ class BaseLaplace:
                 f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
             return f_mu, f_var
 
+        # Every leading dim of the logits but the last is a batch dim, e.g. `(B, L, C)`
+        # for sequences. The link approximations work on `(N, C)`, so flatten them.
+        batch_shape = f_mu.shape[:-1]
+        f_mu = f_mu.reshape(-1, f_mu.shape[-1])
+        f_var = f_var.reshape(-1, *f_var.shape[-2:])
+
+        probs = self._glm_classification_link(
+            f_mu, f_var, link_approx, n_samples, diagonal_output
+        )
+        return probs.reshape(*batch_shape, probs.shape[-1])
+
+    def _glm_classification_link(
+        self,
+        f_mu: torch.Tensor,
+        f_var: torch.Tensor,
+        link_approx: LinkApprox | str,
+        n_samples: int,
+        diagonal_output: bool,
+    ) -> torch.Tensor:
+        """Approximate the predictive class probabilities from the GLM predictive
+        `f_mu` `(batch, classes)` and `f_var` `(batch, classes, classes)`. See
+        `_glm_forward_call` for the arguments.
+        """
         if link_approx == LinkApprox.MC:
             return self._glm_predictive_samples(
                 f_mu,
@@ -819,7 +844,7 @@ class BaseLaplace:
                     "parameter gradients may contain inf or NaN; covariance "
                     "backpropagation is not reliable at this scale.",
                     RuntimeWarning,
-                    stacklevel=2,
+                    stacklevel=3,
                 )
             safe_covariance_scale = torch.where(
                 covariance_scale > 0, covariance_scale, 1
@@ -1216,14 +1241,17 @@ class ParametricLaplace(BaseLaplace):
                     f"the target has {y.ndim} dims."
                 )
 
+            if self.likelihood == Likelihood.CLASSIFICATION:
+                self._check_classification_targets(out, y)
+
             if (
-                self.likelihood == Likelihood.REGRESSION
-                and y.ndim > 2
+                self.likelihood != Likelihood.REWARD_MODELING
+                and out.ndim > 2
                 and "backpack" in self._backend_cls.__name__.lower()
             ):
                 raise NotImplementedError(
-                    "BackPack backends do not support regression targets with more "
-                    "than one batch dimension (e.g. sequences) yet."
+                    "BackPack backends do not support outputs with more than one "
+                    "batch dimension (e.g. sequences) yet."
                 )
 
             self.model.zero_grad()
@@ -1233,13 +1261,45 @@ class ParametricLaplace(BaseLaplace):
 
             # Every token (extra dims between the batch and output dims) is an
             # observation. Count per batch since the sequence length can vary.
-            # The last dim of regression targets is the output dim.
-            y_obs_shape = (
-                y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+            # The last dim of regression targets and of class probabilities is the
+            # output dim.
+            has_output_dim = self.likelihood == Likelihood.REGRESSION or (
+                self.likelihood == Likelihood.CLASSIFICATION and y.ndim == out.ndim
             )
+            y_obs_shape = y.shape[:-1] if has_output_dim else y.shape
             self.n_obs += y_obs_shape.numel()
 
         self.n_data += N
+
+    @staticmethod
+    def _check_classification_targets(out: torch.Tensor, y: torch.Tensor) -> None:
+        """Check that the targets match the logits `out` `(batch, ..., classes)`:
+        either class indices `(batch, ...)` or, for logits `(batch, classes)`, class
+        probabilities with the same shape as the logits.
+
+        Only the number of dims is checked, since `out` is computed on a single
+        datum and the sequence length can vary between batches. The backends check
+        the exact shapes against the logits of each batch.
+        """
+        if out.ndim > 2:
+            if y.ndim != out.ndim - 1:
+                raise ValueError(
+                    f"The model's logits have shape (batch, ..., classes) with "
+                    f"{out.ndim} dims, so the targets must be class indices with "
+                    f"{out.ndim - 1} dims, but they have {y.ndim} dims. Class "
+                    "probabilities as targets are only supported for logits "
+                    "(batch, classes)."
+                )
+            return
+
+        is_index = y.ndim == out.ndim - 1
+        is_prob = y.ndim == out.ndim and y.shape[-1] == out.shape[-1]
+        if not (is_index or is_prob):
+            raise ValueError(
+                f"The model's logits have shape (batch, classes), but the targets "
+                f"have {y.ndim} dims. The targets must be class indices (batch,) or "
+                "class probabilities (batch, classes)."
+            )
 
     @property
     def scatter(self) -> torch.Tensor:
@@ -1423,7 +1483,8 @@ class ParametricLaplace(BaseLaplace):
         -------
         predictive: torch.Tensor or tuple[torch.Tensor]
             For `likelihood='classification'`, a torch.Tensor is returned with
-            a distribution over classes (similar to a Softmax).
+            a distribution over classes (similar to a Softmax), with the same shape
+            as the logits, e.g. `(batch, classes)` or `(batch, seq_len, classes)`.
             For `likelihood='regression'`, a tuple of torch.Tensor is returned
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
@@ -1610,12 +1671,6 @@ class ParametricLaplace(BaseLaplace):
             )
         else:
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
-
-        if self.likelihood == Likelihood.CLASSIFICATION and f_mu.ndim > 2:
-            raise NotImplementedError(
-                "The GLM predictive for classification with more than one batch "
-                "dimension (e.g. sequences) is not supported yet."
-            )
 
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
@@ -2079,25 +2134,28 @@ class KronLaplace(ParametricLaplace):
         if override:
             self.H_facs = None
 
+        n_obs_old: int = 0 if self.H_facs is None else self.n_obs
+        n_data_new: int = len(train_loader.dataset)
         if self.H_facs is not None:
-            n_data_old: int = self.n_data
-            n_data_new: int = len(train_loader.dataset)
             self._init_H()  # re-init H non-decomposed
-            # discount previous Kronecker factors to sum up properly together with new ones
-            self.H_facs = self._rescale_factors(
-                self.H_facs, n_data_old / (n_data_old + n_data_new)
-            )
 
         super().fit(train_loader, override=override, progress_bar=progress_bar)
+
+        # The backends sum the input factors over all tokens, e.g. `B * L` for
+        # outputs `(B, L, K)`, and divide by `n_data_new`. Every token is an
+        # observation, so divide by the number of tokens instead. This also holds
+        # when the sequence length varies between batches.
+        n_obs_new: int = self.n_obs - n_obs_old
+        if n_obs_new > 0:
+            self.H = self._rescale_factors(self.H, n_data_new / n_obs_new)
 
         if self.H_facs is None:
             self.H_facs = self.H
         else:
-            # discount new factors that were computed assuming N = n_data_new
-            self.H = self._rescale_factors(
-                self.H, n_data_new / (n_data_new + n_data_old)
-            )
-            self.H_facs += self.H
+            # Weight previous and new Kronecker factors by their number of observations
+            n_obs_total = n_obs_old + n_obs_new
+            self.H_facs = self._rescale_factors(self.H_facs, n_obs_old / n_obs_total)
+            self.H_facs += self._rescale_factors(self.H, n_obs_new / n_obs_total)
 
         # Decompose to self.H for all required quantities but keep H_facs for further inference
         self.H = self.H_facs.decompose(damping=self.damping)
@@ -2126,24 +2184,18 @@ class KronLaplace(ParametricLaplace):
         return delta @ self.posterior_precision.bmm(delta, exponent=1)
 
     def functional_variance(self, Js: torch.Tensor) -> torch.Tensor:
-        self._check_multidim_jacobians(Js)
-        return self.posterior_precision.inv_square_form(Js)
-
-    @staticmethod
-    def _check_multidim_jacobians(Js: torch.Tensor) -> None:
-        if Js.ndim > 3:
-            raise NotImplementedError(
-                "KronLaplace does not support the GLM predictive for inputs/outputs "
-                "with more than one batch dimension (e.g. sequences) yet."
-            )
+        # `inv_square_form` takes `(batch, outputs, parameters)`, so flatten the
+        # batch dims, e.g. `(B, L)` for sequences
+        batch_shape = Js.shape[:-2]
+        f_var = self.posterior_precision.inv_square_form(Js.reshape(-1, *Js.shape[-2:]))
+        return f_var.reshape(*batch_shape, *f_var.shape[-2:])
 
     def functional_covariance(self, Js: torch.Tensor) -> torch.Tensor:
         self._check_jacobians(Js)
-        self._check_multidim_jacobians(Js)
-        n_batch, n_outs, n_params = Js.shape
-        Js = Js.reshape(n_batch * n_outs, n_params).unsqueeze(0)
+        n_outs_total = Js.shape[:-1].numel()
+        Js = Js.reshape(n_outs_total, Js.shape[-1]).unsqueeze(0)
         cov = self.posterior_precision.inv_square_form(Js).squeeze(0)
-        assert cov.shape == (n_batch * n_outs, n_batch * n_outs)
+        assert cov.shape == (n_outs_total, n_outs_total)
         return cov
 
     def sample(
@@ -2453,6 +2505,16 @@ class BaseFunctionalLaplace(BaseLaplace):
     state. This class handles output links, sampling, and checkpoint settings
     for ``FunctionalLaplace``, ``ELLA``, and ``VaLLA``.
     """
+
+    @staticmethod
+    def _check_output_dims(out: torch.Tensor) -> None:
+        """Function-space estimators assume outputs `(batch, outputs)`."""
+        if out.ndim > 2:
+            raise NotImplementedError(
+                "FunctionalLaplace, ELLA, and VaLLA do not support outputs with more "
+                "than one batch dimension (e.g. sequences) yet. Use a parametric "
+                "Laplace, e.g. `DiagLaplace` or `KronLaplace`, instead."
+            )
 
     def _checkpoint_configuration(self) -> dict[str, Any]:
         """Record input keys and backend options required by a checkpoint.
@@ -3187,6 +3249,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                     out = self.model(X[:1].to(self._device))
                 except (TypeError, AttributeError):
                     out = self.model(X.to(self._device))
+        self._check_output_dims(out)
         self.n_outputs = out.shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
         self.batch_size = train_loader.batch_size
@@ -4372,7 +4435,9 @@ class ELLA(BaseFunctionalLaplace):
                 "BackPACK does not support mapping-style inputs; use AsdlGGN or CurvlinopsGGN."
             )
 
-        self.n_outputs = self.model(first_x).shape[-1]
+        out = self.model(first_x)
+        self._check_output_dims(out)
+        self.n_outputs = out.shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
         self._build_basis(train_loader, indices)
         self.feature_gram = torch.zeros(
@@ -5703,7 +5768,9 @@ class VaLLA(BaseFunctionalLaplace):
                 "BackPACK does not support mapping-style inputs; use AsdlGGN or CurvlinopsGGN."
             )
 
-        self.n_outputs = self.model(x_first).shape[-1]
+        out = self.model(x_first)
+        self._check_output_dims(out)
+        self.n_outputs = out.shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
         if override or not self._fitted:
             if self._inducing_strategy is not None:
