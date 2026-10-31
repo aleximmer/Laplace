@@ -402,6 +402,40 @@ def test_batchgrad_dict_inputs(dict_cls, likelihood, multidim, model):
     assert torch.allclose(loss, loss_ref)
 
 
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize("multidim", [False, True])
+def test_batchgrad_nested_dict_inputs(likelihood, multidim, model):
+    class NestedDictModel(nn.Module):
+        def __init__(self, net: nn.Module) -> None:
+            super().__init__()
+            self.net = net
+
+        def forward(self, data: MutableMapping) -> torch.Tensor:
+            assert data["payload"]["note"] == "not a tensor"
+            return self.net(data["payload"]["input_ids"])
+
+    torch.manual_seed(711)
+    lead_dims = (10, 4) if multidim else (10,)
+    X = torch.randn(*lead_dims, 3)
+    y = (
+        torch.randint(2, lead_dims)
+        if likelihood == "classification"
+        else torch.randn(*lead_dims, 2)
+    )
+
+    # Tensors in nested containers must be mapped over as well
+    data = {"payload": {"input_ids": X, "note": "not a tensor"}}
+
+    backend = CurvatureInterface(model, likelihood)
+    batchgrads_ref, loss_ref = backend.gradients(X, y)
+
+    backend_dict = CurvatureInterface(NestedDictModel(model), likelihood)
+    batchgrads, loss = backend_dict.gradients(data, y)
+
+    assert torch.allclose(batchgrads, batchgrads_ref)
+    assert torch.allclose(loss, loss_ref)
+
+
 def test_batchgrad_data_dependent_control_flow(class_Xy, model):
     class BranchingModel(nn.Module):
         def __init__(self, net: nn.Module) -> None:

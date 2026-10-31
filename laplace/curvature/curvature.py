@@ -5,6 +5,7 @@ from typing import Any, Callable, MutableMapping
 import torch
 from torch import nn
 from torch.nn import CrossEntropyLoss, MSELoss
+from torch.utils._pytree import tree_map
 
 from laplace.utils import Kron, Likelihood
 
@@ -244,18 +245,14 @@ class CurvatureInterface:
         if isinstance(x, MutableMapping):
             # vmap only maps over tensors in plain containers, e.g. not `UserDict`.
             # The model then gets a plain dict; non-tensor entries are passed as is.
+            # Tensors in nested containers are mapped over too.
             x = dict(x)
-            in_dims_x = {k: 0 if torch.is_tensor(v) else None for k, v in x.items()}
+            in_dims_x = tree_map(lambda v: 0 if torch.is_tensor(v) else None, x)
         else:
             in_dims_x = 0
 
         def unsqueeze(x):
-            if isinstance(x, dict):
-                return {
-                    k: v.unsqueeze(0) if torch.is_tensor(v) else v for k, v in x.items()
-                }
-
-            return x.unsqueeze(0)
+            return tree_map(lambda v: v.unsqueeze(0) if torch.is_tensor(v) else v, x)
 
         def loss_single(params_dict, buffers_dict, x, y):
             """Compute the loss of each token of a single sample."""
