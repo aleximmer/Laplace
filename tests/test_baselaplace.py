@@ -1515,11 +1515,7 @@ def test_reward_modeling_asdl_glm(
 def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
     custom_loader = request.getfixturevalue(custom_loader)
 
-    if (
-        "backpack" not in backend.__name__.lower()
-        and laplace != DiagLaplace
-        and laplace != CurvlinopsEF
-    ):
+    if "backpack" not in backend.__name__.lower():
         with pytest.raises(KeyError):
             # Raises an error since custom_loader's input is under the key 'test_input_key'
             # but the default is 'input_ids'
@@ -1534,9 +1530,7 @@ def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
         dict_key_y="test_label_key",
     )
 
-    if ("backpack" in backend.__name__.lower()) or (
-        laplace == DiagLaplace and backend == CurvlinopsEF
-    ):
+    if "backpack" in backend.__name__.lower():
         # Unsupported, thus raises an exception
         with pytest.raises(ValueError):
             lap.fit(custom_loader)
@@ -1691,14 +1685,29 @@ def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
         ("reward_modeling", "custom_loader_clf"),
     ],
 )
-def test_dict_data_diagEF_curvlinops_fails(
-    custom_model, custom_loader, likelihood, request
-):
+def test_dict_data_diagEF_curvlinops(custom_model, custom_loader, likelihood, request):
     custom_loader = request.getfixturevalue(custom_loader)
-    lap = DiagLaplace(custom_model, likelihood=likelihood, backend=CurvlinopsEF)
+    lap = DiagLaplace(
+        custom_model,
+        likelihood=likelihood,
+        backend=CurvlinopsEF,
+        dict_key_x="test_input_key",
+        dict_key_y="test_label_key",
+    )
+    lap.fit(custom_loader)
 
-    with pytest.raises(ValueError):
-        lap.fit(custom_loader)
+    # Must match the same data passed as tensors
+    batches = list(custom_loader)
+    X = torch.cat([b["test_input_key"] for b in batches])
+    y = torch.cat(
+        [b["test_label_key"].reshape(len(b["test_input_key"]), -1) for b in batches]
+    )
+    y = y.squeeze(-1) if likelihood != "regression" else y
+    lap_tensor = DiagLaplace(custom_model, likelihood=likelihood, backend=CurvlinopsEF)
+    lap_tensor.fit(DataLoader(TensorDataset(X, y), batch_size=3))
+
+    assert torch.allclose(lap.H, lap_tensor.H)
+    assert torch.allclose(lap.loss, lap_tensor.loss)
 
 
 @pytest.mark.parametrize(

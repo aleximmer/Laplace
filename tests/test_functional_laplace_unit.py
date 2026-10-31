@@ -93,7 +93,7 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     func_la._init_K_MM()
     # Right now K_MM is initialized with torch.empty. To run this tests we
     #  must set it to zero.
-    func_la.K_MM *= 0
+    func_la.K_MM.zero_()  # `*= 0` would keep any NaN or inf in the empty memory
 
     assert torch.allclose(torch.zeros(size=(M * C, M * C)), func_la.K_MM)
 

@@ -248,18 +248,13 @@ that your data loaders emit dict-like objects, where the input tensors are the d
 
 ## Caveats
 
-Currently, diagonal EF with the Curvlinops backend is unsupported for dict-based inputs.
-This is because we use `torch.func`'s `vmap` to compute the diag-EF, and it only accepts
-tensor input in the model's `forward`.
-See [this issue](https://github.com/pytorch/functorch/issues/159).
-So, if you can write down your Huggingface model's `forward` to accept only a single tensor,
-this is much preferable.
+`CurvlinopsEF` with `hessian_structure="diag"`, and subnetwork Laplace with `CurvlinopsEF`,
+compute per-example gradients with `torch.func`'s `vmap`. `vmap` does not support
+data-dependent control flow, which Huggingface transformers use, e.g., when building the
+attention mask. So these combinations raise an error for Huggingface models, whether the
+model's `forward` takes a dict or a single tensor.
 
-For instance, in the case of causal LLM like GPTs, only `input_ids`
-tensor is necessary.
-Then, any backend and any hessian factorization can be used in this case.
-
-Otherwise, if you must use dict-based inputs, choose the following backends:
+Instead, choose one of the following backends:
 
 - `CurvlinopsGGN` for `hessian_factorization = {"kron", "diag"}`
 - `CurvlinopsEF` for `hessian_factorization = {"kron"}`

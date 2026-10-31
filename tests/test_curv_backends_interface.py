@@ -1,3 +1,6 @@
+from collections import UserDict
+from collections.abc import MutableMapping
+
 import numpy as np
 import pytest
 import torch
@@ -361,3 +364,93 @@ def test_full_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.0001)
+
+
+class DictModel(nn.Module):
+    def __init__(self, net: nn.Module) -> None:
+        super().__init__()
+        self.net = net
+
+    def forward(self, data: MutableMapping) -> torch.Tensor:
+        assert data["note"] == "not a tensor"
+        return self.net(data["input_ids"])
+
+
+@pytest.mark.parametrize("dict_cls", [dict, UserDict])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize("multidim", [False, True])
+def test_batchgrad_dict_inputs(dict_cls, likelihood, multidim, model):
+    torch.manual_seed(711)
+    lead_dims = (10, 4) if multidim else (10,)
+    X = torch.randn(*lead_dims, 3)
+    y = (
+        torch.randint(2, lead_dims)
+        if likelihood == "classification"
+        else torch.randn(*lead_dims, 2)
+    )
+
+    # Non-tensor entries must be passed through as they are
+    data = dict_cls({"input_ids": X, "labels": y, "note": "not a tensor"})
+
+    backend = CurvatureInterface(model, likelihood)
+    batchgrads_ref, loss_ref = backend.gradients(X, y)
+
+    backend_dict = CurvatureInterface(DictModel(model), likelihood)
+    batchgrads, loss = backend_dict.gradients(data, y)
+
+    assert torch.allclose(batchgrads, batchgrads_ref)
+    assert torch.allclose(loss, loss_ref)
+
+
+@pytest.mark.parametrize("dict_cls", [dict, UserDict])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize("multidim", [False, True])
+def test_batchgrad_nested_dict_inputs(dict_cls, likelihood, multidim, model):
+    class NestedDictModel(nn.Module):
+        def __init__(self, net: nn.Module) -> None:
+            super().__init__()
+            self.net = net
+
+        def forward(self, data: MutableMapping) -> torch.Tensor:
+            assert data["payload"]["note"] == "not a tensor"
+            return self.net(data["payload"]["input_ids"])
+
+    torch.manual_seed(711)
+    lead_dims = (10, 4) if multidim else (10,)
+    X = torch.randn(*lead_dims, 3)
+    y = (
+        torch.randint(2, lead_dims)
+        if likelihood == "classification"
+        else torch.randn(*lead_dims, 2)
+    )
+
+    # Tensors in nested containers must be mapped over as well
+    data = {"payload": dict_cls({"input_ids": X, "note": "not a tensor"})}
+
+    backend = CurvatureInterface(model, likelihood)
+    batchgrads_ref, loss_ref = backend.gradients(X, y)
+
+    backend_dict = CurvatureInterface(NestedDictModel(model), likelihood)
+    batchgrads, loss = backend_dict.gradients(data, y)
+
+    assert torch.allclose(batchgrads, batchgrads_ref)
+    assert torch.allclose(loss, loss_ref)
+
+
+def test_batchgrad_data_dependent_control_flow(class_Xy, model):
+    class BranchingModel(nn.Module):
+        def __init__(self, net: nn.Module) -> None:
+            super().__init__()
+            self.net = net
+
+        def forward(self, data: MutableMapping) -> torch.Tensor:
+            x = data["input_ids"]
+            if x.sum() > 0:  # vmap cannot trace this
+                x = 2 * x
+            return self.net(x)
+
+    X, y = class_Xy
+    backend = CurvatureInterface(BranchingModel(model), "classification")
+
+    with pytest.raises(ValueError, match="data-dependent control flow"):
+        backend.gradients({"input_ids": X, "labels": y}, y)

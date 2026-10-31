@@ -1058,12 +1058,52 @@ def test_dtype(laplace, backend, dtype, likelihood):
 
 
 class DictModel(nn.Module):
-    def __init__(self, net: nn.Module) -> None:
+    def __init__(self, net: nn.Module, key: str = "input_ids") -> None:
         super().__init__()
         self.net = net
+        self.key = key
 
     def forward(self, data: MutableMapping) -> torch.Tensor:
-        return self.net(data["test_input_key"])
+        return self.net(data[self.key])
+
+
+@pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_ef_dict_inputs(laplace, likelihood):
+    X = torch.randn(10, 3)
+    y = (
+        torch.randint(2, (10,))
+        if likelihood == "classification"
+        else torch.randn(10, 2)
+    )
+    data = [{"input_ids": x_i, "labels": y_i} for x_i, y_i in zip(X, y)]
+    dict_loader = DataLoader(
+        ListDataset(data), batch_size=5, collate_fn=dict_data_collator
+    )
+
+    net = nn.Linear(3, 2)
+    subnetmask = RandomSubnetMask(model=net, n_params_subnet=5)
+    subnetmask.select()
+
+    # The EF of the subnetwork comes from torch.func per-sample gradients
+    la = laplace(
+        DictModel(deepcopy(net)),
+        likelihood,
+        subnetwork_indices=subnetmask.indices,
+        backend=CurvlinopsEF,
+    )
+    la.fit(dict_loader)
+
+    la_tensor = laplace(
+        deepcopy(net),
+        likelihood,
+        subnetwork_indices=subnetmask.indices,
+        backend=CurvlinopsEF,
+    )
+    la_tensor.fit(DataLoader(TensorDataset(X, y), batch_size=5))
+
+    assert torch.allclose(la.H, la_tensor.H)
+    assert torch.allclose(la.loss, la_tensor.loss)
 
 
 @pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
@@ -1075,7 +1115,7 @@ def test_custom_dict_keys(laplace):
     )
 
     net = nn.Linear(3, 2)
-    model = DictModel(deepcopy(net))
+    model = DictModel(deepcopy(net), key="test_input_key")
     subnetmask = RandomSubnetMask(model=model, n_params_subnet=5)
     subnetmask.select()
 
