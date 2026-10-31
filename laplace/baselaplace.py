@@ -289,9 +289,9 @@ class BaseLaplace:
         pred_type : {'glm', 'nn'}, default='glm'
             type of posterior predictive, linearized GLM predictive or neural
             network sampling predictive. The GLM predictive is consistent with
-            the curvature approximations used here. When Laplace is done only
-            on subset of parameters (i.e. some grad are disabled),
-            only `nn` predictive is supported.
+            the curvature approximations used here. It also works when Laplace
+            is done on a subset of the parameters, either with subnetwork
+            Laplace or by disabling the gradients of the other parameters.
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
@@ -1386,9 +1386,9 @@ class ParametricLaplace(BaseLaplace):
         pred_type : {'glm', 'nn'}, default='glm'
             type of posterior predictive, linearized GLM predictive or neural
             network sampling predictive. The GLM predictive is consistent with
-            the curvature approximations used here. When Laplace is done only
-            on subset of parameters (i.e. some grad are disabled),
-            only `nn` predictive is supported.
+            the curvature approximations used here. It also works when Laplace
+            is done on a subset of the parameters, either with subnetwork
+            Laplace or by disabling the gradients of the other parameters.
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
