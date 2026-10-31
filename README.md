@@ -97,3 +97,9 @@ pred = la(x, pred_type="glm", link_approx="probit")
 
 Pull requests are very welcome.
 Please follow the guidelines in <https://aleximmer.github.io/Laplace/devs_guide>
+
+> [!WARNING]
+> AI-assisted contributions are welcome, but you must understand the problem you are solving.
+> You must also understand the solutions your AI agent proposes and review them yourself.
+> When opening a PR, you **must** write the description yourself.
+> First-time contributors must disclose their AI usage and confirm that they understand the changes.

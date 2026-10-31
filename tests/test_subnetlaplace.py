@@ -1058,12 +1058,13 @@ def test_dtype(laplace, backend, dtype, likelihood):
 
 
 class DictModel(nn.Module):
-    def __init__(self, net: nn.Module) -> None:
+    def __init__(self, net: nn.Module, key: str = "input_ids") -> None:
         super().__init__()
         self.net = net
+        self.key = key
 
     def forward(self, data: MutableMapping) -> torch.Tensor:
-        return self.net(data["input_ids"])
+        return self.net(data[self.key])
 
 
 @pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
@@ -1103,3 +1104,45 @@ def test_ef_dict_inputs(laplace, likelihood):
 
     assert torch.allclose(la.H, la_tensor.H)
     assert torch.allclose(la.loss, la_tensor.loss)
+
+
+@pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
+def test_custom_dict_keys(laplace):
+    X, y = torch.randn(10, 3), torch.randn(10, 2)
+    data = [{"test_input_key": x_i, "test_label_key": y_i} for x_i, y_i in zip(X, y)]
+    dict_loader = DataLoader(
+        ListDataset(data), batch_size=3, collate_fn=dict_data_collator
+    )
+
+    net = nn.Linear(3, 2)
+    model = DictModel(deepcopy(net), key="test_input_key")
+    subnetmask = RandomSubnetMask(model=model, n_params_subnet=5)
+    subnetmask.select()
+
+    la = laplace(
+        model,
+        "regression",
+        subnetwork_indices=subnetmask.indices,
+        backend=CurvlinopsGGN,
+        dict_key_x="test_input_key",
+        dict_key_y="test_label_key",
+    )
+    la.fit(dict_loader)
+
+    # Must match the same model fitted on tensor inputs
+    la_tensor = laplace(
+        deepcopy(net),
+        "regression",
+        subnetwork_indices=subnetmask.indices,
+        backend=CurvlinopsGGN,
+    )
+    la_tensor.fit(DataLoader(TensorDataset(X, y), batch_size=3))
+
+    assert la.dict_key_x == "test_input_key"
+    assert la.dict_key_y == "test_label_key"
+    assert torch.allclose(la.H, la_tensor.H)
+
+    f_mu, f_var = la(next(iter(dict_loader)), pred_type="glm")
+    f_mu_tensor, f_var_tensor = la_tensor(X[:3], pred_type="glm")
+    assert torch.allclose(f_mu, f_mu_tensor)
+    assert torch.allclose(f_var, f_var_tensor)

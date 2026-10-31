@@ -20,6 +20,7 @@ from torchvision.models import wide_resnet50_2
 
 from laplace import (
     DiagLaplace,
+    DiagSubnetLaplace,
     FullLaplace,
     FullSubnetLaplace,
     FunctionalLaplace,
@@ -1383,8 +1384,9 @@ def test_asdl_sum_rows_per_observation():
         AsdlGGN._sum_rows_per_observation(A, 12)  # fewer rows than observations
 
 
+@pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
 @pytest.mark.parametrize("backend", [CurvlinopsGGN, AsdlGGN])
-def test_multidim_subnetwork_equivalent_to_flat(backend):
+def test_multidim_subnetwork_equivalent_to_flat(laplace, backend):
     N, L, D, K = 12, 3, 4, 2
     X, Y = torch.randn(N, D), torch.randn(N, K)
     X_multidim, Y_multidim = X.reshape(N // L, L, D), Y.reshape(N // L, L, K)
@@ -1392,11 +1394,11 @@ def test_multidim_subnetwork_equivalent_to_flat(backend):
 
     model_flat = nn.Linear(D, K)
     model_multidim = deepcopy(model_flat)
-    la_flat = FullSubnetLaplace(
+    la_flat = laplace(
         model_flat, "regression", subnetwork_indices=indices, backend=backend
     )
     la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=N))
-    la_multidim = FullSubnetLaplace(
+    la_multidim = laplace(
         model_multidim, "regression", subnetwork_indices=indices, backend=backend
     )
     la_multidim.fit(DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=N))

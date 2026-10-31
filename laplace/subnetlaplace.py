@@ -66,6 +66,14 @@ class SubnetLaplace(ParametricLaplace):
     temperature : float, default=1
         temperature of the likelihood; lower temperature leads to more
         concentrated posterior and vice versa.
+    dict_key_x: str, default='input_ids'
+        The dictionary key under which the input tensor `x` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
+    dict_key_y: str, default='labels'
+        The dictionary key under which the target tensor `y` is stored. Only has effect
+        when the model takes a `MutableMapping` as the input. Useful for Huggingface
+        LLM models.
     backend : subclasses of `laplace.curvature.{GGNInterface,EFInterface}`
         backend for access to curvature/Hessian approximations
     backend_kwargs : dict, default=None
@@ -85,6 +93,9 @@ class SubnetLaplace(ParametricLaplace):
         backend: Type[CurvatureInterface] | None = None,
         backend_kwargs: dict | None = None,
         asdl_fisher_kwargs: dict | None = None,
+        *,
+        dict_key_x: str = "input_ids",
+        dict_key_y: str = "labels",
     ) -> None:
         if asdl_fisher_kwargs is not None:
             raise ValueError("Subnetwork Laplace does not support asdl_fisher_kwargs.")
@@ -97,6 +108,8 @@ class SubnetLaplace(ParametricLaplace):
             prior_precision=prior_precision,
             prior_mean=prior_mean,
             temperature=temperature,
+            dict_key_x=dict_key_x,
+            dict_key_y=dict_key_y,
             backend=backend,
             backend_kwargs=backend_kwargs,
         )
@@ -225,8 +238,7 @@ class DiagSubnetLaplace(SubnetLaplace, DiagLaplace):
         if not Js.device == self._device:
             raise ValueError("Jacobians need to be on the same device as Laplace.")
 
-        m, k, p = Js.size()
-        if p != self.n_params_subnet:
+        if Js.shape[-1] != self.n_params_subnet:
             raise ValueError("Invalid Jacobians shape for Laplace posterior approx.")
 
     def sample(

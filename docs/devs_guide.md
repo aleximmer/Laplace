@@ -36,6 +36,34 @@ pip install -e ".[dev]"
 python examples/regression_examples.py
 ```
 
+**CPU-only PyTorch**
+
+On Linux, the default PyTorch wheel installs the CUDA libraries even on machines
+without an NVIDIA GPU. To get the much smaller CPU build instead (this is what CI uses):
+
+```bash
+# With uv
+uv venv
+uv pip install --torch-backend cpu -e ".[dev]"
+uv run --no-sync python examples/regression_example.py
+
+# With pip, install the CPU build of torch first
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[dev]"
+```
+
+`uv.lock` pins the CUDA build of PyTorch. In the CPU-only uv setup, don't run `uv sync`,
+and pass `--no-sync` to every `uv run` (or set `UV_NO_SYNC=1`). Otherwise uv
+reinstalls the CUDA packages.
+
+Simpler still, activate the virtualenv once and skip `uv run` altogether:
+
+```bash
+source .venv/bin/activate
+python examples/regression_example.py
+pytest tests/test_lllaplace.py
+```
+
 ## Contributing
 
 Pull requests are very welcome. Please follow these guidelines:
@@ -46,6 +74,20 @@ Pull requests are very welcome. Please follow these guidelines:
 4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
    1. See `docs/api_reference/*.md` on how to include a newly added class in the docs.
 5. Provide as many test cases as possible. Make sure all test cases pass.
+
+!!! warning
+
+    AI-assisted contributions are welcome, but you must understand the problem you are solving.
+    You must also understand the solutions your AI agent proposes and review them yourself.
+    When opening a PR, you **must** write the description yourself.
+    First-time contributors must disclose their AI usage and confirm that they understand the changes.
+
+Maintainers can ask Claude for a review of any pull request, including one from a fork,
+by commenting `@claude review` on it. The review runs as a GitHub Actions workflow and
+posts its findings as inline comments, followed by a summary that names the reviewed
+commit. It checks for bugs and for compliance with `AGENTS.md`, and never approves or
+blocks a pull request. Commenting again after new commits runs a fresh review. The
+review instructions live in `.claude/skills/pr-review/SKILL.md`.
 
 Issues, bug reports, and ideas are also very welcome!
 
