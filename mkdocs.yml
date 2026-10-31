@@ -16,7 +16,8 @@ nav:
   - "Example: MC Acquistion Functions": expectation_example.md
   - "Example: Huggingface LLMs": huggingface_example.md
   - "Example: Language Modeling": lm_example.md
-  - "Example: Diffusion Models": image_output_example.md
+  - "Example: Diffusion Models": diffusion_example.md
+  - "Example: Semantic Segmentation": segmentation_example.md
   - "Example: Reward Modeling": reward_modeling_example.md
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
