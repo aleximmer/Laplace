@@ -92,6 +92,21 @@ Output of the wrapped model: (16, 8, 8, 5)
 ## Fitting Laplace
 
 Segmentation networks are usually large, so we use a K-FAC Hessian over all weights.
+K-FAC with the Curvlinops backends supports `nn.Linear` and `nn.Conv2d` layers only.
+Segmentation networks often also have normalization layers, e.g., `nn.BatchNorm2d` or
+`nn.GroupNorm`, and `nn.ConvTranspose2d` for upsampling. If those have trainable
+parameters, `fit` raises a `NotImplementedError`. Either freeze them, so that the
+Laplace approximation only covers the other layers, or use `hessian_structure="diag"`,
+which supports them. The toy network above has no such layers, so the following does
+nothing here.
+
+```python
+for module in model.modules():
+    if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm, nn.ConvTranspose2d)):
+        for p in module.parameters():
+            p.requires_grad = False
+```
+
 Note that we set `subset_of_weights="all"` explicitly. The default, `"last_layer"`,
 requires an `nn.Linear` last layer, so it fails for a convolutional head.
 
@@ -161,8 +176,11 @@ print(f"[NN] Probabilities: {tuple(probs.shape)}")
 - The targets must be class indices. Class probabilities as targets are not supported
   for image outputs.
 - Pixels labeled with `-100` (PyTorch's default `ignore_index`), e.g., void pixels, are
-  skipped by the loss. They still count toward the number of observations and, for some
-  backends and Hessian structures, toward the Hessian.
+  skipped by the loss, but still count toward the number of observations. With
+  `CurvlinopsGGN`, they also still count toward the K-FAC Hessian used on this page and
+  toward the diagonal Hessian. The full Hessian and the `CurvlinopsEF` backend leave
+  them out. Masking them everywhere is tracked in
+  [#313](https://github.com/aleximmer/Laplace/issues/313).
 
 The full script is in
 [`examples/segmentation_example.py`](https://github.com/aleximmer/Laplace/blob/main/examples/segmentation_example.py).

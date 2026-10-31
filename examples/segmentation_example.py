@@ -64,6 +64,14 @@ print(f"Output of the original model: {tuple(model.net(X).shape)}")
 print(f"Output of the wrapped model: {tuple(model(X).shape)}")
 
 
+# K-FAC with Curvlinops supports `nn.Linear` and `nn.Conv2d` layers only. Freeze the
+# parameters of other layers, e.g. normalization and transposed convolutions, or use a
+# diagonal Hessian. The toy network has no such layers, so this does nothing here.
+for module in model.modules():
+    if isinstance(module, (nn.BatchNorm2d, nn.GroupNorm, nn.ConvTranspose2d)):
+        for p in module.parameters():
+            p.requires_grad = False
+
 # K-FAC Laplace over all weights
 la = Laplace(
     model,
