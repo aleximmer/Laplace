@@ -90,7 +90,11 @@ print(f"Output of the original model: {tuple(out.shape)}")
 print(f"Output of the wrapped model: {tuple(model(data).shape)}")
 
 
-# Diagonal Laplace over all weights
+# BayesDiff: diagonal Laplace over the last layer, with the sampling predictive.
+# The last layer is a conv, so switch off the gradients of everything else.
+for p in model.denoiser.body.parameters():
+    p.requires_grad = False
+
 la = Laplace(
     model,
     "regression",
@@ -103,38 +107,16 @@ la = Laplace(
 la.fit(dataloader)
 la.optimize_prior_precision()
 
-f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
-print(f"[Diag Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+f_mu, f_var = la(data, pred_type="nn", link_approx="mc", n_samples=100)
+print(f"[BayesDiff] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
 
 # Back to PyTorch's layout, e.g., for plotting a per-pixel uncertainty map
 f_var = f_var.movedim(-1, 1)
-print(f"[Diag Laplace] Variance in (N, C, H, W): {tuple(f_var.shape)}")
+print(f"[BayesDiff] Variance in (N, C, H, W): {tuple(f_var.shape)}")
 
 
-# Laplace over the head only: switch off the gradients of everything else
-model = ChannelsLast(Denoiser())
-model.eval()
-
-for p in model.denoiser.body.parameters():
-    p.requires_grad = False
-
-la = Laplace(
-    model,
-    "regression",
-    subset_of_weights="all",
-    hessian_structure="full",
-    backend=CurvlinopsGGN,
-    dict_key_x="x_t",
-    dict_key_y="eps",
-)
-la.fit(dataloader)
-la.optimize_prior_precision()
-
-f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
-print(f"[Head-only Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
-
-
-# Subnetwork Laplace over a random subset of the weights, as in FLARE
+# FLARE: full Laplace over a uniformly random subset of the weights, with the
+# linearized (GLM) predictive
 model = ChannelsLast(Denoiser())
 model.eval()
 
@@ -155,25 +137,9 @@ la.fit(dataloader)
 la.optimize_prior_precision()
 
 f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
-print(f"[Subnetwork Laplace] Hessian: {tuple(la.H.shape)}")
-print(f"[Subnetwork Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+print(f"[FLARE] Hessian: {tuple(la.H.shape)}")
+print(f"[FLARE] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
 
-
-# K-FAC Laplace over all weights, with the sampling predictive
-model = ChannelsLast(Denoiser())
-model.eval()
-
-la = Laplace(
-    model,
-    "regression",
-    subset_of_weights="all",
-    hessian_structure="kron",
-    backend=CurvlinopsGGN,
-    dict_key_x="x_t",
-    dict_key_y="eps",
-)
-la.fit(dataloader)
-la.optimize_prior_precision()
-
-f_mu, f_var = la(data, pred_type="nn", link_approx="mc", n_samples=20)
-print(f"[K-FAC Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+# Per-example score: trace of the output covariance divided by its dimension
+score = f_var.flatten(start_dim=1).mean(dim=1)
+print(f"[FLARE] Score: {tuple(score.shape)}")

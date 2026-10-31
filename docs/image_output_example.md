@@ -118,34 +118,35 @@ Output of the original model: (16, 3, 8, 8)
 Output of the wrapped model: (16, 8, 8, 3)
 ```
 
-## Choosing a Laplace approximation
+## Reproducing BayesDiff and FLARE
 
 Image outputs are large. A single example has `H * W * C` outputs, so the Jacobian that
-the GLM predictive needs has `H * W * C` rows per example, one for each output, and one
-column per parameter in the Laplace approximation. For a 64x64 RGB image, that is
-12,288 rows. Two things keep this affordable:
+the GLM predictive needs has `H * W * C` rows per example and one column per parameter
+in the Laplace approximation. For a 64x64 RGB image, that is 12,288 rows. Diffusion
+papers keep this affordable by putting the Laplace approximation on a small part of the
+denoiser. [BayesDiff](https://arxiv.org/abs/2310.11142) uses the last layer, while
+[FLARE](https://arxiv.org/abs/2602.09170) uses a random subset of the weights. Below we
+set up both on the toy denoiser. They use the Curvlinops backend; see the caveats at the
+end for why.
 
-- A light Hessian structure. `"diag"` scales to large models. `"kron"` is also cheap to
-  fit, but it does not support the GLM predictive for image outputs, so you need the
-  sampling (`"nn"`) predictive with it.
-- Fewer trainable parameters. Freezing all but the desired layers shrinks both the
-  Hessian and the Jacobians. Selecting individual subnetwork weights shrinks the
-  Hessian and the retained Jacobian, but Curvlinops still constructs the full
-  trainable-parameter Jacobian during fitting and GLM prediction, so this can still
-  exceed memory limits. The
-  [BayesDiff](https://arxiv.org/abs/2310.11142) paper, for example, uses a diagonal
-  last-layer Laplace on the denoiser, while [FLARE](https://arxiv.org/abs/2602.09170)
-  uses a full Hessian over a random subset of the weights.
+### BayesDiff: diagonal last-layer Laplace
 
-Below we show four options that work with image outputs. All of them use the
-Curvlinops backend; see the caveats at the end for why.
+BayesDiff fits a last-layer Laplace approximation with a diagonal Hessian and estimates
+the variance of `eps` by sampling weights from the posterior, with 100 samples.
 
-### Diagonal Laplace over all weights
+Laplace's own last-layer option (`subset_of_weights="last_layer"`) only supports
+`nn.Linear` last layers, and the head here is a convolution. To get the same effect,
+switch off the gradients of every other layer and set `subset_of_weights="all"`. Laplace
+only computes the Hessian and the Jacobians of parameters with `requires_grad=True`. The
+same trick works for any set of layers.
 
-Note that we set `subset_of_weights="all"` explicitly. The default, `"last_layer"`,
-requires an `nn.Linear` last layer, so it fails for a convolutional head.
+The sampling predictive (`pred_type="nn"`) needs `link_approx="mc"`. It runs the model
+once per weight sample and never computes the Jacobian.
 
 ```python
+for p in model.denoiser.body.parameters():
+    p.requires_grad = False
+
 la = Laplace(
     model,
     "regression",
@@ -158,73 +159,40 @@ la = Laplace(
 la.fit(dataloader)
 la.optimize_prior_precision()
 
-f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
-print(f"[Diag Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+f_mu, f_var = la(data, pred_type="nn", link_approx="mc", n_samples=100)
+print(f"[BayesDiff] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
 ```
 
 ```
-[Diag Laplace] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
+[BayesDiff] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
 ```
 
-With `diagonal_output=True`, the variance has one entry per pixel and channel, the same
-shape as the mean. Without it, you get a `C x C` covariance per pixel, i.e., a tensor of
-shape `(N, H, W, C, C)`. Either way, the outputs are in the wrapped layout. To get back
-to `(N, C, H, W)`, e.g., to plot a per-pixel uncertainty map, undo the `movedim`:
+The variance has one entry per pixel and channel, in the wrapped layout. To get back to
+`(N, C, H, W)`, e.g., to plot a per-pixel uncertainty map, undo the `movedim`:
 
 ```python
 f_var = f_var.movedim(-1, 1)
-print(f"[Diag Laplace] Variance in (N, C, H, W): {tuple(f_var.shape)}")
+print(f"[BayesDiff] Variance in (N, C, H, W): {tuple(f_var.shape)}")
 ```
 
 ```
-[Diag Laplace] Variance in (N, C, H, W): (16, 3, 8, 8)
+[BayesDiff] Variance in (N, C, H, W): (16, 3, 8, 8)
 ```
 
-### Laplace over the last layer only
+### FLARE: full Laplace over a random subnetwork
 
-Last-layer Laplace (`subset_of_weights="last_layer"`) only supports `nn.Linear` last
-layers. To get the same effect with a convolutional head, switch off the gradients of
-every other layer. Laplace only computes the Hessian and the Jacobians of parameters
-with `requires_grad=True`. The head has few parameters, so a full Hessian is cheap here.
+FLARE argues that a last-layer Laplace approximation is not enough for diffusion models.
+It draws a uniformly random subset of the weights once, fits a full GGN over that
+subset, and pushes the posterior through the linearized denoiser, i.e., $J \Sigma J^\top$,
+where $J$ is the Jacobian of the denoiser with respect to the subset and $\Sigma$ is the
+posterior covariance.
 
-```python
-model = ChannelsLast(Denoiser())
-model.eval()
-
-for p in model.denoiser.body.parameters():
-    p.requires_grad = False
-
-la = Laplace(
-    model,
-    "regression",
-    subset_of_weights="all",
-    hessian_structure="full",
-    backend=CurvlinopsGGN,
-    dict_key_x="x_t",
-    dict_key_y="eps",
-)
-la.fit(dataloader)
-la.optimize_prior_precision()
-
-f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
-print(f"[Head-only Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
-```
-
-```
-[Head-only Laplace] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
-```
-
-The same trick works for any set of layers: enable the gradients of whichever layers
-you want to include.
-
-### Subnetwork Laplace over a random subset of weights
-
-To pick individual weights instead of whole layers, use subnetwork Laplace
-(`subset_of_weights="subnetwork"`). It takes the indices of the chosen weights in the
-flattened parameter vector, i.e., `torch.nn.utils.parameters_to_vector(model.parameters())`.
-`RandomSubnetMask` picks them uniformly at random, as in FLARE. Other masks in
-`laplace.utils`, such as `LargestMagnitudeSubnetMask`, pick them by a score instead.
-With a few hundred weights, a full Hessian is cheap.
+This maps to subnetwork Laplace (`subset_of_weights="subnetwork"`) with the GLM
+predictive. Subnetwork Laplace takes the indices of the chosen weights in the flattened
+parameter vector, i.e., `torch.nn.utils.parameters_to_vector(model.parameters())`.
+`RandomSubnetMask` picks them uniformly at random. Other masks in `laplace.utils`, such
+as `LargestMagnitudeSubnetMask`, pick them by a score instead. With a few hundred
+weights, a full Hessian is cheap.
 
 ```python
 from laplace.utils import RandomSubnetMask
@@ -249,50 +217,42 @@ la.fit(dataloader)
 la.optimize_prior_precision()
 
 f_mu, f_var = la(data, pred_type="glm", diagonal_output=True)
-print(f"[Subnetwork Laplace] Hessian: {tuple(la.H.shape)}")
-print(f"[Subnetwork Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+print(f"[FLARE] Hessian: {tuple(la.H.shape)}")
+print(f"[FLARE] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
 ```
 
 ```
-[Subnetwork Laplace] Hessian: (500, 500)
-[Subnetwork Laplace] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
+[FLARE] Hessian: (500, 500)
+[FLARE] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
 ```
 
-`hessian_structure="diag"` also works if you want a larger subset.
+With `diagonal_output=True`, you get the diagonal of $J \Sigma J^\top$, the same shape as the
+mean. Without it, you get a `C x C` covariance per pixel, i.e., a tensor of shape
+`(N, H, W, C, C)`.
 
-### K-FAC Laplace with the sampling predictive
-
-K-FAC (`hessian_structure="kron"`) is a good fit for larger models, but its GLM
-predictive does not support image outputs. Use the sampling predictive instead, which
-needs `link_approx="mc"`. It draws weights from the posterior and runs the model once
-per sample, so it never computes the Jacobian.
+FLARE scores each generated sample by the trace of its epistemic covariance divided by
+the output dimension. Only the diagonal is needed for that:
 
 ```python
-model = ChannelsLast(Denoiser())
-model.eval()
-
-la = Laplace(
-    model,
-    "regression",
-    subset_of_weights="all",
-    hessian_structure="kron",
-    backend=CurvlinopsGGN,
-    dict_key_x="x_t",
-    dict_key_y="eps",
-)
-la.fit(dataloader)
-la.optimize_prior_precision()
-
-f_mu, f_var = la(data, pred_type="nn", link_approx="mc", n_samples=20)
-print(f"[K-FAC Laplace] Mean: {tuple(f_mu.shape)}, variance: {tuple(f_var.shape)}")
+score = f_var.flatten(start_dim=1).mean(dim=1)
+print(f"[FLARE] Score: {tuple(score.shape)}")
 ```
 
 ```
-[K-FAC Laplace] Mean: (16, 8, 8, 3), variance: (16, 8, 8, 3)
+[FLARE] Score: (16,)
 ```
 
-The sampling predictive is also an option with the other Hessian structures when the
-Jacobians of the GLM predictive do not fit in memory.
+FLARE also carries this covariance through the reverse diffusion steps and takes the
+score at the final step. That recursion sits outside Laplace; the snippet above gives
+you the per-step term.
+
+### Other options
+
+A diagonal Hessian over all weights also works with the GLM predictive. K-FAC
+(`hessian_structure="kron"`) is cheap to fit, but its GLM predictive does not support
+image outputs, so use `pred_type="nn"` with `link_approx="mc"`, as in BayesDiff. The
+sampling predictive is also the fallback for any Hessian structure when the Jacobians of
+the GLM predictive do not fit in memory.
 
 ## Video outputs
 
@@ -313,7 +273,7 @@ layout. Diagonal and full Hessians work as above. K-FAC currently does not suppo
   the [Huggingface example](huggingface_example.md#caveats). Subnetwork Laplace with
   `CurvlinopsEF` also fails with dict-like inputs, for both Hessian structures.
 - `subset_of_weights="last_layer"` requires an `nn.Linear` last layer. Use the
-  `requires_grad` approach above for convolutional heads.
+  `requires_grad` approach from the BayesDiff section for convolutional heads.
 - `hessian_structure="kron"` does not support the GLM predictive for image outputs. Use
   `pred_type="nn"` with `link_approx="mc"`.
 
