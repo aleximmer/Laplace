@@ -133,7 +133,7 @@ can do your usual preprocessing like moving the tensor inputs into the correct d
 
 ```python
 class MyGPT2(nn.Module):
-    def __init__(self, tokenizer: PreTrainedTokenizer) -    None:
+    def __init__(self, tokenizer: PreTrainedTokenizer) -> None:
         super().__init__()
         config = GPT2Config.from_pretrained("gpt2")
         config.pad_token_id = tokenizer.pad_token_id
@@ -142,7 +142,7 @@ class MyGPT2(nn.Module):
             "gpt2", config=config
         )
 
-    def forward(self, data: MutableMapping) -    torch.Tensor:
+    def forward(self, data: MutableMapping) -> torch.Tensor:
         device = next(self.parameters()).device
         input_ids = data["input_ids"].to(device)
         attn_mask = data["attention_mask"].to(device)

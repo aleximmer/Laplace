@@ -1,6 +1,7 @@
 In this example, we apply Laplace to a model whose output is an image, such as the
 denoiser of a diffusion model. The same recipe works for other image- or video-output
-models trained with a Gaussian likelihood.
+models trained with a Gaussian likelihood. For per-pixel classification, see the
+[semantic segmentation example](segmentation_example.md).
 
 Laplace expects the output axis to be the last one, e.g., `(N, K)` for standard models
 or `(N, L, K)` for [language models](lm_example.md). Convolutional models in PyTorch
@@ -248,11 +249,11 @@ you the per-step term.
 
 ### Other options
 
-A diagonal Hessian over all weights also works with the GLM predictive. K-FAC
-(`hessian_structure="kron"`) is cheap to fit, but its GLM predictive does not support
-image outputs, so use `pred_type="nn"` with `link_approx="mc"`, as in BayesDiff. The
-sampling predictive is also the fallback for any Hessian structure when the Jacobians of
-the GLM predictive do not fit in memory.
+A diagonal Hessian over all weights also works with the GLM predictive, and so does
+K-FAC (`hessian_structure="kron"`), which is cheap to fit for large models. When the
+Jacobians of the GLM predictive do not fit in memory, use the sampling predictive
+(`pred_type="nn"` with `link_approx="mc"`), as in BayesDiff. It works with any Hessian
+structure.
 
 ## Video outputs
 
@@ -263,19 +264,10 @@ layout. Diagonal and full Hessians work as above. K-FAC currently does not suppo
 
 ## Caveats
 
-- Only regression is supported. Classification with an output per pixel, such as
-  semantic segmentation with logits `(N, K, H, W)` and targets `(N, H, W)`, does not
-  work yet, even after wrapping.
 - Use the Curvlinops backends (`CurvlinopsGGN`, `CurvlinopsEF`). The ASDL and BackPACK
   backends raise an error for image outputs.
-- `CurvlinopsEF` does not support `hessian_structure="diag"` with dict-like inputs. Use
-  `CurvlinopsGGN` instead, or write the model's `forward` to take a single tensor. See
-  the [Huggingface example](huggingface_example.md#caveats). Subnetwork Laplace with
-  `CurvlinopsEF` also fails with dict-like inputs, for both Hessian structures.
 - `subset_of_weights="last_layer"` requires an `nn.Linear` last layer. Use the
   `requires_grad` approach from the BayesDiff section for convolutional heads.
-- `hessian_structure="kron"` does not support the GLM predictive for image outputs. Use
-  `pred_type="nn"` with `link_approx="mc"`.
 
 The full script is in
-[`examples/image_output_example.py`](https://github.com/aleximmer/Laplace/blob/main/examples/image_output_example.py).
+[`examples/diffusion_example.py`](https://github.com/aleximmer/Laplace/blob/main/examples/diffusion_example.py).

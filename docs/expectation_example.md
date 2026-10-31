@@ -68,6 +68,7 @@ This is defined as \(a \sim p(f(x) \mid \mathcal{D})\).
 Thus, given `la`, it can be obtained very simply:
 
 ```python
+x_test = torch.randn(10, 2)
 f_sample = la.functional_samples(x_test, n_samples=1)
 ```
 
@@ -113,6 +114,7 @@ In general, given a choice of utility function \(u(f(x))\), any acquisition func
 For example, to compute Monte-Carlo-approximated EI, we can do so via:
 
 ```python
+f_best = torch.tensor(0.123)  # Arbitrary in this example
 f_samples = la.functional_samples(x_test, pred_type=pred_type, n_samples=10)
 ei = (f_samples - f_best.reshape(1, 1, 1)).clamp(0.0).mean(0)
 ```

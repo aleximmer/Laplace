@@ -82,8 +82,9 @@ def append_x0_x1(row):
 
 tensor_dataset = dataset.map(append_x0_x1, remove_columns=["x0", "x1"])
 tensor_dataset.set_format(type="torch", columns=["x", "label"])
+columns = tensor_dataset[:]  # Dict of tensors; `tensor_dataset["x"]` may be lazy
 tensor_dataloader = data_utils.DataLoader(
-    data_utils.TensorDataset(tensor_dataset["x"], tensor_dataset["label"]), batch_size=3
+    data_utils.TensorDataset(columns["x"], columns["label"]), batch_size=3
 )
 
 reward_model = SimpleRewardModel()
