@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 
 from laplace import Laplace
 from laplace.baselaplace import BaseLaplace
-from laplace.curvature import AsdlGGN
+from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.utils import (
     HessianStructure,
@@ -36,7 +36,7 @@ def marglik_training(
     train_loader: DataLoader,
     likelihood: Likelihood | str = Likelihood.CLASSIFICATION,
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
-    backend: Type[CurvatureInterface] = AsdlGGN,
+    backend: Type[CurvatureInterface] = CurvlinopsGGN,
     optimizer_cls: Type[Optimizer] = Adam,
     optimizer_kwargs: dict | None = None,
     scheduler_cls: Type[LRScheduler] | None = None,
@@ -96,8 +96,8 @@ def marglik_training(
         Likelihood.CLASSIFICATION or Likelihood.REGRESSION
     hessian_structure : {'diag', 'kron', 'full'}, default='kron'
         structure of the Hessian approximation
-    backend : Backend, default=AsdlGGN
-        Curvature subclass, e.g. AsdlGGN/AsdlEF or BackPackGGN/BackPackEF
+    backend : Backend, default=CurvlinopsGGN
+        Curvature subclass, e.g. CurvlinopsGGN/CurvlinopsEF, AsdlGGN/AsdlEF, or BackPackGGN/BackPackEF
     optimizer_cls : torch.optim.Optimizer, default=Adam
         optimizer to use for optimizing the neural network parameters togeth with `train_loader`
     optimizer_kwargs : dict, default=None

@@ -15,9 +15,17 @@ jobs:
         include:
           - name: default
             python: "3.11"
+            extras: "--extra all"
           - name: old-asdfghjkl
             python: "3.11"
+            extras: "--extra all"
             old_asdfghjkl: true
+          # No ASDL or BackPACK. Curvlinops 3.0.1 still pulls in BackPACK,
+          # so it is uninstalled after the install step.
+          - name: minimal
+            python: "3.11"
+            extras: ""
+            minimal: true
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -27,10 +35,13 @@ jobs:
       - name: Install the project
         run: |
           uv venv
-          uv pip install --torch-backend cpu ${{ matrix.torch }} -r pyproject.toml --extra dev
+          uv pip install --torch-backend cpu ${{ matrix.torch }} -r pyproject.toml --extra dev ${{ matrix.extras }}
       - name: Install the old asdfghjkl
         if: matrix.old_asdfghjkl
         run: uv pip install git+https://github.com/wiseodd/asdl@9c7640f8a870e82d5b439e6da59d753b207003b0
+      - name: Remove BackPACK
+        if: matrix.minimal
+        run: uv pip uninstall backpack-for-pytorch
       - name: Test with pytest
         run: .venv/bin/python -m pytest tests
 

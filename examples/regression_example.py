@@ -4,7 +4,6 @@ from helper.dataloaders import get_sinusoid_example
 from helper.util import plot_regression
 
 from laplace import Laplace, marglik_training
-from laplace.curvature.backpack import BackPackGGN
 
 n_epochs = 1000
 torch.manual_seed(711)
@@ -89,7 +88,6 @@ la, model, margliks, losses = marglik_training(
     train_loader=train_loader,
     likelihood="regression",
     hessian_structure="full",
-    backend=BackPackGGN,
     n_epochs=n_epochs,
     optimizer_kwargs={"lr": 1e-2},
     prior_structure="scalar",

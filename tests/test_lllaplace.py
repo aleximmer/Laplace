@@ -10,14 +10,16 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
-from laplace.curvature.asdl import AsdlEF, AsdlGGN
-from laplace.curvature.backpack import BackPackEF, BackPackGGN
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
 from laplace.utils.matrix import KronDecomposed
 from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    BackPackEF,
+    BackPackGGN,
     ListDataset,
     ScaledModel,
     dict_data_collator,

@@ -5,10 +5,9 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace.baselaplace import FunctionalLaplace
-from laplace.curvature.asdl import AsdlGGN
-from laplace.curvature.backpack import BackPackGGN
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.lllaplace import FunctionalLLLaplace
+from tests.utils import AsdlGGN, BackPackGGN
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
