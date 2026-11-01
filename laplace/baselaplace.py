@@ -1092,7 +1092,6 @@ class BaseLaplace:
             f_mu, f_var, n_samples, diagonal_output, generator
         )
 
-        # Reward models predict rewards, which are regression outputs
         return self.likelihood.predictive_likelihood.inverse_link(f_samples)
 
 
@@ -2989,8 +2988,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-        determines the log likelihood Hessian approximation.
+    likelihood : BaseLikelihood or Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+        determines the log likelihood Hessian approximation. A likelihood
+        object is accepted as well as a name.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -4008,8 +4008,9 @@ class ELLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : Likelihood or str
-        ``"classification"``, ``"regression"``, or ``"reward_modeling"``.
+    likelihood : BaseLikelihood or Likelihood or str
+        A likelihood object, or ``"classification"``, ``"regression"``, or
+        ``"reward_modeling"``.
     subsample_size : int
         Number of training inputs used to construct the Nyström basis.
     n_eigenvalues : int
@@ -4960,8 +4961,9 @@ class VaLLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : Likelihood or str
-        ``"classification"``, ``"regression"``, or ``"reward_modeling"``.
+    likelihood : BaseLikelihood or Likelihood or str
+        A likelihood object, or ``"classification"``, ``"regression"``, or
+        ``"reward_modeling"``.
     inducing_locations : torch.Tensor, MutableMapping, or str
         Initial inputs, or ``"random"`` or ``"kmeans"`` to select them from
         the training loader. Floating-point tensor locations are optimized;

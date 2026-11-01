@@ -107,6 +107,21 @@ la.optimize_prior_precision(
 pred = la(x, pred_type="glm", link_approx="probit")
 ```
 
+### Likelihoods
+
+The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `"reward_modeling"`) or a likelihood object.
+The two forms are interchangeable, so `likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
+To define your own, subclass `BaseLikelihood`; its docstring lists the methods you need to implement.
+A custom likelihood can only be fit if its `name` is `"regression"` or `"classification"`, since the curvature backends choose their code path by name.
+
+```python
+from laplace import CategoricalLikelihood, Laplace
+
+la = Laplace(model, CategoricalLikelihood(),
+             subset_of_weights="all",
+             hessian_structure="diag")
+```
+
 ### Marginal likelihood
 
 The marginal likelihood can be used for model selection [10] and is differentiable

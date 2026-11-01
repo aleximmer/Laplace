@@ -93,7 +93,7 @@ def marglik_training(
     train_loader : DataLoader
         pytorch dataloader that implements `len(train_loader.dataset)` to obtain number of data points
     likelihood : BaseLikelihood or Likelihood or str, default=Likelihood.CLASSIFICATION
-        Likelihood.CLASSIFICATION or Likelihood.REGRESSION
+        a likelihood object, or 'classification' or 'regression'
     hessian_structure : {'diag', 'kron', 'full'}, default='kron'
         structure of the Hessian approximation
     backend : Backend, default=CurvlinopsGGN

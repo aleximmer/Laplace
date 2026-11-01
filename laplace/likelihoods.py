@@ -29,6 +29,9 @@ class BaseLikelihood(ABC):
 
     Instances compare equal to other instances of the same type and to the string
     or `Likelihood` member that equals `name`.
+
+    A custom subclass can only be fit if its `name` is `"regression"` or
+    `"classification"`, because the curvature backends pick their code path by name.
     """
 
     name: ClassVar[str]

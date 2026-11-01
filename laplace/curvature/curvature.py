@@ -440,7 +440,8 @@ class GGNInterface(CurvatureInterface):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'}
+    likelihood : {'classification', 'regression'} or BaseLikelihood
+        a name or a likelihood object.
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
@@ -497,6 +498,19 @@ class GGNInterface(CurvatureInterface):
         return F
 
     def _get_functional_hessian(self, f: torch.Tensor) -> torch.Tensor | None:
+        """Hessian of the negative log likelihood w.r.t. the outputs `f`.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            model outputs `(batch, ..., outputs)`
+
+        Returns
+        -------
+        H : torch.Tensor or None
+            `(batch, ..., outputs, outputs)`, or `None` for a Gaussian likelihood,
+            whose output Hessian is the identity and is skipped in the GGN.
+        """
         if self.likelihood.is_gaussian:
             return None
 
@@ -571,7 +585,8 @@ class EFInterface(CurvatureInterface):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'}
+    likelihood : {'classification', 'regression'} or BaseLikelihood
+        a name or a likelihood object.
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None

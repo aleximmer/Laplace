@@ -47,7 +47,8 @@ class FunctionalApproximation(str, Enum):
 
 
 class Likelihood(str, Enum):
-    """Valid options for `likelihood`."""
+    """Names of the built-in likelihoods. Each maps to a likelihood object in
+    `laplace.likelihoods`, and `likelihood` accepts either."""
 
     REGRESSION = "regression"
     """Homoskedastic regression, assuming `loss_fn = nn.MSELoss()`."""

@@ -59,7 +59,8 @@ class LLLaplace(ParametricLaplace):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : BaseLikelihood or Likelihood or {'classification', 'regression'}
-        determines the log likelihood Hessian approximation
+        determines the log likelihood Hessian approximation. A likelihood
+        object is accepted as well as a name.
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification
     prior_precision : torch.Tensor or float, default=1
