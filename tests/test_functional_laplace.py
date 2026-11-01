@@ -2,11 +2,13 @@
 Integration test checking the correctness of the GP implementation in FunctionalLaplace.
 """
 
+from collections import UserDict
+from copy import deepcopy
 from itertools import product
 
 import pytest
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 
 from laplace.baselaplace import FullLaplace, FunctionalLaplace
 from laplace.curvature.curvlinops import CurvlinopsGGN
@@ -173,3 +175,61 @@ def test_backpack_dict_inputs_suggest_default_backend():
 
     with pytest.raises(ValueError, match="CurvlinopsGGN"):
         la.fit(loader)
+
+
+class _DictInputModel(torch.nn.Module):
+    """Linear model that reads its input from `data["input_ids"]`."""
+
+    def __init__(self, linear: torch.nn.Linear):
+        super().__init__()
+        self.linear = linear
+
+    def forward(self, data):
+        return self.linear(data["input_ids"])
+
+
+@pytest.mark.parametrize("independent_outputs", [False, True])
+def test_dict_inputs_match_tensor_inputs(independent_outputs):
+    torch.manual_seed(711)
+    X, y = torch.randn(8, 3), torch.randn(8, 2)
+    linear = torch.nn.Linear(3, 2)
+
+    tensor_loader = DataLoader(TensorDataset(X, y), batch_size=4)
+    dict_loader = DataLoader(
+        ListDataset([{"input_ids": x, "labels": t} for x, t in zip(X, y)]),
+        batch_size=4,
+        collate_fn=dict_data_collator,
+    )
+
+    kwargs = dict(n_subset=6, independent_outputs=independent_outputs)
+    la_tensor = FunctionalLaplace(deepcopy(linear), "regression", **kwargs)
+    la_dict = FunctionalLaplace(
+        _DictInputModel(deepcopy(linear)), "regression", **kwargs
+    )
+    la_tensor.fit(tensor_loader)
+    la_dict.fit(dict_loader)
+
+    mean_t, var_t = la_tensor(X[:3])
+    mean_d, var_d = la_dict(UserDict({"input_ids": X[:3]}))
+
+    assert torch.allclose(mean_d, mean_t)
+    assert torch.allclose(var_d, var_t)
+
+    _, cov_t = la_tensor(X[:3], joint=True)
+    _, cov_d = la_dict(UserDict({"input_ids": X[:3]}), joint=True)
+
+    assert torch.allclose(cov_d, cov_t)
+    assert torch.allclose(
+        la_dict.log_marginal_likelihood(), la_tensor.log_marginal_likelihood()
+    )
+
+
+def test_sod_loader_keeps_collate_fn():
+    loader = DataLoader(
+        ListDataset([{"input_ids": torch.randn(3)} for _ in range(8)]),
+        batch_size=4,
+        collate_fn=dict_data_collator,
+    )
+    la = FunctionalLaplace(torch.nn.Linear(3, 2), "regression", n_subset=4)
+
+    assert la._get_SoD_data_loader(loader).collate_fn is dict_data_collator

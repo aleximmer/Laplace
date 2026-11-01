@@ -3269,11 +3269,33 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             )
         self._recompute_Sigma = False
 
+    def _batch_inputs(
+        self, data: tuple[torch.Tensor, ...] | MutableMapping
+    ) -> torch.Tensor | MutableMapping:
+        """Get the model inputs from a training batch.
+
+        Parameters
+        ----------
+        data : tuple or MutableMapping
+            A batch from the training loader, either `(X, y)` or a mapping.
+
+        Returns
+        -------
+        torch.Tensor or MutableMapping
+            `X` on the model's device, or the whole mapping, which the model
+            reads its inputs from.
+        """
+        if isinstance(data, MutableMapping):
+            return data
+
+        return data[0].to(self._device)
+
     def _get_SoD_data_loader(self, train_loader: DataLoader) -> DataLoader:
         """Subset-of-Datapoints data loader"""
         return DataLoader(
             dataset=train_loader.dataset,
             batch_size=train_loader.batch_size,
+            collate_fn=train_loader.collate_fn,
             sampler=SoDSampler(
                 N=len(train_loader.dataset), M=self.n_subset, seed=self.seed
             ),
@@ -3386,9 +3408,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             mu.append(
                 self._mean_scatter_term_batch(Js_batch, f_batch, y)
             )  # needed for marginal likelihood
-            for j, (X2, _) in enumerate(train_loader):
+            for j, data2 in enumerate(train_loader):
                 if j >= i:
-                    X2 = X2.to(self._device)
+                    X2 = self._batch_inputs(data2)
                     K_batch = self._kernel_batch(Js_batch, X2)
                     self._store_K_batch(K_batch, i, j)
 
@@ -3454,12 +3476,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         # Compute K_{*M}
         K_M_star = []
-        for X_batch, _ in self.train_loader:
+        for data in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
-                Js_star, X_batch.to(self._device)
+                Js_star, self._batch_inputs(data)
             )
             K_M_star.append(K_M_star_batch)
-            del X_batch
 
         # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star)
@@ -3493,12 +3514,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         # Compute K_{*M}
         K_M_star = []
-        for X_batch, _ in self.train_loader:
+        for data in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
-                Js_star, X_batch.to(self._device)
+                Js_star, self._batch_inputs(data)
             )
             K_M_star.append(K_M_star_batch)
-            del X_batch
 
         # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star, joint=True)
