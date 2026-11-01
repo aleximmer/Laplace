@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 import laplace.curvature
 from laplace.curvature import CurvatureInterface
+from laplace.likelihoods import CategoricalLikelihood
 
 
 def toy_regression_dataset_1d(sigma, n_train=150, n_test=500, batch_size=150):
@@ -198,3 +199,17 @@ AsdlHessian = _optional_backend("AsdlHessian")
 BackPackInterface = _optional_backend("BackPackInterface")
 BackPackGGN = _optional_backend("BackPackGGN")
 BackPackEF = _optional_backend("BackPackEF")
+
+
+class DoubledCategorical(CategoricalLikelihood):
+    """Categorical likelihood with twice the output Hessian, to check that a custom
+    likelihood's `output_hessian` is used."""
+
+    def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
+        return 2 * super().output_hessian(f)
+
+
+class CustomCategorical(CategoricalLikelihood):
+    """Categorical likelihood under a name that no backend knows."""
+
+    name = "custom_categorical"

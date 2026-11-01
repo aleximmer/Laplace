@@ -30,6 +30,7 @@ from tests.utils import (
     AsdlHessian,
     BackPackEF,
     BackPackGGN,
+    CustomCategorical,
     ListDataset,
     dict_data_collator,
     requires_asdl,
@@ -1201,18 +1202,14 @@ def test_subnetmask_accepts_object():
     assert torch.equal(masks[0], masks[1])
 
 
-class _CustomCategorical(CategoricalLikelihood):
-    name = "custom_categorical"
-
-
 def test_subnetmask_accepts_custom_object():
     model = nn.Linear(3, 2)
 
     mask = LargestVarianceSWAGSubnetMask(
-        model, 2, likelihood=_CustomCategorical(), swag_n_snapshots=2
+        model, 2, likelihood=CustomCategorical(), swag_n_snapshots=2
     )
 
-    assert isinstance(mask.likelihood, _CustomCategorical)
+    assert isinstance(mask.likelihood, CustomCategorical)
 
 
 def test_subnetmask_rejects_reward_modeling():

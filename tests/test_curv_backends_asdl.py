@@ -5,8 +5,14 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.likelihoods import CategoricalLikelihood
-from tests.utils import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, requires_asdl
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    BackPackEF,
+    BackPackGGN,
+    DoubledCategorical,
+    requires_asdl,
+)
 
 pytestmark = requires_asdl
 
@@ -452,17 +458,10 @@ def test_kron_normalization_ggn_reg(reg_Xy, model):
     assert torch.allclose(loss_true, loss_test)
 
 
-class _DoubledCategorical(CategoricalLikelihood):
-    """Categorical likelihood with twice the output Hessian."""
-
-    def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
-        return 2 * super().output_hessian(f)
-
-
 @pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
 def test_custom_likelihood_rejected_by_curvature(class_Xy, model, Backend):
     X, y = class_Xy
-    backend = Backend(model, _DoubledCategorical())
+    backend = Backend(model, DoubledCategorical())
 
     with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
         backend.diag(X, y)

@@ -4,8 +4,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
-from laplace.likelihoods import CategoricalLikelihood
-from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackGGN
+from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackGGN, DoubledCategorical
 
 
 @pytest.fixture
@@ -321,17 +320,10 @@ def test_kron_normalization_ef_class(class_Xy, model):
     assert torch.allclose(loss_true, loss_test)
 
 
-class _DoubledCategorical(CategoricalLikelihood):
-    """Categorical likelihood with twice the output Hessian."""
-
-    def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
-        return 2 * super().output_hessian(f)
-
-
 @pytest.mark.parametrize("Backend", [CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian])
 def test_custom_likelihood_rejected_by_curvlinops_curvature(class_Xy, model, Backend):
     X, y = class_Xy
-    backend = Backend(model, _DoubledCategorical())
+    backend = Backend(model, DoubledCategorical())
 
     # Equal to the built-in by name, but still rejected by type
     assert backend.likelihood == "classification"
@@ -349,7 +341,7 @@ def test_custom_likelihood_used_by_curvlinops_ggn_diag(class_Xy, model):
     X, y = class_Xy
 
     _, diag = CurvlinopsGGN(model, "classification").diag(X, y)
-    _, diag_doubled = CurvlinopsGGN(model, _DoubledCategorical()).diag(X, y)
+    _, diag_doubled = CurvlinopsGGN(model, DoubledCategorical()).diag(X, y)
 
     assert torch.allclose(diag_doubled, 2 * diag)
 
@@ -358,7 +350,7 @@ def test_custom_likelihood_jacobians_curvlinops(class_Xy, model):
     X, _ = class_Xy
 
     Js, f = CurvlinopsGGN(model, "classification").jacobians(X)
-    Js_doubled, f_doubled = CurvlinopsGGN(model, _DoubledCategorical()).jacobians(X)
+    Js_doubled, f_doubled = CurvlinopsGGN(model, DoubledCategorical()).jacobians(X)
 
     assert torch.allclose(Js, Js_doubled)
     assert torch.allclose(f, f_doubled)

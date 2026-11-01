@@ -126,7 +126,7 @@ class Likelihood(metaclass=_LikelihoodMeta):
             return self.name == other.name
 
         if isinstance(other, str):
-            return self.name == str(getattr(other, "value", other))
+            return self.name == _name_of(other)
 
         return NotImplemented
 
@@ -403,13 +403,8 @@ class CategoricalLikelihood(Likelihood):
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
         return (y.shape[:-1] if y.ndim == f.ndim else y.shape).numel()
 
-    def log_normalizer(
-        self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
-    ) -> torch.Tensor:
-        return _zero_like(sigma_noise)
-
     def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
-        p = torch.softmax(f, dim=-1)
+        p = self.inverse_link(f)
 
         return torch.diag_embed(p) - torch.einsum("...k,...c->...kc", p, p)
 
@@ -419,14 +414,14 @@ class CategoricalLikelihood(Likelihood):
     def sample(
         self, f: torch.Tensor, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        p = torch.softmax(f, dim=-1).reshape(-1, f.shape[-1])
+        p = self.inverse_link(f).reshape(-1, f.shape[-1])
         idx = torch.multinomial(p, 1, generator=generator)
         y = torch.zeros_like(p).scatter_(1, idx, 1.0)
 
         return y.reshape(f.shape)
 
     def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return torch.softmax(f, dim=-1) - y
+        return self.inverse_link(f) - y
 
 
 class BradleyTerryLikelihood(Likelihood):
@@ -492,6 +487,12 @@ class BradleyTerryLikelihood(Likelihood):
         return self._predictive
 
 
+def _name_of(name: str) -> str:
+    """The value of a string, or of a member of a `(str, Enum)` such as the old
+    `Likelihood` enum, whose `str()` is not its value."""
+    return str(getattr(name, "value", name))
+
+
 def _float_dtype(x: torch.Tensor | float) -> torch.dtype:
     """Dtype of `x` if it is a floating tensor, else the default dtype."""
     if isinstance(x, torch.Tensor) and x.is_floating_point():
@@ -530,7 +531,7 @@ def get_likelihood(likelihood: Likelihood | str) -> Likelihood:
 
     if isinstance(likelihood, str):
         for cls in (GaussianLikelihood, CategoricalLikelihood, BradleyTerryLikelihood):
-            if cls.name == str(getattr(likelihood, "value", likelihood)):
+            if cls.name == _name_of(likelihood):
                 return cls()
 
     raise ValueError(f"Invalid likelihood type {likelihood}")

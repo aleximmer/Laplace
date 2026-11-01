@@ -20,6 +20,7 @@ from laplace.lllaplace import FullLLLaplace, FunctionalLLLaplace
 from tests.utils import (
     AsdlGGN,
     BackPackGGN,
+    DoubledCategorical,
     ListDataset,
     dict_data_collator,
     requires_backpack,
@@ -274,13 +275,6 @@ def test_frozen_parameters_match_fixed_features(likelihood):
 
     for out_frozen, out_fixed in zip(la_frozen(X[:3]), la_fixed(X[:3])):
         assert torch.allclose(out_frozen, out_fixed)
-
-
-class DoubledCategorical(CategoricalLikelihood):
-    """Categorical likelihood with a doubled output Hessian."""
-
-    def output_hessian(self, f):
-        return 2 * super().output_hessian(f)
 
 
 @pytest.mark.parametrize("likelihood", ["regression", "classification"])

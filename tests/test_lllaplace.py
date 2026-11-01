@@ -21,6 +21,7 @@ from tests.utils import (
     AsdlGGN,
     BackPackEF,
     BackPackGGN,
+    CustomCategorical,
     ListDataset,
     ScaledModel,
     dict_data_collator,
@@ -885,10 +886,6 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
     )
 
 
-class _CustomCategorical(CategoricalLikelihood):
-    name = "custom_categorical"
-
-
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize("likelihood", ["regression", "classification"])
 def test_lllaplace_likelihood_object_equivalence(laplace, likelihood):
@@ -932,7 +929,7 @@ def test_lllaplace_custom_categorical_nn_predictive_is_softmaxed(laplace, model)
     X = torch.randn(10, 3)
     y = torch.randint(2, (10,))
     lap.fit(DataLoader(TensorDataset(X, y), batch_size=3))
-    lap.likelihood = _CustomCategorical()
+    lap.likelihood = CustomCategorical()
     X = X[:4]
 
     samples = lap._nn_predictive_samples(X, n_samples=3)

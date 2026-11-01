@@ -224,6 +224,15 @@ class BaseLaplace:
 
         self._likelihood = likelihood
 
+    def _stage_likelihood(self, fitting: bool) -> Likelihood:
+        """The fit likelihood while fitting, else the predictive likelihood. The two
+        differ only for reward modeling.
+        """
+        if fitting:
+            return self.likelihood.fit_likelihood
+
+        return self.likelihood.predictive_likelihood
+
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore a pickled instance.
 
@@ -1567,11 +1576,7 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        likelihood = (
-            self.likelihood.fit_likelihood
-            if fitting
-            else self.likelihood.predictive_likelihood
-        )
+        likelihood = self._stage_likelihood(fitting)
 
         if pred_type == PredType.GLM:
             return self._glm_forward_call(
@@ -2836,11 +2841,7 @@ class BaseFunctionalLaplace(BaseLaplace):
             or generator.device != self._device
         ):
             raise ValueError("Invalid random generator (check type and device).")
-        likelihood = (
-            self.likelihood.fit_likelihood
-            if fitting
-            else self.likelihood.predictive_likelihood
-        )
+        likelihood = self._stage_likelihood(fitting)
         if likelihood == Likelihood.CLASSIFICATION and link_approx == LinkApprox.MC:
             return self.predictive_samples(
                 x,
@@ -3002,11 +3003,7 @@ class BaseFunctionalLaplace(BaseLaplace):
         samples = self.functional_samples(
             x, pred_type, n_samples, diagonal_output, generator, joint
         )
-        likelihood = (
-            self.likelihood.fit_likelihood
-            if fitting
-            else self.likelihood.predictive_likelihood
-        )
+        likelihood = self._stage_likelihood(fitting)
 
         return likelihood.inverse_link(samples)
 

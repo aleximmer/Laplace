@@ -7,7 +7,6 @@ from torch import nn
 from torch.utils._pytree import tree_map
 
 from laplace.likelihoods import (
-    BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
     Likelihood,
@@ -102,10 +101,7 @@ class CurvatureInterface:
         """
         likelihood = get_likelihood(likelihood)
 
-        if likelihood.name not in (
-            Likelihood.REGRESSION.value,
-            Likelihood.CLASSIFICATION.value,
-        ) or isinstance(likelihood, BradleyTerryLikelihood):
+        if likelihood.name not in ("regression", "classification"):
             raise ValueError(
                 f"Curvature backends support only regression and classification, "
                 f"got {likelihood}. Pass `fit_likelihood` for reward modeling."

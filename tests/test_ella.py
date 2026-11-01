@@ -20,7 +20,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from tests.utils import AsdlGGN, BackPackGGN, requires_backpack
+from tests.utils import AsdlGGN, BackPackGGN, DoubledCategorical, requires_backpack
 
 torch.set_num_threads(1)
 
@@ -897,13 +897,6 @@ def test_seeded_ella_map_mean_reference():
     mean, _ = estimator.predictive_moments(inputs[:2])
     expected = torch.tensor([[0.2, -0.3], [0.6, -0.4]])
     torch.testing.assert_close(mean, expected)
-
-
-class DoubledCategorical(CategoricalLikelihood):
-    """Categorical likelihood with a doubled output Hessian."""
-
-    def output_hessian(self, f):
-        return 2 * super().output_hessian(f)
 
 
 @pytest.mark.parametrize("likelihood", ["regression", "classification"])
