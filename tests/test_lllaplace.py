@@ -1,3 +1,4 @@
+from collections.abc import MutableMapping
 from itertools import product
 
 import numpy as np
@@ -16,7 +17,12 @@ from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
 from laplace.utils.matrix import KronDecomposed
-from tests.utils import ScaledModel, jacobians_naive
+from tests.utils import (
+    ListDataset,
+    ScaledModel,
+    dict_data_collator,
+    jacobians_naive,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -624,6 +630,44 @@ def test_nn_model_kwargs(laplace, likelihood, reg_loader, class_loader):
     fs_default = lap._nn_functional_samples(X, 3, g())
     assert not torch.allclose(fs_scaled, fs_unscaled)
     assert torch.equal(fs_unscaled, fs_default)
+
+
+class DictScaledModel(ScaledModel):
+    """`ScaledModel` that reads its input from a dict-like batch."""
+
+    def forward(self, data: MutableMapping, scale: float = 1.0) -> torch.Tensor:
+        return super().forward(data["input_ids"], scale=scale)
+
+
+@pytest.mark.parametrize(
+    "laplace,likelihood", product(flavors, ["regression", "classification"])
+)
+def test_nn_dict_inputs(laplace, likelihood):
+    X = torch.randn(10, 3)
+    y = (
+        torch.randint(2, (10,))
+        if likelihood == "classification"
+        else torch.randn(10, 2)
+    )
+    data = [{"input_ids": x_i, "labels": y_i} for x_i, y_i in zip(X, y)]
+    dict_loader = DataLoader(
+        ListDataset(data), batch_size=5, collate_fn=dict_data_collator
+    )
+
+    lap = laplace(DictScaledModel(), likelihood, prior_precision=0.7)
+    lap.fit(dict_loader)
+    batch = dict_data_collator(data)
+
+    for model_kwargs in [{}, {"scale": 2.0}]:
+        pred = lap(batch, pred_type="nn", link_approx="mc", n_samples=5, **model_kwargs)
+
+        if likelihood == "regression":
+            mean, var = pred
+            assert mean.shape == torch.Size([10, 2])
+            assert var.shape == torch.Size([10, 2])
+        else:
+            assert pred.shape == torch.Size([10, 2])
+            assert torch.allclose(pred.sum(-1), torch.ones(10))
 
 
 @pytest.mark.parametrize("laplace", flavors)
