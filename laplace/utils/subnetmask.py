@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -12,9 +11,6 @@ import laplace
 from laplace.utils.enums import Likelihood
 from laplace.utils.feature_extractor import FeatureExtractor
 from laplace.utils.swag import fit_diagonal_swag_var
-
-if TYPE_CHECKING:
-    from laplace.likelihoods import BaseLikelihood
 
 __all__ = [
     "SubnetMask",
@@ -261,7 +257,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
     model : torch.nn.Module
     n_params_subnet : int
         number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
-    likelihood : BaseLikelihood or Likelihood or str
+    likelihood : Likelihood or str
         a likelihood object, or 'classification' or 'regression'
     swag_n_snapshots : int
         number of model snapshots to collect for SWAG
@@ -275,7 +271,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         self,
         model: nn.Module,
         n_params_subnet: int,
-        likelihood: BaseLikelihood | Likelihood | str = Likelihood.CLASSIFICATION,
+        likelihood: Likelihood | str = Likelihood.CLASSIFICATION,
         swag_n_snapshots: int = 40,
         swag_snapshot_freq: int = 1,
         swag_lr: float = 0.01,
@@ -293,7 +289,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
 
         super().__init__(model, n_params_subnet)
 
-        self.likelihood: BaseLikelihood = lik
+        self.likelihood: Likelihood = lik
         self.swag_n_snapshots: int = swag_n_snapshots
         self.swag_snapshot_freq: int = swag_snapshot_freq
         self.swag_lr: float = swag_lr

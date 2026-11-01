@@ -20,7 +20,7 @@ from laplace import Laplace
 from laplace.baselaplace import BaseLaplace
 from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.curvature import CurvatureInterface
-from laplace.likelihoods import BaseLikelihood, get_likelihood
+from laplace.likelihoods import get_likelihood
 from laplace.utils import (
     HessianStructure,
     Likelihood,
@@ -34,7 +34,7 @@ from laplace.utils import (
 def marglik_training(
     model: torch.nn.Module,
     train_loader: DataLoader,
-    likelihood: BaseLikelihood | Likelihood | str = Likelihood.CLASSIFICATION,
+    likelihood: Likelihood | str = Likelihood.CLASSIFICATION,
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
     backend: Type[CurvatureInterface] = CurvlinopsGGN,
     optimizer_cls: Type[Optimizer] = Adam,
@@ -92,7 +92,7 @@ def marglik_training(
         torch neural network model (needs to comply with Backend choice)
     train_loader : DataLoader
         pytorch dataloader that implements `len(train_loader.dataset)` to obtain number of data points
-    likelihood : BaseLikelihood or Likelihood or str, default=Likelihood.CLASSIFICATION
+    likelihood : Likelihood or str, default=Likelihood.CLASSIFICATION
         a likelihood object, or 'classification' or 'regression'
     hessian_structure : {'diag', 'kron', 'full'}, default='kron'
         structure of the Hessian approximation

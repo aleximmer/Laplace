@@ -11,9 +11,9 @@ from torch.utils.data import (
 
 from laplace import ELLA, FunctionalLaplace, Laplace, VaLLA
 from laplace.likelihoods import (
-    BaseLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
+    Likelihood,
 )
 
 torch.set_num_threads(1)
@@ -116,7 +116,7 @@ def test_functional_factory_likelihood_object_equivalence(data, likelihood):
 
     assert type(by_name) is type(by_object)
     assert by_name.likelihood == by_object.likelihood
-    assert isinstance(by_object.likelihood, BaseLikelihood)
+    assert isinstance(by_object.likelihood, Likelihood)
 
     by_name.fit(loader)
     by_object.fit(loader)

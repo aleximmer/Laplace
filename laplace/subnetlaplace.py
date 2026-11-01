@@ -8,7 +8,6 @@ from torch import nn
 from laplace.baselaplace import DiagLaplace, FullLaplace, Likelihood, ParametricLaplace
 from laplace.curvature import EFInterface, GGNInterface
 from laplace.curvature.curvature import CurvatureInterface
-from laplace.likelihoods import BaseLikelihood
 
 __all__ = ["SubnetLaplace", "FullSubnetLaplace", "DiagSubnetLaplace"]
 
@@ -51,7 +50,7 @@ class SubnetLaplace(ParametricLaplace):
     Parameters
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
-    likelihood : BaseLikelihood or Likelihood or {'classification', 'regression'}
+    likelihood : Likelihood or {'classification', 'regression'}
         determines the log likelihood Hessian approximation. A likelihood
         object is accepted as well as a name.
     subnetwork_indices : torch.LongTensor
@@ -86,7 +85,7 @@ class SubnetLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         subnetwork_indices: torch.LongTensor,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,

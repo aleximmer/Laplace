@@ -17,7 +17,6 @@ from laplace.baselaplace import (
     ParametricLaplace,
 )
 from laplace.curvature.curvature import CurvatureInterface
-from laplace.likelihoods import BaseLikelihood
 from laplace.utils import FeatureExtractor, Kron
 from laplace.utils.enums import Likelihood
 from laplace.utils.feature_extractor import FeatureReduction
@@ -58,7 +57,7 @@ class LLLaplace(ParametricLaplace):
     Parameters
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
-    likelihood : BaseLikelihood or Likelihood or {'classification', 'regression'}
+    likelihood : Likelihood or {'classification', 'regression'}
         determines the log likelihood Hessian approximation. A likelihood
         object is accepted as well as a name.
     sigma_noise : torch.Tensor or float, default=1
@@ -102,7 +101,7 @@ class LLLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -430,7 +429,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -553,7 +552,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         n_subset: int,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,

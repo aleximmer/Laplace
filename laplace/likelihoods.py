@@ -3,18 +3,67 @@ about the observation model: the loss, the output-space Hessian, the normalizer,
 how to sample targets.
 """
 
+from __future__ import annotations
+
 import inspect
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
+from collections.abc import Iterator
 from math import pi, sqrt
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import torch
 from torch import nn
 
-from laplace.utils.enums import Likelihood
+_BUILTIN_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING")
 
 
-class BaseLikelihood(ABC):
+class _LikelihoodMeta(ABCMeta):
+    """Gives `Likelihood` the class-level API of the enum it replaced: lookup by
+    value with `Likelihood("regression")`, lookup by key with
+    `Likelihood["REGRESSION"]`, iteration, `len`, and `in`.
+    """
+
+    def __call__(cls, *args: Any, **kwargs: Any) -> Any:
+        # Only the abstract base looks up by value, the way `Enum("value")` does. This
+        # also unpickles members of the old enum, which pickled as `Likelihood(value)`.
+        if vars(cls).get("_is_base", False) and len(args) == 1 and not kwargs:
+            likelihood = get_likelihood(args[0])
+            if likelihood is args[0]:
+                return likelihood
+
+            # Like an enum member, a built-in likelihood is a single shared instance
+            return next(m for m in cls if m == likelihood)
+
+        return super().__call__(*args, **kwargs)
+
+    def _require_base(cls) -> None:
+        """Keep the enum API on `Likelihood` itself, not on its subclasses."""
+        if not vars(cls).get("_is_base", False):
+            raise TypeError(f"{cls.__name__} does not list the built-in likelihoods.")
+
+    def __getitem__(cls, key: str) -> Likelihood:
+        cls._require_base()
+
+        if key not in _BUILTIN_KEYS:
+            raise KeyError(key)
+
+        return getattr(cls, key)
+
+    def __iter__(cls) -> Iterator[Likelihood]:
+        cls._require_base()
+
+        return (getattr(cls, key) for key in _BUILTIN_KEYS)
+
+    def __len__(cls) -> int:
+        cls._require_base()
+
+        return len(_BUILTIN_KEYS)
+
+    def __contains__(cls, item: object) -> bool:
+        return any(item == member for member in cls)
+
+
+class Likelihood(metaclass=_LikelihoodMeta):
     """Base class for likelihoods.
 
     A likelihood compares the model output `f` with the targets `y`. All leading
@@ -28,8 +77,14 @@ class BaseLikelihood(ABC):
     `is_gaussian` (`False`), and `fit_likelihood` and `predictive_likelihood` (both
     `self`).
 
-    Instances compare equal to other instances of the same type and to the string
-    or `Likelihood` member that equals `name`.
+    Likelihoods compare by `name`: an instance equals any likelihood or string with
+    the same name. So a subclass of `CategoricalLikelihood` that keeps its name still
+    equals `Likelihood.CLASSIFICATION`.
+
+    `Likelihood` used to be an enum. The built-in likelihoods are still available as
+    `Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, and
+    `Likelihood.REWARD_MODELING`, and `Likelihood("regression")` returns the built-in
+    likelihood with that name. Code written for the enum keeps working.
 
     A custom subclass can only be fit if its `name` is `"regression"` or
     `"classification"`, because the curvature backends pick their code path by name.
@@ -42,6 +97,17 @@ class BaseLikelihood(ABC):
 
     name: ClassVar[str]
     """Identifier of the likelihood, e.g. what is stored in `state_dict()`."""
+
+    REGRESSION: ClassVar[GaussianLikelihood]
+    """The built-in `GaussianLikelihood`."""
+
+    CLASSIFICATION: ClassVar[CategoricalLikelihood]
+    """The built-in `CategoricalLikelihood`."""
+
+    REWARD_MODELING: ClassVar[BradleyTerryLikelihood]
+    """The built-in `BradleyTerryLikelihood`."""
+
+    _is_base: ClassVar[bool] = True
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         """Require a `name` on every concrete subclass.
@@ -59,10 +125,12 @@ class BaseLikelihood(ABC):
             raise TypeError(f"Likelihood {cls.__name__} must define a `name`.")
 
     def __eq__(self, other: object) -> bool:
-        if isinstance(other, BaseLikelihood):
-            return type(self) is type(other) and self.name == other.name
+        # By name only, so that a subclass of a built-in matches checks such as
+        # `likelihood == Likelihood.CLASSIFICATION`, as it did against the old enum
+        if isinstance(other, Likelihood):
+            return self.name == other.name
 
-        if isinstance(other, (str, Likelihood)):
+        if isinstance(other, str):
             return self.name == str(getattr(other, "value", other))
 
         return NotImplemented
@@ -75,6 +143,11 @@ class BaseLikelihood(ABC):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
+
+    @property
+    def value(self) -> str:
+        """Same as `name`. Kept from the time `Likelihood` was an enum."""
+        return self.name
 
     @abstractmethod
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
@@ -186,17 +259,17 @@ class BaseLikelihood(ABC):
         return False
 
     @property
-    def fit_likelihood(self) -> "BaseLikelihood":
+    def fit_likelihood(self) -> Likelihood:
         """Likelihood used for fitting the curvature."""
         return self
 
     @property
-    def predictive_likelihood(self) -> "BaseLikelihood":
+    def predictive_likelihood(self) -> Likelihood:
         """Likelihood of the predictive distribution."""
         return self
 
 
-class GaussianLikelihood(BaseLikelihood):
+class GaussianLikelihood(Likelihood):
     """Gaussian likelihood with unit variance for the loss, i.e. regression."""
 
     name: ClassVar[str] = "regression"
@@ -262,7 +335,7 @@ class GaussianLikelihood(BaseLikelihood):
         return True
 
 
-class CategoricalLikelihood(BaseLikelihood):
+class CategoricalLikelihood(Likelihood):
     """Categorical likelihood with a softmax link, i.e. classification.
 
     The targets are class indices `(batch, ...)` or class probabilities with the
@@ -351,7 +424,7 @@ class CategoricalLikelihood(BaseLikelihood):
         return torch.softmax(f, dim=-1) - y
 
 
-class BradleyTerryLikelihood(BaseLikelihood):
+class BradleyTerryLikelihood(Likelihood):
     """Bradley-Terry likelihood for reward modeling.
 
     The curvature is fitted with a categorical likelihood over the compared items,
@@ -405,12 +478,12 @@ class BradleyTerryLikelihood(BaseLikelihood):
         return self._fit.output_gradient(f, y)
 
     @property
-    def fit_likelihood(self) -> BaseLikelihood:
+    def fit_likelihood(self) -> Likelihood:
         """A `CategoricalLikelihood`."""
         return self._fit
 
     @property
-    def predictive_likelihood(self) -> BaseLikelihood:
+    def predictive_likelihood(self) -> Likelihood:
         """A `GaussianLikelihood`."""
         return self._predictive
 
@@ -430,30 +503,35 @@ def _zero_like(x: torch.Tensor | float) -> torch.Tensor:
     return torch.zeros((), dtype=_float_dtype(x), device=device)
 
 
-def get_likelihood(likelihood: BaseLikelihood | Likelihood | str) -> BaseLikelihood:
+def get_likelihood(likelihood: Likelihood | str) -> Likelihood:
     """Turn a likelihood name into a likelihood object.
 
     Parameters
     ----------
-    likelihood : BaseLikelihood or Likelihood or str
+    likelihood : Likelihood or str
         an instance, which is returned as is, or one of `'regression'`,
         `'classification'`, and `'reward_modeling'`.
 
     Returns
     -------
-    likelihood : BaseLikelihood
+    likelihood : Likelihood
 
     Raises
     ------
     ValueError
         if `likelihood` is neither a likelihood instance nor a known name.
     """
-    if isinstance(likelihood, BaseLikelihood):
+    if isinstance(likelihood, Likelihood):
         return likelihood
 
-    if isinstance(likelihood, (str, Likelihood)):
+    if isinstance(likelihood, str):
         for cls in (GaussianLikelihood, CategoricalLikelihood, BradleyTerryLikelihood):
             if cls.name == str(getattr(likelihood, "value", likelihood)):
                 return cls()
 
     raise ValueError(f"Invalid likelihood type {likelihood}")
+
+
+Likelihood.REGRESSION = GaussianLikelihood()
+Likelihood.CLASSIFICATION = CategoricalLikelihood()
+Likelihood.REWARD_MODELING = BradleyTerryLikelihood()

@@ -7,13 +7,13 @@ from torch import nn
 from torch.utils._pytree import tree_map
 
 from laplace.likelihoods import (
-    BaseLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
+    Likelihood,
     get_likelihood,
 )
-from laplace.utils import Kron, Likelihood
+from laplace.utils import Kron
 
 
 class CurvatureInterface:
@@ -27,7 +27,7 @@ class CurvatureInterface:
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'} or BaseLikelihood
+    likelihood : {'classification', 'regression'} or Likelihood
         a name or a likelihood object. The reward modeling likelihood is not
         supported, pass its `fit_likelihood` instead.
     last_layer : bool, default=False
@@ -46,7 +46,7 @@ class CurvatureInterface:
 
     Attributes
     ----------
-    likelihood : BaseLikelihood
+    likelihood : Likelihood
     lossfunc : torch.nn.MSELoss or torch.nn.CrossEntropyLoss
         the loss module built by the likelihood
     factor : float
@@ -57,7 +57,7 @@ class CurvatureInterface:
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
         dict_key_x: str = "input_ids",
@@ -87,12 +87,12 @@ class CurvatureInterface:
         }
 
     @property
-    def likelihood(self) -> BaseLikelihood:
+    def likelihood(self) -> Likelihood:
         """The likelihood object."""
         return self._likelihood
 
     @likelihood.setter
-    def likelihood(self, likelihood: BaseLikelihood | Likelihood | str) -> None:
+    def likelihood(self, likelihood: Likelihood | str) -> None:
         """Set the likelihood from an object, a `Likelihood` member, or a name.
 
         Raises
@@ -499,7 +499,7 @@ class GGNInterface(CurvatureInterface):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'} or BaseLikelihood
+    likelihood : {'classification', 'regression'} or Likelihood
         a name or a likelihood object.
     last_layer : bool, default=False
         only consider curvature of last layer
@@ -523,7 +523,7 @@ class GGNInterface(CurvatureInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
         dict_key_x: str = "input_ids",
@@ -644,7 +644,7 @@ class EFInterface(CurvatureInterface):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'} or BaseLikelihood
+    likelihood : {'classification', 'regression'} or Likelihood
         a name or a likelihood object.
     last_layer : bool, default=False
         only consider curvature of last layer

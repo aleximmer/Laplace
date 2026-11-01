@@ -23,7 +23,7 @@ from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.curvlinops import CurvlinopsGGN
-from laplace.likelihoods import BaseLikelihood, get_likelihood
+from laplace.likelihoods import get_likelihood
 from laplace.utils import SoDSampler
 from laplace.utils.enums import (
     Likelihood,
@@ -77,7 +77,7 @@ class BaseLaplace:
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : BaseLikelihood or Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
         determines the log likelihood Hessian approximation. Strings and
         `Likelihood` members become the matching likelihood object, which is
         stored in `self.likelihood`.
@@ -120,7 +120,7 @@ class BaseLaplace:
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -204,12 +204,12 @@ class BaseLaplace:
         return next(self.model.parameters()).dtype
 
     @property
-    def likelihood(self) -> BaseLikelihood:
+    def likelihood(self) -> Likelihood:
         """The likelihood object."""
         return self._likelihood
 
     @likelihood.setter
-    def likelihood(self, likelihood: BaseLikelihood | Likelihood | str) -> None:
+    def likelihood(self, likelihood: Likelihood | str) -> None:
         """Set the likelihood from an object, a `Likelihood` member, or a name.
 
         The cached backend is rebuilt on next use if the fit likelihood changes.
@@ -728,7 +728,7 @@ class BaseLaplace:
     def _glm_forward_call(
         self,
         x: torch.Tensor | MutableMapping,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         joint: bool = False,
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
@@ -742,7 +742,7 @@ class BaseLaplace:
             `(batch_size, input_shape)` if tensor. If MutableMapping, must contain
             the said tensor.
 
-        likelihood : BaseLikelihood or Likelihood or str
+        likelihood : Likelihood or str
             likelihood of the predictive. A Gaussian one returns the predictive
             moments, any other is treated as categorical and returns class
             probabilities.
@@ -1169,7 +1169,7 @@ class ParametricLaplace(BaseLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -2008,7 +2008,7 @@ class FullLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -2146,7 +2146,7 @@ class KronLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -2332,7 +2332,7 @@ class LowRankLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: BaseLikelihood | Likelihood | str,
+        likelihood: Likelihood | str,
         backend: type[CurvatureInterface] = AsdfghjklHessian
         if find_spec("asdfghjkl") is not None
         else CurvatureInterface,
@@ -3035,7 +3035,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : BaseLikelihood or Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
         determines the log likelihood Hessian approximation. A likelihood
         object is accepted as well as a name.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
@@ -4055,7 +4055,7 @@ class ELLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : BaseLikelihood or Likelihood or str
+    likelihood : Likelihood or str
         A likelihood object, or ``"classification"``, ``"regression"``, or
         ``"reward_modeling"``.
     subsample_size : int
@@ -5008,7 +5008,7 @@ class VaLLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : BaseLikelihood or Likelihood or str
+    likelihood : Likelihood or str
         A likelihood object, or ``"classification"``, ``"regression"``, or
         ``"reward_modeling"``.
     inducing_locations : torch.Tensor, MutableMapping, or str

@@ -1,3 +1,4 @@
+import pickle
 from math import log, pi, sqrt
 
 import pytest
@@ -5,7 +6,6 @@ import torch
 from torch import nn
 
 from laplace import (
-    BaseLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
@@ -183,13 +183,13 @@ def test_sample_and_output_gradient(lik):
 
 
 def test_subclass_contract():
-    class Incomplete(BaseLikelihood):
+    class Incomplete(Likelihood):
         name = "incomplete"
 
     with pytest.raises(TypeError):
         Incomplete()
 
-    class Minimal(BaseLikelihood):
+    class Minimal(Likelihood):
         name = "minimal"
         loss_factor = 1.0
 
@@ -229,7 +229,7 @@ def test_concrete_subclass_requires_name():
         class Nameless(CategoricalLikelihood):
             name = None
 
-    class AbstractNameless(BaseLikelihood):
+    class AbstractNameless(Likelihood):
         def inverse_link(self, f):
             return f
 
@@ -275,3 +275,76 @@ def test_reward_modeling_split():
     assert lik.predictive_likelihood == "regression"
     assert lik.is_gaussian is False
     assert lik.name == "reward_modeling"
+
+
+def test_builtin_members_replace_the_enum():
+    assert type(Likelihood.REGRESSION) is GaussianLikelihood
+    assert type(Likelihood.CLASSIFICATION) is CategoricalLikelihood
+    assert type(Likelihood.REWARD_MODELING) is BradleyTerryLikelihood
+
+    assert Likelihood.REGRESSION == "regression"
+    assert Likelihood.CLASSIFICATION.value == "classification"
+    assert hash(Likelihood.REWARD_MODELING) == hash("reward_modeling")
+
+
+def test_enum_lookup_iteration_and_membership():
+    assert Likelihood("regression") is Likelihood.REGRESSION
+    assert Likelihood(Likelihood.CLASSIFICATION) is Likelihood.CLASSIFICATION
+    assert Likelihood["REWARD_MODELING"] is Likelihood.REWARD_MODELING
+
+    custom = GaussianLikelihood()
+    assert Likelihood(custom) is custom
+
+    assert list(Likelihood) == [
+        Likelihood.REGRESSION,
+        Likelihood.CLASSIFICATION,
+        Likelihood.REWARD_MODELING,
+    ]
+    assert len(Likelihood) == 3
+    assert "classification" in Likelihood
+    assert "foo" not in Likelihood
+
+    with pytest.raises(ValueError, match="Invalid likelihood type"):
+        Likelihood("foo")
+
+    with pytest.raises(KeyError):
+        Likelihood["FOO"]
+
+    # The enum API belongs to `Likelihood`, not to its subclasses
+    with pytest.raises(TypeError):
+        len(GaussianLikelihood)
+
+    with pytest.raises(TypeError):
+        list(CategoricalLikelihood)
+
+
+def test_base_class_stays_abstract():
+    with pytest.raises(TypeError):
+        Likelihood()
+
+    # Subclasses are constructed normally, not looked up by value
+    with pytest.raises(TypeError):
+        GaussianLikelihood("regression")
+
+
+def test_old_enum_import_path_and_pickle():
+    from laplace.utils.enums import Likelihood as EnumsLikelihood
+
+    assert EnumsLikelihood is Likelihood
+
+    # How a member of the old `Likelihood(str, Enum)` was pickled
+    old_member = b"claplace.utils.enums\nLikelihood\n(Vclassification\ntR."
+    assert pickle.loads(old_member) is Likelihood.CLASSIFICATION
+
+    assert pickle.loads(pickle.dumps(Likelihood.REGRESSION)) == Likelihood.REGRESSION
+
+
+def test_subclass_equals_its_builtin_by_name():
+    class Doubled(CategoricalLikelihood):
+        def output_hessian(self, f):
+            return 2 * super().output_hessian(f)
+
+    assert Doubled() == Likelihood.CLASSIFICATION
+    assert Likelihood.CLASSIFICATION == Doubled()
+    assert Doubled() != Likelihood.REGRESSION
+    assert len({Doubled(), CategoricalLikelihood()}) == 1

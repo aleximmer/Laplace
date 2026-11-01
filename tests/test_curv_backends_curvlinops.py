@@ -333,6 +333,9 @@ def test_custom_likelihood_rejected_by_curvlinops_curvature(class_Xy, model, Bac
     X, y = class_Xy
     backend = Backend(model, _DoubledCategorical())
 
+    # Equal to the built-in by name, but still rejected by type
+    assert backend.likelihood == "classification"
+
     with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
         backend.full(X, y)
 
