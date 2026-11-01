@@ -1,7 +1,9 @@
 name: pytest
 
 on:
+  # Run once when a PR is opened or reopened, not on every push to it.
   pull_request:
+    types: [opened, reopened]
   push:
     branches: [main]
 

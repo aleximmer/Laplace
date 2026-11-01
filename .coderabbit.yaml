@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+
+# CodeRabbit reviews a PR once, when it is opened. Later pushes are not reviewed
+# automatically: comment `@coderabbitai review` once the comments are addressed.
+# It approves the PR once its threads are resolved and the latest commit has been
+# reviewed.
+
+reviews:
+  profile: chill
+
+  auto_review:
+    enabled: true
+    auto_incremental_review: false
+    drafts: false
+
+  auto_approvals:
+    enabled: true
+
+  path_filters:
+    - "!uv.lock"
+    - "!**/*.png"
+
+  sequence_diagrams: false
+  related_issues: false
+  related_prs: false
+  suggested_labels: false
+  suggested_reviewers: false
+  estimate_code_review_effort: false
+  poem: false
+
+  tools:
+    # Ruff covers linting for this repo; these would duplicate or contradict it.
+    pylint:
+      enabled: false
+    flake8:
+      enabled: false
+
+knowledge_base:
+  web_search:
+    enabled: false
