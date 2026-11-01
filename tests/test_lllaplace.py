@@ -26,11 +26,7 @@ from tests.utils import (
     jacobians_naive,
 )
 
-
-@pytest.fixture(autouse=True)
-def run_around_tests():
-    torch.set_default_dtype(torch.float64)
-    yield
+pytestmark = pytest.mark.default_dtype(torch.float64)
 
 
 flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]

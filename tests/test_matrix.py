@@ -16,7 +16,7 @@ from tests.utils import (
     jacobians_naive,
 )
 
-torch.set_default_dtype(torch.double)
+pytestmark = pytest.mark.default_dtype(torch.float64)
 
 
 @pytest.fixture

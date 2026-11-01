@@ -25,8 +25,8 @@ from tests.utils import (
     requires_backpack,
 )
 
-torch.manual_seed(240)
-torch.set_default_dtype(torch.double)
+pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
+
 flavors = [KronLaplace, DiagLaplace, FullLaplace]
 valid_backends = [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
 

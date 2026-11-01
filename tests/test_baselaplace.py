@@ -42,8 +42,7 @@ from tests.utils import (
     requires_asdl,
 )
 
-torch.manual_seed(240)
-torch.set_default_dtype(torch.double)
+pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
 flavors = [FullLaplace, KronLaplace, DiagLaplace]
 if find_spec("asdfghjkl") is not None:

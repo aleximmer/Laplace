@@ -9,8 +9,7 @@ from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.lllaplace import FunctionalLLLaplace
 from tests.utils import AsdlGGN, BackPackGGN
 
-torch.manual_seed(240)
-torch.set_default_dtype(torch.double)
+pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
 
 @pytest.fixture

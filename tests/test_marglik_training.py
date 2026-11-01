@@ -8,8 +8,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from laplace import marglik_training
 from laplace.curvature import CurvlinopsGGN
 
-torch.manual_seed(711)
-
 
 @pytest.fixture
 def model():
