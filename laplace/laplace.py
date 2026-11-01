@@ -3,6 +3,7 @@ from __future__ import annotations
 import torch
 
 from laplace.baselaplace import ELLA, BaseLaplace, VaLLA
+from laplace.likelihoods import BaseLikelihood
 from laplace.utils.enums import (
     FunctionalApproximation,
     HessianStructure,
@@ -13,7 +14,7 @@ from laplace.utils.enums import (
 
 def Laplace(
     model: torch.nn.Module,
-    likelihood: Likelihood | str,
+    likelihood: BaseLikelihood | Likelihood | str,
     subset_of_weights: SubsetOfWeights | str = SubsetOfWeights.LAST_LAYER,
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
     *args,
@@ -27,7 +28,7 @@ def Laplace(
     ----------
     model : torch.nn.Module
         Pretrained network around which to approximate the posterior.
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+    likelihood : BaseLikelihood or Likelihood or str in {'classification', 'regression', 'reward_modeling'}
         Likelihood used for fitting. Reward modeling requires an estimator
         that supports pairwise preferences, such as ELLA or VaLLA.
     subset_of_weights : SubsetOfWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER

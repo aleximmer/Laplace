@@ -30,7 +30,13 @@ from laplace import (
 )
 from laplace.baselaplace import BaseLaplace
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
 from laplace.utils import KronDecomposed
+from laplace.utils.enums import Likelihood
 from tests.utils import (
     AsdlEF,
     AsdlGGN,
@@ -2382,3 +2388,86 @@ def test_joint_glm_samples_multidim(laplace):
 
     assert samples_multidim.shape == (n_samples, N, K)
     assert torch.allclose(samples_flat, samples_multidim)
+
+
+def _hessian_matrix(lap):
+    """Dense view of the fitted Hessian of any parametric flavor."""
+    if isinstance(lap, KronLaplace):
+        return lap.H.to_matrix()
+
+    if isinstance(lap, LowRankLaplace):
+        V, eigvals = lap.H
+        return V @ torch.diag(eigvals) @ V.T
+
+    return lap.H
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize(
+    "name, likelihood",
+    [
+        ("regression", GaussianLikelihood()),
+        ("classification", CategoricalLikelihood()),
+        ("reward_modeling", BradleyTerryLikelihood()),
+    ],
+)
+def test_likelihood_object_equivalence(
+    laplace,
+    name,
+    likelihood,
+    model,
+    reg_loader,
+    class_loader,
+    reward_model,
+    reward_loader,
+    reward_test_X,
+):
+    if name == "reward_modeling":
+        net, loader, X = reward_model, reward_loader, reward_test_X
+    else:
+        net = model
+        loader = reg_loader if name == "regression" else class_loader
+        X = next(iter(loader))[0]
+
+    la_str = laplace(net, name)
+    la_str.fit(loader)
+    la_obj = laplace(deepcopy(net), likelihood)
+    la_obj.fit(loader)
+
+    assert torch.allclose(_hessian_matrix(la_str), _hessian_matrix(la_obj))
+    assert torch.allclose(la_str.log_likelihood, la_obj.log_likelihood)
+    assert torch.allclose(
+        la_str.log_marginal_likelihood(), la_obj.log_marginal_likelihood()
+    )
+
+    # The nn predictive draws from the global generator
+    for pred_type, kwargs in [("glm", {}), ("nn", {"n_samples": 10})]:
+        torch.manual_seed(7)
+        pred_str = la_str(X, pred_type=pred_type, link_approx="mc", **kwargs)
+        torch.manual_seed(7)
+        pred_obj = la_obj(X, pred_type=pred_type, link_approx="mc", **kwargs)
+
+        pred_str = pred_str if isinstance(pred_str, tuple) else (pred_str,)
+        pred_obj = pred_obj if isinstance(pred_obj, tuple) else (pred_obj,)
+        for p_str, p_obj in zip(pred_str, pred_obj):
+            assert torch.allclose(p_str, p_obj)
+
+    torch.manual_seed(7)
+    samples_str = la_str.predictive_samples(X, pred_type="nn", n_samples=10)
+    torch.manual_seed(7)
+    samples_obj = la_obj.predictive_samples(X, pred_type="nn", n_samples=10)
+    assert torch.allclose(samples_str, samples_obj)
+
+
+@pytest.mark.parametrize("likelihood", ["regression", Likelihood.REGRESSION])
+def test_likelihood_attr_backcompat(likelihood, model):
+    lap = DiagLaplace(model, likelihood)
+
+    assert isinstance(lap.likelihood, GaussianLikelihood)
+    assert lap.likelihood == "regression"
+    assert lap.likelihood == Likelihood.REGRESSION
+
+
+def test_sigma_noise_non_gaussian_object(model):
+    with pytest.raises(ValueError, match="Sigma noise != 1"):
+        DiagLaplace(model, CategoricalLikelihood(), sigma_noise=2)
