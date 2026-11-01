@@ -118,3 +118,25 @@ def test_broken_installed_backend_is_not_skipped():
 
     assert res.returncode != 0, res.stdout
     assert "asdl.matrices" in res.stderr
+
+
+@pytest.mark.skipif(
+    find_spec("asdl") is None or find_spec("backpack") is None,
+    reason="asdl and backpack needed",
+)
+def test_dir_lists_installed_backends():
+    import laplace.curvature
+
+    assert set(laplace.curvature._OPTIONAL_BACKENDS) <= set(dir(laplace.curvature))
+
+
+def test_dir_hides_missing_backends():
+    code = """
+    import laplace.curvature
+
+    print(sorted(n for n in dir(laplace.curvature) if n.startswith("BackPack")))
+    """
+    res = _run_without(["backpack"], code)
+
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip().splitlines()[-1] == "[]"

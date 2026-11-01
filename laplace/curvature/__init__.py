@@ -2,6 +2,7 @@ import importlib
 import logging
 import sys
 from importlib.util import find_spec
+from typing import TYPE_CHECKING
 
 from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvlinops import (
@@ -10,6 +11,16 @@ from laplace.curvature.curvlinops import (
     CurvlinopsHessian,
     CurvlinopsInterface,
 )
+
+if TYPE_CHECKING:
+    # Let type checkers and IDEs see the lazily imported classes below.
+    from laplace.curvature.asdl import AsdlEF as AsdlEF
+    from laplace.curvature.asdl import AsdlGGN as AsdlGGN
+    from laplace.curvature.asdl import AsdlHessian as AsdlHessian
+    from laplace.curvature.asdl import AsdlInterface as AsdlInterface
+    from laplace.curvature.backpack import BackPackEF as BackPackEF
+    from laplace.curvature.backpack import BackPackGGN as BackPackGGN
+    from laplace.curvature.backpack import BackPackInterface as BackPackInterface
 
 # Backends from optional packages, mapped to the module defining them. They are
 # imported on first access, so `import laplace` works without the packages.
@@ -56,6 +67,18 @@ def __getattr__(name: str) -> type:
     module = importlib.import_module(_OPTIONAL_BACKENDS[name])
 
     return getattr(module, name)
+
+
+def __dir__() -> list[str]:
+    """List the module's names, including optional backends that are installed.
+
+    Returns
+    -------
+    list[str]
+        Sorted attribute names. Missing optional backends are left out, so
+        `"BackPackGGN" in dir(laplace.curvature)` checks whether it can be used.
+    """
+    return sorted(set(globals()) | set(__all__))
 
 
 def _is_optional_backend(cls: type, name: str) -> bool:
