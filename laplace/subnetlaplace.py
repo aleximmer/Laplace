@@ -121,9 +121,21 @@ class SubnetLaplace(ParametricLaplace):
 
         # check validity of subnetwork indices and pass them to backend
         self._check_subnetwork_indices(subnetwork_indices)
+        self._subnetwork_indices = subnetwork_indices
         self.backend.subnetwork_indices = subnetwork_indices
         self.n_params_subnet = len(subnetwork_indices)
         self._init_H()
+
+    @property
+    def backend(self) -> CurvatureInterface:
+        """The curvature backend, restricted to the subnetwork. It is rebuilt with
+        the subnetwork indices if the likelihood changes.
+        """
+        if self._backend is None:
+            backend = super().backend
+            backend.subnetwork_indices = getattr(self, "_subnetwork_indices", None)
+
+        return super().backend
 
     def _check_subnetwork_indices(
         self, subnetwork_indices: torch.LongTensor | None

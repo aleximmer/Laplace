@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import pickle
 import warnings
 from collections.abc import MutableMapping
 from copy import deepcopy
@@ -2471,3 +2472,96 @@ def test_likelihood_attr_backcompat(likelihood, model):
 def test_sigma_noise_non_gaussian_object(model):
     with pytest.raises(ValueError, match="Sigma noise != 1"):
         DiagLaplace(model, CategoricalLikelihood(), sigma_noise=2)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_likelihood_assignment_from_str(laplace, model, class_loader):
+    X, _ = next(iter(class_loader))
+
+    lap = laplace(model, CategoricalLikelihood())
+    lap.fit(class_loader)
+    probs = lap(X, pred_type="glm", link_approx="probit")
+
+    lap.likelihood = "regression"
+    assert type(lap.likelihood) is GaussianLikelihood
+    assert lap._backend is None
+    assert type(lap.backend.likelihood) is GaussianLikelihood
+
+    lap.likelihood = "classification"
+    assert type(lap.likelihood) is CategoricalLikelihood
+
+    torch.testing.assert_close(lap(X, pred_type="glm", link_approx="probit"), probs)
+
+
+def test_likelihood_assignment_keeps_backend_with_same_fit_likelihood(model):
+    lap = DiagLaplace(model, "reward_modeling")
+    backend = lap.backend
+
+    # Same object, so the fit likelihood does not change
+    lap.likelihood = lap.likelihood
+    assert lap._backend is backend
+
+
+def test_likelihood_assignment_keeps_subnetwork(model, class_loader):
+    indices = torch.tensor([0, 4, 11], dtype=torch.long)
+    lap = DiagSubnetLaplace(model, "regression", subnetwork_indices=indices)
+
+    lap.likelihood = "classification"
+    lap.fit(class_loader)
+
+    assert torch.equal(lap.backend.subnetwork_indices, indices)
+    assert lap.H.shape == (3,)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_legacy_pickle_with_str_likelihood(
+    laplace, likelihood, model, class_loader, reg_loader
+):
+    loader = class_loader if likelihood == "classification" else reg_loader
+    X, _ = next(iter(loader))
+
+    lap = laplace(model, likelihood)
+    lap.fit(loader)
+    pred = lap(X, pred_type="glm")
+
+    # Pickles made before likelihood objects stored plain strings, also in the
+    # cached backend
+    state = dict(vars(lap))
+    state["likelihood"] = str(state.pop("_likelihood"))
+    backend = state["_backend"]
+    backend.__dict__["likelihood"] = str(backend.__dict__.pop("_likelihood"))
+
+    legacy = laplace.__new__(laplace)
+    legacy.__setstate__(state)
+
+    assert type(legacy.likelihood) is type(lap.likelihood)
+    assert type(legacy.backend.likelihood) is type(lap.likelihood)
+
+    pred_legacy = legacy(X, pred_type="glm")
+    for a, b in zip(
+        pred if isinstance(pred, tuple) else (pred,),
+        pred_legacy if isinstance(pred_legacy, tuple) else (pred_legacy,),
+    ):
+        torch.testing.assert_close(a, b)
+
+    # And through an actual pickle round trip
+    restored = pickle.loads(pickle.dumps(legacy))
+    pred_restored = restored(X, pred_type="glm")
+    for a, b in zip(
+        pred if isinstance(pred, tuple) else (pred,),
+        pred_restored if isinstance(pred_restored, tuple) else (pred_restored,),
+    ):
+        torch.testing.assert_close(a, b)
+
+
+def test_deepcopy_and_state_dict_keep_likelihood(model, class_loader):
+    lap = DiagLaplace(model, "classification")
+    lap.fit(class_loader)
+
+    assert lap.state_dict()["likelihood"] == "classification"
+    assert "likelihood" not in vars(lap)
+
+    lap2 = deepcopy(lap)
+    assert type(lap2.likelihood) is CategoricalLikelihood
+    assert lap2.likelihood is not lap.likelihood

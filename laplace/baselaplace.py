@@ -133,7 +133,8 @@ class BaseLaplace:
         asdl_fisher_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self.model: nn.Module = model
-        self.likelihood: BaseLikelihood = get_likelihood(likelihood)
+        self._backend: CurvatureInterface | None = None
+        self.likelihood = likelihood
 
         # Only do Laplace on params that require grad
         self.params: list[torch.Tensor] = []
@@ -171,7 +172,7 @@ class BaseLaplace:
                     " are not supported."
                 )
 
-        self._backend: CurvatureInterface | None = None
+        self._backend = None
         self._backend_cls: type[CurvatureInterface] = backend
         self._backend_kwargs: dict[str, Any] = (
             dict() if backend_kwargs is None else backend_kwargs
@@ -201,6 +202,50 @@ class BaseLaplace:
     @property
     def _dtype(self) -> torch.dtype:
         return next(self.model.parameters()).dtype
+
+    @property
+    def likelihood(self) -> BaseLikelihood:
+        """The likelihood object."""
+        return self._likelihood
+
+    @likelihood.setter
+    def likelihood(self, likelihood: BaseLikelihood | Likelihood | str) -> None:
+        """Set the likelihood from an object, a `Likelihood` member, or a name.
+
+        The cached backend is rebuilt on next use if the fit likelihood changes.
+        """
+        likelihood = get_likelihood(likelihood)
+
+        if (
+            self._backend is not None
+            and self._backend.likelihood is not likelihood.fit_likelihood
+        ):
+            self._backend = None
+
+        self._likelihood = likelihood
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore a pickled instance.
+
+        Pickles made before likelihood objects existed store the likelihood as a
+        string under `likelihood`. It is turned into a likelihood object here.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            the pickled `__dict__`.
+        """
+        state = dict(state)
+
+        if "likelihood" in state:
+            state["_likelihood"] = get_likelihood(state.pop("likelihood"))
+
+        backend = state.get("_backend")
+        if backend is not None and "likelihood" in vars(backend):
+            # A cached backend from an old pickle that skipped its own `__setstate__`
+            backend.__setstate__(vars(backend))
+
+        self.__dict__.update(state)
 
     @property
     def backend(self) -> CurvatureInterface:
@@ -2791,9 +2836,11 @@ class BaseFunctionalLaplace(BaseLaplace):
             or generator.device != self._device
         ):
             raise ValueError("Invalid random generator (check type and device).")
-        likelihood = self.likelihood
-        if likelihood == Likelihood.REWARD_MODELING:
-            likelihood = Likelihood.CLASSIFICATION if fitting else Likelihood.REGRESSION
+        likelihood = (
+            self.likelihood.fit_likelihood
+            if fitting
+            else self.likelihood.predictive_likelihood
+        )
         if likelihood == Likelihood.CLASSIFICATION and link_approx == LinkApprox.MC:
             return self.predictive_samples(
                 x,
