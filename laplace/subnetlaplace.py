@@ -8,6 +8,7 @@ from torch import nn
 from laplace.baselaplace import DiagLaplace, FullLaplace, Likelihood, ParametricLaplace
 from laplace.curvature import EFInterface, GGNInterface
 from laplace.curvature.curvature import CurvatureInterface
+from laplace.likelihoods import BaseLikelihood
 
 __all__ = ["SubnetLaplace", "FullSubnetLaplace", "DiagSubnetLaplace"]
 
@@ -84,7 +85,7 @@ class SubnetLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         subnetwork_indices: torch.LongTensor,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,

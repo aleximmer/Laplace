@@ -13,6 +13,7 @@ from laplace import DiagSubnetLaplace, FullSubnetLaplace, Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
 from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
+from laplace.likelihoods import BradleyTerryLikelihood, CategoricalLikelihood
 from laplace.utils import (
     LargestMagnitudeSubnetMask,
     LargestVarianceDiagLaplaceSubnetMask,
@@ -1180,3 +1181,45 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
     assert torch.allclose(
         torch.corrcoef(flat.T), cov / torch.outer(std, std), atol=0.05
     )
+
+
+def test_subnetmask_accepts_object():
+    masks = []
+
+    for lik in ("classification", CategoricalLikelihood()):
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
+        X = torch.randn(12, 3)
+        y = torch.randint(2, (12,))
+        loader = DataLoader(TensorDataset(X, y), batch_size=4)
+
+        mask = LargestVarianceSWAGSubnetMask(
+            model, n_params_subnet=7, likelihood=lik, swag_n_snapshots=3
+        )
+        masks.append(mask.select(loader).clone())
+
+    assert torch.equal(masks[0], masks[1])
+
+
+class _CustomCategorical(CategoricalLikelihood):
+    name = "custom_categorical"
+
+
+def test_subnetmask_accepts_custom_object():
+    model = nn.Linear(3, 2)
+
+    mask = LargestVarianceSWAGSubnetMask(
+        model, 2, likelihood=_CustomCategorical(), swag_n_snapshots=2
+    )
+
+    assert isinstance(mask.likelihood, _CustomCategorical)
+
+
+def test_subnetmask_rejects_reward_modeling():
+    model = nn.Linear(3, 2)
+
+    for lik in ("reward_modeling", BradleyTerryLikelihood()):
+        with pytest.raises(
+            ValueError, match="Only available for classification and regression!"
+        ):
+            LargestVarianceSWAGSubnetMask(model, 2, likelihood=lik)
