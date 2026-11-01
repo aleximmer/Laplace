@@ -77,7 +77,7 @@ testpaths = "tests"
 markers = [
   "cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU",
   "default_dtype(dtype): torch default dtype for the test (float32 if unmarked)",
-  "seed(n): call torch.manual_seed(n) before the test",
+  "seed(n): torch RNG seed for the test (0 if unmarked)",
 ]
 
 [tool.ruff.lint]

@@ -38,3 +38,17 @@ def test_seed_marker_seeds_rng():
 def test_seed_does_not_depend_on_earlier_draws():
     expected = torch.Generator().manual_seed(240)
     assert torch.equal(torch.randn(5), torch.randn(5, generator=expected))
+
+
+def test_unmarked_test_gets_seed_zero():
+    expected = torch.Generator().manual_seed(0)
+    assert torch.equal(torch.randn(5), torch.randn(5, generator=expected))
+
+
+def test_leaking_test_reseeds_rng():
+    torch.manual_seed(1234)
+
+
+def test_next_test_still_gets_seed_zero():
+    expected = torch.Generator().manual_seed(0)
+    assert torch.equal(torch.randn(5), torch.randn(5, generator=expected))

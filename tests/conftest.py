@@ -12,8 +12,9 @@ def _isolate_global_torch_state(request: pytest.FixtureRequest) -> Iterator[None
     time affects every module after it, so results depend on file order.
 
     The dtype comes from the `default_dtype` marker and falls back to
-    `torch.float32`. A `seed` marker reseeds torch's RNG before the test;
-    unmarked tests leave the RNG alone.
+    `torch.float32`. The RNG is seeded from the `seed` marker, or with 0, so
+    each test draws the same numbers however it was selected. The RNG state
+    from before the test is restored afterwards.
 
     Parameters
     ----------
@@ -27,10 +28,9 @@ def _isolate_global_torch_state(request: pytest.FixtureRequest) -> Iterator[None
     previous_dtype = torch.get_default_dtype()
     torch.set_default_dtype(dtype_marker.args[0] if dtype_marker else torch.float32)
 
-    if seed_marker is not None:
-        torch.manual_seed(seed_marker.args[0])
-
     try:
-        yield
+        with torch.random.fork_rng():
+            torch.manual_seed(seed_marker.args[0] if seed_marker else 0)
+            yield
     finally:
         torch.set_default_dtype(previous_dtype)
