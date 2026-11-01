@@ -46,6 +46,7 @@ class CurvatureInterface:
     ----------
     likelihood : BaseLikelihood
     lossfunc : torch.nn.MSELoss or torch.nn.CrossEntropyLoss
+        the loss module built by the likelihood
     factor : float
         conversion factor between torch losses and base likelihoods
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.

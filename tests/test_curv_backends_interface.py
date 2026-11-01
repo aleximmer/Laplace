@@ -523,5 +523,21 @@ def test_backend_accepts_likelihood_object(
 
 @pytest.mark.parametrize("likelihood", [BradleyTerryLikelihood(), "reward_modeling"])
 def test_backend_rejects_unsupported_likelihood(likelihood, model):
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="support only regression and classification"):
         CurvatureInterface(model, likelihood)
+
+
+def test_backend_rejects_invalid_likelihood_name(model):
+    with pytest.raises(ValueError, match="Invalid likelihood type"):
+        CurvatureInterface(model, "foo")
+
+
+@pytest.mark.parametrize("backend_cls", [CurvlinopsGGN, AsdlGGN])
+def test_regression_rejects_target_with_fewer_dims(backend_cls):
+    # f is `(B, 1)` and y is `(B,)`: MSELoss would silently broadcast to `(B, B)`
+    torch.manual_seed(711)
+    X, y = torch.randn(10, 3), torch.randn(10)
+    net = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 1))
+
+    with pytest.raises(ValueError, match="dims but the target has"):
+        backend_cls(net, "regression").diag(X, y)
