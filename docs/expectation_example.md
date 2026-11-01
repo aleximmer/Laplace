@@ -203,10 +203,13 @@ qEI-CF batch: [0.154, 0.899, 0.686, 0.331, 0.371, 0.9]
 One point lands near \(x^*\).
 The other two go to uncertain regions: once one point covers the likely optimum, a second point there adds little.
 
-### Thompson sampling with the NN predictive
+### Thompson sampling
 
 Thompson sampling needs one coherent function, evaluated at every candidate.
-With `pred_type="nn"`, Laplace draws a set of weights from the posterior and runs the network with them, so every input sees the same function:
+Laplace gives you two ways to get one from a single weight sample \(\theta\), and they make different tradeoffs.
+
+The first plugs \(\theta\) into the network itself.
+That is what `pred_type="nn"` does, so every input sees the same function:
 
 ```python
 def thompson_sample(la, candidates, seed, chunk_size=None):
@@ -230,11 +233,49 @@ x_next = grid[g(f_sample).argmax()]
 If the candidates don't fit in one forward pass, evaluate them in chunks and give every chunk a generator with the same seed.
 Each chunk then gets the same weights.
 
-```
-Thompson x_next: [0.061, 0.0]
+The second plugs \(\theta\) into the network linearized around the MAP estimate, \(f(x) = f_{\theta_\text{MAP}}(x) + J(x)(\theta - \theta_\text{MAP})\).
+The Laplace backend already computes \(J(x)\) for the GLM predictive, so the draw takes a few lines:
+
+```python
+def linearized_thompson_sample(la, candidates, seed, chunk_size=None):
+    theta = la.sample(1, generator=torch.Generator().manual_seed(seed))[0]
+    delta = theta - la.mean
+
+    # Subnetwork Laplace samples full weight vectors, but its Jacobians only
+    # cover the subnetwork
+    if la.backend.subnetwork_indices is not None:
+        delta = delta[la.backend.subnetwork_indices]
+
+    chunks = [candidates] if chunk_size is None else candidates.split(chunk_size)
+
+    f_sample = []
+    for chunk in chunks:
+        Js, f_map = la.backend.jacobians(chunk)  # (B, K, P), (B, K)
+        f_sample.append(f_map + Js @ delta)
+
+    return torch.cat(f_sample).detach()
 ```
 
-A single posterior draw is free to favor a far corner where the network is uncertain; that is how Thompson sampling explores.
+Every chunk reuses the same \(\theta\).
+Each chunk also holds a `(chunk_size, outputs, n_params)` Jacobian in memory, so use smaller chunks for bigger networks.
+
+Both are proper Thompson samples, but of different posteriors:
+
+```
+Thompson (nn) x_next: [0.061, 0.0]
+Thompson (linearized) x_next: [0.633, 0.286]
+```
+
+The linearized draw follows the same posterior as the GLM predictive used in the rest of this page, and here it lands near \(x^*\).
+The `nn` draw skips the linearization, but the Gaussian over weights was fitted for the linearized network.
+Pushing those weights through the nonlinear network often spreads the functions out much more than the GLM predictive does [4].
+In this example the `nn` samples are far wider than the GLM predictive, which is why the draw above picks a corner.
+
+The `nn` draw has practical upsides.
+It only needs forward passes, and it works through the public API for every Laplace variant, including last-layer and subnetwork Laplace.
+The linearized draw needs a Jacobian per candidate, which costs more time and memory than a forward pass.
+The helper above works for Laplace over all weights and for subnetwork Laplace.
+With last-layer Laplace the network is linear in the sampled weights, so the two draws coincide and the `nn` draw is the one to use.
 
 ### Function-space Laplace
 
@@ -248,3 +289,5 @@ With them, both the batch utility and Thompson sampling work through the same ca
 [2] Astudillo, R. and Frazier, P. I. [Bayesian optimization of composite functions](https://proceedings.mlr.press/v97/astudillo19a.html). ICML, 2019.
 
 [3] Hernández-Lobato, J. M., Requeima, J., Pyzer-Knapp, E. O., and Aspuru-Guzik, A. [Parallel and distributed Thompson sampling for large-scale accelerated exploration of chemical space](https://proceedings.mlr.press/v70/hernandez-lobato17a.html). ICML, 2017.
+
+[4] Immer, A., Korzepa, M., and Bauer, M. [Improving predictions of Bayesian neural nets via local linearization](https://proceedings.mlr.press/v130/immer21a.html). AISTATS, 2021.

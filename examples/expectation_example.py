@@ -257,6 +257,54 @@ def thompson_sample(
     return torch.cat(f_sample)
 
 
+def linearized_thompson_sample(
+    la: BaseLaplace,
+    candidates: torch.Tensor,
+    seed: int,
+    chunk_size: int | None = None,
+) -> torch.Tensor:
+    """Evaluate one draw of the linearized network on all candidates.
+
+    The draw is `f(x) = f_MAP(x) + J(x) (theta - theta_MAP)` for a single weight
+    sample `theta`, with the same Jacobians the GLM predictive uses. It follows
+    the same posterior as the GLM predictive. Works for Laplace over all weights
+    and for subnetwork Laplace.
+
+    Parameters
+    ----------
+    la : BaseLaplace
+        fitted Laplace approximation
+    candidates : torch.Tensor
+        inputs `(n_candidates, 2)`
+    seed : int
+        seed of the weight sample
+    chunk_size : int, optional
+        number of candidates per Jacobian computation, all at once if `None`.
+        Each chunk holds a `(chunk_size, outputs, n_params)` Jacobian in memory.
+
+    Returns
+    -------
+    f_sample : torch.Tensor
+        `(n_candidates, 2)`
+    """
+    theta = la.sample(1, generator=torch.Generator().manual_seed(seed))[0]
+    delta = theta - la.mean
+
+    # Subnetwork Laplace samples full weight vectors, but its Jacobians only
+    # cover the subnetwork
+    if la.backend.subnetwork_indices is not None:
+        delta = delta[la.backend.subnetwork_indices]
+
+    chunks = [candidates] if chunk_size is None else candidates.split(chunk_size)
+
+    f_sample = []
+    for chunk in chunks:
+        Js, f_map = la.backend.jacobians(chunk)  # (B, K, P), (B, K)
+        f_sample.append(f_map + Js @ delta)
+
+    return torch.cat(f_sample).detach()
+
+
 def maximize(
     objective: Callable[[torch.Tensor], torch.Tensor],
     x0: torch.Tensor,
@@ -337,10 +385,15 @@ def main() -> None:
     x_batch = maximize(qei, torch.rand(q, 2))
     print(f"qEI-CF batch: {fmt(x_batch)}")
 
-    # Thompson sampling: one network from the posterior, evaluated on every
-    # candidate, then pick the candidate that network likes best
+    # Thompson sampling: one function from the posterior, evaluated on every
+    # candidate, then pick the candidate that function likes best. First with the
+    # sampled weights plugged into the network itself...
     f_sample = thompson_sample(la, grid, seed=0, chunk_size=500)
-    print(f"Thompson x_next: {fmt(grid[g(f_sample).argmax()])}")
+    print(f"Thompson (nn) x_next: {fmt(grid[g(f_sample).argmax()])}")
+
+    # ...then with the same weights in the linearized network
+    f_sample = linearized_thompson_sample(la, grid, seed=0, chunk_size=500)
+    print(f"Thompson (linearized) x_next: {fmt(grid[g(f_sample).argmax()])}")
 
 
 if __name__ == "__main__":

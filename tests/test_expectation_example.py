@@ -6,15 +6,18 @@ from pathlib import Path
 
 import pytest
 import torch
+from torch.utils.data import DataLoader, TensorDataset
 
 from examples.expectation_example import (
     ei_cf,
     expected_utility,
     fit_laplace,
     joint_glm_samples,
+    linearized_thompson_sample,
     thompson_sample,
 )
-from laplace import BaseLaplace
+from laplace import BaseLaplace, Laplace
+from laplace.utils import LargestMagnitudeSubnetMask
 
 
 @pytest.fixture(scope="module")
@@ -37,7 +40,8 @@ def test_example_runs() -> None:
         "EI-CF x_best:",
         "PI-CF x_best:",
         "qEI-CF batch:",
-        "Thompson x_next:",
+        "Thompson (nn) x_next:",
+        "Thompson (linearized) x_next:",
     ]:
         assert prefix in result.stdout
 
@@ -98,3 +102,54 @@ def test_expected_utility_differentiable_and_deterministic(fitted: BaseLaplace) 
     assert u.shape == (4,)
     assert torch.equal(u, expected_utility(fitted, x, utility))
     assert torch.autograd.grad(u.sum(), x)[0].abs().sum() > 0
+
+
+def test_linearized_thompson_chunking_consistent(fitted: BaseLaplace) -> None:
+    candidates = torch.rand(10, 2)
+
+    full = linearized_thompson_sample(fitted, candidates, seed=7)
+    chunked = linearized_thompson_sample(fitted, candidates, seed=7, chunk_size=3)
+
+    assert full.shape == (10, 2)
+    assert torch.allclose(full, chunked, atol=1e-6)
+
+
+def test_linearized_thompson_matches_glm_marginals(fitted: BaseLaplace) -> None:
+    x = torch.rand(3, 2)
+
+    # Across seeds, each input's samples follow the GLM marginal
+    samples = torch.stack(
+        [linearized_thompson_sample(fitted, x, seed=s) for s in range(2000)]
+    )
+    mean, var = fitted(x)
+    var = var.diagonal(dim1=-2, dim2=-1).detach()
+
+    assert torch.allclose(samples.mean(0), mean.detach(), atol=0.1 * var.sqrt().max())
+    assert torch.allclose(samples.var(0), var, rtol=0.15)
+
+
+def test_linearized_thompson_subnetwork() -> None:
+    torch.manual_seed(0)
+    X, Y = torch.rand(40, 2), torch.randn(40, 2)
+    model = torch.nn.Sequential(
+        torch.nn.Linear(2, 16), torch.nn.Tanh(), torch.nn.Linear(16, 2)
+    )
+    indices = LargestMagnitudeSubnetMask(model, n_params_subnet=20).select()
+    la = Laplace(
+        model,
+        "regression",
+        subset_of_weights="subnetwork",
+        hessian_structure="full",
+        subnetwork_indices=indices,
+    )
+    la.fit(DataLoader(TensorDataset(X, Y), batch_size=20))
+
+    x = torch.rand(3, 2)
+    samples = torch.stack(
+        [linearized_thompson_sample(la, x, seed=s) for s in range(2000)]
+    )
+    mean, var = la(x)
+    var = var.diagonal(dim1=-2, dim2=-1).detach()
+
+    assert torch.allclose(samples.mean(0), mean.detach(), atol=0.1 * var.sqrt().max())
+    assert torch.allclose(samples.var(0), var, rtol=0.15)
