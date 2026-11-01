@@ -6,6 +6,7 @@ from itertools import product
 
 import pytest
 import torch
+from torch.utils.data import DataLoader
 
 from laplace.baselaplace import FullLaplace, FunctionalLaplace
 from laplace.curvature.curvlinops import CurvlinopsGGN
@@ -13,6 +14,9 @@ from laplace.lllaplace import FullLLLaplace, FunctionalLLLaplace
 from tests.utils import (
     AsdlGGN,
     BackPackGGN,
+    ListDataset,
+    dict_data_collator,
+    requires_backpack,
     toy_classification_dataset,
     toy_model,
     toy_multivariate_regression_dataset,
@@ -139,3 +143,33 @@ def test_default_backend_is_curvlinops(laplace, passed):
     la = laplace(model, "regression", n_subset=5, **passed)
 
     assert la._backend_cls is CurvlinopsGGN
+
+
+def test_accepts_curvlinops_subclass():
+    class MyGGN(CurvlinopsGGN):
+        pass
+
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 8), torch.nn.Tanh(), torch.nn.Linear(8, 2)
+    )
+    la = FunctionalLaplace(model, "regression", n_subset=5, backend=MyGGN)
+
+    assert la._backend_cls is MyGGN
+
+
+@requires_backpack
+def test_backpack_dict_inputs_suggest_default_backend():
+    class DictModel(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = torch.nn.Linear(3, 2)
+
+        def forward(self, data):
+            return self.linear(data["input_ids"])
+
+    data = [{"input_ids": torch.randn(3), "labels": torch.randn(2)} for _ in range(8)]
+    loader = DataLoader(ListDataset(data), batch_size=4, collate_fn=dict_data_collator)
+    la = FunctionalLaplace(DictModel(), "regression", n_subset=4, backend=BackPackGGN)
+
+    with pytest.raises(ValueError, match="CurvlinopsGGN"):
+        la.fit(loader)

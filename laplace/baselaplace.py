@@ -3084,7 +3084,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         seed: int = 0,
     ):
         assert (
-            backend in (None, CurvlinopsGGN)
+            backend is None
+            or issubclass(backend, CurvlinopsGGN)
             or _is_optional_backend(backend, "BackPackGGN")
             or _is_optional_backend(backend, "AsdlGGN")
         )
@@ -3298,12 +3299,12 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         data = next(iter(train_loader))
         with torch.no_grad():
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
-                if "backpack" in self._backend_cls.__name__.lower():
+                if self._uses_backpack_backend:
                     raise ValueError(
                         "Currently BackPACK backend is not supported "
                         + "for custom models with non-tensor inputs "
-                        + "(https://github.com/pytorch/functorch/issues/159). Consider "
-                        + "using AsdlGGN backend instead."
+                        + "(https://github.com/pytorch/functorch/issues/159). Use "
+                        + "CurvlinopsGGN, the default backend, instead."
                     )
 
                 out = self.model(data)
