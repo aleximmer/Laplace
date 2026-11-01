@@ -254,13 +254,34 @@ class LLLaplace(ParametricLaplace):
         f_var = torch.diagonal(f_cov, dim1=-2, dim2=-1)
         return f_mu, f_var
 
-    def _nn_predictive_samples(
+    def _nn_functional_samples(
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         n_samples: int = 100,
         generator: torch.Generator | None = None,
         **model_kwargs,
     ) -> torch.Tensor:
+        """Sample network outputs by sampling only the last-layer weights.
+
+        The features are computed once and reused for every sample.
+
+        Parameters
+        ----------
+        X : torch.Tensor or MutableMapping
+            input data `(batch_size, input_shape)`
+
+        n_samples : int, default=100
+            number of samples
+
+        generator : torch.Generator, optional
+            random number generator to control the samples
+
+        Returns
+        -------
+        samples : torch.Tensor
+            output samples `(n_samples, batch_size, output_shape)`, before any
+            inverse-link function
+        """
         fs = list()
 
         feats = None
@@ -270,7 +291,8 @@ class LLLaplace(ParametricLaplace):
             if feats is None:
                 # Cache features at the first iteration
                 f, feats = self.model.forward_with_features(
-                    X.to(self._device), **model_kwargs
+                    X.to(self._device) if isinstance(X, torch.Tensor) else X,
+                    **model_kwargs,
                 )
             else:
                 # Used the cached features for the rest iterations
@@ -279,7 +301,17 @@ class LLLaplace(ParametricLaplace):
             fs.append(f.detach() if not self.enable_backprop else f)
 
         vector_to_parameters(self.mean, self.model.last_layer.parameters())
-        fs = torch.stack(fs)
+
+        return torch.stack(fs)
+
+    def _nn_predictive_samples(
+        self,
+        X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        n_samples: int = 100,
+        generator: torch.Generator | None = None,
+        **model_kwargs,
+    ) -> torch.Tensor:
+        fs = self._nn_functional_samples(X, n_samples, generator, **model_kwargs)
 
         if self.likelihood == Likelihood.CLASSIFICATION:
             fs = torch.softmax(fs, dim=-1)

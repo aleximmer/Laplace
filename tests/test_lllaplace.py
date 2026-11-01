@@ -553,6 +553,50 @@ def test_regression_predictive_samples(laplace, model, reg_loader):
 
 
 @pytest.mark.parametrize("laplace", flavors)
+def test_regression_nn_functional_samples(laplace, model, reg_loader):
+    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap.fit(reg_loader)
+    X, _ = reg_loader.dataset.tensors
+    f_map = lap.model(X).detach()
+
+    fsamples = lap.functional_samples(X, pred_type="nn", n_samples=7)
+    assert fsamples.shape == torch.Size([7, f_map.shape[0], f_map.shape[1]])
+
+    # In regression, the predictive samples are the functional samples
+    fsamples = lap.functional_samples(
+        X, pred_type="nn", n_samples=3, generator=torch.Generator().manual_seed(1)
+    )
+    psamples = lap.predictive_samples(
+        X, pred_type="nn", n_samples=3, generator=torch.Generator().manual_seed(1)
+    )
+    assert torch.allclose(fsamples, psamples)
+
+    # The last layer is back at the MAP estimate afterwards
+    assert torch.allclose(lap.model(X), f_map)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_classification_nn_functional_samples(laplace, model, class_loader):
+    lap = laplace(model, "classification", prior_precision=0.7)
+    lap.fit(class_loader)
+    X, _ = class_loader.dataset.tensors
+    f_map = lap.model(X).detach()
+
+    # Functional samples are logits, so they need not sum to one
+    fsamples = lap.functional_samples(X, pred_type="nn", n_samples=7)
+    assert fsamples.shape == torch.Size([7, f_map.shape[0], f_map.shape[1]])
+    assert not torch.allclose(fsamples.sum(-1), torch.ones(7, f_map.shape[0]))
+
+    psamples = lap.predictive_samples(
+        X, pred_type="nn", n_samples=3, generator=torch.Generator().manual_seed(1)
+    )
+    fsamples = lap.functional_samples(
+        X, pred_type="nn", n_samples=3, generator=torch.Generator().manual_seed(1)
+    )
+    assert torch.allclose(psamples, torch.softmax(fsamples, dim=-1))
+
+
+@pytest.mark.parametrize("laplace", flavors)
 def test_classification_predictive_samples(laplace, model, class_loader):
     lap = laplace(model, "classification", prior_precision=0.7)
     lap.fit(class_loader)
