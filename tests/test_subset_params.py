@@ -18,8 +18,8 @@ from laplace.curvature import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPack
 from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 
-torch.manual_seed(240)
-torch.set_default_dtype(torch.double)
+pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
+
 flavors = [KronLaplace, DiagLaplace, FullLaplace]
 valid_backends = [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
 

@@ -7,8 +7,8 @@ from laplace.baselaplace import DiagLaplace, FullLaplace, KronLaplace
 from laplace.laplace import Laplace
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 
-torch.manual_seed(240)
-torch.set_default_dtype(torch.double)
+pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
+
 flavors = [
     FullLaplace,
     KronLaplace,

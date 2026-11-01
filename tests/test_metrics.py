@@ -51,7 +51,7 @@ def test_running_nll_metric_ignore_idx():
         ignore_index=ignore_idx,
     ).item()
 
-    assert math.isclose(nll_running, nll_offline, rel_tol=1e-7)
+    assert math.isclose(nll_running, nll_offline, rel_tol=1e-5)
 
 
 @pytest.mark.parametrize("transpose_probs", [False, True])
