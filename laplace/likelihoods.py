@@ -81,11 +81,6 @@ class Likelihood(metaclass=_LikelihoodMeta):
     the same name. So a subclass of `CategoricalLikelihood` that keeps its name still
     equals `Likelihood.CLASSIFICATION`.
 
-    `Likelihood` used to be an enum. The built-in likelihoods are still available as
-    `Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, and
-    `Likelihood.REWARD_MODELING`, and `Likelihood("regression")` returns the built-in
-    likelihood with that name. Code written for the enum keeps working.
-
     A custom subclass can only be fit if its `name` is `"regression"` or
     `"classification"`, because the curvature backends pick their code path by name.
     FunctionalLaplace, ELLA, and VaLLA use the subclass's overrides, such as
@@ -146,7 +141,7 @@ class Likelihood(metaclass=_LikelihoodMeta):
 
     @property
     def value(self) -> str:
-        """Same as `name`. Kept from the time `Likelihood` was an enum."""
+        """Same as `name`."""
         return self.name
 
     @abstractmethod
