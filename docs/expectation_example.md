@@ -157,47 +157,34 @@ Neither reduces to per-input marginals; both need the outputs at all inputs join
 
 !!! warning
 
-    `la.functional_samples(x, pred_type="glm")` gets each input's marginal
-    right but not the correlations between inputs. It reuses the same
-    standard-normal noise for every input in `x`, so the samples are coupled in
-    a way the posterior doesn't imply. That is fine for the previous section
-    and wrong for this one. The same holds for function-space methods unless
-    you pass `joint=True` (see below).
+    The default `la.functional_samples(x)` gets each input's marginal right
+    but not the correlations between inputs. Pass `joint=True` when the
+    utility looks at several inputs.
 
-Laplace supports both cases in other ways.
+### Batch acquisition with joint samples
 
-### Batch acquisition with the joint GLM predictive
-
-For regression, `la(x, joint=True)` returns the mean and the full covariance of all outputs at all inputs, with shapes `(q * 2,)` and `(q * 2, q * 2)`, ordered input first, then output.
-Sampling from it with fixed base noise keeps the estimate smooth in \(x\), as before:
-
-```python
-def joint_glm_samples(la, x, base_noise, jitter=1e-6):
-    mean, cov = la(x, pred_type=PredType.GLM, joint=True)
-    eye = torch.eye(cov.shape[0], dtype=cov.dtype, device=cov.device)
-    scale_tril = torch.linalg.cholesky(cov + jitter * eye)
-    samples = mean + base_noise @ scale_tril.T
-    return samples.reshape(base_noise.shape[0], *x.shape[:-1], -1)  # (n_samples, q, 2)
-```
-
-The jitter keeps the Cholesky factorization from failing when two of the \(q\) inputs nearly coincide.
+With `joint=True`, `la.functional_samples` samples from the joint GLM predictive.
+That is the mean and full covariance of all outputs at all inputs, which `la(x, joint=True)` returns with shapes `(q * 2,)` and `(q * 2, q * 2)`, ordered input first, then output.
 The \(q\)-batch EI-CF scores the best of the \(q\) outcomes in each sample:
 
 ```python
 q = 3
-base_noise = torch.randn(256, q * 2, generator=torch.Generator().manual_seed(0))
 
 
 def qei(x: torch.Tensor) -> torch.Tensor:
-    f_samples = joint_glm_samples(la, x, base_noise)  # (256, q, 2)
+    f_samples = la.functional_samples(
+        x, n_samples=256, joint=True, generator=torch.Generator().manual_seed(0)
+    )  # (256, q, 2)
     return (g(f_samples).max(-1).values - best).clamp(min=0).mean()
 
 
 x_batch = maximize(qei, torch.rand(q, 2))
 ```
 
+The fixed seed keeps the estimate smooth in \(x\), as in the previous section.
+
 ```
-qEI-CF batch: [0.154, 0.899, 0.686, 0.331, 0.371, 0.9]
+qEI-CF batch: [0.152, 0.903, 0.686, 0.332, 0.371, 0.9]
 ```
 
 One point lands near \(x^*\).
@@ -259,6 +246,9 @@ def linearized_thompson_sample(la, candidates, seed, chunk_size=None):
 Every chunk reuses the same \(\theta\).
 Each chunk also holds a `(chunk_size, outputs, n_params)` Jacobian in memory, so use smaller chunks for bigger networks.
 
+When there are only a few candidates, `la.functional_samples(candidates, n_samples=1, joint=True)` also gives a linearized Thompson sample.
+Its covariance grows as `(n_candidates * outputs)²`, so for large grids use the chunked helper above.
+
 Both are proper Thompson samples, but of different posteriors:
 
 ```
@@ -279,8 +269,8 @@ With last-layer Laplace the network is linear in the sampled weights, so the two
 
 ### Function-space Laplace
 
-Function-space methods (`hessian_structure="gp"`, ELLA, and VaLLA; see the [ELLA and VaLLA example](ella_valla_example.md)) draw joint samples directly with `la.functional_samples(x, joint=True)`.
-With them, both the batch utility and Thompson sampling work through the same call as the single-input case.
+`joint=True` works the same way for every Laplace variant, including the function-space methods (`hessian_structure="gp"`, ELLA, and VaLLA; see the [ELLA and VaLLA example](ella_valla_example.md)).
+With any of them, the batch utility and Thompson sampling go through the same call as the single-input case.
 
 ## References
 
