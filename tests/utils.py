@@ -177,6 +177,10 @@ def _optional_backend(name: str) -> type[CurvatureInterface]:
         module = laplace.curvature._OPTIONAL_BACKENDS[name]
         package = laplace.curvature._OPTIONAL_PACKAGES[module]
 
+        # Installed but broken: fail loudly instead of skipping every test.
+        if find_spec(package) is not None:
+            raise
+
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             pytest.skip(f"{package} not installed")
 

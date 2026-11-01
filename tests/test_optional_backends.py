@@ -102,3 +102,19 @@ def test_is_optional_backend():
     assert _is_optional_backend(AsdlEF, "AsdlInterface")
     assert not _is_optional_backend(CurvlinopsGGN, "BackPackInterface")
     assert not _is_optional_backend(BackPackGGN, "AsdlInterface")
+
+
+@pytest.mark.skipif(find_spec("asdl") is None, reason="asdl not installed")
+def test_broken_installed_backend_is_not_skipped():
+    # asdl is installed but one of its modules fails to import, e.g. after an
+    # API change. The test helpers must raise instead of handing out a stand-in
+    # that would turn every ASDL test into a skip.
+    code = """
+    import tests.utils
+
+    print(getattr(tests.utils.AsdlGGN, "_missing_package", None))
+    """
+    res = _run_without(["asdl.matrices"], code)
+
+    assert res.returncode != 0, res.stdout
+    assert "asdl.matrices" in res.stderr
