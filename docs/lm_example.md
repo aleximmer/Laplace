@@ -18,6 +18,8 @@ See the following [explanation](huggingface_example.md).
     layouts, e.g., outputs pooled over tokens `(B, K)` or sequence-first layers `(L, B, D)`,
     use the Curvlinops backends (`CurvlinopsEF`, `CurvlinopsGGN`) instead.
 
+    The ASDL backends need the asdl extra: `pip install "laplace-torch[asdl]"`.
+
 ```python
 # `tensordict` is only needed for this toy dataset: `pip install tensordict`
 import torch

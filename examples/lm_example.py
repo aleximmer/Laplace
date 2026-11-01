@@ -1,4 +1,5 @@
 # Requires `tensordict` (not a dependency of laplace-torch): `pip install tensordict`
+# The ASDL backends need the asdl extra: `pip install "laplace-torch[asdl]"`
 import torch
 import torch.nn as nn
 from tensordict import TensorDict

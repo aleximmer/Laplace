@@ -52,7 +52,18 @@ clone the repository and install it from the checkout:
 pip install -e .
 ```
 
-Additionally, if you want to use the `asdfghjkl` backend, please install it via:
+The default backend, Curvlinops, is always installed. The ASDL and BackPACK
+backends are optional extras:
+
+```bash
+pip install "laplace-torch[asdl]"      # AsdlGGN, AsdlEF, AsdlHessian
+pip install "laplace-torch[backpack]"  # BackPackGGN, BackPackEF
+pip install "laplace-torch[all]"       # both
+```
+
+Extras can be combined, e.g. `pip install "laplace-torch[asdl,backpack]"`.
+
+The old `asdfghjkl` backend, which `LowRankLaplace` needs, is not on PyPI. Install it via:
 
 ```bash
 pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl

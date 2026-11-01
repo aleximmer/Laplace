@@ -30,7 +30,7 @@ python examples/regression_example.py
 git clone git@github.com:aleximmer/Laplace.git
 
 # Recommended to create a virtualenv before the following step
-pip install -e ".[dev]"
+pip install -e ".[dev,all]"
 
 # Run as usual, e.g.
 python examples/regression_examples.py
@@ -44,12 +44,12 @@ without an NVIDIA GPU. To get the much smaller CPU build instead (this is what C
 ```bash
 # With uv
 uv venv
-uv pip install --torch-backend cpu -e ".[dev]"
+uv pip install --torch-backend cpu -e ".[dev,all]"
 uv run --no-sync python examples/regression_example.py
 
 # With pip, install the CPU build of torch first
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[dev]"
+pip install -e ".[dev,all]"
 ```
 
 `uv.lock` pins the CUDA build of PyTorch. In the CPU-only uv setup, don't run `uv sync`,
