@@ -3,6 +3,7 @@ about the observation model: the loss, the output-space Hessian, the normalizer,
 how to sample targets.
 """
 
+import inspect
 from abc import ABC, abstractmethod
 from math import pi, sqrt
 from typing import ClassVar
@@ -32,10 +33,30 @@ class BaseLikelihood(ABC):
 
     A custom subclass can only be fit if its `name` is `"regression"` or
     `"classification"`, because the curvature backends pick their code path by name.
+    FunctionalLaplace, ELLA, and VaLLA use the subclass's overrides, such as
+    `output_hessian`. Most curvature methods of the Curvlinops, ASDL, and BackPACK
+    backends use their own loss instead, so weight-space Laplace with these backends
+    supports only the built-in likelihoods for now and raises a `ValueError` for a
+    custom one.
     """
 
     name: ClassVar[str]
     """Identifier of the likelihood, e.g. what is stored in `state_dict()`."""
+
+    def __init_subclass__(cls, **kwargs: object) -> None:
+        """Require a `name` on every concrete subclass.
+
+        Raises
+        ------
+        TypeError
+            if a subclass with no abstract members left has no `name`.
+        """
+        super().__init_subclass__(**kwargs)
+
+        if not inspect.isabstract(cls) and not isinstance(
+            getattr(cls, "name", None), str
+        ):
+            raise TypeError(f"Likelihood {cls.__name__} must define a `name`.")
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, BaseLikelihood):
@@ -150,10 +171,13 @@ class BaseLikelihood(ABC):
             number of outputs
         sigma_noise : torch.Tensor
             observation noise, ignored if the likelihood has none.
-        """
-        sigma_noise = torch.as_tensor(sigma_noise)
 
-        return torch.zeros_like(sigma_noise)
+        Returns
+        -------
+        c : torch.Tensor
+            a 0-dim zero with the dtype and device of `sigma_noise`.
+        """
+        return _zero_like(sigma_noise)
 
     @property
     def is_gaussian(self) -> bool:
@@ -200,10 +224,12 @@ class GaussianLikelihood(BaseLikelihood):
     def log_normalizer(
         self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
     ) -> torch.Tensor:
-        """`n_obs * n_outputs * log(sigma_noise * sqrt(2 pi))`."""
-        return (
-            n_obs * n_outputs * torch.log(torch.as_tensor(sigma_noise) * sqrt(2 * pi))
-        )
+        """`n_obs * n_outputs * log(sigma_noise * sqrt(2 pi))`. A float
+        `sigma_noise` gives a tensor with the default dtype.
+        """
+        sigma_noise = torch.as_tensor(sigma_noise, dtype=_float_dtype(sigma_noise))
+
+        return n_obs * n_outputs * torch.log(sigma_noise * sqrt(2 * pi))
 
     def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
         """Identity, expanded to the batch dims of `f`."""
@@ -296,7 +322,7 @@ class CategoricalLikelihood(BaseLikelihood):
         self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
     ) -> torch.Tensor:
         """Zero, since the cross-entropy is already the negative log likelihood."""
-        return torch.zeros_like(torch.as_tensor(sigma_noise))
+        return _zero_like(sigma_noise)
 
     def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
         """`diag(p) - p p^T`, where `p` is the softmax of `f`."""
@@ -387,6 +413,21 @@ class BradleyTerryLikelihood(BaseLikelihood):
     def predictive_likelihood(self) -> BaseLikelihood:
         """A `GaussianLikelihood`."""
         return self._predictive
+
+
+def _float_dtype(x: torch.Tensor | float) -> torch.dtype:
+    """Dtype of `x` if it is a floating tensor, else the default dtype."""
+    if isinstance(x, torch.Tensor) and x.is_floating_point():
+        return x.dtype
+
+    return torch.get_default_dtype()
+
+
+def _zero_like(x: torch.Tensor | float) -> torch.Tensor:
+    """0-dim zero with the floating dtype and the device of `x`."""
+    device = x.device if isinstance(x, torch.Tensor) else None
+
+    return torch.zeros((), dtype=_float_dtype(x), device=device)
 
 
 def get_likelihood(likelihood: BaseLikelihood | Likelihood | str) -> BaseLikelihood:

@@ -134,6 +134,38 @@ def test_log_normalizer():
     assert out.dtype == sigma.dtype
 
 
+@pytest.mark.parametrize("lik", [CategoricalLikelihood(), BradleyTerryLikelihood()])
+@pytest.mark.parametrize(
+    "sigma", [torch.tensor([1.0], dtype=torch.float32), torch.tensor(1.0), 1.0]
+)
+def test_log_normalizer_zero_is_scalar(lik, sigma):
+    out = lik.log_normalizer(3, 2, sigma)
+
+    assert out.shape == ()
+    assert out == 0
+
+    if isinstance(sigma, torch.Tensor):
+        assert out.dtype == sigma.dtype
+        assert out.device == sigma.device
+    else:
+        assert out.dtype == torch.get_default_dtype()
+
+
+def test_log_normalizer_gaussian_dtype():
+    lik = GaussianLikelihood()
+
+    out = lik.log_normalizer(3, 2, 0.5)
+    assert out.dtype == torch.get_default_dtype()
+    assert torch.allclose(out, torch.tensor(6 * log(0.5 * sqrt(2 * pi))))
+
+    sigma = torch.tensor(0.5, dtype=torch.float32)
+    assert lik.log_normalizer(3, 2, sigma).dtype == torch.float32
+
+    sigma = torch.tensor(0.5, requires_grad=True)
+    lik.log_normalizer(3, 2, sigma).backward()
+    assert torch.allclose(sigma.grad, torch.tensor(6 / 0.5))
+
+
 @pytest.mark.parametrize("lik", [GaussianLikelihood(), CategoricalLikelihood()])
 def test_sample_and_output_gradient(lik):
     f = torch.randn(6, 4)
@@ -189,6 +221,51 @@ def test_subclass_contract():
     f, y = torch.randn(3, 2), torch.randn(3, 2)
     assert torch.allclose(lik.loss(f, y), nn.L1Loss(reduction="sum")(f, y))
     assert lik.n_observations(f, y) == 3
+
+
+def test_concrete_subclass_requires_name():
+    with pytest.raises(TypeError, match="must define a `name`"):
+
+        class Nameless(CategoricalLikelihood):
+            name = None
+
+    class AbstractNameless(BaseLikelihood):
+        def inverse_link(self, f):
+            return f
+
+    with pytest.raises(TypeError, match="must define a `name`"):
+
+        class ConcreteNameless(AbstractNameless):
+            loss_factor = 1.0
+
+            def loss_fn(self, reduction="sum"):
+                return nn.MSELoss(reduction=reduction)
+
+            def check_targets(self, f, y):
+                return None
+
+            def output_hessian(self, f):
+                return f
+
+            def sample(self, f, generator=None):
+                return f
+
+            def output_gradient(self, f, y):
+                return f - y
+
+
+@pytest.mark.parametrize("shape", [(7, 3, 4), (50, 10)])
+def test_categorical_sample_matches_multinomial(shape):
+    f = torch.randn(*shape, dtype=torch.float64)
+
+    torch.manual_seed(42)
+    y = CategoricalLikelihood().sample(f)
+
+    torch.manual_seed(42)
+    y_ref = torch.distributions.Multinomial(logits=f).sample()
+
+    assert y.dtype == y_ref.dtype
+    assert torch.equal(y, y_ref)
 
 
 def test_reward_modeling_split():

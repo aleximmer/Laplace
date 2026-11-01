@@ -453,6 +453,29 @@ def test_reward_modeling_pair_fit_single_prediction(mapping):
     assert estimator.predictive_samples(single_input, n_samples=2).shape == (2, 2, 1)
 
 
+def test_reward_modeling_fitting_mc_uses_classification_link():
+    torch.manual_seed(10)
+    pairs = torch.randn(6, 2, 2)
+    labels = torch.randint(0, 2, (6,))
+    estimator = make_ella(RewardModel(), "reward_modeling")
+    estimator.fit(DataLoader(TensorDataset(pairs, labels), batch_size=2))
+
+    gen = torch.Generator()
+    probs = estimator(
+        pairs[:2],
+        fitting=True,
+        link_approx="mc",
+        n_samples=7,
+        generator=gen.manual_seed(3),
+    )
+    samples = estimator.predictive_samples(
+        pairs[:2], n_samples=7, generator=gen.manual_seed(3), fitting=True
+    )
+
+    torch.testing.assert_close(probs, samples.mean(dim=0))
+    torch.testing.assert_close(probs.sum(-1), torch.ones(2))
+
+
 @pytest.mark.parametrize("backend", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
 def test_ella_curvature_backends(data, backend):
     x, loader, model = data

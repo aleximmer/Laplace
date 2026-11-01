@@ -67,8 +67,8 @@ def marglik_training(
     The settings of standard training can be controlled by passing `train_loader`,
     `optimizer_cls`, `optimizer_kwargs`, `scheduler_cls`, `scheduler_kwargs`, and `n_epochs`.
     The `model` should return logits, i.e., no softmax should be applied.
-    With `likelihood=Likelihood.CLASSIFICATION` or `Likelihood.REGRESSION`, one can choose between
-    categorical likelihood (CrossEntropyLoss) and Gaussian likelihood (MSELoss).
+    `likelihood` is a name, a `Likelihood` member, or a likelihood object, e.g.
+    `CategoricalLikelihood()` (CrossEntropyLoss) or `GaussianLikelihood()` (MSELoss).
 
     As in [1], we optimize prior precision and, for regression, observation noise
     using the marginal likelihood. The prior precision structure can be chosen
