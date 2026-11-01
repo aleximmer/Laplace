@@ -76,7 +76,9 @@ class FeatureExtractor(nn.Module):
             self.set_last_layer(last_layer_name)
 
     def forward(
-        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        **model_kwargs: Any,
     ) -> torch.Tensor:
         """Forward pass. If the last layer is not known yet, it will be
         determined when this function is called for the first time.
@@ -85,17 +87,21 @@ class FeatureExtractor(nn.Module):
         ----------
         x : torch.Tensor or a dict-like object containing the input tensors
             one batch of data to use as input for the forward pass
+        **model_kwargs : Any
+            keyword arguments passed to the model's forward pass
         """
         if self.last_layer is None:
             # if this is the first forward pass and last layer is unknown
-            out = self.find_last_layer(x)
+            out = self.find_last_layer(x, **model_kwargs)
         else:
             # if last and penultimate layers are already known
-            out = self.model(x)
+            out = self.model(x, **model_kwargs)
         return out
 
     def forward_with_features(
-        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        **model_kwargs: Any,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """Forward pass which returns the output of the penultimate layer along
         with the output of the last layer. If the last layer is not known yet,
@@ -105,8 +111,10 @@ class FeatureExtractor(nn.Module):
         ----------
         x : torch.Tensor or a dict-like object containing the input tensors
             one batch of data to use as input for the forward pass
+        **model_kwargs : Any
+            keyword arguments passed to the model's forward pass
         """
-        out = self.forward(x)
+        out = self.forward(x, **model_kwargs)
         features = self._features[self._last_layer_name]
 
         if features.dim() > 2 and self.feature_reduction is not None:
@@ -207,7 +215,9 @@ class FeatureExtractor(nn.Module):
         return hook
 
     def find_last_layer(
-        self, x: torch.Tensor | MutableMapping[str, torch.Tensor | Any]
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        **model_kwargs: Any,
     ) -> torch.Tensor:
         """Automatically determines the last layer of the model with one
         forward pass. It assumes that the last layer is the same for every
@@ -220,6 +230,8 @@ class FeatureExtractor(nn.Module):
         ----------
         x : torch.Tensor or dict-like object containing the input tensors
             one batch of data to use as input for the forward pass
+        **model_kwargs : Any
+            keyword arguments passed to the model's forward pass
         """
         if self.last_layer is not None:
             raise ValueError("Last layer is already known.")
@@ -249,7 +261,7 @@ class FeatureExtractor(nn.Module):
             raise ValueError("The model only has one module.")
 
         # forward pass to find execution order
-        out = self.model(x)
+        out = self.model(x, **model_kwargs)
 
         # find the last layer, store features, return output of forward pass
         keys = list(act_out.keys())

@@ -334,7 +334,8 @@ class LLLaplace(ParametricLaplace):
             if feats is None:
                 # Cache features at the first iteration
                 logits, feats = self.model.forward_with_features(
-                    X.to(self._device), **model_kwargs
+                    X.to(self._device) if isinstance(X, torch.Tensor) else X,
+                    **model_kwargs,
                 )
             else:
                 # Used the cached features for the rest iterations

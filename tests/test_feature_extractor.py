@@ -5,6 +5,7 @@ import torchvision.models as models
 
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
+from tests.utils import ScaledModel
 
 
 class CNN(nn.Module):
@@ -201,3 +202,17 @@ def test_load_legacy_feature_extractor_state_dict(nested, known_last_layer):
     conflicting[f"{prefix}last_layer.weight"] = legacy[f"{prefix}last_layer.weight"] + 1
     with pytest.raises(RuntimeError, match="last_layer.weight"):
         wrapper.load_state_dict(conflicting, strict=True)
+
+
+def test_feature_extractor_model_kwargs():
+    X = torch.randn(10, 3)
+    fe = FeatureExtractor(ScaledModel())
+    expected = fe.model(X, scale=2.0)
+
+    # The last layer is unknown here, so this goes through `find_last_layer`
+    out, _ = fe.forward_with_features(X, scale=2.0)
+    assert torch.allclose(out, expected)
+
+    # Now the last layer is known
+    out, _ = fe.forward_with_features(X, scale=2.0)
+    assert torch.allclose(out, expected)
