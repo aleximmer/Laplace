@@ -12,7 +12,7 @@ from examples.expectation_example import (
     ei_cf,
     expected_utility,
     fit_laplace,
-    joint_glm_samples,
+    g,
     linearized_thompson_sample,
     thompson_sample,
 )
@@ -77,7 +77,9 @@ def test_joint_samples_match_marginals(fitted: BaseLaplace) -> None:
     torch.manual_seed(0)
     x = torch.rand(3, 2)
 
-    samples = joint_glm_samples(fitted, x, torch.randn(20000, 6)).detach()
+    samples = fitted.functional_samples(
+        x, n_samples=20000, joint=True, generator=torch.Generator().manual_seed(0)
+    ).detach()
     mean, var = fitted(x)
     var = var.diagonal(dim1=-2, dim2=-1).detach()
 
@@ -95,8 +97,28 @@ def test_joint_samples_match_marginals(fitted: BaseLaplace) -> None:
 
 
 def test_joint_samples_duplicate_points_no_error(fitted: BaseLaplace) -> None:
-    x = torch.rand(1, 2).repeat(3, 1)  # Singular joint covariance without jitter
-    assert joint_glm_samples(fitted, x, torch.randn(8, 6)).shape == (8, 3, 2)
+    x = torch.rand(1, 2).repeat(3, 1)  # Singular joint covariance
+    samples = fitted.functional_samples(
+        x, n_samples=8, joint=True, generator=torch.Generator().manual_seed(0)
+    )
+
+    assert samples.shape == (8, 3, 2)
+    assert torch.isfinite(samples).all()
+
+
+def test_qei_differentiable_and_deterministic(fitted: BaseLaplace) -> None:
+    x = torch.rand(3, 2, requires_grad=True)
+
+    def qei(x: torch.Tensor) -> torch.Tensor:
+        f_samples = fitted.functional_samples(
+            x, n_samples=256, joint=True, generator=torch.Generator().manual_seed(0)
+        )
+        return (g(f_samples).max(-1).values - (-1.0)).clamp(min=0).mean()
+
+    value = qei(x)
+
+    assert torch.equal(value, qei(x))
+    assert torch.autograd.grad(value, x)[0].abs().sum() > 0
 
 
 def test_expected_utility_differentiable_and_deterministic(fitted: BaseLaplace) -> None:

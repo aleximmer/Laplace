@@ -981,9 +981,11 @@ class BaseLaplace:
         n_samples: int = 1,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
+        joint: bool = False,
     ) -> torch.Tensor:
         """Sample from the functional posterior on input data `x`.
-        Can be used, for example, for Thompson sampling.
+        Pass `joint=True` for Thompson sampling or other uses that need
+        samples consistent across inputs.
 
         Parameters
         ----------
@@ -1002,6 +1004,16 @@ class BaseLaplace:
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
+
+        joint : bool, default=False
+            whether to sample all inputs in `x` jointly. With `joint=False`, each
+            input's marginal is correct but the samples ignore the correlation
+            between inputs. Use `joint=True` for Thompson sampling or batch
+            acquisition functions such as qEI. The joint covariance has
+            `(batch_size * outputs)**2` entries, so memory grows quadratically
+            with the batch. Extra batch dimensions are flattened into
+            `batch_size`. Ignored when `pred_type='nn'`, since one weight sample
+            already gives one function over all inputs.
 
         Returns
         -------
@@ -1093,10 +1105,11 @@ class BaseLaplace:
             f_mu, f_var, n_samples, diagonal_output, generator
         )
 
-        if self.likelihood == Likelihood.REGRESSION:
-            return f_samples
-        else:
+        # Reward models predict rewards, which are regression outputs
+        if self.likelihood == Likelihood.CLASSIFICATION:
             return torch.softmax(f_samples, dim=-1)
+        else:
+            return f_samples
 
 
 class ParametricLaplace(BaseLaplace):
@@ -1556,10 +1569,11 @@ class ParametricLaplace(BaseLaplace):
         n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
+        joint: bool = False,
     ) -> torch.Tensor:
         """Sample from the function-space posterior on input data `x`.
-        Can be used, for example, for Thompson sampling or to compute an arbitrary
-        expectation.
+        Can be used, for example, to compute an arbitrary expectation, or with
+        `joint=True` for Thompson sampling.
 
         Parameters
         ----------
@@ -1581,6 +1595,16 @@ class ParametricLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
 
+        joint : bool, default=False
+            whether to sample all inputs in `x` jointly. With `joint=False`, each
+            input's marginal is correct but the samples ignore the correlation
+            between inputs. Use `joint=True` for Thompson sampling or batch
+            acquisition functions such as qEI. The joint covariance has
+            `(batch_size * outputs)**2` entries, so memory grows quadratically
+            with the batch. Extra batch dimensions are flattened into
+            `batch_size`. Ignored when `pred_type='nn'`, since one weight sample
+            already gives one function over all inputs.
+
         Returns
         -------
         samples : torch.Tensor
@@ -1589,7 +1613,23 @@ class ParametricLaplace(BaseLaplace):
         if pred_type not in PredType.__members__.values():
             raise ValueError("Only glm and nn supported as prediction types.")
 
-        if pred_type == PredType.GLM:
+        if pred_type == PredType.GLM and joint:
+            f_mu, f_cov = self._glm_predictive_distribution(x, joint=True)
+
+            # Reward models are fitted on pairs but predict one reward per item
+            n_outputs = (
+                1 if self.likelihood == Likelihood.REWARD_MODELING else self.n_outputs
+            )
+
+            if diagonal_output:
+                # Keep the covariance between inputs, drop it between outputs
+                output_ids = torch.arange(f_mu.numel(), device=f_mu.device)
+                output_ids = output_ids % n_outputs
+                f_cov = f_cov * (output_ids[:, None] == output_ids[None, :])
+
+            samples = draw_gaussian(f_mu, f_cov, n_samples, generator)
+            return samples.reshape(n_samples, -1, n_outputs)
+        elif pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(x)
             return self._glm_functional_samples(
                 f_mu, f_var, n_samples, diagonal_output, generator
@@ -1604,6 +1644,7 @@ class ParametricLaplace(BaseLaplace):
         n_samples: int = 100,
         diagonal_output: bool = False,
         generator: torch.Generator | None = None,
+        joint: bool = False,
     ) -> torch.Tensor:
         """Sample from the posterior predictive on input data `x`. I.e., the respective
         inverse-link function (e.g. softmax) is applied on top of the functional
@@ -1629,6 +1670,16 @@ class ParametricLaplace(BaseLaplace):
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used)
 
+        joint : bool, default=False
+            whether to sample all inputs in `x` jointly. With `joint=False`, each
+            input's marginal is correct but the samples ignore the correlation
+            between inputs. Use `joint=True` for Thompson sampling or batch
+            acquisition functions such as qEI. The joint covariance has
+            `(batch_size * outputs)**2` entries, so memory grows quadratically
+            with the batch. Extra batch dimensions are flattened into
+            `batch_size`. Ignored when `pred_type='nn'`, since one weight sample
+            already gives one function over all inputs.
+
         Returns
         -------
         samples : torch.Tensor
@@ -1637,7 +1688,16 @@ class ParametricLaplace(BaseLaplace):
         if pred_type not in PredType.__members__.values():
             raise ValueError("Only glm and nn supported as prediction types.")
 
-        if pred_type == PredType.GLM:
+        if pred_type == PredType.GLM and joint:
+            f_samples = self.functional_samples(
+                x, pred_type, n_samples, diagonal_output, generator, joint=True
+            )
+
+            if self.likelihood == Likelihood.CLASSIFICATION:
+                return torch.softmax(f_samples, dim=-1)
+            else:
+                return f_samples
+        elif pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(x)
             return self._glm_predictive_samples(
                 f_mu, f_var, n_samples, diagonal_output, generator

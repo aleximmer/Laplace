@@ -185,39 +185,6 @@ def expected_utility(
     return utility(f_samples).mean(0)
 
 
-def joint_glm_samples(
-    la: BaseLaplace,
-    x: torch.Tensor,
-    base_noise: torch.Tensor,
-    jitter: float = 1e-6,
-) -> torch.Tensor:
-    """Draw samples of the outputs at all inputs jointly from the GLM predictive.
-
-    Parameters
-    ----------
-    la : BaseLaplace
-        fitted Laplace approximation (regression)
-    x : torch.Tensor
-        inputs `(q, 2)`
-    base_noise : torch.Tensor
-        standard normal noise `(n_samples, q * 2)`, kept fixed while optimizing
-    jitter : float, default=1e-6
-        added to the diagonal so the Cholesky factorization works even when
-        inputs nearly coincide
-
-    Returns
-    -------
-    samples : torch.Tensor
-        `(n_samples, q, 2)`
-    """
-    mean, cov = la(x, pred_type=PredType.GLM, joint=True)  # (q*2,), (q*2, q*2)
-    eye = torch.eye(cov.shape[0], dtype=cov.dtype, device=cov.device)
-    scale_tril = torch.linalg.cholesky(cov + jitter * eye)
-    samples = mean + base_noise @ scale_tril.T
-
-    return samples.reshape(base_noise.shape[0], *x.shape[:-1], -1)
-
-
 def thompson_sample(
     la: BaseLaplace,
     candidates: torch.Tensor,
@@ -376,10 +343,11 @@ def main() -> None:
     # Utilities that look at several inputs: q-batch EI needs the outputs at
     # all q inputs jointly, so sample from the joint GLM predictive
     q = 3
-    base_noise = torch.randn(256, q * 2, generator=torch.Generator().manual_seed(0))
 
     def qei(x: torch.Tensor) -> torch.Tensor:
-        f_samples = joint_glm_samples(la, x, base_noise)  # (256, q, 2)
+        f_samples = la.functional_samples(
+            x, n_samples=256, joint=True, generator=torch.Generator().manual_seed(0)
+        )  # (256, q, 2)
         return (g(f_samples).max(-1).values - best).clamp(min=0).mean()
 
     x_batch = maximize(qei, torch.rand(q, 2))
