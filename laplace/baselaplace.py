@@ -19,9 +19,8 @@ from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
 
+from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
-from laplace.curvature.asdl import AsdlGGN, AsdlInterface
-from laplace.curvature.backpack import BackPackGGN, BackPackInterface
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.utils import SoDSampler
@@ -163,8 +162,9 @@ class BaseLaplace:
         if backend is None:
             backend = CurvlinopsGGN
         else:
-            if self.is_subset_params and issubclass(
-                backend, (BackPackInterface, AsdfghjklInterface)
+            if self.is_subset_params and (
+                issubclass(backend, AsdfghjklInterface)
+                or _is_optional_backend(backend, "BackPackInterface")
             ):
                 raise ValueError(
                     "If some grad are switched off, the BackPACK and Asdfghjkl backends"
@@ -2614,12 +2614,12 @@ class BaseFunctionalLaplace(BaseLaplace):
     @property
     def _uses_backpack_backend(self) -> bool:
         """Whether the curvature backend extends modules using BackPACK."""
-        return issubclass(self._backend_cls, BackPackInterface)
+        return _is_optional_backend(self._backend_cls, "BackPackInterface")
 
     @property
     def _uses_asdl_backend(self) -> bool:
         """Whether the curvature backend computes Jacobians using ASDL."""
-        return issubclass(self._backend_cls, AsdlInterface)
+        return _is_optional_backend(self._backend_cls, "AsdlInterface")
 
     def _glm_predictive_distribution(
         self, x: torch.Tensor | MutableMapping, joint: bool = False
@@ -3083,7 +3083,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         independent_outputs: bool = False,
         seed: int = 0,
     ):
-        assert backend in [None, BackPackGGN, AsdlGGN, CurvlinopsGGN]
+        assert (
+            backend in (None, CurvlinopsGGN)
+            or _is_optional_backend(backend, "BackPackGGN")
+            or _is_optional_backend(backend, "AsdlGGN")
+        )
         self._check_prior_precision(prior_precision)
         super().__init__(
             model,

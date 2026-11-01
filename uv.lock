@@ -1024,8 +1024,6 @@ name = "laplace-torch"
 version = "0.4"
 source = { editable = "." }
 dependencies = [
-    { name = "asdfghjkl" },
-    { name = "backpack-for-pytorch" },
     { name = "curvlinops-for-pytorch" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -1039,6 +1037,16 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "asdfghjkl" },
+    { name = "backpack-for-pytorch" },
+]
+asdl = [
+    { name = "asdfghjkl" },
+]
+backpack = [
+    { name = "backpack-for-pytorch" },
+]
 dev = [
     { name = "coveralls" },
     { name = "pytest" },
@@ -1063,10 +1071,11 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asdfghjkl", specifier = "==0.1a5" },
-    { name = "backpack-for-pytorch" },
+    { name = "asdfghjkl", marker = "extra == 'asdl'", specifier = "==0.1a5" },
+    { name = "backpack-for-pytorch", marker = "extra == 'backpack'" },
     { name = "coveralls", marker = "extra == 'dev'" },
     { name = "curvlinops-for-pytorch", specifier = "==3.0.1" },
+    { name = "laplace-torch", extras = ["asdl", "backpack"], marker = "extra == 'all'" },
     { name = "numpy" },
     { name = "opt-einsum" },
     { name = "pytest", marker = "extra == 'dev'" },
@@ -1081,7 +1090,7 @@ requires-dist = [
     { name = "torchvision", specifier = ">=0.15" },
     { name = "tqdm", specifier = ">=4.66" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["asdl", "backpack", "all", "dev"]
 
 [package.metadata.requires-dev]
 docs = [
