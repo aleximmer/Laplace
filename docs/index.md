@@ -113,6 +113,8 @@ The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `
 The two forms are interchangeable, so `likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
 To define your own, subclass `BaseLikelihood`; its docstring lists the methods you need to implement.
 A custom likelihood can only be fit if its `name` is `"regression"` or `"classification"`, since the curvature backends choose their code path by name.
+FunctionalLaplace, ELLA, and VaLLA use the subclass's overrides, such as `output_hessian`.
+Most curvature methods of the Curvlinops, ASDL, and BackPACK backends use their own loss instead, so weight-space Laplace with these backends supports only the built-in likelihoods for now and raises a `ValueError` for a custom one.
 
 ```python
 from laplace import CategoricalLikelihood, Laplace

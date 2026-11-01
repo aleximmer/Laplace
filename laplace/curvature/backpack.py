@@ -285,6 +285,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
@@ -306,6 +308,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        self._check_builtin_likelihood()
+
         context = KFAC if self.stochastic else KFLR
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
@@ -329,6 +333,8 @@ class BackPackEF(BackPackInterface, EFInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))

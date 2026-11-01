@@ -541,3 +541,58 @@ def test_regression_rejects_target_with_fewer_dims(backend_cls):
 
     with pytest.raises(ValueError, match="dims but the target has"):
         backend_cls(net, "regression").diag(X, y)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+@pytest.mark.parametrize(
+    "name,likelihood",
+    [
+        ("regression", GaussianLikelihood()),
+        ("classification", CategoricalLikelihood()),
+    ],
+)
+def test_mc_fisher_str_vs_object(structure, name, likelihood, model, class_Xy, reg_Xy):
+    # `stochastic=True` samples targets in `_get_mc_functional_fisher`
+    X, y = reg_Xy if name == "regression" else class_Xy
+
+    outs = []
+    for lik in (name, likelihood):
+        backend = GGNInterface(model, lik, stochastic=True, num_samples=3)
+
+        torch.manual_seed(0)
+        outs.append(getattr(backend, structure)(X, y))
+
+    (loss_str, H_str), (loss_obj, H_obj) = outs
+
+    assert torch.allclose(loss_str, loss_obj)
+    assert torch.equal(H_str, H_obj)
+
+
+def test_backend_likelihood_setter_coerces_str(model):
+    backend = CurvlinopsGGN(model, "regression")
+
+    backend.likelihood = "classification"
+    assert type(backend.likelihood) is CategoricalLikelihood
+
+    with pytest.raises(ValueError, match="support only regression and classification"):
+        backend.likelihood = "reward_modeling"
+
+
+def test_backend_legacy_pickle_state(model, class_Xy):
+    X, y = class_Xy
+    backend = CurvlinopsGGN(model, "classification")
+    loss, H = backend.diag(X, y)
+
+    # Pickles made before likelihood objects stored a plain string
+    state = dict(vars(backend))
+    state["likelihood"] = str(state.pop("_likelihood"))
+
+    legacy = CurvlinopsGGN.__new__(CurvlinopsGGN)
+    legacy.__setstate__(state)
+
+    assert type(legacy.likelihood) is CategoricalLikelihood
+    assert "likelihood" not in vars(legacy)
+
+    loss_legacy, H_legacy = legacy.diag(X, y)
+    assert torch.allclose(loss, loss_legacy)
+    assert torch.allclose(H, H_legacy)

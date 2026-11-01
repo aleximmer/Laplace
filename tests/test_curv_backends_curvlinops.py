@@ -4,6 +4,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
+from laplace.likelihoods import CategoricalLikelihood
 from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackGGN
 
 
@@ -318,3 +319,43 @@ def test_kron_normalization_ef_class(class_Xy, model):
     loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
+
+
+class _DoubledCategorical(CategoricalLikelihood):
+    """Categorical likelihood with twice the output Hessian."""
+
+    def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
+        return 2 * super().output_hessian(f)
+
+
+@pytest.mark.parametrize("Backend", [CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian])
+def test_custom_likelihood_rejected_by_curvlinops_curvature(class_Xy, model, Backend):
+    X, y = class_Xy
+    backend = Backend(model, _DoubledCategorical())
+
+    with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
+        backend.full(X, y)
+
+    if Backend is not CurvlinopsHessian:
+        with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
+            backend.kron(X, y, N=len(X))
+
+
+def test_custom_likelihood_used_by_curvlinops_ggn_diag(class_Xy, model):
+    # The diagonal GGN goes through `GGNInterface`, which uses `output_hessian`
+    X, y = class_Xy
+
+    _, diag = CurvlinopsGGN(model, "classification").diag(X, y)
+    _, diag_doubled = CurvlinopsGGN(model, _DoubledCategorical()).diag(X, y)
+
+    assert torch.allclose(diag_doubled, 2 * diag)
+
+
+def test_custom_likelihood_jacobians_curvlinops(class_Xy, model):
+    X, _ = class_Xy
+
+    Js, f = CurvlinopsGGN(model, "classification").jacobians(X)
+    Js_doubled, f_doubled = CurvlinopsGGN(model, _DoubledCategorical()).jacobians(X)
+
+    assert torch.allclose(Js, Js_doubled)
+    assert torch.allclose(f, f_doubled)

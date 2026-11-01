@@ -9,6 +9,8 @@ from torch.utils._pytree import tree_map
 from laplace.likelihoods import (
     BaseLikelihood,
     BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
     get_likelihood,
 )
 from laplace.utils import Kron, Likelihood
@@ -61,15 +63,7 @@ class CurvatureInterface:
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
-        self.likelihood: BaseLikelihood = get_likelihood(likelihood)
-        if self.likelihood.name not in (
-            Likelihood.REGRESSION.value,
-            Likelihood.CLASSIFICATION.value,
-        ) or isinstance(self.likelihood, BradleyTerryLikelihood):
-            raise ValueError(
-                f"Curvature backends support only regression and classification, "
-                f"got {self.likelihood}. Pass `fit_likelihood` for reward modeling."
-            )
+        self.likelihood = likelihood
 
         self.model: nn.Module = model
         self.last_layer: bool = last_layer
@@ -93,8 +87,73 @@ class CurvatureInterface:
         }
 
     @property
+    def likelihood(self) -> BaseLikelihood:
+        """The likelihood object."""
+        return self._likelihood
+
+    @likelihood.setter
+    def likelihood(self, likelihood: BaseLikelihood | Likelihood | str) -> None:
+        """Set the likelihood from an object, a `Likelihood` member, or a name.
+
+        Raises
+        ------
+        ValueError
+            if the likelihood is neither regression nor classification.
+        """
+        likelihood = get_likelihood(likelihood)
+
+        if likelihood.name not in (
+            Likelihood.REGRESSION.value,
+            Likelihood.CLASSIFICATION.value,
+        ) or isinstance(likelihood, BradleyTerryLikelihood):
+            raise ValueError(
+                f"Curvature backends support only regression and classification, "
+                f"got {likelihood}. Pass `fit_likelihood` for reward modeling."
+            )
+
+        self._likelihood = likelihood
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore a pickled backend.
+
+        Pickles made before likelihood objects existed store the likelihood as a
+        string under `likelihood`. It is turned into a likelihood object here.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            the pickled `__dict__`.
+        """
+        state = dict(state)
+
+        if "likelihood" in state:
+            state["_likelihood"] = get_likelihood(state.pop("likelihood"))
+
+        self.__dict__.pop("likelihood", None)
+        self.__dict__.update(state)
+
+    @property
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
+
+    def _check_builtin_likelihood(self) -> None:
+        """Make sure the likelihood is a built-in one.
+
+        Backends that compute the curvature from their own loss would silently
+        ignore what a custom likelihood overrides, e.g. `output_hessian`.
+
+        Raises
+        ------
+        ValueError
+            if the likelihood is not exactly a `GaussianLikelihood` or a
+            `CategoricalLikelihood`.
+        """
+        if type(self.likelihood) not in (GaussianLikelihood, CategoricalLikelihood):
+            raise ValueError(
+                f"Custom likelihoods aren't supported by the curvature of "
+                f"{type(self).__name__} yet, got {self.likelihood!r}. Use "
+                f"GaussianLikelihood or CategoricalLikelihood."
+            )
 
     def _check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
         """Check that the targets `y` match the outputs `f` with the likelihood.

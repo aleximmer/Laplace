@@ -112,6 +112,8 @@ class CurvlinopsInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        self._check_builtin_likelihood()
+
         if isinstance(x, (dict, MutableMapping)):
             kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
@@ -153,6 +155,8 @@ class CurvlinopsInterface(CurvatureInterface):
         # Fallback to torch.func backend for SubnetLaplace
         if self.subnetwork_indices is not None:
             return super().full(x, y, **kwargs)
+
+        self._check_builtin_likelihood()
 
         curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != "N"}
         if isinstance(x, (dict, MutableMapping)):

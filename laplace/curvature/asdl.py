@@ -258,6 +258,8 @@ class AsdlInterface(CurvatureInterface):
             # outputs. With multidim outputs, use the Jacobian-based GGN instead.
             return super(AsdlInterface, self).diag(x, y, **kwargs)
 
+        self._check_builtin_likelihood()
+
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
 
@@ -423,6 +425,8 @@ class AsdlInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        self._check_builtin_likelihood()
+
         if self.likelihood == Likelihood.REGRESSION and y.ndim > 2:
             raise NotImplementedError(
                 "Kronecker-factored curvature with ASDL does not support regression "
@@ -498,6 +502,8 @@ class AsdlHessian(AsdlInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
 
