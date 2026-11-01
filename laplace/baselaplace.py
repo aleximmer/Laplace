@@ -2956,11 +2956,13 @@ class BaseFunctionalLaplace(BaseLaplace):
         samples = self.functional_samples(
             x, pred_type, n_samples, diagonal_output, generator, joint
         )
-        if self.likelihood == Likelihood.CLASSIFICATION or (
-            self.likelihood == Likelihood.REWARD_MODELING and fitting
-        ):
-            return samples.softmax(dim=-1)
-        return samples
+        likelihood = (
+            self.likelihood.fit_likelihood
+            if fitting
+            else self.likelihood.predictive_likelihood
+        )
+
+        return likelihood.inverse_link(samples)
 
 
 class FunctionalLaplace(BaseFunctionalLaplace):
@@ -3356,19 +3358,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                 )
 
             with torch.no_grad():
-                loss_batch = self.backend.factor * self.backend.lossfunc(f_batch, y)
-
-            if self.likelihood == Likelihood.REGRESSION:
-                b, C = f_batch.shape
-                lambdas_batch = torch.unsqueeze(
-                    torch.eye(C, device=self._device, dtype=self._dtype), 0
-                ).repeat(b, 1, 1)
-            else:
-                # second derivative of log lik is diag(p) - pp^T
-                ps = torch.softmax(f_batch, dim=-1)
-                lambdas_batch = torch.diag_embed(ps) - torch.einsum(
-                    "mk,mc->mck", ps, ps
+                loss_batch = self.backend.factor * self.likelihood.fit_likelihood.loss(
+                    f_batch, y
                 )
+
+            lambdas_batch = self.likelihood.fit_likelihood.output_hessian(f_batch)
 
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
@@ -4514,10 +4508,7 @@ class ELLA(BaseFunctionalLaplace):
                     "bck,bcl->kl", features, features
                 ).detach()
             else:
-                probs = output.softmax(dim=-1)
-                hessian = torch.diag_embed(probs) - probs.unsqueeze(
-                    -1
-                ) * probs.unsqueeze(-2)
+                hessian = self.likelihood.fit_likelihood.output_hessian(output)
                 self.feature_gram += torch.einsum(
                     "bck,bcd,bdl->kl", features, hessian, features
                 ).detach()

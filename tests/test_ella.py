@@ -15,6 +15,11 @@ from torch.utils.data import (
 
 from laplace import Laplace
 from laplace.curvature import CurvlinopsGGN
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
 from tests.utils import AsdlGGN, BackPackGGN, requires_backpack
 
 torch.set_num_threads(1)
@@ -869,3 +874,84 @@ def test_seeded_ella_map_mean_reference():
     mean, _ = estimator.predictive_moments(inputs[:2])
     expected = torch.tensor([[0.2, -0.3], [0.6, -0.4]])
     torch.testing.assert_close(mean, expected)
+
+
+class DoubledCategorical(CategoricalLikelihood):
+    """Categorical likelihood with a doubled output Hessian."""
+
+    def output_hessian(self, f):
+        return 2 * super().output_hessian(f)
+
+
+@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+def test_ella_likelihood_object_equivalence(data, likelihood):
+    x, loader, model = data
+    if likelihood == "regression":
+        model = torch.nn.Sequential(torch.nn.Linear(2, 1))
+        loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
+        as_object = GaussianLikelihood()
+    else:
+        as_object = CategoricalLikelihood()
+
+    by_name = make_ella(deepcopy(model), likelihood)
+    by_object = make_ella(deepcopy(model), as_object)
+    by_name.fit(loader)
+    by_object.fit(loader)
+
+    mean_name, cov_name = by_name.predictive_moments(x)
+    mean_object, cov_object = by_object.predictive_moments(x)
+
+    torch.testing.assert_close(mean_name, mean_object)
+    torch.testing.assert_close(cov_name, cov_object)
+    torch.testing.assert_close(by_name(x), by_object(x))
+
+
+def test_ella_reward_likelihood_object_equivalence():
+    torch.manual_seed(10)
+    pairs = torch.randn(6, 2, 2)
+    labels = torch.randint(0, 2, (6,))
+    loader = DataLoader(TensorDataset(pairs, labels), batch_size=2)
+    model = RewardModel()
+
+    by_name = make_ella(deepcopy(model), "reward_modeling")
+    by_object = make_ella(deepcopy(model), BradleyTerryLikelihood())
+    by_name.fit(loader)
+    by_object.fit(loader)
+
+    mean_name, cov_name = by_name(pairs[:2, 0])
+    mean_object, cov_object = by_object(pairs[:2, 0])
+
+    torch.testing.assert_close(mean_name, mean_object)
+    torch.testing.assert_close(cov_name, cov_object)
+    torch.testing.assert_close(
+        by_name(pairs[:2], fitting=True), by_object(pairs[:2], fitting=True)
+    )
+
+
+def test_ella_uses_likelihood_output_hessian(data):
+    x, loader, model = data
+    default = make_ella(deepcopy(model), "classification")
+    doubled = make_ella(deepcopy(model), DoubledCategorical())
+    default.fit(loader)
+    doubled.fit(loader)
+
+    assert not torch.allclose(default.feature_gram, doubled.feature_gram)
+
+
+@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+def test_ella_checkpoint_likelihood_is_str(data, likelihood):
+    x, loader, model = data
+    if likelihood == "regression":
+        model = torch.nn.Sequential(torch.nn.Linear(2, 1))
+        loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
+
+    estimator = make_ella(model, likelihood)
+    estimator.fit(loader)
+    state = estimator.state_dict()
+
+    assert type(state["likelihood"]) is str
+
+    restored = make_ella(deepcopy(model), likelihood)
+    restored.load_state_dict(state)
+
+    assert restored.likelihood == likelihood
