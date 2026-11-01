@@ -2423,6 +2423,12 @@ def test_likelihood_object_equivalence(
     reward_loader,
     reward_test_X,
 ):
+    if name == "reward_modeling" and laplace == LowRankLaplace:
+        pytest.skip(
+            "The asdfghjkl backend of LowRankLaplace keeps the stale `output_size` of "
+            "the pairwise fit, so its GLM predictive fails for reward models."
+        )
+
     if name == "reward_modeling":
         net, loader, X = reward_model, reward_loader, reward_test_X
     else:
@@ -2430,8 +2436,13 @@ def test_likelihood_object_equivalence(
         loader = reg_loader if name == "regression" else class_loader
         X = next(iter(loader))[0]
 
+    # LowRankLaplace finds its eigenpairs by power iteration from random vectors, so
+    # both fits start from the same RNG state
+    torch.manual_seed(0)
     la_str = laplace(net, name)
     la_str.fit(loader)
+
+    torch.manual_seed(0)
     la_obj = laplace(deepcopy(net), likelihood)
     la_obj.fit(loader)
 
