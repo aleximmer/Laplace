@@ -64,6 +64,7 @@ dev = [
 [dependency-groups]
 docs = [
   "black",
+  "griffe-inherited-docstrings==1.1.4",
   "matplotlib",
   "mkdocs == 1.6.1",
   "mkdocs-material == 9.7.7",

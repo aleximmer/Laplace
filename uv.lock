@@ -838,6 +838,18 @@ wheels = [
 ]
 
 [[package]]
+name = "griffe-inherited-docstrings"
+version = "1.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "griffelib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/61/1dd4a7c59618c5e9ee0f61eb9fb934ba11163fa66932c8e2cc99d74f3d7b/griffe_inherited_docstrings-1.1.4.tar.gz", hash = "sha256:ac98890a4505d986254302325959de6c82716968ec499aca009cb91c1d75eecb", size = 32495, upload-time = "2026-10-06T09:07:03.147Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/35/364ed24b4cba404a6f02998b381c872f99480a26f0c57687537578d4b5ad/griffe_inherited_docstrings-1.1.4-py3-none-any.whl", hash = "sha256:6c813c567f6f7396d6e1a78575fb7ad0d5b472fc02c1b782f830fcf26ab7254d", size = 10888, upload-time = "2026-10-06T09:07:02.095Z" },
+]
+
+[[package]]
 name = "griffecli"
 version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1061,6 +1073,7 @@ dev = [
 [package.dev-dependencies]
 docs = [
     { name = "black" },
+    { name = "griffe-inherited-docstrings" },
     { name = "matplotlib" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
@@ -1095,6 +1108,7 @@ provides-extras = ["asdl", "backpack", "all", "dev"]
 [package.metadata.requires-dev]
 docs = [
     { name = "black" },
+    { name = "griffe-inherited-docstrings", specifier = "==1.1.4" },
     { name = "matplotlib" },
     { name = "mkdocs", specifier = "==1.6.1" },
     { name = "mkdocs-material", specifier = "==9.7.7" },

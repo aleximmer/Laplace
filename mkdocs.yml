@@ -108,6 +108,9 @@ plugins:
           options:
             docstring_style: numpy
             docstring_section_style: list
+            # Overrides without a docstring show the base class's
+            extensions:
+              - griffe_inherited_docstrings
             docstring_options:
               ignore_init_summary: true
             filters: []

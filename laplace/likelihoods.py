@@ -265,55 +265,55 @@ class Likelihood(metaclass=_LikelihoodMeta):
 
 
 class GaussianLikelihood(Likelihood):
-    """Gaussian likelihood with unit variance for the loss, i.e. regression."""
+    """Gaussian likelihood, i.e. regression.
+
+    The loss is the MSE, so the negative log likelihood is half the loss plus the
+    normalizer `n_obs * n_outputs * log(sigma_noise * sqrt(2 pi))`. The targets have
+    as many dims as the outputs `f`, and every entry of the targets but the last dim
+    is an observation.
+
+    With unit noise, the output Hessian is the identity, the inverse link is the
+    identity, samples are `y ~ N(f, 1)`, and the output gradient is `f - y`. A float
+    `sigma_noise` gives a normalizer with the default dtype.
+    """
 
     name: ClassVar[str] = "regression"
 
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
-        """MSE loss."""
         return nn.MSELoss(reduction=reduction)
 
     @property
     def loss_factor(self) -> float:
-        """0.5, since the loss is the MSE."""
         return 0.5
 
     def check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
-        """Require targets with as many dims as `f`."""
         if y.ndim != f.ndim:
             raise ValueError(
                 f"The model's output has {f.ndim} dims but the target has {y.ndim} dims."
             )
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        """Every entry of `y` but the last dim (the outputs) is an observation."""
         return y.shape[:-1].numel()
 
     def log_normalizer(
         self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
     ) -> torch.Tensor:
-        """`n_obs * n_outputs * log(sigma_noise * sqrt(2 pi))`. A float
-        `sigma_noise` gives a tensor with the default dtype.
-        """
         sigma_noise = torch.as_tensor(sigma_noise, dtype=_float_dtype(sigma_noise))
 
         return n_obs * n_outputs * torch.log(sigma_noise * sqrt(2 * pi))
 
     def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
-        """Identity, expanded to the batch dims of `f`."""
         K = f.shape[-1]
         eye = torch.eye(K, device=f.device, dtype=f.dtype)
 
         return eye.expand(*f.shape[:-1], K, K)
 
     def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
-        """Identity."""
         return f
 
     def sample(
         self, f: torch.Tensor, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        """Sample `y ~ N(f, 1)`."""
         noise = torch.randn(
             f.shape, device=f.device, dtype=f.dtype, generator=generator
         )
@@ -321,41 +321,43 @@ class GaussianLikelihood(Likelihood):
         return f + noise
 
     def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """`f - y`."""
         return f - y
 
     @property
     def is_gaussian(self) -> bool:
-        """`True`."""
         return True
 
 
 class CategoricalLikelihood(Likelihood):
     """Categorical likelihood with a softmax link, i.e. classification.
 
-    The targets are class indices `(batch, ...)` or class probabilities with the
-    shape of the logits.
+    The loss is the cross-entropy, which is already the negative log likelihood, so
+    the normalizer is zero. The targets are class indices `(batch, ...)` or class
+    probabilities with the shape of the logits `f`.
+
+    For logits with extra batch dims, e.g. `(B, L, C)` for sequences, `loss` flattens
+    the batch dims, since `CrossEntropyLoss` expects the class axis at dim 1. Every
+    token is then an observation; the class dim of probability targets does not
+    count.
+
+    With `p = softmax(f)`, the output Hessian is `diag(p) - p p^T`, the inverse link
+    is the softmax, samples are one-hot draws from `p`, and the output gradient is
+    `p - y`.
     """
 
     name: ClassVar[str] = "classification"
 
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
-        """Cross-entropy loss."""
         return nn.CrossEntropyLoss(reduction=reduction)
 
     @property
     def loss_factor(self) -> float:
-        """1.0, since the cross-entropy is the negative log likelihood."""
         return 1.0
 
     def check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
-        """Check that the targets `y` match the logits `f` `(batch, ..., classes)`:
-        class indices `(batch, ...)` or class probabilities with the same shape as
-        `f`.
-
-        Flattening the batch dims would silently misalign targets of the wrong shape
-        with the same number of elements, e.g. `(B, L, M)` instead of `(B, M, L)`.
-        """
+        # Check the exact shape: flattening the batch dims would silently misalign
+        # targets of the wrong shape with as many elements, e.g. `(B, L, M)` instead
+        # of `(B, M, L)`
         if y.shape != f.shape[:-1] and y.shape != f.shape:
             raise ValueError(
                 f"The targets have shape {tuple(y.shape)}, which matches neither the "
@@ -364,13 +366,6 @@ class CategoricalLikelihood(Likelihood):
             )
 
     def loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """Summed cross-entropy, where every leading dim of `f` but the last is a
-        batch dim.
-
-        `CrossEntropyLoss` expects the class axis at dim 1, while Laplace puts it
-        last, e.g. logits `(B, L, C)` with targets `(B, L)`. So the batch dims are
-        flattened, which makes every token an observation.
-        """
         self.check_targets(f, y)
 
         if f.ndim > 2:
@@ -381,33 +376,24 @@ class CategoricalLikelihood(Likelihood):
         return self.loss_fn()(f, y)
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        """Every token is an observation. Class probabilities have a class dim that
-        does not count.
-        """
         return (y.shape[:-1] if y.ndim == f.ndim else y.shape).numel()
 
     def log_normalizer(
         self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
     ) -> torch.Tensor:
-        """Zero, since the cross-entropy is already the negative log likelihood."""
         return _zero_like(sigma_noise)
 
     def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
-        """`diag(p) - p p^T`, where `p` is the softmax of `f`."""
         p = torch.softmax(f, dim=-1)
 
         return torch.diag_embed(p) - torch.einsum("...k,...c->...kc", p, p)
 
     def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
-        """Softmax over the last dim."""
         return torch.softmax(f, dim=-1)
 
     def sample(
         self, f: torch.Tensor, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        """Sample one-hot targets from the categorical distribution given by the
-        logits `f`.
-        """
         p = torch.softmax(f, dim=-1).reshape(-1, f.shape[-1])
         idx = torch.multinomial(p, 1, generator=generator)
         y = torch.zeros_like(p).scatter_(1, idx, 1.0)
@@ -415,16 +401,17 @@ class CategoricalLikelihood(Likelihood):
         return y.reshape(f.shape)
 
     def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """`softmax(f) - y`."""
         return torch.softmax(f, dim=-1) - y
 
 
 class BradleyTerryLikelihood(Likelihood):
     """Bradley-Terry likelihood for reward modeling.
 
-    The curvature is fitted with a categorical likelihood over the compared items,
-    while the predictive is a Gaussian over the reward. Loss, Hessian, and the other
-    fitting quantities are those of the categorical likelihood.
+    The curvature is fitted with a `CategoricalLikelihood` over the compared items,
+    so the loss, the target check, the output Hessian, the inverse link, samples,
+    and the output gradient are all categorical. Unlike for classification, every
+    entry of the targets is an observation. The predictive is a
+    `GaussianLikelihood` over the reward.
     """
 
     name: ClassVar[str] = "reward_modeling"
@@ -434,52 +421,41 @@ class BradleyTerryLikelihood(Likelihood):
         self._predictive = GaussianLikelihood()
 
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
-        """Cross-entropy loss."""
         return self._fit.loss_fn(reduction)
 
     @property
     def loss_factor(self) -> float:
-        """1.0."""
         return self._fit.loss_factor
 
     def check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
-        """Check the targets as for the categorical likelihood."""
         self._fit.check_targets(f, y)
 
     def loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """Summed cross-entropy, as for the categorical likelihood."""
         return self._fit.loss(f, y)
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        """Every entry of `y` is an observation."""
         return y.shape.numel()
 
     def output_hessian(self, f: torch.Tensor) -> torch.Tensor:
-        """`diag(p) - p p^T`, as for the categorical likelihood."""
         return self._fit.output_hessian(f)
 
     def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
-        """Softmax over the last dim."""
         return self._fit.inverse_link(f)
 
     def sample(
         self, f: torch.Tensor, generator: torch.Generator | None = None
     ) -> torch.Tensor:
-        """Sample one-hot targets, as for the categorical likelihood."""
         return self._fit.sample(f, generator)
 
     def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """`softmax(f) - y`."""
         return self._fit.output_gradient(f, y)
 
     @property
     def fit_likelihood(self) -> Likelihood:
-        """A `CategoricalLikelihood`."""
         return self._fit
 
     @property
     def predictive_likelihood(self) -> Likelihood:
-        """A `GaussianLikelihood`."""
         return self._predictive
 
 
