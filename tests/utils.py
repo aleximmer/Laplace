@@ -3,6 +3,7 @@ from collections.abc import MutableMapping
 from typing import Any, List
 
 import torch
+from torch import nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 
@@ -125,3 +126,16 @@ def dict_data_collator(batch: List[MutableMapping]) -> UserDict:
         ret[k] = vals
 
     return ret
+
+
+class ScaledModel(nn.Module):
+    """Takes an extra forward kwarg that changes the features."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(3, 20)
+        self.fc2 = nn.Linear(20, 2)
+        self.output_size = 2
+
+    def forward(self, x: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
+        return self.fc2(scale * self.fc1(x))

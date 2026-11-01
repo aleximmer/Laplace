@@ -16,7 +16,7 @@ from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
 from laplace.utils.matrix import KronDecomposed
-from tests.utils import jacobians_naive
+from tests.utils import ScaledModel, jacobians_naive
 
 
 @pytest.fixture(autouse=True)
@@ -594,6 +594,36 @@ def test_classification_nn_functional_samples(laplace, model, class_loader):
         X, pred_type="nn", n_samples=3, generator=torch.Generator().manual_seed(1)
     )
     assert torch.allclose(psamples, torch.softmax(fsamples, dim=-1))
+
+
+@pytest.mark.parametrize(
+    "laplace,likelihood", product(flavors, ["regression", "classification"])
+)
+def test_nn_model_kwargs(laplace, likelihood, reg_loader, class_loader):
+    loader = reg_loader if likelihood == "regression" else class_loader
+    lap = laplace(ScaledModel(), likelihood, prior_precision=0.7)
+    lap.fit(loader)
+    X, _ = loader.dataset.tensors
+
+    pred = lap(X, pred_type="nn", link_approx="mc", n_samples=5, scale=2.0)
+
+    if likelihood == "regression":
+        mean, var = pred
+        assert mean.shape == torch.Size([10, 2])
+        assert var.shape == torch.Size([10, 2])
+    else:
+        assert pred.shape == torch.Size([10, 2])
+        assert torch.allclose(pred.sum(-1), torch.ones(10))
+
+    # The kwarg changes the samples, so it reaches the model
+    def g() -> torch.Generator:
+        return torch.Generator().manual_seed(0)
+
+    fs_scaled = lap._nn_functional_samples(X, 3, g(), scale=2.0)
+    fs_unscaled = lap._nn_functional_samples(X, 3, g(), scale=1.0)
+    fs_default = lap._nn_functional_samples(X, 3, g())
+    assert not torch.allclose(fs_scaled, fs_unscaled)
+    assert torch.equal(fs_unscaled, fs_default)
 
 
 @pytest.mark.parametrize("laplace", flavors)
