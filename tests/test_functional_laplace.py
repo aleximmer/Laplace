@@ -128,3 +128,14 @@ def test_gp_equivalence_classification(laplace, independent_outputs, gp_backend,
 
     assert p_full.shape == p_gp.shape
     assert torch.allclose(torch.argmax(p_full, -1), torch.argmax(p_gp, -1))
+
+
+@pytest.mark.parametrize("laplace", [FunctionalLaplace, FunctionalLLLaplace])
+@pytest.mark.parametrize("passed", [{}, {"backend": None}])
+def test_default_backend_is_curvlinops(laplace, passed):
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 8), torch.nn.Tanh(), torch.nn.Linear(8, 2)
+    )
+    la = laplace(model, "regression", n_subset=5, **passed)
+
+    assert la._backend_cls is CurvlinopsGGN

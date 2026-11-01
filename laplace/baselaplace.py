@@ -3078,12 +3078,12 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         enable_backprop: bool = False,
         dict_key_x="input_ids",
         dict_key_y="labels",
-        backend: type[CurvatureInterface] | None = BackPackGGN,
+        backend: type[CurvatureInterface] | None = None,
         backend_kwargs: dict[str, Any] | None = None,
         independent_outputs: bool = False,
         seed: int = 0,
     ):
-        assert backend in [BackPackGGN, AsdlGGN, CurvlinopsGGN]
+        assert backend in [None, BackPackGGN, AsdlGGN, CurvlinopsGGN]
         self._check_prior_precision(prior_precision)
         super().__init__(
             model,

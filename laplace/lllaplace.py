@@ -16,7 +16,6 @@ from laplace.baselaplace import (
     KronLaplace,
     ParametricLaplace,
 )
-from laplace.curvature import BackPackGGN
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.utils import FeatureExtractor, Kron
 from laplace.utils.enums import Likelihood
@@ -566,7 +565,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         last_layer_name: str | None = None,
-        backend: type[CurvatureInterface] | None = BackPackGGN,
+        backend: type[CurvatureInterface] | None = None,
         backend_kwargs: dict[str, Any] | None = None,
         independent_outputs: bool = False,
         seed: int = 0,
