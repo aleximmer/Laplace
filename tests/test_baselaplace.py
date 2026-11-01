@@ -2193,3 +2193,161 @@ def test_dtype(laplace, backend, dtype, likelihood):
             assert False  # Fail the test
         else:
             pass  # Ignore
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loader):
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+    x = reg_loader.dataset.tensors[0][:3]
+
+    samples = lap.functional_samples(
+        x, n_samples=20000, joint=True, generator=torch.Generator().manual_seed(0)
+    ).detach()
+    mean, cov = lap(x, joint=True)
+
+    assert samples.shape == (20000, 3, lap.n_outputs)
+
+    flat = samples.reshape(20000, -1)
+    std = cov.diagonal().sqrt()
+    assert torch.allclose(flat.mean(0), mean, atol=0.05 * std.max())
+    assert torch.allclose(flat.var(0), cov.diagonal(), rtol=0.1)
+    assert torch.allclose(
+        torch.corrcoef(flat.T), cov / torch.outer(std, std), atol=0.05
+    )
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_functional_samples_seeded_deterministic(laplace, model, reg_loader):
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+    x = reg_loader.dataset.tensors[0][:3]
+
+    samples_1 = lap.functional_samples(
+        x, n_samples=10, joint=True, generator=torch.Generator().manual_seed(1)
+    )
+    samples_2 = lap.functional_samples(
+        x, n_samples=10, joint=True, generator=torch.Generator().manual_seed(1)
+    )
+
+    assert torch.equal(samples_1, samples_2)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_functional_samples_diagonal_output(laplace, model, reg_loader):
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+    x = reg_loader.dataset.tensors[0][:3]
+    K = lap.n_outputs
+
+    samples = lap.functional_samples(
+        x,
+        n_samples=20000,
+        diagonal_output=True,
+        joint=True,
+        generator=torch.Generator().manual_seed(0),
+    ).detach()
+    _, cov = lap(x, joint=True)
+
+    assert samples.shape == (20000, 3, K)
+
+    corr = torch.corrcoef(samples.reshape(20000, -1).T)
+    std = cov.diagonal().sqrt()
+    cov_corr = cov / torch.outer(std, std)
+
+    ids = torch.arange(corr.shape[0])
+    same_output = (ids[:, None] % K) == (ids[None, :] % K)
+    assert torch.all(corr[~same_output].abs() < 0.05)
+    assert torch.allclose(corr[same_output], cov_corr[same_output], atol=0.05)
+
+
+@pytest.mark.parametrize("enable_backprop", [False, True])
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_functional_samples_duplicate_inputs(
+    laplace, model, reg_loader, enable_backprop
+):
+    lap = laplace(model, "regression", enable_backprop=enable_backprop)
+    lap.fit(reg_loader)
+    x = torch.randn(1, 3).repeat(3, 1)
+
+    samples = lap.functional_samples(x, n_samples=8, joint=True)
+
+    assert samples.shape == (8, 3, 2)
+    assert torch.isfinite(samples).all()
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_functional_samples_backprop(laplace, model, reg_loader):
+    lap = laplace(model, "regression", enable_backprop=True)
+    lap.fit(reg_loader)
+    x = reg_loader.dataset.tensors[0][:3].clone().requires_grad_()
+
+    samples = lap.functional_samples(
+        x, n_samples=10, joint=True, generator=torch.Generator().manual_seed(0)
+    )
+    grad = torch.autograd.grad(samples.sum(), x)[0]
+
+    assert grad.abs().sum() > 0
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_predictive_samples_classification(laplace, model, class_loader):
+    lap = laplace(model, "classification")
+    lap.fit(class_loader)
+    x = class_loader.dataset.tensors[0][:3]
+
+    samples = lap.predictive_samples(x, n_samples=10, joint=True)
+
+    assert samples.shape == (10, 3, 2)
+    assert torch.allclose(samples.sum(-1), torch.ones(10, 3))
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_nn_samples_ignore_joint(laplace, model, reg_loader):
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+    x = reg_loader.dataset.tensors[0][:3]
+
+    samples_joint = lap.functional_samples(
+        x,
+        pred_type="nn",
+        n_samples=5,
+        joint=True,
+        generator=torch.Generator().manual_seed(0),
+    )
+    samples_marginal = lap.functional_samples(
+        x,
+        pred_type="nn",
+        n_samples=5,
+        joint=False,
+        generator=torch.Generator().manual_seed(0),
+    )
+
+    assert torch.equal(samples_joint, samples_marginal)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
+def test_joint_glm_samples_multidim(laplace):
+    N, L, D, K, n_samples = 12, 3, 4, 2, 7
+    X, Y = torch.randn(N, D), torch.randn(N, K)
+    X_multidim, Y_multidim = X.reshape(N // L, L, D), Y.reshape(N // L, L, K)
+
+    model_flat = nn.Linear(D, K)
+    model_multidim = deepcopy(model_flat)
+    la_flat = laplace(model_flat, "regression", backend=CurvlinopsGGN)
+    la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=N))
+    la_multidim = laplace(model_multidim, "regression", backend=CurvlinopsGGN)
+    la_multidim.fit(DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=N))
+
+    samples_flat = la_flat.functional_samples(
+        X, n_samples=n_samples, joint=True, generator=torch.Generator().manual_seed(0)
+    )
+    samples_multidim = la_multidim.functional_samples(
+        X_multidim,
+        n_samples=n_samples,
+        joint=True,
+        generator=torch.Generator().manual_seed(0),
+    )
+
+    assert samples_multidim.shape == (n_samples, N, K)
+    assert torch.allclose(samples_flat, samples_multidim)

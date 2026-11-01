@@ -788,3 +788,25 @@ def test_dtype(laplace, backend, dtype, likelihood):
             assert False  # Fail the test
         else:
             pass  # Ignore
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loader):
+    lap = laplace(model, "regression")
+    lap.fit(reg_loader)
+    x = reg_loader.dataset.tensors[0][:3]
+
+    samples = lap.functional_samples(
+        x, n_samples=20000, joint=True, generator=torch.Generator().manual_seed(0)
+    ).detach()
+    mean, cov = lap(x, joint=True)
+
+    assert samples.shape == (20000, 3, lap.n_outputs)
+
+    flat = samples.reshape(20000, -1)
+    std = cov.diagonal().sqrt()
+    assert torch.allclose(flat.mean(0), mean, atol=0.05 * std.max())
+    assert torch.allclose(flat.var(0), cov.diagonal(), rtol=0.1)
+    assert torch.allclose(
+        torch.corrcoef(flat.T), cov / torch.outer(std, std), atol=0.05
+    )
