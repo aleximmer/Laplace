@@ -27,8 +27,7 @@ from laplace import (
 
 # These tests load only checkpoints written by the same test process.
 # Explicit pickle loading preserves their intent on PyTorch 2.6 and newer.
-torch.manual_seed(240)
-torch.set_default_dtype(torch.double)
+pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
 lrlaplace_param = pytest.param(
     LowRankLaplace, marks=pytest.mark.xfail(reason="Unimplemented in the new ASDL")

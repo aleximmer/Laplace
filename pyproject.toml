@@ -74,7 +74,11 @@ docs = [
 
 [tool.pytest.ini_options]
 testpaths = "tests"
-markers = ["cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU"]
+markers = [
+  "cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU",
+  "default_dtype(dtype): torch default dtype for the test (float32 if unmarked)",
+  "seed(n): call torch.manual_seed(n) before the test",
+]
 
 [tool.ruff.lint]
 # Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
