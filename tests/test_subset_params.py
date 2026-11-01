@@ -64,13 +64,14 @@ def reg_loader():
 @pytest.mark.parametrize(
     "laplace,lh", product(flavors, ["classification", "regression"])
 )
-def test_compatible_backend(laplace, lh, model):
-    laplace(model, lh, backend=CurvlinopsEF)
-    laplace(model, lh, backend=CurvlinopsGGN)
-    laplace(model, lh, backend=CurvlinopsHessian)
-    laplace(model, lh, backend=AsdlEF)
-    laplace(model, lh, backend=AsdlGGN)
-    laplace(model, lh, backend=AsdlHessian)
+@pytest.mark.parametrize(
+    "backend",
+    [CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian, AsdlEF, AsdlGGN, AsdlHessian],
+)
+def test_compatible_backend(laplace, lh, backend, model):
+    la = laplace(model, lh, backend=backend)
+
+    assert la._backend_cls is backend
 
 
 @requires_backpack
