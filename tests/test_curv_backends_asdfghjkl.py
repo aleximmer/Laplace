@@ -13,7 +13,8 @@ from asdfghjkl.operations import Bias, Scale
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import AsdfghjklEF, AsdfghjklGGN, BackPackEF, BackPackGGN
+from laplace.curvature import AsdfghjklEF, AsdfghjklGGN
+from tests.utils import BackPackEF, BackPackGGN
 
 
 @pytest.fixture

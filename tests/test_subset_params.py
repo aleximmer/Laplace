@@ -14,9 +14,16 @@ from laplace import (
     FullSubnetLaplace,
     KronLaplace,
 )
-from laplace.curvature import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPackGGN
 from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    AsdlHessian,
+    BackPackEF,
+    BackPackGGN,
+    requires_backpack,
+)
 
 torch.manual_seed(240)
 torch.set_default_dtype(torch.double)
@@ -66,6 +73,7 @@ def test_compatible_backend(laplace, lh, model):
     laplace(model, lh, backend=AsdlHessian)
 
 
+@requires_backpack
 @pytest.mark.parametrize(
     "laplace,lh", product(flavors, ["classification", "regression"])
 )

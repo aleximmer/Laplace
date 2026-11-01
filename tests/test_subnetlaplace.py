@@ -11,8 +11,6 @@ from torchvision.models import wide_resnet50_2
 
 from laplace import DiagSubnetLaplace, FullSubnetLaplace, Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
-from laplace.curvature.asdl import AsdlEF, AsdlGGN, AsdlHessian
-from laplace.curvature.backpack import BackPackEF, BackPackGGN
 from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 from laplace.utils import (
@@ -25,7 +23,16 @@ from laplace.utils import (
     RandomSubnetMask,
     SubnetMask,
 )
-from tests.utils import ListDataset, dict_data_collator
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    AsdlHessian,
+    BackPackEF,
+    BackPackGGN,
+    ListDataset,
+    dict_data_collator,
+    requires_asdl,
+)
 
 torch.manual_seed(240)
 torch.set_default_dtype(torch.double)
@@ -83,6 +90,7 @@ def reg_loader():
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
+@requires_asdl
 @pytest.mark.parametrize("stochastic", [False, True])
 def test_asdl_diag_with_unused_module(class_loader, stochastic):
     class PartiallyUsedModel(nn.Module):
@@ -124,6 +132,7 @@ def test_asdl_diag_with_unused_module(class_loader, stochastic):
     assert torch.allclose(selected_diag, full_diag[reference_indices])
 
 
+@requires_asdl
 def test_asdl_diag_rejects_selected_parameters_without_fisher(class_loader):
     class Scale(nn.Module):
         def __init__(self):

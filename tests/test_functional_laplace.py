@@ -8,11 +8,11 @@ import pytest
 import torch
 
 from laplace.baselaplace import FullLaplace, FunctionalLaplace
-from laplace.curvature.asdl import AsdlGGN
-from laplace.curvature.backpack import BackPackGGN
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.lllaplace import FullLLLaplace, FunctionalLLLaplace
 from tests.utils import (
+    AsdlGGN,
+    BackPackGGN,
     toy_classification_dataset,
     toy_model,
     toy_multivariate_regression_dataset,

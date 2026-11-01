@@ -1,10 +1,15 @@
 from collections import UserDict
 from collections.abc import MutableMapping
+from importlib.util import find_spec
 from typing import Any, List
 
+import pytest
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset
+
+import laplace.curvature
+from laplace.curvature import CurvatureInterface
 
 
 def toy_regression_dataset_1d(sigma, n_train=150, n_test=500, batch_size=150):
@@ -139,3 +144,53 @@ class ScaledModel(nn.Module):
 
     def forward(self, x: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
         return self.fc2(scale * self.fc1(x))
+
+
+requires_asdl = pytest.mark.skipif(
+    find_spec("asdl") is None, reason="asdl not installed"
+)
+requires_backpack = pytest.mark.skipif(
+    find_spec("backpack") is None, reason="backpack not installed"
+)
+
+
+def _optional_backend(name: str) -> type[CurvatureInterface]:
+    """Get an optional backend class, or a stand-in if its package is missing.
+
+    The stand-in has the same name and a `_missing_package` attribute. Building
+    it skips the running test, and `tests/conftest.py` skips tests that take it
+    as a parameter before they run.
+
+    Parameters
+    ----------
+    name : str
+        Name of the backend class in `laplace.curvature`, e.g. `"AsdlGGN"`.
+
+    Returns
+    -------
+    type[CurvatureInterface]
+        The backend class or its stand-in.
+    """
+    try:
+        return getattr(laplace.curvature, name)
+    except ImportError:
+        module = laplace.curvature._OPTIONAL_BACKENDS[name]
+        package = laplace.curvature._OPTIONAL_PACKAGES[module]
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pytest.skip(f"{package} not installed")
+
+        return type(
+            name,
+            (CurvatureInterface,),
+            {"__init__": __init__, "_missing_package": package},
+        )
+
+
+AsdlInterface = _optional_backend("AsdlInterface")
+AsdlGGN = _optional_backend("AsdlGGN")
+AsdlEF = _optional_backend("AsdlEF")
+AsdlHessian = _optional_backend("AsdlHessian")
+BackPackInterface = _optional_backend("BackPackInterface")
+BackPackGGN = _optional_backend("BackPackGGN")
+BackPackEF = _optional_backend("BackPackEF")

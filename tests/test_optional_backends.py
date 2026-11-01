@@ -8,10 +8,12 @@ setting `sys.modules[name] = None`, so `find_spec(name)` returns `None` there.
 import subprocess
 import sys
 import textwrap
+from importlib.util import find_spec
 
 import pytest
 
-from laplace.curvature import AsdlEF, BackPackGGN, CurvlinopsGGN
+from laplace.curvature import CurvlinopsGGN
+from tests.utils import AsdlEF, BackPackGGN
 
 
 def _run_without(blocked: list[str], code: str) -> subprocess.CompletedProcess:
@@ -89,6 +91,10 @@ def test_missing_backend_raises_install_hint(module, name, extra, statement):
     assert f'pip install "laplace-torch[{extra}]"' in res.stdout
 
 
+@pytest.mark.skipif(
+    find_spec("asdl") is None or find_spec("backpack") is None,
+    reason="asdl and backpack needed",
+)
 def test_is_optional_backend():
     from laplace.curvature import _is_optional_backend
 

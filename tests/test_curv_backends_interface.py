@@ -7,15 +7,8 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import (
-    AsdlEF,
-    AsdlGGN,
-    BackPackEF,
-    BackPackGGN,
-    CurvatureInterface,
-    EFInterface,
-    GGNInterface,
-)
+from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from tests.utils import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
 
 
 @pytest.fixture

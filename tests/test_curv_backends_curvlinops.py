@@ -3,15 +3,8 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import (
-    AsdlEF,
-    AsdlGGN,
-    AsdlHessian,
-    BackPackGGN,
-    CurvlinopsEF,
-    CurvlinopsGGN,
-    CurvlinopsHessian,
-)
+from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
+from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackGGN
 
 
 @pytest.fixture(autouse=True)

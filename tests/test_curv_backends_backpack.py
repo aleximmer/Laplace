@@ -3,7 +3,9 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import BackPackEF, BackPackGGN
+from tests.utils import BackPackEF, BackPackGGN, requires_backpack
+
+pytestmark = requires_backpack
 
 
 @pytest.fixture
