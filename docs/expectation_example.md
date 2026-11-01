@@ -1,122 +1,250 @@
-## Motivation
+## Making decisions with a Laplace posterior
 
-Often, we want to compute non-analytic expectation \(\mathbb{E}_{p(f(x) \mid \mathcal{D})} [g(f(x))]\) of a function \(g(f(x))\) given a Laplace posterior over functions \(p(f(x) \mid \mathcal{D})\) at input \(x\).
-This naturally arises in decision-making:
-Given a posterior belief about an unknown function \(f\), we would like to compute the expected utility of \(x\).
-In Bayesian optimization, this is called \_acquisition function_.
-For some utility function \(g\) and posterior belief \(p(f(x) \mid \mathcal{D})\), the resulting acquisition function can be computed analytically, e.g. if \(g\) is linear and the posterior is Gaussian (process).
-But, in general, closed-form solutions don't exist.
+Once you have fitted a Laplace approximation, you have a belief \(p(f \mid \mathcal{D})\) about the function your network models.
+One thing to do with a belief is to act on it.
+Decision theory says to pick the action with the highest expected utility under your belief:
 
-In this example, we will see how easy it is to compute a _differentiable_, Monte-Carlo approximated acquisition function under the posterior distribution over neural network functions implied by a Laplace approximation.
+\[
+x_\text{best} = \arg\max_x \, \mathbb{E}_{p(f \mid \mathcal{D})} \big[ u(f, x) \big].
+\]
 
-## Laplace approximations
+The utility \(u\) can be almost anything, as long as it reflects how much you prefer one outcome over another.
+The price of that freedom is that the expectation rarely has a closed form, even when the posterior is Gaussian.
 
-As always, the first step of a Laplace approximation is MAP estimation.
+Laplace makes the Monte Carlo route easy.
+Draw samples of the network outputs with `la.functional_samples`, apply \(u\), and average.
+With `enable_backprop=True` the estimate is differentiable in \(x\), so the \(\arg\max\) becomes plain gradient ascent.
+Bayesian optimization is the obvious use: an acquisition function is an expected utility, and this recipe gives you one for any utility you can write down, not only the few that have closed forms [1].
+
+The full script is in [`examples/expectation_example.py`](https://github.com/aleximmer/Laplace/blob/main/examples/expectation_example.py).
+
+## Setup: a calibration problem
+
+Suppose an expensive simulator maps an input \(x \in [0, 1]^2\) to two outputs \(h(x) \in \mathbb{R}^2\), and we want the input whose outputs match a target \(y^*\).
+The outer function \(g(y) = -\lVert y - y^* \rVert^2\) is cheap and known; only \(h\) is expensive.
+Astudillo and Frazier [2] call this a composite objective \(g(h(x))\), and modeling \(h\) instead of \(g \circ h\) directly uses what we know about \(g\).
 
 ```python
-import torch
-import torch.utils.data as data_utils
-from torch import autograd, nn, optim
+def true_fn(x: torch.Tensor) -> torch.Tensor:
+    return torch.stack(
+        [
+            x[:, 0] + 0.3 * torch.sin(4 * x[:, 1]),
+            x[:, 1] + 0.3 * torch.sin(4 * x[:, 0]),
+        ],
+        dim=-1,
+    )
 
-from laplace import Laplace
-from laplace.utils.enums import HessianStructure, Likelihood, PredType, SubsetOfWeights
 
-torch.manual_seed(123)
+X_STAR = torch.tensor([0.7, 0.3])
+Y_TARGET = true_fn(X_STAR[None])[0]
 
-model = nn.Sequential(nn.Linear(2, 10), nn.GELU(), nn.Linear(10, 1))
-X, Y = torch.randn(5, 2), torch.randn(5, 1)
-train_loader = data_utils.DataLoader(data_utils.TensorDataset(X, Y), batch_size=3)
-opt = optim.AdamW(model.parameters(), lr=1e-3, weight_decay=5e-4)
-loss_fn = nn.MSELoss()
 
-for epoch in range(10):
-    model.train()
-
-    for x, y in train_loader:
-        opt.zero_grad()
-        out = model(x)
-        loss = loss_fn(out, y)
-        loss.backward()
-        opt.step()
+def g(y: torch.Tensor) -> torch.Tensor:
+    return -((y - Y_TARGET) ** 2).sum(-1)
 ```
 
-Then, we are ready to obtain the Laplace approximation.
-In this example, we focus on the weight-space approximation, but the same can be done in the function space directly by simply specifying `hessian_structure=HessianStructure.GP`.
+We query the simulator 20 times, train a small two-output network on the results, and fit a Laplace approximation on top.
 
 ```python
+X_train = torch.rand(20, 2)
+Y_train = true_fn(X_train)
+
+model = nn.Sequential(
+    nn.Linear(2, 50), nn.Tanh(), nn.Linear(50, 50), nn.Tanh(), nn.Linear(50, 2)
+)
+# ... train with MSE ...
+
 la = Laplace(
     model,
     Likelihood.REGRESSION,
     subset_of_weights=SubsetOfWeights.ALL,
     hessian_structure=HessianStructure.KRON,
+    sigma_noise=0.05,
     enable_backprop=True,
 )
 la.fit(train_loader)
 la.optimize_prior_precision(PredType.GLM)
 ```
 
+The simulator is noise-free, so we set `sigma_noise` small.
+With the default of 1, the posterior is far wider than the data supports.
+
 !!! tip
 
-    If you need the gradient of quantities that depend on Laplace's predictive
-    distribution/samples, then be sure to specify `enable_backprop=True`. This is in
-    fact necessary for continuous Bayesian optimization.
+    Pass `enable_backprop=True` whenever you need gradients of anything computed
+    from Laplace's predictive or its samples. Continuous optimization over \(x\)
+    depends on it.
 
-## Thompson Sampling
+## Utilities that look at a single input
 
-The simplest acquisition function that can be obtained from the Laplace posterior is Thompson sampling.
-This is defined as \(a \sim p(f(x) \mid \mathcal{D})\).
-Thus, given `la`, it can be obtained very simply:
+Most acquisition functions score one input at a time: \(u\) depends on \(f\) only through \(f(x)\).
+Then the expectation over functions reduces to an expectation over the outputs at \(x\):
 
-```python
-x_test = torch.randn(10, 2)
-f_sample = la.functional_samples(x_test, n_samples=1)
-```
+\[
+\mathbb{E}_{p(f \mid \mathcal{D})} \big[ u(f(x)) \big] = \mathbb{E}_{p(f(x) \mid \mathcal{D})} \big[ u(f(x)) \big].
+\]
 
-Note that `f_sample` can be obtained through the `"nn"` and `"glm"` predictives.
-The `la.functional_samples` function supports both options.
+The integrand ignores \(f\) everywhere except at \(x\), so only the distribution of \(f(x)\) matters.
+That is exactly what `la.functional_samples(x)` draws from, one input at a time.
 
-```python
-for pred_type in [PredType.GLM, PredType.NN]:
-    print(f"Thompson sampling, {pred_type}")
+Here \(f(x)\) has two outputs, and \(g\) mixes them, so the samples need the full covariance between the outputs at each \(x\).
+`functional_samples` uses it by default; don't pass `diagonal_output=True` here.
 
-    x_test = torch.randn(10, 2)
-    x_test.requires_grad = True
-
-    f_sample = la.functional_samples(x_test, pred_type=pred_type, n_samples=1)
-    f_sample = f_sample.squeeze(0)  # We only use a single sample
-    print(f"TS shape: {f_sample.shape}, TS requires grad: {f_sample.requires_grad}")
-
-    grad_x = autograd.grad(f_sample.sum(), x_test)[0]
-
-    print(
-        f"Grad x_test shape: {grad_x.shape}, Grad x_test vanishing: {torch.allclose(grad_x, torch.tensor(0.0))}"
-    )
-    print()
-```
-
-The snippet above will output:
-
-```
-Thompson sampling, glm
-TS shape: torch.Size([10, 1]), TS requires grad: True
-Grad x_test shape: torch.Size([10, 2]), Grad x_test vanishing: False
-
-Thompson sampling, nn
-TS shape: torch.Size([10, 1]), TS requires grad: True
-Grad x_test shape: torch.Size([10, 2]), Grad x_test vanishing: False
-```
-
-As we can see, the gradient can be computed through Laplace's predictive and its non-vanishing.
-
-## Monte-Carlo EI
-
-In general, given a choice of utility function \(u(f(x))\), any acquisition function can be obtained w.r.t. the Laplace posterior.
-For example, to compute Monte-Carlo-approximated EI, we can do so via:
+Our utility is the improvement of \(g\) over the best value seen so far, which gives expected improvement for composite functions (EI-CF) [2].
+Unlike plain EI, EI-CF has no closed form, even under a Gaussian posterior.
 
 ```python
-f_best = torch.tensor(0.123)  # Arbitrary in this example
-f_samples = la.functional_samples(x_test, pred_type=pred_type, n_samples=10)
-ei = (f_samples - f_best.reshape(1, 1, 1)).clamp(0.0).mean(0)
+def ei_cf(f: torch.Tensor, best: float) -> torch.Tensor:
+    return (g(f) - best).clamp(min=0)
+
+
+def expected_utility(la, x, utility, n_samples=256, seed=0):
+    f_samples = la.functional_samples(
+        x, n_samples=n_samples, generator=torch.Generator().manual_seed(seed)
+    )  # (n_samples, batch, 2)
+    return utility(f_samples).mean(0)  # (batch,)
 ```
 
-Again, if \(u\) is differentiable, then we can obtain the gradient w.r.t. the input, and we can do continuous Bayesian optimization.
+The generator gets the same seed on every call.
+The estimate then uses the same random numbers at every step of the optimizer, which makes it a smooth, deterministic function of \(x\) that gradient ascent can work with [1].
+We maximize it from five random starting points and keep the best:
+
+```python
+best = g(Y_train).max().item()
+
+
+def ei(x: torch.Tensor) -> torch.Tensor:
+    return expected_utility(la, x, lambda f: ei_cf(f, best))
+
+
+x_restarts = maximize(ei, torch.rand(5, 2))  # Adam, clamped to the unit square
+x_best = x_restarts[ei(x_restarts).argmax()]
+```
+
+```
+EI-CF x_best: [0.688, 0.331]
+```
+
+That is close to the true answer \(x^* = (0.7, 0.3)\).
+
+Switching to another utility changes one line.
+Probability of improvement is the expected value of an indicator:
+
+```python
+def pi_cf(f: torch.Tensor, best: float) -> torch.Tensor:
+    return (g(f) > best).float()
+
+
+grid_1d = torch.linspace(0, 1, 50)
+grid = torch.cartesian_prod(grid_1d, grid_1d)
+
+pi = expected_utility(la, grid, lambda f: pi_cf(f, best))
+x_best = grid[pi.argmax()]
+```
+
+An indicator has zero gradient almost everywhere, so here we score a 50 × 50 grid of candidates and take the best one.
+
+```
+PI-CF x_best: [0.673, 0.327]
+```
+
+## Utilities that look at several inputs
+
+Some utilities depend on \(f\) at several inputs at once.
+In batch Bayesian optimization, we choose \(q\) inputs together and care about the best outcome among them.
+Thompson sampling picks the maximizer of a single function drawn from the posterior [3].
+Neither reduces to per-input marginals; both need the outputs at all inputs jointly.
+
+!!! warning
+
+    `la.functional_samples(x, pred_type="glm")` gets each input's marginal
+    right but not the correlations between inputs. It reuses the same
+    standard-normal noise for every input in `x`, so the samples are coupled in
+    a way the posterior doesn't imply. That is fine for the previous section
+    and wrong for this one. The same holds for function-space methods unless
+    you pass `joint=True` (see below).
+
+Laplace supports both cases in other ways.
+
+### Batch acquisition with the joint GLM predictive
+
+For regression, `la(x, joint=True)` returns the mean and the full covariance of all outputs at all inputs, with shapes `(q * 2,)` and `(q * 2, q * 2)`, ordered input first, then output.
+Sampling from it with fixed base noise keeps the estimate smooth in \(x\), as before:
+
+```python
+def joint_glm_samples(la, x, base_noise, jitter=1e-6):
+    mean, cov = la(x, pred_type=PredType.GLM, joint=True)
+    eye = torch.eye(cov.shape[0], dtype=cov.dtype, device=cov.device)
+    scale_tril = torch.linalg.cholesky(cov + jitter * eye)
+    samples = mean + base_noise @ scale_tril.T
+    return samples.reshape(base_noise.shape[0], *x.shape[:-1], -1)  # (n_samples, q, 2)
+```
+
+The jitter keeps the Cholesky factorization from failing when two of the \(q\) inputs nearly coincide.
+The \(q\)-batch EI-CF scores the best of the \(q\) outcomes in each sample:
+
+```python
+q = 3
+base_noise = torch.randn(256, q * 2, generator=torch.Generator().manual_seed(0))
+
+
+def qei(x: torch.Tensor) -> torch.Tensor:
+    f_samples = joint_glm_samples(la, x, base_noise)  # (256, q, 2)
+    return (g(f_samples).max(-1).values - best).clamp(min=0).mean()
+
+
+x_batch = maximize(qei, torch.rand(q, 2))
+```
+
+```
+qEI-CF batch: [0.154, 0.899, 0.686, 0.331, 0.371, 0.9]
+```
+
+One point lands near \(x^*\).
+The other two go to uncertain regions: once one point covers the likely optimum, a second point there adds little.
+
+### Thompson sampling with the NN predictive
+
+Thompson sampling needs one coherent function, evaluated at every candidate.
+With `pred_type="nn"`, Laplace draws a set of weights from the posterior and runs the network with them, so every input sees the same function:
+
+```python
+def thompson_sample(la, candidates, seed, chunk_size=None):
+    chunks = [candidates] if chunk_size is None else candidates.split(chunk_size)
+    f_sample = [
+        la.functional_samples(
+            chunk,
+            pred_type=PredType.NN,
+            n_samples=1,
+            generator=torch.Generator().manual_seed(seed),
+        )[0]
+        for chunk in chunks
+    ]
+    return torch.cat(f_sample)
+
+
+f_sample = thompson_sample(la, grid, seed=0, chunk_size=500)
+x_next = grid[g(f_sample).argmax()]
+```
+
+If the candidates don't fit in one forward pass, evaluate them in chunks and give every chunk a generator with the same seed.
+Each chunk then gets the same weights.
+
+```
+Thompson x_next: [0.061, 0.0]
+```
+
+A single posterior draw is free to favor a far corner where the network is uncertain; that is how Thompson sampling explores.
+
+### Function-space Laplace
+
+Function-space methods (`hessian_structure="gp"`, ELLA, and VaLLA; see the [ELLA and VaLLA example](ella_valla_example.md)) draw joint samples directly with `la.functional_samples(x, joint=True)`.
+With them, both the batch utility and Thompson sampling work through the same call as the single-input case.
+
+## References
+
+[1] Wilson, J. T., Moriconi, R., Hutter, F., and Deisenroth, M. P. [The reparameterization trick for acquisition functions](https://arxiv.org/abs/1712.00424). NIPS Workshop on Bayesian Optimization, 2017.
+
+[2] Astudillo, R. and Frazier, P. I. [Bayesian optimization of composite functions](https://proceedings.mlr.press/v97/astudillo19a.html). ICML, 2019.
+
+[3] Hernández-Lobato, J. M., Requeima, J., Pyzer-Knapp, E. O., and Aspuru-Guzik, A. [Parallel and distributed Thompson sampling for large-scale accelerated exploration of chemical space](https://proceedings.mlr.press/v70/hernandez-lobato17a.html). ICML, 2017.
