@@ -3120,7 +3120,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.L = None
 
         # Posterior mean (used in regression marginal likelihood)
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.mean = parameters_to_vector(self.params).detach()
 
         self._fitted = False
         self._recompute_Sigma = True

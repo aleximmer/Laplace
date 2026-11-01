@@ -233,3 +233,41 @@ def test_sod_loader_keeps_collate_fn():
     la = FunctionalLaplace(torch.nn.Linear(3, 2), "regression", n_subset=4)
 
     assert la._get_SoD_data_loader(loader).collate_fn is dict_data_collator
+
+
+class _FixedLinear(torch.nn.Module):
+    """Linear map whose weights are buffers, so it has no parameters."""
+
+    def __init__(self, linear: torch.nn.Linear):
+        super().__init__()
+        self.register_buffer("weight", linear.weight.detach().clone())
+        self.register_buffer("bias", linear.bias.detach().clone())
+
+    def forward(self, x):
+        return torch.nn.functional.linear(x, self.weight, self.bias)
+
+
+@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+def test_frozen_parameters_match_fixed_features(likelihood):
+    torch.manual_seed(711)
+    X = torch.randn(16, 3)
+    y = torch.randn(16, 2) if likelihood == "regression" else torch.randint(0, 2, (16,))
+    loader = DataLoader(TensorDataset(X, y), batch_size=8)
+
+    first, last = torch.nn.Linear(3, 4), torch.nn.Linear(4, 2)
+    frozen = torch.nn.Sequential(deepcopy(first), torch.nn.Tanh(), deepcopy(last))
+    frozen[0].requires_grad_(False)
+    fixed = torch.nn.Sequential(_FixedLinear(first), torch.nn.Tanh(), deepcopy(last))
+
+    la_frozen = FunctionalLaplace(frozen, likelihood, n_subset=8)
+    la_fixed = FunctionalLaplace(fixed, likelihood, n_subset=8)
+    la_frozen.fit(loader)
+    la_fixed.fit(loader)
+
+    assert la_frozen.mean.numel() == la_frozen.n_params
+    assert torch.allclose(
+        la_frozen.log_marginal_likelihood(), la_fixed.log_marginal_likelihood()
+    )
+
+    for out_frozen, out_fixed in zip(la_frozen(X[:3]), la_fixed(X[:3])):
+        assert torch.allclose(out_frozen, out_fixed)
