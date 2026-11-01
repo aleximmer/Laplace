@@ -13,7 +13,7 @@ nav:
   - "Example: ELLA and VaLLA": ella_valla_example.md
   - "Example: Calibration": calibration_example.md
   - "Example: GP Inference": calibration_gp_example.md
-  - "Example: MC Acquistion Functions": expectation_example.md
+  - "Example: Decision-Making": expectation_example.md
   - "Example: Huggingface LLMs": huggingface_example.md
   - "Example: Language Modeling": lm_example.md
   - "Example: Diffusion Models": diffusion_example.md

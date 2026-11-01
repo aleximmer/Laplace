@@ -137,3 +137,5 @@ state_dict.bin
 /temp
 
 .pdm-python
+
+docs/superpowers/
