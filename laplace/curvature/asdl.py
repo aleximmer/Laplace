@@ -31,6 +31,7 @@ except ModuleNotFoundError as err:
     ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.likelihoods import BaseLikelihood
 from laplace.utils import Kron, Likelihood, _is_batchnorm
 
 EPS = 1e-6
@@ -42,7 +43,7 @@ class AsdlInterface(CurvatureInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
         dict_key_x: str = "input_ids",
@@ -473,7 +474,7 @@ class AsdlHessian(AsdlInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
@@ -525,7 +526,7 @@ class AsdlGGN(AsdlInterface, GGNInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
         dict_key_x: str = "input_ids",
@@ -548,7 +549,7 @@ class AsdlEF(AsdlInterface, EFInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",

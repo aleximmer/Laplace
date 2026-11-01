@@ -28,6 +28,7 @@ except ModuleNotFoundError as err:
     ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.likelihoods import BaseLikelihood
 from laplace.utils import Kron, Likelihood
 
 
@@ -37,7 +38,7 @@ class BackPackInterface(CurvatureInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
         dict_key_x: str = "input_ids",
@@ -241,7 +242,7 @@ class BackPackGGN(BackPackInterface, GGNInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
         dict_key_x: str = "input_ids",

@@ -25,6 +25,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.likelihoods import BaseLikelihood
 from laplace.utils import Kron, _is_batchnorm
 from laplace.utils.enums import Likelihood
 
@@ -178,7 +179,7 @@ class AsdfghjklHessian(AsdfghjklInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
@@ -242,7 +243,7 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: BaseLikelihood | Likelihood | str,
         last_layer: bool = False,
         subnetwork_indices: torch.LongTensor | None = None,
         dict_key_x: str = "input_ids",
@@ -267,7 +268,7 @@ class AsdfghjklEF(AsdfghjklInterface, EFInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | None,
+        likelihood: BaseLikelihood | Likelihood | None,
         last_layer: bool = False,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",

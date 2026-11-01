@@ -7,7 +7,17 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature import (
+    CurvatureInterface,
+    CurvlinopsGGN,
+    EFInterface,
+    GGNInterface,
+)
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
 from tests.utils import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
 
 
@@ -482,3 +492,36 @@ def test_batchgrad_data_dependent_control_flow(class_Xy, model):
 
     with pytest.raises(ValueError, match="data-dependent control flow"):
         backend.gradients({"input_ids": X, "labels": y}, y)
+
+
+@pytest.mark.parametrize("backend_cls", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
+@pytest.mark.parametrize("structure", ["diag", "kron", "full"])
+@pytest.mark.parametrize(
+    "name,likelihood",
+    [
+        ("regression", GaussianLikelihood()),
+        ("classification", CategoricalLikelihood()),
+    ],
+)
+def test_backend_accepts_likelihood_object(
+    backend_cls, structure, name, likelihood, model, class_Xy, reg_Xy
+):
+    X, y = reg_Xy if name == "regression" else class_Xy
+
+    extra = (len(X),) if structure == "kron" else ()
+
+    loss_str, H_str = getattr(backend_cls(model, name), structure)(X, y, *extra)
+    loss_obj, H_obj = getattr(backend_cls(model, likelihood), structure)(X, y, *extra)
+
+    assert torch.allclose(loss_str, loss_obj)
+
+    if structure == "kron":
+        H_str, H_obj = H_str.to_matrix(), H_obj.to_matrix()
+
+    assert torch.allclose(H_str, H_obj)
+
+
+@pytest.mark.parametrize("likelihood", [BradleyTerryLikelihood(), "reward_modeling"])
+def test_backend_rejects_unsupported_likelihood(likelihood, model):
+    with pytest.raises(ValueError):
+        CurvatureInterface(model, likelihood)
