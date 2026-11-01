@@ -267,14 +267,31 @@ class Likelihood(metaclass=_LikelihoodMeta):
 class GaussianLikelihood(Likelihood):
     """Gaussian likelihood, i.e. regression.
 
-    The loss is the MSE, so the negative log likelihood is half the loss plus the
-    normalizer `n_obs * n_outputs * log(sigma_noise * sqrt(2 pi))`. The targets have
-    as many dims as the outputs `f`, and every entry of the targets but the last dim
-    is an observation.
+    With observation noise \\(\\sigma\\), a target \\(y \\in \\mathbb{R}^K\\) given the
+    outputs \\(f\\) has the likelihood
 
-    With unit noise, the output Hessian is the identity, the inverse link is the
-    identity, samples are `y ~ N(f, 1)`, and the output gradient is `f - y`. A float
-    `sigma_noise` gives a normalizer with the default dtype.
+    $$
+        p(y \\mid f) = \\mathcal{N}(y \\mid f, \\sigma^2 I).
+    $$
+
+    The loss is the summed MSE, so for \\(N\\) observations the negative log
+    likelihood is
+
+    $$
+        -\\log p(\\mathcal{D} \\mid f)
+        = \\frac{1}{\\sigma^2} \\cdot \\frac{1}{2} \\sum_{n=1}^N \\lVert y_n - f_n \\rVert^2
+        + N K \\log\\left(\\sigma \\sqrt{2 \\pi}\\right),
+    $$
+
+    which gives the loss factor \\(\\tfrac{1}{2}\\) and the normalizer
+    \\(N K \\log(\\sigma \\sqrt{2\\pi})\\). The targets have as many dims as the outputs,
+    and every entry of the targets but the last dim is an observation.
+
+    The noise enters through `sigma_noise` of the Laplace approximation, so the
+    other quantities assume \\(\\sigma = 1\\): the output Hessian is \\(I\\), the inverse
+    link is the identity, samples are \\(y \\sim \\mathcal{N}(f, I)\\), and the output
+    gradient is \\(f - y\\). A float `sigma_noise` gives a normalizer with the default
+    dtype.
     """
 
     name: ClassVar[str] = "regression"
@@ -331,18 +348,26 @@ class GaussianLikelihood(Likelihood):
 class CategoricalLikelihood(Likelihood):
     """Categorical likelihood with a softmax link, i.e. classification.
 
-    The loss is the cross-entropy, which is already the negative log likelihood, so
-    the normalizer is zero. The targets are class indices `(batch, ...)` or class
-    probabilities with the shape of the logits `f`.
+    With logits \\(f \\in \\mathbb{R}^C\\) and class probabilities
+    \\(p = \\operatorname{softmax}(f)\\), a class \\(y\\) has the likelihood
+    \\(p(y \\mid f) = p_y\\). The loss is the cross-entropy \\(-\\log p_y\\), or
+    \\(-\\sum_c y_c \\log p_c\\) for class probabilities \\(y\\), which is already the
+    negative log likelihood. So the loss factor is \\(1\\) and the normalizer is zero.
 
-    For logits with extra batch dims, e.g. `(B, L, C)` for sequences, `loss` flattens
-    the batch dims, since `CrossEntropyLoss` expects the class axis at dim 1. Every
-    token is then an observation; the class dim of probability targets does not
-    count.
+    The targets are class indices `(batch, ...)` or class probabilities with the
+    shape of the logits. For logits with extra batch dims, e.g. `(B, L, C)` for
+    sequences, `loss` flattens the batch dims, since `CrossEntropyLoss` expects the
+    class axis at dim 1. Every token is then an observation; the class dim of
+    probability targets does not count.
 
-    With `p = softmax(f)`, the output Hessian is `diag(p) - p p^T`, the inverse link
-    is the softmax, samples are one-hot draws from `p`, and the output gradient is
-    `p - y`.
+    The output Hessian of the negative log likelihood is
+
+    $$
+        \\nabla^2_f \\left(-\\log p(y \\mid f)\\right) = \\operatorname{diag}(p) - p p^\\top,
+    $$
+
+    the inverse link is the softmax, samples are one-hot draws
+    \\(y \\sim \\operatorname{Cat}(p)\\), and the output gradient is \\(p - y\\).
     """
 
     name: ClassVar[str] = "classification"
@@ -407,11 +432,19 @@ class CategoricalLikelihood(Likelihood):
 class BradleyTerryLikelihood(Likelihood):
     """Bradley-Terry likelihood for reward modeling.
 
-    The curvature is fitted with a `CategoricalLikelihood` over the compared items,
-    so the loss, the target check, the output Hessian, the inverse link, samples,
-    and the output gradient are all categorical. Unlike for classification, every
-    entry of the targets is an observation. The predictive is a
-    `GaussianLikelihood` over the reward.
+    The model outputs a reward \\(r(x)\\) per item. For a pair of items \\(x_1\\) and
+    \\(x_2\\), the probability that \\(x_1\\) is preferred is
+
+    $$
+        p(x_1 \\succ x_2) = \\frac{\\exp r(x_1)}{\\exp r(x_1) + \\exp r(x_2)},
+    $$
+
+    the softmax of the two rewards. The curvature is therefore fitted with a
+    `CategoricalLikelihood` over the compared items, so the loss, the target check,
+    the output Hessian, the inverse link, samples, and the output gradient are all
+    categorical. Unlike for classification, every entry of the targets is an
+    observation. The predictive is a `GaussianLikelihood` over the reward
+    \\(r(x)\\).
     """
 
     name: ClassVar[str] = "reward_modeling"
