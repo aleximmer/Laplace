@@ -1105,10 +1105,11 @@ class BaseLaplace:
             f_mu, f_var, n_samples, diagonal_output, generator
         )
 
-        if self.likelihood == Likelihood.REGRESSION:
-            return f_samples
-        else:
+        # Reward models predict rewards, which are regression outputs
+        if self.likelihood == Likelihood.CLASSIFICATION:
             return torch.softmax(f_samples, dim=-1)
+        else:
+            return f_samples
 
 
 class ParametricLaplace(BaseLaplace):
@@ -1615,14 +1616,19 @@ class ParametricLaplace(BaseLaplace):
         if pred_type == PredType.GLM and joint:
             f_mu, f_cov = self._glm_predictive_distribution(x, joint=True)
 
+            # Reward models are fitted on pairs but predict one reward per item
+            n_outputs = (
+                1 if self.likelihood == Likelihood.REWARD_MODELING else self.n_outputs
+            )
+
             if diagonal_output:
                 # Keep the covariance between inputs, drop it between outputs
                 output_ids = torch.arange(f_mu.numel(), device=f_mu.device)
-                output_ids = output_ids % self.n_outputs
+                output_ids = output_ids % n_outputs
                 f_cov = f_cov * (output_ids[:, None] == output_ids[None, :])
 
             samples = draw_gaussian(f_mu, f_cov, n_samples, generator)
-            return samples.reshape(n_samples, -1, self.n_outputs)
+            return samples.reshape(n_samples, -1, n_outputs)
         elif pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(x)
             return self._glm_functional_samples(
@@ -1687,10 +1693,10 @@ class ParametricLaplace(BaseLaplace):
                 x, pred_type, n_samples, diagonal_output, generator, joint=True
             )
 
-            if self.likelihood == Likelihood.REGRESSION:
-                return f_samples
-            else:
+            if self.likelihood == Likelihood.CLASSIFICATION:
                 return torch.softmax(f_samples, dim=-1)
+            else:
+                return f_samples
         elif pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(x)
             return self._glm_predictive_samples(

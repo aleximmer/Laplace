@@ -2278,6 +2278,9 @@ def test_joint_functional_samples_duplicate_inputs(
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_joint_functional_samples_backprop(laplace, model, reg_loader):
+    if laplace == LowRankLaplace:
+        pytest.skip("The asdfghjkl backend of LowRankLaplace detaches its Jacobians.")
+
     lap = laplace(model, "regression", enable_backprop=True)
     lap.fit(reg_loader)
     x = reg_loader.dataset.tensors[0][:3].clone().requires_grad_()
@@ -2288,6 +2291,27 @@ def test_joint_functional_samples_backprop(laplace, model, reg_loader):
     grad = torch.autograd.grad(samples.sum(), x)[0]
 
     assert grad.abs().sum() > 0
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("joint", [False, True])
+def test_reward_modeling_predictive_samples_are_rewards(
+    laplace, joint, reward_model, reward_loader, reward_test_X
+):
+    lap = laplace(reward_model, "reward_modeling")
+    lap.fit(reward_loader)
+    x = reward_test_X[:3]
+
+    # At prediction time, reward modeling is regression on the rewards
+    psamples = lap.predictive_samples(
+        x, n_samples=10, joint=joint, generator=torch.Generator().manual_seed(0)
+    )
+    fsamples = lap.functional_samples(
+        x, n_samples=10, joint=joint, generator=torch.Generator().manual_seed(0)
+    )
+
+    assert psamples.shape == (10, 3, 1)
+    assert torch.allclose(psamples, fsamples)
 
 
 @pytest.mark.parametrize("laplace", flavors)
