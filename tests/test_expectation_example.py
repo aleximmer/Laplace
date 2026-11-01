@@ -85,6 +85,14 @@ def test_joint_samples_match_marginals(fitted: BaseLaplace) -> None:
     assert torch.allclose(samples.mean(0), mean.detach(), atol=0.05 * var.sqrt().max())
     assert torch.allclose(samples.var(0), var, rtol=0.1)
 
+    # The correlations between inputs follow the joint covariance too
+    _, cov = fitted(x, joint=True)
+    std = cov.detach().diagonal().sqrt()
+    corr_joint = cov.detach() / torch.outer(std, std)
+    corr_samples = torch.corrcoef(samples.reshape(20000, 6).T)
+
+    assert torch.allclose(corr_samples, corr_joint, atol=0.05)
+
 
 def test_joint_samples_duplicate_points_no_error(fitted: BaseLaplace) -> None:
     x = torch.rand(1, 2).repeat(3, 1)  # Singular joint covariance without jitter
