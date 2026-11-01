@@ -62,6 +62,7 @@ pip install "laplace-torch[all]"       # both
 ```
 
 Extras can be combined, e.g. `pip install "laplace-torch[asdl,backpack]"`.
+Curvlinops currently depends on BackPACK, so a plain install still pulls it in.
 
 The old `asdfghjkl` backend, which `LowRankLaplace` needs, is not on PyPI. Install it via:
 
