@@ -20,6 +20,13 @@ from laplace.baselaplace import (
     VaLLA,
 )
 from laplace.laplace import Laplace
+from laplace.likelihoods import (
+    BaseLikelihood,
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+    get_likelihood,
+)
 from laplace.lllaplace import (
     DiagLLLaplace,
     FullLLLaplace,
@@ -61,6 +68,12 @@ __all__ = [
     "FullSubnetLaplace",
     "DiagSubnetLaplace",  # subnetwork
     "marglik_training",
+    # Likelihoods
+    "BaseLikelihood",
+    "GaussianLikelihood",
+    "CategoricalLikelihood",
+    "BradleyTerryLikelihood",
+    "get_likelihood",
     # Enums
     "SubsetOfWeights",
     "FunctionalApproximation",
