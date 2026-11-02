@@ -74,6 +74,19 @@ Pull requests are very welcome. Please follow these guidelines:
 4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
    1. See `docs/api_reference/*.md` on how to include a newly added class in the docs.
 5. Provide as many test cases as possible. Make sure all test cases pass.
+6. CI also runs every script in `./examples` and the Python snippets of every page in `./docs`.
+   New scripts and pages are picked up automatically, so make sure they run on a CPU in a few
+   minutes. To run them locally:
+
+    ```bash
+    uv pip install -r examples/requirements.txt
+    pytest examples/test_examples.py -m "not slow"
+    ```
+
+    If a script is slow, give it command-line options for fewer iterations, a data subset
+    or a smaller model, and set them in `ARGS` in `examples/test_examples.py`. Doc snippets
+    can't take arguments, so pages that need a full dataset go in `SLOW`. CI runs those
+    once a week.
 
 !!! warning
 

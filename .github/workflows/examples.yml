@@ -1,0 +1,56 @@
+name: examples
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Mondays, 04:00 UTC. The calibration doc pages train and evaluate on full datasets.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  examples:
+    name: examples and doc snippets
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Cache Hugging Face models and datasets
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-hub-examples
+      - name: Install the project and the example dependencies
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra all -r examples/requirements.txt
+      - name: Run examples
+        run: .venv/bin/python -m pytest examples/test_examples.py -m "not slow" -v
+
+  examples-slow:
+    name: calibration doc pages
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Cache Hugging Face models and datasets
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-hub-calibration
+      - name: Install the project and the example dependencies
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra all -r examples/requirements.txt
+      - name: Run slow examples
+        run: .venv/bin/python -m pytest examples/test_examples.py -m slow -v
