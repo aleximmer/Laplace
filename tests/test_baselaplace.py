@@ -2722,10 +2722,8 @@ def test_categorical_options_end_to_end(laplace, options):
 
 
 def test_glm_mc_predictive_for_custom_link():
-    torch.manual_seed(7)
-    X = torch.randn(50, 3)
-    y = torch.poisson(torch.exp(0.5 * X[:, :1]))
-    loader = DataLoader(TensorDataset(X, y), batch_size=10)
+    loader = _poisson_loader()
+    X = loader.dataset.tensors[0]
 
     model = nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1))
     la = DiagLaplace(model, PoissonLog(), prior_precision=10.0)
@@ -2777,3 +2775,36 @@ def test_gridsearch_requires_loss_for_custom(model, reg_loader):
         loss=torchmetrics.MeanSquaredError(num_outputs=2), **kwargs
     )
     assert torch.isfinite(la.prior_precision).all()
+
+
+def _poisson_loader() -> DataLoader:
+    """Inputs `(50, 3)` and Poisson counts `(50, 1)` with log rate \\(x_1 / 2\\)."""
+    torch.manual_seed(7)
+    X = torch.randn(50, 3)
+    y = torch.poisson(torch.exp(0.5 * X[:, :1]))
+
+    return DataLoader(TensorDataset(X, y), batch_size=10)
+
+
+def test_nn_predictive_for_custom_link():
+    loader = _poisson_loader()
+    model = nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1))
+    la = DiagLaplace(model, PoissonLog(), prior_precision=10.0)
+
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        la.fit(loader)
+
+    X = loader.dataset.tensors[0][:8]
+    pred = la(
+        X,
+        pred_type="nn",
+        link_approx="mc",
+        n_samples=50,
+        generator=torch.Generator().manual_seed(1),
+    )
+
+    # The same weight samples, mapped through exp(f) instead of the softmax
+    fs = la._nn_functional_samples(X, 50, torch.Generator().manual_seed(1))
+    assert pred.shape == (8, 1)
+    torch.testing.assert_close(pred, fs.exp().mean(0))
+    assert not torch.allclose(pred, torch.ones_like(pred))

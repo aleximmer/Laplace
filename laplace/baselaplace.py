@@ -1555,7 +1555,8 @@ class ParametricLaplace(BaseLaplace):
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
+            For `pred_type='nn'`, only 'mc' is possible. Likelihoods other than
+            classification and reward modeling always use Monte Carlo.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -1565,7 +1566,8 @@ class ParametricLaplace(BaseLaplace):
             Only available for regression and GLM predictive.
 
         n_samples : int
-            number of samples for `link_approx='mc'`.
+            number of samples for `link_approx='mc'`, for `pred_type='nn'`, and
+            for the Monte Carlo predictive of other likelihoods.
 
         diagonal_output : bool
             whether to use a diagonalized posterior predictive on the outputs.
@@ -1592,6 +1594,10 @@ class ParametricLaplace(BaseLaplace):
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+            For any other likelihood, a torch.Tensor with the shape of the outputs
+            is returned. It averages the likelihood's `inverse_link` over
+            `n_samples` draws of the outputs from the GLM predictive or from the
+            weight posterior.
 
         Warns
         -----
@@ -1647,8 +1653,14 @@ class ParametricLaplace(BaseLaplace):
             if likelihood.is_gaussian:
                 samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
                 return samples.mean(dim=0), samples.var(dim=0)
-            else:  # classification; the average is computed online
+            elif likelihood.name in _CATEGORICAL_NAMES:
+                # The average is computed online
                 return self._nn_predictive_classification(x, n_samples, **model_kwargs)
+            else:
+                f_samples = self._nn_functional_samples(
+                    x, n_samples, generator, **model_kwargs
+                )
+                return likelihood.inverse_link(f_samples).mean(dim=0)
 
     def functional_samples(
         self,

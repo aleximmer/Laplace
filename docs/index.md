@@ -142,11 +142,13 @@ Not every backend computes the curvature with every option:
 
 | Hessian structure | Options | Support |
 |---|---|---|
-| `diag`, `full` with a GGN or EF backend | all | Every backend. If a backend's library can't handle an option, Laplace falls back to its own torch.func implementation, which is slower. |
-| `kron` | `label_smoothing` | Curvlinops (but not with `stochastic=True`), ASDL, and BackPACK GGN. Asdfghjkl doesn't support it. |
+| `diag`, `full` with a deterministic GGN or EF backend of Curvlinops, ASDL, or BackPACK | all | Supported. If a backend's library can't handle an option, Laplace falls back to its own torch.func implementation, which is slower. |
+| Asdfghjkl backends | any | `diag` falls back to torch.func. `full`, `kron`, and low-rank raise. |
+| `kron` | `label_smoothing` | Curvlinops (deterministic only), ASDL, and BackPACK GGN |
 | `kron` | `weight`, `ignore_index` | None |
 | `full` with a Hessian backend | all | `CurvlinopsHessian` and `AsdlHessian` |
-| `stochastic=True` (Monte Carlo Fisher) | `label_smoothing` | `CurvlinopsGGN` with `full` only |
+| `stochastic=True` (Monte Carlo Fisher) | `label_smoothing` | `CurvlinopsGGN` with `full`, and ASDL GGN with `kron` |
+| `stochastic=True` (Monte Carlo Fisher) | `weight`, `ignore_index` | None |
 
 An unsupported combination raises a `ValueError` that points you to a GGN or EF backend with the `diag` or `full` structure.
 

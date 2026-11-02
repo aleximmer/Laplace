@@ -23,6 +23,7 @@ from tests.utils import (
     BackPackGGN,
     CustomCategorical,
     ListDataset,
+    PoissonLog,
     ScaledGaussian,
     ScaledModel,
     dict_data_collator,
@@ -947,3 +948,32 @@ def test_custom_likelihood_full_lllaplace(model, reg_loader):
 
     # The output Hessian is I / s^2 instead of I
     torch.testing.assert_close(la.H, ref.H / 4)
+
+
+@pytest.mark.parametrize("laplace", [FullLLLaplace, DiagLLLaplace])
+def test_nn_predictive_for_custom_link_lllaplace(laplace):
+    torch.manual_seed(7)
+    X = torch.randn(50, 3)
+    y = torch.poisson(torch.exp(0.5 * X[:, :1]))
+    loader = DataLoader(TensorDataset(X, y), batch_size=10)
+
+    model = nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1))
+    la = laplace(model, PoissonLog(), prior_precision=10.0)
+
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        la.fit(loader)
+
+    X = X[:8]
+    pred = la(
+        X,
+        pred_type="nn",
+        link_approx="mc",
+        n_samples=50,
+        generator=torch.Generator().manual_seed(1),
+    )
+
+    # The same last-layer samples, mapped through exp(f) instead of the softmax
+    fs = la._nn_functional_samples(X, 50, torch.Generator().manual_seed(1))
+    assert pred.shape == (8, 1)
+    torch.testing.assert_close(pred, fs.exp().mean(0))
+    assert not torch.allclose(pred, torch.ones_like(pred))
