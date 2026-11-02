@@ -263,6 +263,9 @@ class ScaledGaussian(Likelihood):
     def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
         return torch.distributions.Normal(f, self.scale)
 
+    def hyperparameters(self) -> dict[str, Any]:
+        return {"scale": self.scale}
+
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None
     ) -> torch.Tensor:

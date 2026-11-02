@@ -17,6 +17,8 @@ from tests.utils import (
     DistributionOnlyBernoulli,
     DistributionOnlyCategorical,
     DistributionOnlyGaussian,
+    DoubledCategorical,
+    ScaledGaussian,
 )
 
 
@@ -501,3 +503,26 @@ def test_subclass_equals_its_builtin_by_name():
     assert Likelihood.CLASSIFICATION == Doubled()
     assert Doubled() != Likelihood.REGRESSION
     assert len({Doubled(), CategoricalLikelihood()}) == 1
+
+
+def test_equality_includes_hyperparameters():
+    assert ScaledGaussian(1.0) != ScaledGaussian(2.0)
+    assert ScaledGaussian(2.0) == ScaledGaussian(2.0)
+    assert ScaledGaussian(1.0) == "scaled_gaussian"
+    assert GaussianLikelihood() == Likelihood.REGRESSION
+    assert DoubledCategorical() == Likelihood.CLASSIFICATION
+    assert GaussianLikelihood().hyperparameters() == {}
+
+
+def test_equality_compares_tensor_hyperparameters():
+    class Weighted(CategoricalLikelihood):
+        def __init__(self, weight: torch.Tensor) -> None:
+            self.weight = weight
+
+        def hyperparameters(self) -> dict:
+            return {"weight": self.weight}
+
+    assert Weighted(torch.ones(2)) == Weighted(torch.ones(2))
+    assert Weighted(torch.ones(2)) != Weighted(torch.zeros(2))
+    assert Weighted(torch.ones(2)) != Weighted(torch.ones(3))
+    assert Weighted(torch.ones(2)) != CategoricalLikelihood()

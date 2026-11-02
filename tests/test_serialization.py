@@ -31,6 +31,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
+from tests.utils import ScaledGaussian
 
 # These tests load only checkpoints written by the same test process.
 # Explicit pickle loading preserves their intent on PyTorch 2.6 and newer.
@@ -174,7 +175,9 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
     # Make sure no pickle object
     for val in state_dict.values():
         if val is not None:
-            assert isinstance(val, (list, tuple, int, float, str, bool, torch.Tensor))
+            assert isinstance(
+                val, (dict, list, tuple, int, float, str, bool, torch.Tensor)
+            )
 
 
 @pytest.mark.parametrize("laplace", flavors_functional)
@@ -190,7 +193,8 @@ def test_serialize_no_pickle_functional(laplace, model, reg_loader):
     for val in state_dict.values():
         if val is not None:
             assert isinstance(
-                val, (DataLoader, list, tuple, int, float, str, bool, torch.Tensor)
+                val,
+                (DataLoader, dict, list, tuple, int, float, str, bool, torch.Tensor),
             )
 
 
@@ -435,3 +439,38 @@ def test_deepcopy_and_pickle_object_likelihood(
         assert la2.likelihood == likelihood
         assert la2.likelihood is not la.likelihood
         assert torch.allclose(la(X, fitting=True), la2(X, fitting=True))
+
+
+def test_checkpoint_stores_likelihood_hyperparameters(model, reg_loader):
+    la = FunctionalLaplace(model, ScaledGaussian(2.0), n_subset=10)
+    state_dict = la.state_dict()
+
+    assert state_dict["likelihood"] == "scaled_gaussian"
+    assert state_dict["likelihood_hyperparameters"] == {"scale": 2.0}
+
+    FunctionalLaplace(model, ScaledGaussian(2.0), n_subset=10).load_state_dict(
+        state_dict
+    )
+
+    with pytest.raises(ValueError, match="Different likelihoods"):
+        FunctionalLaplace(model, ScaledGaussian(1.0), n_subset=10).load_state_dict(
+            state_dict
+        )
+
+    default = DiagLaplace(model, "regression")
+    default.fit(reg_loader)
+    assert default.state_dict()["likelihood_hyperparameters"] == {}
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_old_checkpoint_without_hyperparameters_loads(laplace, model, class_loader):
+    la = laplace(model, "classification")
+    la.fit(class_loader)
+    state_dict = la.state_dict()
+    del state_dict["likelihood_hyperparameters"]
+
+    la2 = laplace(model, "classification")
+    la2.load_state_dict(state_dict)
+
+    X, _ = next(iter(class_loader))
+    assert torch.allclose(la(X), la2(X))

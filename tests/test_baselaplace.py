@@ -2576,3 +2576,35 @@ def test_deepcopy_and_state_dict_keep_likelihood(model, class_loader):
     lap2 = deepcopy(lap)
     assert type(lap2.likelihood) is CategoricalLikelihood
     assert lap2.likelihood is not lap.likelihood
+
+
+class TemperedCategorical(CategoricalLikelihood):
+    """Built-in categorical likelihood that reports a temperature as an option."""
+
+    def __init__(self, temperature: float = 1.0) -> None:
+        self.temperature = temperature
+
+    def hyperparameters(self) -> dict:
+        return {} if self.temperature == 1.0 else {"temperature": self.temperature}
+
+
+def test_parameterized_builtin_subclass_keeps_classification_paths(model, class_loader):
+    lik = TemperedCategorical(temperature=1.0)
+    assert lik.name == "classification"
+
+    la = DiagLaplace(model, lik)
+    la.fit(class_loader)
+    ref = DiagLaplace(model, "classification")
+    ref.fit(class_loader)
+
+    X, _ = next(iter(class_loader))
+    probs = la(X, pred_type="glm", link_approx="probit")
+
+    torch.testing.assert_close(probs.sum(-1), torch.ones(len(X)))
+    torch.testing.assert_close(probs, ref(X, pred_type="glm", link_approx="probit"))
+
+    # With an option set, the name still selects the classification paths
+    tempered = DiagLaplace(model, TemperedCategorical(temperature=2.0))
+    tempered.fit(class_loader)
+    probs = tempered(X, pred_type="glm", link_approx="probit")
+    torch.testing.assert_close(probs.sum(-1), torch.ones(len(X)))

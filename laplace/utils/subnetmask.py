@@ -284,7 +284,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         except ValueError:
             lik = None
 
-        if lik is None or lik == Likelihood.REWARD_MODELING:
+        if lik is None or lik.name == Likelihood.REWARD_MODELING.name:
             raise ValueError("Only available for classification and regression!")
 
         super().__init__(model, n_params_subnet)

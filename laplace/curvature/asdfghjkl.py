@@ -25,6 +25,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.likelihoods import get_likelihood
 from laplace.utils import Kron, _is_batchnorm
 from laplace.utils.enums import Likelihood
 
@@ -257,7 +258,7 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
         dict_key_y: str = "labels",
         stochastic: bool = False,
     ) -> None:
-        if likelihood != Likelihood.CLASSIFICATION:
+        if get_likelihood(likelihood).name != Likelihood.CLASSIFICATION.name:
             raise ValueError("This backend only supports classification currently.")
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
@@ -280,7 +281,7 @@ class AsdfghjklEF(AsdfghjklInterface, EFInterface):
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ) -> None:
-        if likelihood != Likelihood.CLASSIFICATION:
+        if get_likelihood(likelihood).name != Likelihood.CLASSIFICATION.name:
             raise ValueError("This backend only supports classification currently.")
 
         super().__init__(model, likelihood, last_layer, None, dict_key_x, dict_key_y)

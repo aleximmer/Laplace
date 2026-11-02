@@ -59,7 +59,7 @@ class CurvlinopsInterface(CurvatureInterface):
     @property
     def _linop_model(self) -> nn.Module:
         """The model that is passed to the Curvlinops linear operators."""
-        if self.likelihood == Likelihood.CLASSIFICATION:
+        if self.likelihood.name == Likelihood.CLASSIFICATION.name:
             return _ClassDimFirst(self.model)
 
         return self.model

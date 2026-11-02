@@ -23,7 +23,7 @@ from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.curvlinops import CurvlinopsGGN
-from laplace.likelihoods import get_likelihood
+from laplace.likelihoods import get_likelihood, hyperparameters_equal
 from laplace.utils import SoDSampler
 from laplace.utils.enums import (
     Likelihood,
@@ -69,6 +69,32 @@ __all__ = [
     "DiagLaplace",
     "LowRankLaplace",
 ]
+
+
+def _same_likelihood(likelihood: Likelihood, state_dict: dict[str, Any]) -> bool:
+    """Whether a checkpoint was saved with the same likelihood.
+
+    Parameters
+    ----------
+    likelihood : Likelihood
+        the likelihood of the Laplace approximation that loads the checkpoint.
+    state_dict : dict
+        the checkpoint. Old checkpoints have no `"likelihood_hyperparameters"` key, and
+        then only the name is compared.
+
+    Returns
+    -------
+    same : bool
+    """
+    if likelihood.name != str(state_dict["likelihood"]):
+        return False
+
+    if "likelihood_hyperparameters" not in state_dict:
+        return True
+
+    return hyperparameters_equal(
+        likelihood.hyperparameters(), state_dict["likelihood_hyperparameters"]
+    )
 
 
 class BaseLaplace:
@@ -563,7 +589,7 @@ class BaseLaplace:
         """
         likelihood = self.likelihood.fit_likelihood
 
-        if likelihood == Likelihood.CLASSIFICATION:
+        if likelihood.name == Likelihood.CLASSIFICATION.name:
             warnings.warn(
                 "By default `link_approx` is `probit`. Make sure to set it equals to "
                 "the way you want to call `la(test_data, pred_type=..., link_approx=...)`."
@@ -631,7 +657,7 @@ class BaseLaplace:
                     torchmetrics.MeanSquaredError(num_outputs=self.n_outputs).to(
                         self._device
                     )
-                    if likelihood == Likelihood.REGRESSION
+                    if likelihood.name == Likelihood.REGRESSION.name
                     else RunningNLLMetric().to(self._device)
                 )
 
@@ -1287,13 +1313,13 @@ class ParametricLaplace(BaseLaplace):
 
             # `out` comes from a single datum, so only the number of dims can be
             # checked here. The backends check the exact shapes of every batch.
-            if self.likelihood == Likelihood.REGRESSION:
+            if self.likelihood.name == Likelihood.REGRESSION.name:
                 self.likelihood.check_targets(out, y)
-            elif self.likelihood == Likelihood.CLASSIFICATION:
+            elif self.likelihood.name == Likelihood.CLASSIFICATION.name:
                 self._check_classification_targets(out, y)
 
             if (
-                self.likelihood != Likelihood.REWARD_MODELING
+                self.likelihood.name != Likelihood.REWARD_MODELING.name
                 and out.ndim > 2
                 and "backpack" in self._backend_cls.__name__.lower()
             ):
@@ -1645,7 +1671,9 @@ class ParametricLaplace(BaseLaplace):
 
             # Reward models are fitted on pairs but predict one reward per item
             n_outputs = (
-                1 if self.likelihood == Likelihood.REWARD_MODELING else self.n_outputs
+                1
+                if self.likelihood.name == Likelihood.REWARD_MODELING.name
+                else self.n_outputs
             )
 
             if diagonal_output:
@@ -1739,7 +1767,8 @@ class ParametricLaplace(BaseLaplace):
         # In reward modeling, the output size differs between fitting (pairwise) and
         # prediction (single items), which ASDL's Jacobian can't handle
         if "asdl" in self._backend_cls.__name__.lower() and (
-            self.enable_backprop or self.likelihood == Likelihood.REWARD_MODELING
+            self.enable_backprop
+            or self.likelihood.name == Likelihood.REWARD_MODELING.name
         ):
             if self.enable_backprop:
                 # Asdl's doesn't support backprop over Jacobians
@@ -1948,6 +1977,7 @@ class ParametricLaplace(BaseLaplace):
             "n_obs": self.n_obs,
             "n_outputs": self.n_outputs,
             "likelihood": str(self.likelihood),
+            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
             "temperature": self.temperature,
             "enable_backprop": self.enable_backprop,
             "cls_name": self.__class__.__name__,
@@ -1967,7 +1997,7 @@ class ParametricLaplace(BaseLaplace):
                 + " Make sure that you use the same `subset_of_weights` value and the same `.requires_grad`"
                 + " switch on `model.parameters()`."
             )
-        if self.likelihood != state_dict["likelihood"]:
+        if not _same_likelihood(self.likelihood, state_dict):
             raise ValueError("Different likelihoods detected!")
 
         # Ignorable warnings
@@ -2407,7 +2437,7 @@ class LowRankLaplace(ParametricLaplace):
             except (TypeError, AttributeError):
                 out = self.model(X.to(self._device))
 
-        if self.likelihood == Likelihood.REGRESSION:
+        if self.likelihood.name == Likelihood.REGRESSION.name:
             self.likelihood.check_targets(out, y)
 
         self.n_outputs = out.shape[-1]
@@ -2842,7 +2872,10 @@ class BaseFunctionalLaplace(BaseLaplace):
         ):
             raise ValueError("Invalid random generator (check type and device).")
         likelihood = self._stage_likelihood(fitting)
-        if likelihood == Likelihood.CLASSIFICATION and link_approx == LinkApprox.MC:
+        if (
+            likelihood.name == Likelihood.CLASSIFICATION.name
+            and link_approx == LinkApprox.MC
+        ):
             return self.predictive_samples(
                 x,
                 n_samples=n_samples,
@@ -3356,7 +3389,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.batch_size = train_loader.batch_size
 
         if (
-            self.likelihood == "regression"
+            self.likelihood.name == Likelihood.REGRESSION.name
             and self.n_outputs > 1
             and self.independent_outputs
         ):
@@ -3395,7 +3428,10 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
             Js_batch, f_batch = self._jacobians(X, enable_backprop=False)
 
-            if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
+            if (
+                self.likelihood.name == Likelihood.REGRESSION.name
+                and y.ndim != out.ndim
+            ):
                 raise ValueError(
                     f"The model's output has {out.ndim} dims but "
                     f"the target has {y.ndim} dims."
@@ -3603,7 +3639,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         log determinant term := \\( \\log | K + \\sigma_2 I | \\)
         """
-        if self.likelihood == Likelihood.REGRESSION:
+        if self.likelihood.name == Likelihood.REGRESSION.name:
             if self.independent_outputs:
                 log_det = torch.tensor(
                     0.0, requires_grad=True, device=self._device, dtype=self._dtype
@@ -3668,7 +3704,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         \\( m := f + J (\\theta - \\theta_{MAP}) \\)
 
         """
-        if self.likelihood == "regression":
+        if self.likelihood.name == Likelihood.REGRESSION.name:
             noise = self.sigma_noise.square()
         else:
             noise = eps
@@ -3880,9 +3916,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         mu : torch.tensor
             K_batch_star with shape (batch, output_shape)
         """
-        if self.likelihood == Likelihood.REGRESSION:
+        if self.likelihood.name == Likelihood.REGRESSION.name:
             return y - (f + torch.einsum("bcp,p->bc", Js, self.prior_mean - self.mean))
-        elif self.likelihood == Likelihood.CLASSIFICATION:
+        elif self.likelihood.name == Likelihood.CLASSIFICATION.name:
             return -torch.einsum("bcp,p->bc", Js, self.prior_mean - self.mean)
 
     def log_marginal_likelihood(
@@ -3914,7 +3950,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         # update sigma_noise (useful when iterating on marglik)
         if sigma_noise is not None:
-            if self.likelihood != Likelihood.REGRESSION:
+            if self.likelihood.name != Likelihood.REGRESSION.name:
                 raise ValueError("Can only change sigma_noise for regression.")
             self.sigma_noise = sigma_noise
 
@@ -3978,6 +4014,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             "n_data": self.n_data,
             "n_outputs": self.n_outputs,
             "likelihood": str(self.likelihood),
+            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
             "temperature": self.temperature,
             "enable_backprop": self.enable_backprop,
             "cls_name": self.__class__.__name__,
@@ -3997,7 +4034,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                 + " Make sure that you use the same `subset_of_weights` value and the same `.requires_grad`"
                 + " switch on `model.parameters()`."
             )
-        if self.likelihood != state_dict["likelihood"]:
+        if not _same_likelihood(self.likelihood, state_dict):
             raise ValueError("Different likelihoods detected!")
 
         # Ignorable warnings
@@ -4202,7 +4239,7 @@ class ELLA(BaseFunctionalLaplace):
         candidate = torch.as_tensor(value, device=self._device, dtype=self._dtype)
         if not torch.all(torch.isfinite(candidate) & (candidate > 0)):
             raise ValueError("sigma_noise must be positive and finite.")
-        if self.likelihood != Likelihood.REGRESSION and torch.any(
+        if self.likelihood.name != Likelihood.REGRESSION.name and torch.any(
             torch.as_tensor(value) != 1
         ):
             raise ValueError("sigma_noise != 1 is only available for regression.")
@@ -4266,7 +4303,7 @@ class ELLA(BaseFunctionalLaplace):
             chosen = torch.randperm(n, generator=generator)[: self.subsample_size]
             return available[chosen]
 
-        if self.likelihood == Likelihood.REGRESSION:
+        if self.likelihood.name == Likelihood.REGRESSION.name:
             raise ValueError("balanced sampling is only defined for classification.")
 
         labels = []
@@ -4316,7 +4353,7 @@ class ELLA(BaseFunctionalLaplace):
         for batch in subset_loader(loader, indices):
             x, _ = self._batch(batch)
             if (
-                self.likelihood == Likelihood.REWARD_MODELING
+                self.likelihood.name == Likelihood.REWARD_MODELING.name
                 and not self._uses_backpack_backend
             ):
                 jacobians, outputs = CurvatureInterface.jacobians(self.backend, x)
@@ -4417,7 +4454,7 @@ class ELLA(BaseFunctionalLaplace):
             if len(feature_columns) == self.n_eigenvalues:
                 return torch.stack(feature_columns, dim=-1), output
         if (
-            self.likelihood == Likelihood.REWARD_MODELING
+            self.likelihood.name == Likelihood.REWARD_MODELING.name
             and self._uses_backpack_backend
             and (query_shape := self.model(x).shape)[-1] == 1
         ):
@@ -4428,7 +4465,7 @@ class ELLA(BaseFunctionalLaplace):
                 x, selectors, enable_backprop=self.enable_backprop
             )
         elif (
-            self.likelihood == Likelihood.REWARD_MODELING
+            self.likelihood.name == Likelihood.REWARD_MODELING.name
             and not self._uses_backpack_backend
         ):
             jacobians, output = CurvatureInterface.jacobians(
@@ -4463,7 +4500,7 @@ class ELLA(BaseFunctionalLaplace):
         if self.feature_gram is None:
             return
         precision = self.feature_gram / self.temperature
-        if self.likelihood == Likelihood.REGRESSION:
+        if self.likelihood.name == Likelihood.REGRESSION.name:
             precision = precision / self.sigma_noise.square()
         precision = precision + self.prior_precision * torch.eye(
             self.n_eigenvalues, device=self._device, dtype=self._dtype
@@ -4547,7 +4584,7 @@ class ELLA(BaseFunctionalLaplace):
         for step, batch in enumerate(iterator, start=1):
             x, y = self._batch(batch)
             features, output = self._features(x)
-            if self.likelihood == Likelihood.REGRESSION:
+            if self.likelihood.name == Likelihood.REGRESSION.name:
                 regression_targets(y, output)
                 self.feature_gram += torch.einsum(
                     "bck,bcl->kl", features, features
@@ -4700,7 +4737,7 @@ class ELLA(BaseFunctionalLaplace):
         count = 0
         for batch in loader:
             x, y = self._batch(batch)
-            if self.likelihood == Likelihood.REGRESSION:
+            if self.likelihood.name == Likelihood.REGRESSION.name:
                 mean, covariance = self.predictive_moments(x)
                 y = regression_targets(y, mean)
                 variance = (
@@ -4933,6 +4970,7 @@ class ELLA(BaseFunctionalLaplace):
             "n_params": self.n_params,
             "model_fingerprint": _model_fingerprint(self.model),
             "likelihood": str(self.likelihood),
+            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
             "subsample_size": self.subsample_size,
             "n_eigenvalues": self.n_eigenvalues,
             "dual_directions": self.dual_directions.detach().clone()
@@ -4974,7 +5012,7 @@ class ELLA(BaseFunctionalLaplace):
             raise ValueError(
                 "Checkpoint requires the same ELLA type and pretrained model."
             )
-        if state_dict["likelihood"] != self.likelihood:
+        if not _same_likelihood(self.likelihood, state_dict):
             raise ValueError("Checkpoint likelihood does not match.")
         self._validate_checkpoint_configuration(state_dict)
         _check_model_fingerprint(self.model, state_dict["model_fingerprint"])
@@ -5114,7 +5152,7 @@ class VaLLA(BaseFunctionalLaplace):
             backend_kwargs=backend_kwargs,
         )
         if (
-            self.likelihood != Likelihood.REGRESSION
+            self.likelihood.name != Likelihood.REGRESSION.name
             and alpha != 1
             and mc_softmax_samples == 0
         ):
@@ -5131,7 +5169,7 @@ class VaLLA(BaseFunctionalLaplace):
         )
         self.log_noise_variance = (
             torch.nn.Parameter(2 * self._sigma_noise.detach().log().clone())
-            if likelihood == Likelihood.REGRESSION
+            if self.likelihood.name == Likelihood.REGRESSION.name
             else None
         )
         self._inducing_strategy = (
@@ -5249,7 +5287,7 @@ class VaLLA(BaseFunctionalLaplace):
         candidate = torch.as_tensor(value, device=self._device, dtype=self._dtype)
         if not torch.all(torch.isfinite(candidate) & (candidate > 0)):
             raise ValueError("sigma_noise must be positive and finite.")
-        if self.likelihood != Likelihood.REGRESSION and torch.any(
+        if self.likelihood.name != Likelihood.REGRESSION.name and torch.any(
             torch.as_tensor(value) != 1
         ):
             raise ValueError("sigma_noise != 1 is only available for regression.")
@@ -5370,7 +5408,7 @@ class VaLLA(BaseFunctionalLaplace):
             n_pairs = (self.num_inducing + 1) // 2
             needed = (
                 n_pairs
-                if self.likelihood == Likelihood.REWARD_MODELING
+                if self.likelihood.name == Likelihood.REWARD_MODELING.name
                 else self.num_inducing
             )
             count = min(len(available_indices), needed)
@@ -5383,7 +5421,7 @@ class VaLLA(BaseFunctionalLaplace):
 
         for batch in source:
             x, y = self._batch(batch)
-            if self.likelihood == Likelihood.REWARD_MODELING:
+            if self.likelihood.name == Likelihood.REWARD_MODELING.name:
                 x = _individual_reward_inputs(x, self.dict_key_x)
                 labels = torch.zeros(
                     x[self.dict_key_x].shape[0]
@@ -5392,7 +5430,7 @@ class VaLLA(BaseFunctionalLaplace):
                     device=self._device,
                     dtype=torch.long,
                 )
-            elif self.likelihood == Likelihood.CLASSIFICATION:
+            elif self.likelihood.name == Likelihood.CLASSIFICATION.name:
                 labels = classification_targets(y)
             else:
                 labels = torch.zeros(y.shape[0], device=self._device, dtype=torch.long)
@@ -5445,7 +5483,7 @@ class VaLLA(BaseFunctionalLaplace):
             network outputs shaped ``[batch, outputs]``.
         """
         if self._uses_asdl_backend or (
-            self.likelihood == Likelihood.REWARD_MODELING
+            self.likelihood.name == Likelihood.REWARD_MODELING.name
             and not self._uses_backpack_backend
         ):
             return CurvatureInterface.jacobians(
@@ -5694,7 +5732,7 @@ class VaLLA(BaseFunctionalLaplace):
             Scalar loss minimized during fitting.
         """
         mean, covariance, features, triangular = self._latent_distribution(x)
-        if self.likelihood == Likelihood.REGRESSION:
+        if self.likelihood.name == Likelihood.REGRESSION.name:
             y = regression_targets(y, mean)
             noise_variance = self.sigma_noise.square()
             latent_variance = covariance.diagonal(dim1=-2, dim2=-1)
@@ -5763,7 +5801,7 @@ class VaLLA(BaseFunctionalLaplace):
         count = 0
         for batch in loader:
             x, y = self._batch(batch)
-            if self.likelihood == Likelihood.REGRESSION:
+            if self.likelihood.name == Likelihood.REGRESSION.name:
                 mean, covariance = self.predictive_moments(x)
                 y = regression_targets(y, mean)
                 variance = (
@@ -5841,7 +5879,7 @@ class VaLLA(BaseFunctionalLaplace):
         if not isinstance(self.mc_softmax_samples, int) or self.mc_softmax_samples < 0:
             raise ValueError("mc_softmax_samples must be a nonnegative integer.")
         if (
-            self.likelihood != Likelihood.REGRESSION
+            self.likelihood.name != Likelihood.REGRESSION.name
             and self.alpha != 1
             and self.mc_softmax_samples == 0
         ):
@@ -5999,6 +6037,7 @@ class VaLLA(BaseFunctionalLaplace):
             "n_params": self.n_params,
             "model_fingerprint": _model_fingerprint(self.model),
             "likelihood": str(self.likelihood),
+            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
             "inducing_locations": self.inducing_locations.detach().clone()
             if isinstance(self.inducing_locations, torch.Tensor)
             else deepcopy(self.inducing_locations),
@@ -6047,7 +6086,7 @@ class VaLLA(BaseFunctionalLaplace):
             raise ValueError(
                 "Checkpoint requires the same VaLLA type and pretrained model."
             )
-        if state_dict["likelihood"] != self.likelihood:
+        if not _same_likelihood(self.likelihood, state_dict):
             raise ValueError("Checkpoint likelihood does not match.")
         self._validate_checkpoint_configuration(state_dict)
         _check_model_fingerprint(self.model, state_dict["model_fingerprint"])

@@ -55,7 +55,9 @@ class AsdlInterface(CurvatureInterface):
     @property
     def loss_type(self) -> str:
         return (
-            LOSS_MSE if self.likelihood == Likelihood.REGRESSION else LOSS_CROSS_ENTROPY
+            LOSS_MSE
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else LOSS_CROSS_ENTROPY
         )
 
     def jacobians(
@@ -150,7 +152,9 @@ class AsdlInterface(CurvatureInterface):
 
         # The last dim of regression targets is the output dim
         n_obs = (
-            y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+            y.shape[:-1]
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else y.shape
         ).numel()
         Gs = self._sum_rows_per_observation(Gs, n_obs)
 
@@ -411,7 +415,7 @@ class AsdlInterface(CurvatureInterface):
             # No Fisher values were gathered, as with an empty subnetwork.
             diag_ggn = f.new_empty(0)
 
-        if type(self) is AsdlEF and self.likelihood == "regression":
+        if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
             curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
@@ -426,7 +430,7 @@ class AsdlInterface(CurvatureInterface):
     ) -> tuple[torch.Tensor, Kron]:
         self._check_builtin_likelihood()
 
-        if self.likelihood == Likelihood.REGRESSION and y.ndim > 2:
+        if self.likelihood.name == Likelihood.REGRESSION.name and y.ndim > 2:
             raise NotImplementedError(
                 "Kronecker-factored curvature with ASDL does not support regression "
                 "targets with more than one batch dimension (e.g. sequences). "
@@ -466,7 +470,7 @@ class AsdlInterface(CurvatureInterface):
         # ASDL sums the input factors over all tokens, e.g. `B * L` rows for logits
         # `(B, L, C)`. `KronLaplace.fit` normalizes by the number of tokens.
         kron = self._rescale_kron_factors(kron, N)
-        if type(self) is AsdlEF and self.likelihood == "regression":
+        if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
             curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss

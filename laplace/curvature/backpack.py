@@ -289,8 +289,12 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
-        y = y if self.likelihood == "regression" else y.view(-1)
+        f = (
+            f
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else f.view(-1, f.size(-1))
+        )
+        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -312,8 +316,12 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         context = KFAC if self.stochastic else KFLR
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
-        y = y if self.likelihood == "regression" else y.view(-1)
+        f = (
+            f
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else f.view(-1, f.size(-1))
+        )
+        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -336,8 +344,12 @@ class BackPackEF(BackPackInterface, EFInterface):
 
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
-        y = y if self.likelihood == "regression" else y.view(-1)
+        f = (
+            f
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else f.view(-1, f.size(-1))
+        )
+        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward()

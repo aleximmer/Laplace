@@ -179,7 +179,7 @@ def marglik_training(
     hyperparameters.append(log_prior_prec)
 
     # set up loss (and observation noise hyperparam)
-    if lik == Likelihood.REWARD_MODELING:
+    if lik.name == Likelihood.REWARD_MODELING.name:
         raise ValueError(
             "Marginal-likelihood training does not support reward modeling."
         )

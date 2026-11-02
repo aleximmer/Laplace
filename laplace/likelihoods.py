@@ -114,9 +114,12 @@ class Likelihood(metaclass=_LikelihoodMeta):
     torch losses. Their `distribution` is the model's predictive, so it does not
     change with options that only reweight or smooth the loss.
 
-    Likelihoods compare by `name`: an instance equals any likelihood or string with
-    the same name. So a subclass of `CategoricalLikelihood` that keeps its name still
-    equals `Likelihood.CLASSIFICATION`.
+    Two likelihoods are equal if they have the same `name` and the same
+    `hyperparameters()`, the options that differ from their defaults. A string equals
+    a likelihood with that name. Internally, the library dispatches on `name`, so a
+    subclass of `CategoricalLikelihood` that keeps its name and carries options still
+    takes the classification code paths, even though it does not equal
+    `Likelihood.CLASSIFICATION`.
 
     A custom subclass can only be fit if its `name` is `"regression"` or
     `"classification"`, because the curvature backends pick their code path by name.
@@ -165,10 +168,12 @@ class Likelihood(metaclass=_LikelihoodMeta):
             raise TypeError(f"Likelihood {cls.__name__} must define a `name`.")
 
     def __eq__(self, other: object) -> bool:
-        # By name only, so that a subclass of a built-in matches checks such as
-        # `likelihood == Likelihood.CLASSIFICATION`, as it did against the old enum
+        # A string names a likelihood type, so only the name counts. Two likelihoods
+        # must also agree on their options.
         if isinstance(other, Likelihood):
-            return self.name == other.name
+            return self.name == other.name and hyperparameters_equal(
+                self.hyperparameters(), other.hyperparameters()
+            )
 
         if isinstance(other, str):
             return self.name == _name_of(other)
@@ -183,6 +188,21 @@ class Likelihood(metaclass=_LikelihoodMeta):
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
+
+    def hyperparameters(self) -> dict[str, Any]:
+        """Options of the likelihood that differ from their defaults, by name.
+
+        They are part of the likelihood's identity: two likelihoods are equal only if
+        their names and hyperparameters match, and checkpoints store them. Override
+        this in a subclass that takes options. Values are plain Python objects or
+        tensors.
+
+        Returns
+        -------
+        hyperparameters : dict
+            empty by default.
+        """
+        return {}
 
     @property
     def value(self) -> str:
@@ -720,6 +740,38 @@ class _NegLogProbLoss(nn.Module):
         nll = -self.likelihood.distribution(f).log_prob(y)
 
         return nll.sum() if self.reduction == "sum" else nll.mean()
+
+
+def hyperparameters_equal(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Compare two hyperparameter dicts by keys, then by values.
+
+    Parameters
+    ----------
+    a, b : dict
+        values are plain Python objects or tensors, compared with `torch.equal` if
+        either is a tensor.
+
+    Returns
+    -------
+    equal : bool
+    """
+    if a.keys() != b.keys():
+        return False
+
+    for key, value in a.items():
+        other = b[key]
+
+        if isinstance(value, torch.Tensor) or isinstance(other, torch.Tensor):
+            if not (
+                isinstance(value, torch.Tensor)
+                and isinstance(other, torch.Tensor)
+                and torch.equal(value, other)
+            ):
+                return False
+        elif value != other:
+            return False
+
+    return True
 
 
 def _name_of(name: str) -> str:
