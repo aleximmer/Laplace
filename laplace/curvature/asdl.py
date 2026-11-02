@@ -31,6 +31,7 @@ except ModuleNotFoundError as err:
     ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.curvature import _ALL_OPTIONS, _TARGET_FREE_OPTIONS
 from laplace.utils import Kron, Likelihood, _is_batchnorm
 
 EPS = 1e-6
@@ -38,6 +39,11 @@ EPS = 1e-6
 
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
+
+    # The exact and MC Fishers build their own loss from enumerated or sampled
+    # classes, so they can't see class weights or ignored targets. KFAC counts
+    # ignored tokens in its input factors.
+    _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(
         self,
@@ -256,12 +262,17 @@ class AsdlInterface(CurvatureInterface):
         if "N" in kwargs:
             del kwargs["N"]
 
+        # Fallback to torch.func for options or likelihoods ASDL can't handle
+        if not self._honours("diag"):
+            if isinstance(self, (GGNInterface, EFInterface)):
+                return super().diag(x, y, **kwargs)
+
+            raise self._unsupported_error("diag")
+
         if self.loss_type == LOSS_MSE and self._ggn_type == FISHER_EXACT and y.ndim > 2:
             # ASDL's exact MSE Fisher loops over `logits[:, i]`, which assumes 2D
             # outputs. With multidim outputs, use the Jacobian-based GGN instead.
             return super(AsdlInterface, self).diag(x, y, **kwargs)
-
-        self._check_builtin_likelihood()
 
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
@@ -428,7 +439,8 @@ class AsdlInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
-        self._check_builtin_likelihood()
+        if not self._honours("kron"):
+            raise self._unsupported_error("kron")
 
         if self.likelihood.name == Likelihood.REGRESSION.name and y.ndim > 2:
             raise NotImplementedError(
@@ -478,6 +490,9 @@ class AsdlInterface(CurvatureInterface):
 
 
 class AsdlHessian(AsdlInterface):
+    # ASDL differentiates `lossfunc` twice at the observed targets
+    _honoured = {"full": _ALL_OPTIONS}
+
     def __init__(
         self,
         model: nn.Module,
@@ -505,7 +520,8 @@ class AsdlHessian(AsdlInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        self._check_builtin_likelihood()
+        if not self._honours("full"):
+            raise self._unsupported_error("full")
 
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
@@ -554,6 +570,10 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl."""
+
+    # The empirical Fisher differentiates `lossfunc` at the observed targets. KFAC
+    # counts ignored tokens in its input factors.
+    _honoured = {"diag": _ALL_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(
         self,

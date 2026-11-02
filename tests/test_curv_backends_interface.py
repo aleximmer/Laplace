@@ -9,7 +9,9 @@ from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import (
     CurvatureInterface,
+    CurvlinopsEF,
     CurvlinopsGGN,
+    CurvlinopsHessian,
     EFInterface,
     GGNInterface,
 )
@@ -18,7 +20,15 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from tests.utils import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    AsdlHessian,
+    BackPackEF,
+    BackPackGGN,
+    ScaledGaussian,
+    requires_backpack,
+)
 
 
 @pytest.fixture
@@ -523,7 +533,7 @@ def test_backend_accepts_likelihood_object(
 
 @pytest.mark.parametrize("likelihood", [BradleyTerryLikelihood(), "reward_modeling"])
 def test_backend_rejects_unsupported_likelihood(likelihood, model):
-    with pytest.raises(ValueError, match="support only regression and classification"):
+    with pytest.raises(ValueError, match="fit_likelihood"):
         CurvatureInterface(model, likelihood)
 
 
@@ -574,7 +584,7 @@ def test_backend_likelihood_setter_coerces_str(model):
     backend.likelihood = "classification"
     assert type(backend.likelihood) is CategoricalLikelihood
 
-    with pytest.raises(ValueError, match="support only regression and classification"):
+    with pytest.raises(ValueError, match="fit_likelihood"):
         backend.likelihood = "reward_modeling"
 
 
@@ -596,3 +606,237 @@ def test_backend_legacy_pickle_state(model, class_Xy):
     loss_legacy, H_legacy = legacy.diag(X, y)
     assert torch.allclose(loss, loss_legacy)
     assert torch.allclose(H, H_legacy)
+
+
+def test_backend_accepts_custom_name(model):
+    backend = CurvlinopsGGN(model, ScaledGaussian())
+
+    assert isinstance(backend.likelihood, ScaledGaussian)
+
+
+@pytest.mark.parametrize("backend_cls", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_ggn_matches_closed_form(backend_cls, structure, model, reg_Xy):
+    X, y = reg_Xy
+
+    _, H_reg = getattr(backend_cls(model, "regression"), structure)(X, y)
+    loss, H = getattr(backend_cls(model, ScaledGaussian(2.0)), structure)(X, y)
+
+    # The output Hessian of a Gaussian with scale 2 is I / 4
+    assert torch.allclose(H, H_reg / 4)
+
+    f = model(X).detach()
+    assert torch.allclose(loss, -torch.distributions.Normal(f, 2.0).log_prob(y).sum())
+
+
+_ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
+_TARGET_FREE = frozenset({"label_smoothing"})
+
+# Float32 weights for a float64 model: the backends must cast them
+_OPTIONS_WEIGHT = torch.tensor([0.5, 2.0, 1.5])
+
+_CURVATURE_OPTIONS = [
+    {},
+    {"weight": _OPTIONS_WEIGHT},
+    {"ignore_index": 1},
+    {"label_smoothing": 0.1},
+    {"weight": _OPTIONS_WEIGHT, "ignore_index": 1, "label_smoothing": 0.1},
+]
+
+# Backend, kind of curvature, method, stochastic, and the options that the backend
+# claims to honour natively (or, for `GGNInterface`/`EFInterface`, by itself).
+# Deterministic GGN/EF `diag`/`full` must match the reference with any options,
+# through the fallback if need be. Other cells raise for options they don't honour.
+_CURVATURE_CELLS = [
+    (CurvlinopsGGN, "ggn", "full", False, _ALL_OPTIONS),
+    (CurvlinopsGGN, "ggn", "full", True, _TARGET_FREE),
+    (CurvlinopsGGN, "ggn", "diag", False, _ALL_OPTIONS),
+    (CurvlinopsGGN, "ggn", "kron", False, _TARGET_FREE),
+    # MC KFAC differentiates the loss at sampled labels, so label smoothing
+    # changes it (downgraded)
+    (CurvlinopsGGN, "ggn", "kron", True, frozenset()),
+    (CurvlinopsEF, "ef", "full", False, _ALL_OPTIONS),
+    (CurvlinopsEF, "ef", "diag", False, _ALL_OPTIONS),
+    (CurvlinopsEF, "ef", "kron", False, _TARGET_FREE),
+    (CurvlinopsHessian, "hessian", "full", False, _ALL_OPTIONS),
+    (AsdlGGN, "ggn", "diag", False, _TARGET_FREE),
+    (AsdlGGN, "ggn", "diag", True, _TARGET_FREE),
+    (AsdlGGN, "ggn", "kron", False, _TARGET_FREE),
+    (AsdlGGN, "ggn", "kron", True, _TARGET_FREE),
+    (AsdlGGN, "ggn", "full", False, _ALL_OPTIONS),
+    (AsdlEF, "ef", "diag", False, _ALL_OPTIONS),
+    (AsdlEF, "ef", "kron", False, _TARGET_FREE),
+    (AsdlEF, "ef", "full", False, _ALL_OPTIONS),
+    (AsdlHessian, "hessian", "full", False, _ALL_OPTIONS),
+    (BackPackGGN, "ggn", "diag", False, _TARGET_FREE),
+    (BackPackGGN, "ggn", "diag", True, _TARGET_FREE),
+    (BackPackGGN, "ggn", "kron", False, _TARGET_FREE),
+    (BackPackGGN, "ggn", "kron", True, _TARGET_FREE),
+    (BackPackGGN, "ggn", "full", False, _ALL_OPTIONS),
+    (BackPackEF, "ef", "diag", False, _ALL_OPTIONS),
+    (BackPackEF, "ef", "full", False, _ALL_OPTIONS),
+    (GGNInterface, "ggn", "full", False, _ALL_OPTIONS),
+    (GGNInterface, "ggn", "diag", False, _ALL_OPTIONS),
+    # The MC Fisher smooths the sampled labels in `output_gradient`, which changes
+    # it (downgraded)
+    (GGNInterface, "ggn", "full", True, frozenset()),
+    (GGNInterface, "ggn", "diag", True, frozenset()),
+    (EFInterface, "ef", "full", False, _ALL_OPTIONS),
+    (EFInterface, "ef", "diag", False, _ALL_OPTIONS),
+]
+
+
+def _options_model(kron: bool) -> nn.Module:
+    """Small float64 classifier with 3 classes. For Kronecker factors, a single
+    linear layer, on which KFAC is exact for a single datum."""
+    torch.manual_seed(711)
+
+    if kron:
+        model = nn.Linear(3, 3)
+    else:
+        model = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 3))
+
+    setattr(model, "output_size", 3)
+
+    return model.double()
+
+
+def _options_data(kron: bool) -> tuple[torch.Tensor, torch.Tensor]:
+    """Inputs and class targets, a single datum for Kronecker factors. The first two
+    targets of the batch are class 1, which is ignored with `ignore_index=1`."""
+    torch.manual_seed(711)
+
+    if kron:
+        return torch.randn(1, 3, dtype=torch.float64), torch.tensor([2])
+
+    y = torch.randint(3, (8,))
+    y[:2] = 1
+
+    return torch.randn(8, 3, dtype=torch.float64), y
+
+
+def _make_backend(backend_cls, model, likelihood, stochastic):
+    """Build a backend, passing `stochastic` only to those that take it."""
+    if stochastic:
+        return backend_cls(model, likelihood, stochastic=True)
+
+    return backend_cls(model, likelihood)
+
+
+def _hessian_reference(
+    model: nn.Module,
+    likelihood: CategoricalLikelihood,
+    X: torch.Tensor,
+    y: torch.Tensor,
+) -> torch.Tensor:
+    """Hessian of the summed loss w.r.t. the flattened parameters, via torch.func."""
+    params = {k: v.detach() for k, v in model.named_parameters()}
+    theta = torch.cat([v.flatten() for v in params.values()])
+
+    def loss(theta: torch.Tensor) -> torch.Tensor:
+        split, offset = {}, 0
+
+        for k, v in params.items():
+            split[k] = theta[offset : offset + v.numel()].reshape(v.shape)
+            offset += v.numel()
+
+        return likelihood.loss(torch.func.functional_call(model, split, (X,)), y)
+
+    return torch.func.hessian(loss)(theta)
+
+
+@pytest.mark.parametrize("opts", _CURVATURE_OPTIONS)
+@pytest.mark.parametrize(
+    "backend_cls,kind,method,stochastic,claimed",
+    _CURVATURE_CELLS,
+    ids=lambda v: v.__name__ if isinstance(v, type) else None,
+)
+def test_categorical_options_curvature(
+    backend_cls, kind, method, stochastic, claimed, opts
+):
+    kron = method == "kron"
+    X, y = _options_data(kron)
+    likelihood = CategoricalLikelihood(**opts)
+
+    # Fresh models, since BackPACK extends the model in place
+    backend = _make_backend(backend_cls, _options_model(kron), likelihood, stochastic)
+    args = (X, y, len(X)) if kron else (X, y)
+
+    # Kronecker factors, Hessians, and Monte Carlo Fishers have no fallback
+    must_honour = kron or kind == "hessian" or stochastic
+
+    if must_honour and not set(opts) <= claimed:
+        with pytest.raises(ValueError, match="diag"):
+            getattr(backend, method)(*args)
+
+        return
+
+    torch.manual_seed(0)
+    loss, H = getattr(backend, method)(*args)
+
+    reference_model = _options_model(kron)
+    f_ref = reference_model(X).detach()
+    assert torch.allclose(loss, likelihood.loss(f_ref, y))
+
+    if kron:
+        H = H.diag()
+
+    if stochastic:
+        # The Monte Carlo Fisher ignores the targets, so the honoured options leave
+        # it as it is without them, given the same samples
+        default = _make_backend(
+            backend_cls, _options_model(kron), CategoricalLikelihood(), True
+        )
+        torch.manual_seed(0)
+        _, H_ref = getattr(default, method)(*args)
+
+        if kron:
+            H_ref = H_ref.diag()
+    elif kind == "hessian":
+        H_ref = _hessian_reference(reference_model, likelihood, X, y)
+    else:
+        reference_cls = GGNInterface if kind == "ggn" else EFInterface
+        reference = reference_cls(reference_model, likelihood)
+        _, H_ref = getattr(reference, "diag" if kron else method)(X, y)
+
+    assert H.dtype == H_ref.dtype
+    assert torch.allclose(H, H_ref)
+
+
+def test_unhonoured_options_raise(model, class_Xy):
+    X, y = class_Xy
+
+    with pytest.raises(ValueError, match="diag"):
+        CurvlinopsGGN(model, CategoricalLikelihood(ignore_index=1)).kron(X, y, len(X))
+
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
+
+    with pytest.raises(ValueError, match="diag"):
+        CurvlinopsGGN(model, weighted, stochastic=True).full(X, y)
+
+    # The GGN of a smoothed cross-entropy doesn't depend on the targets
+    _, kron = CurvlinopsGGN(model, "classification").kron(X, y, len(X))
+    _, kron_smooth = CurvlinopsGGN(
+        model, CategoricalLikelihood(label_smoothing=0.1)
+    ).kron(X, y, len(X))
+
+    assert torch.allclose(kron.to_matrix(), kron_smooth.to_matrix())
+
+
+def test_custom_kron_raises(model, reg_Xy):
+    X, y = reg_Xy
+
+    with pytest.raises(ValueError, match="diag"):
+        CurvlinopsGGN(model, ScaledGaussian()).kron(X, y, len(X))
+
+
+@requires_backpack
+def test_backpack_custom_construction(model, reg_Xy, class_Xy):
+    X, y = reg_Xy
+    _, H = BackPackGGN(model, ScaledGaussian()).diag(X, y)
+    assert torch.isfinite(H).all()
+
+    X, y = class_Xy
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
+    _, H = BackPackGGN(model, weighted).diag(X, y)
+    assert torch.isfinite(H).all()

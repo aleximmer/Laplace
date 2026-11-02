@@ -35,6 +35,9 @@ EPS = 1e-6
 class AsdfghjklInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
 
+    # Unmaintained and unchecked, so it honours no options
+    _honoured: dict[str, frozenset[str]] = {}
+
     def jacobians(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -139,7 +142,12 @@ class AsdfghjklInterface(CurvatureInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        self._check_builtin_likelihood()
+        # Fallback to torch.func for options or likelihoods asdfghjkl can't handle
+        if not self._honours("diag"):
+            if isinstance(self, (GGNInterface, EFInterface)):
+                return super().diag(x, y, **kwargs)
+
+            raise self._unsupported_error("diag")
 
         with torch.no_grad():
             if self.last_layer:
@@ -162,7 +170,8 @@ class AsdfghjklInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
-        self._check_builtin_likelihood()
+        if not self._honours("kron"):
+            raise self._unsupported_error("kron")
 
         with torch.no_grad():
             if self.last_layer:
@@ -209,7 +218,8 @@ class AsdfghjklHessian(AsdfghjklInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        self._check_builtin_likelihood()
+        if not self._honours("full"):
+            raise self._unsupported_error("full")
 
         hessian_for_loss(self.model, self.lossfunc, SHAPE_FULL, x, y)
         H = self._model.hessian.data
@@ -219,7 +229,8 @@ class AsdfghjklHessian(AsdfghjklInterface):
     def eig_lowrank(
         self, data_loader: DataLoader
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        self._check_builtin_likelihood()
+        if not self._honours("eig_lowrank"):
+            raise self._unsupported_error("eig_lowrank")
 
         # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
         eigvals, eigvecs = hessian_eigenvalues(

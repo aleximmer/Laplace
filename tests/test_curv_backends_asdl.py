@@ -8,6 +8,7 @@ from torch.nn.utils import parameters_to_vector
 from tests.utils import (
     AsdlEF,
     AsdlGGN,
+    AsdlHessian,
     BackPackEF,
     BackPackGGN,
     DoubledCategorical,
@@ -458,14 +459,36 @@ def test_kron_normalization_ggn_reg(reg_Xy, model):
     assert torch.allclose(loss_true, loss_test)
 
 
-@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
-def test_custom_likelihood_rejected_by_curvature(class_Xy, model, Backend):
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_honoured_by_ggn(class_Xy, model, structure):
+    # The custom `output_hessian` is used through the torch.func fallback
+    X, y = class_Xy
+
+    _, H = getattr(AsdlGGN(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(AsdlGGN(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, 2 * H)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_ef_equals_builtin(class_Xy, model, structure):
+    # The EF depends only on the loss, which `DoubledCategorical` keeps
+    X, y = class_Xy
+
+    _, H = getattr(AsdlEF(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(AsdlEF(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, H)
+
+
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF, AsdlHessian])
+def test_custom_likelihood_rejected_by_kron_and_hessian(class_Xy, model, Backend):
     X, y = class_Xy
     backend = Backend(model, DoubledCategorical())
 
-    with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
-        backend.diag(X, y)
-
-    if Backend is AsdlGGN:
-        with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
+    if Backend is AsdlHessian:
+        with pytest.raises(ValueError, match="diag"):
+            backend.full(X, y)
+    else:
+        with pytest.raises(ValueError, match="diag"):
             backend.kron(X, y, N=len(X))

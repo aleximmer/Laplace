@@ -320,19 +320,44 @@ def test_kron_normalization_ef_class(class_Xy, model):
     assert torch.allclose(loss_true, loss_test)
 
 
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_honoured_by_curvlinops_ggn(class_Xy, model, structure):
+    # The custom `output_hessian` is used through the torch.func fallback
+    X, y = class_Xy
+
+    _, H = getattr(CurvlinopsGGN(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(CurvlinopsGGN(model, DoubledCategorical()), structure)(X, y)
+
+    # Curvlinops and torch.func round differently in float32
+    assert torch.allclose(H_doubled, 2 * H, atol=1e-6)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_curvlinops_ef_equals_builtin(class_Xy, model, structure):
+    # The EF depends only on the loss, which `DoubledCategorical` keeps
+    X, y = class_Xy
+
+    _, H = getattr(CurvlinopsEF(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(CurvlinopsEF(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, H)
+
+
 @pytest.mark.parametrize("Backend", [CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian])
-def test_custom_likelihood_rejected_by_curvlinops_curvature(class_Xy, model, Backend):
+def test_custom_likelihood_rejected_by_curvlinops_kron_and_hessian(
+    class_Xy, model, Backend
+):
     X, y = class_Xy
     backend = Backend(model, DoubledCategorical())
 
-    # Equal to the built-in by name, but still rejected by type
+    # Equal to the built-in by name, but still not honoured, since it isn't one
     assert backend.likelihood == "classification"
 
-    with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
-        backend.full(X, y)
-
-    if Backend is not CurvlinopsHessian:
-        with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
+    if Backend is CurvlinopsHessian:
+        with pytest.raises(ValueError, match="diag"):
+            backend.full(X, y)
+    else:
+        with pytest.raises(ValueError, match="diag"):
             backend.kron(X, y, N=len(X))
 
 

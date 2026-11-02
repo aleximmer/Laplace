@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable, MutableMapping
+from typing import Any, Callable, ClassVar, MutableMapping
 
 import torch
 from torch import nn
@@ -13,6 +13,15 @@ from laplace.likelihoods import (
     get_likelihood,
 )
 from laplace.utils import Kron
+
+_BUILTIN_TYPES = (GaussianLikelihood, CategoricalLikelihood)
+
+# Options of the built-in likelihoods, see `CurvatureInterface._honours`
+_ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
+
+# Options that leave a target-independent curvature unchanged, e.g. the GGN, since
+# label smoothing does not change the Hessian of the cross-entropy w.r.t. the logits
+_TARGET_FREE_OPTIONS = frozenset({"label_smoothing"})
 
 
 class CurvatureInterface:
@@ -27,8 +36,9 @@ class CurvatureInterface:
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
     likelihood : {'classification', 'regression'} or Likelihood
-        a name or a likelihood object. The reward modeling likelihood is not
-        supported, pass its `fit_likelihood` instead.
+        a name or a likelihood object. Custom likelihoods work as well. A composite
+        likelihood like reward modeling is not supported, pass its
+        `fit_likelihood` instead.
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.LongTensor, default=None
@@ -46,12 +56,25 @@ class CurvatureInterface:
     Attributes
     ----------
     likelihood : Likelihood
-    lossfunc : torch.nn.MSELoss or torch.nn.CrossEntropyLoss
-        the loss module built by the likelihood
+    lossfunc : torch.nn.Module
+        the loss module built by the likelihood, e.g. `torch.nn.MSELoss` or
+        `torch.nn.CrossEntropyLoss`, on the device and with the dtype of the model.
     factor : float
         conversion factor between torch losses and base likelihoods
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
+
+    Notes
+    -----
+    Backends that compute the curvature from their own loss honour the options of a
+    built-in likelihood only where their library implements them, see `_honours`.
+    Otherwise, a GGN or EF backend falls back to the torch.func code of
+    `GGNInterface` or `EFInterface` for `diag` and `full`, which supports any
+    likelihood. Other structures raise a `ValueError`.
     """
+
+    _honoured: ClassVar[dict[str, frozenset[str]]] = {}
+    """Options of the built-in likelihoods that the library of the backend
+    implements, per curvature method. Missing methods honour none."""
 
     def __init__(
         self,
@@ -62,18 +85,14 @@ class CurvatureInterface:
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
+        # The model comes first, since the likelihood setter casts the loss to it
+        self.model: nn.Module = model
         self.likelihood = likelihood
 
-        self.model: nn.Module = model
         self.last_layer: bool = last_layer
         self.subnetwork_indices: torch.LongTensor | None = subnetwork_indices
         self.dict_key_x = dict_key_x
         self.dict_key_y = dict_key_y
-
-        self.lossfunc: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = (
-            self.likelihood.loss_fn()
-        )
-        self.factor: float = self.likelihood.loss_factor
 
         self.params: list[nn.Parameter] = [
             p for p in self._model.parameters() if p.requires_grad
@@ -93,22 +112,34 @@ class CurvatureInterface:
     @likelihood.setter
     def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
         """Set the likelihood from an object, a `Likelihood` member, a name, or a
-        torch criterion, see `get_likelihood`.
+        torch criterion, see `get_likelihood`. It also rebuilds `lossfunc` with the
+        device and dtype of the model's first parameter, so that the class weights of
+        a criterion match the model, and sets `factor`.
 
         Raises
         ------
         ValueError
-            if the likelihood is neither regression nor classification.
+            if the likelihood fits its curvature with another likelihood, e.g.
+            reward modeling.
         """
         likelihood = get_likelihood(likelihood)
 
-        if likelihood.name not in ("regression", "classification"):
+        if likelihood.fit_likelihood is not likelihood:
             raise ValueError(
-                f"Curvature backends support only regression and classification, "
-                f"got {likelihood}. Pass `fit_likelihood` for reward modeling."
+                f"Curvature backends fit the curvature of a single likelihood, but "
+                f"{likelihood!r} fits it with {likelihood.fit_likelihood!r}. Pass "
+                f"`fit_likelihood` instead."
             )
 
+        lossfunc = likelihood.loss_fn()
+        param = next(self.model.parameters(), None)
+
+        if isinstance(lossfunc, nn.Module) and param is not None:
+            lossfunc = lossfunc.to(device=param.device, dtype=param.dtype)
+
         self._likelihood = likelihood
+        self.lossfunc: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = lossfunc
+        self.factor: float = likelihood.loss_factor
 
     def __setstate__(self, state: dict[str, Any]) -> None:
         """Restore a pickled backend.
@@ -133,24 +164,90 @@ class CurvatureInterface:
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
 
-    def _check_builtin_likelihood(self) -> None:
-        """Make sure the likelihood is a built-in one.
+    def _honoured_options(self, method: str) -> frozenset[str]:
+        """Options of the built-in likelihoods that this backend honours natively.
 
-        Backends that compute the curvature from their own loss would silently
-        ignore what a custom likelihood overrides, e.g. `output_hessian`.
+        Parameters
+        ----------
+        method : str
+            curvature method, e.g. `"diag"`, `"kron"`, or `"full"`.
 
-        Raises
-        ------
-        ValueError
-            if the likelihood is not exactly a `GaussianLikelihood` or a
-            `CategoricalLikelihood`.
+        Returns
+        -------
+        options : frozenset[str]
+            names of the honoured options, as in `Likelihood.hyperparameters`.
         """
-        if type(self.likelihood) not in (GaussianLikelihood, CategoricalLikelihood):
-            raise ValueError(
-                f"Custom likelihoods aren't supported by the curvature of "
-                f"{type(self).__name__} yet, got {self.likelihood!r}. Use "
-                f"GaussianLikelihood or CategoricalLikelihood."
-            )
+        return self._honoured.get(method, frozenset())
+
+    def _honours(self, method: str) -> bool:
+        """Whether the library of this backend computes the curvature of `method`
+        for the likelihood exactly.
+
+        That is the case if the likelihood is exactly a `GaussianLikelihood` or a
+        `CategoricalLikelihood`, whose losses the libraries know, and the library
+        implements all of its non-default options. A subclass might override any
+        member, e.g. `output_hessian`, which the library cannot see.
+
+        Parameters
+        ----------
+        method : str
+            curvature method, e.g. `"diag"`, `"kron"`, or `"full"`.
+
+        Returns
+        -------
+        honours : bool
+        """
+        if type(self.likelihood) not in _BUILTIN_TYPES:
+            return False
+
+        options = set(self.likelihood.hyperparameters())
+
+        return options <= self._honoured_options(method)
+
+    def _unsupported_error(
+        self,
+        method: str,
+        honoured: frozenset[str] | None = None,
+        stochastic: bool = False,
+    ) -> ValueError:
+        """Error for a curvature method that cannot handle the likelihood.
+
+        Parameters
+        ----------
+        method : str
+            curvature method, e.g. `"kron"`.
+        honoured : frozenset[str], optional
+            options that the method honours, `_honoured_options(method)` by
+            default.
+        stochastic : bool, default=False
+            whether the method computes a Monte Carlo Fisher.
+
+        Returns
+        -------
+        error : ValueError
+        """
+        likelihood = self.likelihood
+
+        if type(likelihood) in _BUILTIN_TYPES:
+            if honoured is None:
+                honoured = self._honoured_options(method)
+
+            options = sorted(set(likelihood.hyperparameters()) - honoured)
+            noun = "options" if len(options) > 1 else "option"
+            what = f"the {noun} {', '.join(options)} of {likelihood!r}"
+        else:
+            what = f"the custom likelihood {likelihood!r}"
+
+        where = f"{type(self).__name__}.{method}"
+
+        if stochastic:
+            where += " with stochastic=True"
+
+        return ValueError(
+            f"{where} does not support {what}. Use a deterministic GGN or EF "
+            f"backend with the `diag` or `full` structure, which support any "
+            f"likelihood."
+        )
 
     def _check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
         """Check that the targets `y` match the outputs `f` with the likelihood.
@@ -535,6 +632,31 @@ class GGNInterface(CurvatureInterface):
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
 
+    def _check_mc_fisher(self, method: str) -> None:
+        """Make sure the Monte Carlo Fisher supports the likelihood.
+
+        It draws targets from the likelihood and uses `output_gradient` at them. So
+        it cannot see the observed targets, which class weights and ignored tokens
+        refer to. `output_gradient` would also smooth the sampled targets, which
+        changes the expected outer product. Custom likelihoods are fine, since the
+        sampled gradients estimate their Fisher.
+
+        Parameters
+        ----------
+        method : str
+            curvature method, `"diag"` or `"full"`.
+
+        Raises
+        ------
+        ValueError
+            if the likelihood is a built-in one with non-default options.
+        """
+        if (
+            type(self.likelihood) in _BUILTIN_TYPES
+            and self.likelihood.hyperparameters()
+        ):
+            raise self._unsupported_error(method, frozenset(), stochastic=True)
+
     def _get_mc_functional_fisher(self, f: torch.Tensor) -> torch.Tensor:
         """Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
         using MC integral with `self.num_samples` many samples.
@@ -599,6 +721,9 @@ class GGNInterface(CurvatureInterface):
         H : torch.Tensor
             GGN `(parameters, parameters)`
         """
+        if self.stochastic:
+            self._check_mc_fisher("full")
+
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
         H_lik = (
             self._get_mc_functional_fisher(f)
@@ -620,6 +745,9 @@ class GGNInterface(CurvatureInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.stochastic:
+            self._check_mc_fisher("diag")
+
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
         loss = self.factor * self._loss(f, y)
 

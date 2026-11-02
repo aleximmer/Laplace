@@ -15,6 +15,7 @@ from curvlinops import (
 from torch import nn
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.curvature import _ALL_OPTIONS, _TARGET_FREE_OPTIONS
 from laplace.utils import Kron, Likelihood
 
 _FullLinearOperator: TypeAlias = (
@@ -42,6 +43,10 @@ class _ClassDimFirst(nn.Module):
 
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
+
+    # The dense operators differentiate `lossfunc` at the observed targets. KFAC
+    # counts ignored tokens in its input factors and has no class weights.
+    _honoured = {"full": _ALL_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(
         self,
@@ -111,7 +116,8 @@ class CurvlinopsInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
-        self._check_builtin_likelihood()
+        if not self._honours("kron"):
+            raise self._unsupported_error("kron")
 
         if isinstance(x, (dict, MutableMapping)):
             kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
@@ -155,9 +161,14 @@ class CurvlinopsInterface(CurvatureInterface):
         if self.subnetwork_indices is not None:
             return super().full(x, y, **kwargs)
 
-        self._check_builtin_likelihood()
-
         curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != "N"}
+
+        # Fallback to torch.func for options or likelihoods Curvlinops can't handle
+        if not self._honours("full"):
+            if isinstance(self, (GGNInterface, EFInterface)):
+                return super().full(x, y, **curvlinops_kwargs)
+
+            raise self._unsupported_error("full")
         if isinstance(x, (dict, MutableMapping)):
             curvlinops_kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
@@ -199,6 +210,15 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
         self.stochastic = stochastic
+
+    def _honoured_options(self, method: str) -> frozenset[str]:
+        if not self.stochastic:
+            return super()._honoured_options(method)
+
+        # The MC Fisher of the dense operator samples gradients that ignore the
+        # loss. MC KFAC differentiates `lossfunc` at sampled labels, so even label
+        # smoothing changes it.
+        return _TARGET_FREE_OPTIONS if method == "full" else frozenset()
 
     @property
     def _kron_fisher_type(self) -> FisherType:
