@@ -263,7 +263,7 @@ class AsdlInterface(CurvatureInterface):
             del kwargs["N"]
 
         # Fallback to torch.func for options or likelihoods ASDL can't handle
-        if not self._honours("diag"):
+        if not self._honours("diag", y):
             if isinstance(self, (GGNInterface, EFInterface)):
                 return super().diag(x, y, **kwargs)
 
@@ -441,6 +441,8 @@ class AsdlInterface(CurvatureInterface):
     ) -> tuple[torch.Tensor, Kron]:
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
+
+        self._warn_kron_ignored(y)
 
         if self.likelihood.name == Likelihood.REGRESSION.name and y.ndim > 2:
             raise NotImplementedError(

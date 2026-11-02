@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import Any, Callable, ClassVar, MutableMapping
 
 import torch
@@ -22,6 +23,30 @@ _ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
 # Options that leave a target-independent curvature unchanged, e.g. the GGN, since
 # label smoothing does not change the Hessian of the cross-entropy w.r.t. the logits
 _TARGET_FREE_OPTIONS = frozenset({"label_smoothing"})
+
+
+def _ignored_tokens(likelihood: Likelihood, y: torch.Tensor) -> int:
+    """Number of tokens that a categorical likelihood ignores in the targets `y`.
+
+    Only index targets can be ignored. They are integers, while probability targets
+    are floats, as in `nn.CrossEntropyLoss`. This holds for the default
+    `ignore_index=-100` too, e.g. for padded sequences.
+
+    Parameters
+    ----------
+    likelihood : Likelihood
+    y : torch.Tensor
+        targets of a batch.
+
+    Returns
+    -------
+    n_ignored : int
+        zero for other likelihoods and for probability targets.
+    """
+    if not isinstance(likelihood, CategoricalLikelihood) or y.is_floating_point():
+        return 0
+
+    return int((y == likelihood.ignore_index).sum())
 
 
 class CurvatureInterface:
@@ -179,7 +204,7 @@ class CurvatureInterface:
         """
         return self._honoured.get(method, frozenset())
 
-    def _honours(self, method: str) -> bool:
+    def _honours(self, method: str, y: torch.Tensor | None = None) -> bool:
         """Whether the library of this backend computes the curvature of `method`
         for the likelihood exactly.
 
@@ -188,10 +213,16 @@ class CurvatureInterface:
         implements all of its non-default options. A subclass might override any
         member, e.g. `output_hessian`, which the library cannot see.
 
+        With the targets `y`, the option `ignore_index` also counts as set if `y`
+        holds ignored tokens, even with the default `-100`. Libraries that don't
+        honour it would count those tokens, e.g. padding.
+
         Parameters
         ----------
         method : str
             curvature method, e.g. `"diag"`, `"kron"`, or `"full"`.
+        y : torch.Tensor, optional
+            targets of the batch.
 
         Returns
         -------
@@ -202,7 +233,33 @@ class CurvatureInterface:
 
         options = set(self.likelihood.hyperparameters())
 
+        if y is not None and _ignored_tokens(self.likelihood, y) > 0:
+            options.add("ignore_index")
+
         return options <= self._honoured_options(method)
+
+    def _warn_kron_ignored(self, y: torch.Tensor) -> None:
+        """Warn that KFAC counts the tokens that the likelihood ignores in `y`.
+
+        The Kronecker factors keep their behaviour from before ignored tokens were
+        dropped from the number of observations: they sum over all tokens, and
+        `KronLaplace` normalizes them by that count.
+
+        Parameters
+        ----------
+        y : torch.Tensor
+            targets of the batch.
+        """
+        if _ignored_tokens(self.likelihood, y) == 0:
+            return
+
+        warnings.warn(
+            f"{type(self).__name__}.kron can't drop the ignored tokens, e.g. "
+            f"padding, from the input factors of KFAC, so they count like the "
+            f"others. Use the `diag` or `full` structure to mask them exactly.",
+            UserWarning,
+            stacklevel=3,
+        )
 
     def _unsupported_error(
         self,
@@ -639,7 +696,9 @@ class GGNInterface(CurvatureInterface):
         it cannot see the observed targets, which class weights and ignored tokens
         refer to. `output_gradient` would also smooth the sampled targets, which
         changes the expected outer product. Custom likelihoods are fine, since the
-        sampled gradients estimate their Fisher.
+        sampled gradients estimate their Fisher. Tokens with the default ignore
+        index, e.g. padding, are masked with the observed targets.
+
 
         Parameters
         ----------
@@ -657,9 +716,24 @@ class GGNInterface(CurvatureInterface):
         ):
             raise self._unsupported_error(method, frozenset(), stochastic=True)
 
-    def _get_mc_functional_fisher(self, f: torch.Tensor) -> torch.Tensor:
+    def _get_mc_functional_fisher(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
         using MC integral with `self.num_samples` many samples.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            model outputs `(batch, ..., outputs)`
+        y : torch.Tensor, optional
+            observed targets. The tokens that a categorical likelihood ignores in
+            them, e.g. padding, get a zero Fisher.
+
+        Returns
+        -------
+        F : torch.Tensor
+            `(batch, ..., outputs, outputs)`
         """
         F = 0
 
@@ -672,6 +746,10 @@ class GGNInterface(CurvatureInterface):
                 / self.num_samples
                 * torch.einsum("...c,...k->...ck", grad_sample, grad_sample)
             )
+
+        if y is not None and _ignored_tokens(self.likelihood, y) > 0:
+            mask = (y != self.likelihood.ignore_index).reshape(f.shape[:-1])
+            F = mask[..., None, None] * F
 
         return F
 
@@ -726,7 +804,7 @@ class GGNInterface(CurvatureInterface):
 
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
         H_lik = (
-            self._get_mc_functional_fisher(f)
+            self._get_mc_functional_fisher(f, y)
             if self.stochastic
             else self._get_functional_hessian(f, y)
         )
@@ -752,13 +830,14 @@ class GGNInterface(CurvatureInterface):
         loss = self.factor * self._loss(f, y)
 
         H_lik = (
-            self._get_mc_functional_fisher(f)
+            self._get_mc_functional_fisher(f, y)
             if self.stochastic
             else self._get_functional_hessian(f, y)
         )
 
         if H_lik is not None:
             H = torch.einsum("...cp,...ck,...kp->p", Js, H_lik, Js)
+
         else:  # The case of exact GGN for regression
             H = torch.einsum("...cp,...cp->p", Js, Js)
 

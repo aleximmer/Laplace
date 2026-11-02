@@ -304,7 +304,7 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        if not self._honours("diag"):
+        if not self._honours("diag", y):
             return super().diag(x, y, **kwargs)
 
         context = DiagGGNMC if self.stochastic else DiagGGNExact
@@ -334,6 +334,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
     ) -> tuple[torch.Tensor, Kron]:
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
+
+        self._warn_kron_ignored(y)
 
         context = KFAC if self.stochastic else KFLR
         f = self.model(x)
@@ -365,7 +367,7 @@ class BackPackEF(BackPackInterface, EFInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        if not self._honours("diag"):
+        if not self._honours("diag", y):
             return super().diag(x, y, **kwargs)
 
         f = self.model(x)

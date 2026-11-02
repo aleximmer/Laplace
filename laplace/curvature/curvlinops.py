@@ -119,6 +119,8 @@ class CurvlinopsInterface(CurvatureInterface):
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
 
+        self._warn_kron_ignored(y)
+
         if isinstance(x, (dict, MutableMapping)):
             kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
@@ -164,7 +166,7 @@ class CurvlinopsInterface(CurvatureInterface):
         curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != "N"}
 
         # Fallback to torch.func for options or likelihoods Curvlinops can't handle
-        if not self._honours("full"):
+        if not self._honours("full", y):
             if isinstance(self, (GGNInterface, EFInterface)):
                 return super().full(x, y, **curvlinops_kwargs)
 

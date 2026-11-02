@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import MutableMapping
 from importlib.util import find_spec
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import torch
@@ -36,7 +36,7 @@ class AsdfghjklInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
 
     # Unmaintained and unchecked, so it honours no options
-    _honoured: dict[str, frozenset[str]] = {}
+    _honoured: ClassVar[dict[str, frozenset[str]]] = {}
 
     def jacobians(
         self,
@@ -143,7 +143,7 @@ class AsdfghjklInterface(CurvatureInterface):
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # Fallback to torch.func for options or likelihoods asdfghjkl can't handle
-        if not self._honours("diag"):
+        if not self._honours("diag", y):
             if isinstance(self, (GGNInterface, EFInterface)):
                 return super().diag(x, y, **kwargs)
 
@@ -172,6 +172,8 @@ class AsdfghjklInterface(CurvatureInterface):
     ) -> tuple[torch.Tensor, Kron]:
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
+
+        self._warn_kron_ignored(y)
 
         with torch.no_grad():
             if self.last_layer:

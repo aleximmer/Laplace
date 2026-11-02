@@ -1,3 +1,4 @@
+import warnings
 from collections import UserDict
 from collections.abc import MutableMapping
 
@@ -840,3 +841,110 @@ def test_backpack_custom_construction(model, reg_Xy, class_Xy):
     weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
     _, H = BackPackGGN(model, weighted).diag(X, y)
     assert torch.isfinite(H).all()
+
+
+def _padded_data() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Inputs, class targets whose first three entries are padding with the default
+    `ignore_index=-100`, and the mask of the kept targets."""
+    X, y = _options_data(kron=False)
+    y[:3] = -100
+
+    return X, y, y != -100
+
+
+# Backend, method, and stochastic. None of these libraries masks padded tokens in
+# these methods, so the backends must fall back to torch.func, except for the
+# deterministic Curvlinops and EF ones, which mask them natively.
+_PADDED_CELLS = [
+    (CurvlinopsGGN, "full", False),
+    (CurvlinopsGGN, "full", True),
+    (CurvlinopsEF, "full", False),
+    (AsdlGGN, "diag", False),
+    (AsdlGGN, "diag", True),
+    (AsdlGGN, "full", False),
+    (AsdlEF, "diag", False),
+    (BackPackGGN, "diag", False),
+    (BackPackGGN, "diag", True),
+    (BackPackEF, "diag", False),
+]
+
+
+@pytest.mark.parametrize(
+    "backend_cls,method,stochastic",
+    _PADDED_CELLS,
+    ids=lambda v: v.__name__ if isinstance(v, type) else None,
+)
+def test_padded_tokens_match_reference(backend_cls, method, stochastic):
+    X, y, keep = _padded_data()
+    likelihood = CategoricalLikelihood()
+
+    backend = _make_backend(backend_cls, _options_model(False), likelihood, stochastic)
+    torch.manual_seed(0)
+    _, H = getattr(backend, method)(X, y)
+
+    # The torch.func backend with the same likelihood and the same samples
+    is_ef = backend_cls in (CurvlinopsEF, AsdlEF, BackPackEF)
+    reference_cls = EFInterface if is_ef else GGNInterface
+    reference = _make_backend(
+        reference_cls, _options_model(False), likelihood, stochastic
+    )
+    torch.manual_seed(0)
+    _, H_ref = getattr(reference, method)(X, y)
+
+    assert torch.allclose(H, H_ref)
+
+    if not stochastic:
+        # Padding counts for nothing, as if those data weren't there
+        _, H_kept = getattr(reference, method)(X[keep], y[keep])
+        assert torch.allclose(H, H_kept)
+
+
+def test_mc_fisher_masks_padded_tokens():
+    X, y, keep = _padded_data()
+    backend = GGNInterface(_options_model(False), "classification", stochastic=True)
+
+    # A padded datum gets no curvature, whatever the samples
+    _, H_pad = backend.diag(X[~keep], y[~keep])
+    assert torch.all(H_pad == 0)
+
+    # Probability targets are never ignored
+    q = torch.nn.functional.one_hot(y.clamp(min=0), 3).double()
+    _, H_prob = backend.diag(X, q)
+    assert torch.all(H_prob[H_prob.abs() > 0].isfinite()) and H_prob.abs().sum() > 0
+
+
+@pytest.mark.parametrize(
+    "backend_cls",
+    [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF, BackPackGGN],
+    ids=lambda v: v.__name__,
+)
+def test_kron_warns_for_padded_tokens(backend_cls):
+    X, y, keep = _padded_data()
+    backend = backend_cls(_options_model(False), "classification")
+
+    with pytest.warns(UserWarning, match="ignored tokens"):
+        backend.kron(X, y, len(X))
+
+    # No padding, no warning
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        backend.kron(X[keep], y[keep], int(keep.sum()))
+
+    assert not any("ignored tokens" in str(w.message) for w in caught)
+
+
+def test_honours_counts_padding_as_ignore_index(model, class_Xy):
+    X, y = class_Xy
+    backend = CurvlinopsGGN(model, "classification", stochastic=True)
+
+    # The MC Fisher of the dense operator honours label smoothing only
+    assert backend._honours("full", y)
+
+    y = y.clone()
+    y[0] = -100
+    assert not backend._honours("full", y)
+    assert backend._honours("full")
+
+    # Probability targets have no ignored tokens
+    q = torch.nn.functional.one_hot(y.clamp(min=0), 2).float()
+    assert backend._honours("full", q)
