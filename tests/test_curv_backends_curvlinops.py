@@ -14,12 +14,6 @@ from laplace.curvature import (
 )
 
 
-@pytest.fixture(autouse=True)
-def run_around_tests():
-    torch.set_default_dtype(torch.float32)
-    yield
-
-
 @pytest.fixture
 def model():
     torch.manual_seed(711)

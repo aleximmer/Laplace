@@ -11,7 +11,7 @@ from laplace.utils import Kron, block_diag
 from laplace.utils import kron as kron_prod
 from tests.utils import get_diag_psd_matrix, get_psd_matrix, jacobians_naive
 
-torch.set_default_dtype(torch.double)
+pytestmark = pytest.mark.default_dtype(torch.float64)
 
 
 @pytest.fixture

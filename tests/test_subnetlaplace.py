@@ -27,8 +27,8 @@ from laplace.utils import (
 )
 from tests.utils import ListDataset, dict_data_collator
 
-torch.manual_seed(240)
-torch.set_default_dtype(torch.double)
+pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
+
 score_based_subnet_masks = [
     RandomSubnetMask,
     LargestMagnitudeSubnetMask,
