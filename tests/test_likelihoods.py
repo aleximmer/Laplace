@@ -702,3 +702,58 @@ def test_categorical_subclass_without_super_init_has_default_options():
 
     assert Custom().hyperparameters() == {}
     assert torch.allclose(Custom().loss(f, y), CategoricalLikelihood().loss(f, y))
+
+
+@pytest.mark.parametrize(
+    "lik,f_shape,y_shape,n_obs",
+    [
+        # `Normal(f)`-style targets with the shape of the outputs
+        (DistributionOnlyGaussian(), (1, 2), (7, 2), 7),
+        (DistributionOnlyGaussian(), (1, 4, 2), (7, 4, 2), 28),
+        # `Categorical(logits=f)`-style index targets
+        (DistributionOnlyCategorical(), (1, 3), (7,), 7),
+        (DistributionOnlyCategorical(), (1, 4, 3), (7, 4), 28),
+        # One Bernoulli per logit, with targets of the outputs' shape
+        (DistributionOnlyBernoulli(), (1, 3), (7, 3), 7),
+    ],
+)
+def test_default_n_observations_counts_targets(lik, f_shape, y_shape, n_obs):
+    # The outputs may come from a single datum, as in `ParametricLaplace.fit`
+    assert lik.n_observations(torch.randn(f_shape), torch.zeros(y_shape)) == n_obs
+
+
+def test_builtin_n_observations_unchanged():
+    f = torch.randn(1, 4, 3)
+
+    assert GaussianLikelihood().n_observations(f, torch.randn(7, 4, 3)) == 28
+    assert CategoricalLikelihood().n_observations(f, torch.zeros(7, 4).long()) == 28
+    assert BradleyTerryLikelihood().n_observations(f, torch.zeros(7).long()) == 7
+
+
+def test_categorical_validates_options():
+    with pytest.raises(ValueError, match="1-D"):
+        CategoricalLikelihood(weight=torch.ones(2, 3))
+
+    with pytest.raises(ValueError, match="1-D"):
+        CategoricalLikelihood(weight=torch.tensor(1.0))
+
+    for label_smoothing in (-0.1, 1.5):
+        with pytest.raises(ValueError, match=r"\[0, 1\]"):
+            CategoricalLikelihood(label_smoothing=label_smoothing)
+
+    # The bounds are fine, as in torch
+    CategoricalLikelihood(label_smoothing=0.0)
+    CategoricalLikelihood(label_smoothing=1.0)
+
+
+def test_repr_shows_options():
+    assert repr(CategoricalLikelihood()) == "CategoricalLikelihood()"
+    assert (
+        repr(CategoricalLikelihood(label_smoothing=0.1))
+        == "CategoricalLikelihood(label_smoothing=0.1)"
+    )
+    assert repr(CategoricalLikelihood(weight=torch.ones(3), ignore_index=2)) == (
+        "CategoricalLikelihood(weight=tensor(shape=(3,)), ignore_index=2)"
+    )
+    assert repr(ScaledGaussian(3.0)) == "ScaledGaussian(scale=3.0)"
+    assert repr(GaussianLikelihood()) == "GaussianLikelihood()"

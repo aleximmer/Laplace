@@ -83,7 +83,8 @@ class Likelihood(metaclass=_LikelihoodMeta):
     - `loss`: calls `check_targets`, then `loss_fn`.
     - `check_targets`: raises a `ValueError` unless the targets have the
       distribution's shape.
-    - `n_observations`: the number of entries in the batch dims of `f`.
+    - `n_observations`: the number of entries in the batch dims of the targets, i.e.
+      their leading dims that match the batch dims of `f`.
     - `inverse_link`: the mean of the distribution, or the class probabilities of a
       `Categorical`.
     - `sample`: a draw from the distribution.
@@ -188,7 +189,15 @@ class Likelihood(metaclass=_LikelihoodMeta):
         return self.name
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}()"
+        # Show the options, but only the shape of a tensor, which can be large
+        options = ", ".join(
+            f"{k}=tensor(shape={tuple(v.shape)})"
+            if torch.is_tensor(v)
+            else f"{k}={v!r}"
+            for k, v in self.hyperparameters().items()
+        )
+
+        return f"{type(self).__name__}({options})"
 
     def hyperparameters(self) -> dict[str, Any]:
         """Options of the likelihood that differ from their defaults, by name.
@@ -430,10 +439,26 @@ class Likelihood(metaclass=_LikelihoodMeta):
         return self.loss_fn()(f, y)
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        """Number of observations in a batch. By default, every leading dim of `f`
-        is a batch dim.
+        """Number of observations in a batch.
+
+        By default, every leading dim of the outputs but the last is a batch dim,
+        and the targets share them. So this counts the leading dims of `y`, e.g.
+        `B * L` for outputs `(B, L, K)` and targets `(B, L)` or `(B, L, K)`. The
+        batch size comes from the targets, so `f` may come from fewer data, as long
+        as it has the same number of dims.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            outputs `(batch, ..., outputs)`, possibly of a single datum.
+        y : torch.Tensor
+            targets of the batch.
+
+        Returns
+        -------
+        n_obs : int
         """
-        return f.shape[:-1].numel()
+        return y.shape[: f.ndim - 1].numel()
 
     def log_normalizer(
         self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
@@ -620,6 +645,11 @@ class CategoricalLikelihood(Likelihood):
         index target whose tokens do not count, as in `nn.CrossEntropyLoss`.
     label_smoothing : float, default=0.0
         label smoothing \\(\\varepsilon \\in [0, 1]\\), as in `nn.CrossEntropyLoss`.
+
+    Raises
+    ------
+    ValueError
+        if `weight` is not 1-D or `label_smoothing` is outside \\([0, 1]\\).
     """
 
     name: ClassVar[str] = "classification"
@@ -641,6 +671,17 @@ class CategoricalLikelihood(Likelihood):
         ignore_index: int = -100,
         label_smoothing: float = 0.0,
     ) -> None:
+        if weight is not None and weight.ndim != 1:
+            raise ValueError(
+                f"The class weights must be 1-D, but they have shape "
+                f"{tuple(weight.shape)}."
+            )
+
+        if not 0.0 <= label_smoothing <= 1.0:
+            raise ValueError(
+                f"The label smoothing must be in [0, 1], but it is {label_smoothing}."
+            )
+
         self.weight = weight
         self.ignore_index = ignore_index
         self.label_smoothing = label_smoothing
