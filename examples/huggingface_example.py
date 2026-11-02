@@ -1,3 +1,4 @@
+import argparse
 import logging
 import warnings
 from collections import UserDict
@@ -26,7 +27,12 @@ warnings.filterwarnings("ignore")
 torch.manual_seed(0)
 numpy.random.seed(0)
 
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
+# Any GPT-2 checkpoint works, e.g. a tiny random one for a quick test run
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", default="gpt2")
+args = parser.parse_args()
+
+tokenizer = GPT2Tokenizer.from_pretrained(args.model)
 tokenizer.pad_token_id = tokenizer.eos_token_id
 
 data = [
@@ -67,11 +73,11 @@ class MyGPT2(nn.Module):
 
     def __init__(self, tokenizer: PreTrainedTokenizer) -> None:
         super().__init__()
-        config = GPT2Config.from_pretrained("gpt2")
+        config = GPT2Config.from_pretrained(args.model)
         config.pad_token_id = tokenizer.pad_token_id
         config.num_labels = 2
         self.hf_model = GPT2ForSequenceClassification.from_pretrained(
-            "gpt2", config=config
+            args.model, config=config
         )
 
     def forward(self, data: MutableMapping) -> torch.Tensor:

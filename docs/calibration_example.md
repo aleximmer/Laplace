@@ -1,16 +1,15 @@
-An advantage of the Laplace approximation over variational Bayes and Markov Chain Monte Carlo methods is its _post-hoc_ nature. That means we can apply LA on (almost) any _pre-trained_ neural network. In this example, we will see how we can apply the last-layer LA on a deep WideResNet model, trained on CIFAR-10.
+An advantage of the Laplace approximation over variational Bayes and Markov Chain Monte Carlo methods is its _post-hoc_ nature. That means we can apply LA on (almost) any _pre-trained_ neural network. In this example, we will see how we can apply the last-layer LA on a ResNet-18 trained on CIFAR-10.
 
 ## Data loading
 
-First, let us load the CIFAR-10 dataset. The helper scripts for CIFAR-10 and WideResNet are available in the `examples/helper` directory in the main repository.
+First, let us load the CIFAR-10 dataset from the Hugging Face Hub. The helper scripts for the data and the model are in the `examples/helper` directory of the main repository.
 
 ```python
 import torch
 import torch.distributions as dists
 import numpy as np
-import helper.wideresnet as wrn
 import helper.dataloaders as dl
-from helper import util
+from helper.models import load_cifar10_resnet18
 from netcal.metrics import ECE
 
 from laplace import Laplace
@@ -21,22 +20,19 @@ torch.manual_seed(7777)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
 train_loader = dl.CIFAR10(train=True)
 test_loader = dl.CIFAR10(train=False)
-targets = torch.cat([y for x, y in test_loader], dim=0).numpy()
+targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 ```
 
 ## Load a pre-trained model
 
-Next, we will load a pre-trained WideResNet-16-4 model. Note that a GPU with CUDA support is needed for this example.
+Next, we load a ResNet-18 pretrained on CIFAR-10 from the [Hugging Face Hub](https://huggingface.co/edadaltocg/resnet18_cifar10). It runs on the CPU too, but a GPU is much faster.
 
 ```python
-# The model is a standard WideResNet 16-4
-# Taken as is from https://github.com/hendrycks/outlier-exposure
-model = wrn.WideResNet(16, 4, num_classes=10).cuda().eval()
-
-util.download_pretrained_model()
-model.load_state_dict(torch.load("./temp/CIFAR10_plain.pt"))
+model = load_cifar10_resnet18().to(device).eval()
 ```
 
 To simplify the downstream tasks, we will use the following helper function to make predictions. It simply iterates through all minibatches and obtains the predictive probabilities of the CIFAR-10 classes.
@@ -48,11 +44,11 @@ def predict(dataloader, model, laplace=False):
 
     for x, _ in dataloader:
         if laplace:
-            py.append(model(x.cuda()))
+            py.append(model(x.to(device)))
         else:
-            py.append(torch.softmax(model(x.cuda()), dim=-1))
+            py.append(torch.softmax(model(x.to(device)), dim=-1))
 
-    return torch.cat(py).cpu().numpy()
+    return torch.cat(py).cpu()
 ```
 
 ## The calibration of MAP
