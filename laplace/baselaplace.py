@@ -3406,7 +3406,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                     f_batch, y
                 )
 
-            lambdas_batch = self.likelihood.fit_likelihood.output_hessian(f_batch)
+            lambdas_batch = self.likelihood.fit_likelihood.output_hessian(f_batch, y)
 
             self.loss += loss_batch
             lambdas.append(lambdas_batch)

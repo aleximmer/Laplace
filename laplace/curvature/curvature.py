@@ -552,13 +552,17 @@ class GGNInterface(CurvatureInterface):
 
         return F
 
-    def _get_functional_hessian(self, f: torch.Tensor) -> torch.Tensor | None:
+    def _get_functional_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor | None:
         """Hessian of the negative log likelihood w.r.t. the outputs `f`.
 
         Parameters
         ----------
         f : torch.Tensor
             model outputs `(batch, ..., outputs)`
+        y : torch.Tensor, optional
+            targets, passed on to the likelihood's `output_hessian`.
 
         Returns
         -------
@@ -569,7 +573,7 @@ class GGNInterface(CurvatureInterface):
         if self.likelihood.is_gaussian:
             return None
 
-        return self.likelihood.output_hessian(f)
+        return self.likelihood.output_hessian(f, y)
 
     def full(
         self,
@@ -598,7 +602,7 @@ class GGNInterface(CurvatureInterface):
         H_lik = (
             self._get_mc_functional_fisher(f)
             if self.stochastic
-            else self._get_functional_hessian(f)
+            else self._get_functional_hessian(f, y)
         )
 
         if H_lik is not None:
@@ -621,7 +625,7 @@ class GGNInterface(CurvatureInterface):
         H_lik = (
             self._get_mc_functional_fisher(f)
             if self.stochastic
-            else self._get_functional_hessian(f)
+            else self._get_functional_hessian(f, y)
         )
 
         if H_lik is not None:

@@ -1,4 +1,5 @@
 import pickle
+import warnings
 from math import log, pi, sqrt
 
 import pytest
@@ -12,6 +13,7 @@ from laplace import (
     Likelihood,
     get_likelihood,
 )
+from tests.utils import DistributionOnlyCategorical, DistributionOnlyGaussian
 
 
 @pytest.mark.parametrize(
@@ -189,37 +191,18 @@ def test_subclass_contract():
     with pytest.raises(TypeError):
         Incomplete()
 
-    class Minimal(Likelihood):
-        name = "minimal"
-        loss_factor = 1.0
+    with pytest.raises(TypeError):
+        Likelihood()
 
-        def loss_fn(self, reduction="sum"):
-            return nn.L1Loss(reduction=reduction)
-
-        def check_targets(self, f, y):
-            return None
-
-        def output_hessian(self, f):
-            return torch.eye(f.shape[-1]).expand(*f.shape, f.shape[-1])
-
-        def inverse_link(self, f):
-            return f
-
-        def sample(self, f, generator=None):
-            return f
-
-        def output_gradient(self, f, y):
-            return f - y
-
-    lik = Minimal()
+    lik = DistributionOnlyGaussian()
     assert get_likelihood(lik) is lik
     assert lik.is_gaussian is False
     assert lik.fit_likelihood is lik
     assert lik.predictive_likelihood is lik
+    assert lik.loss_factor == 1.0
     assert lik.log_normalizer(3, 2, torch.tensor(1.0)) == 0
 
     f, y = torch.randn(3, 2), torch.randn(3, 2)
-    assert torch.allclose(lik.loss(f, y), nn.L1Loss(reduction="sum")(f, y))
     assert lik.n_observations(f, y) == 3
 
 
@@ -236,22 +219,172 @@ def test_concrete_subclass_requires_name():
     with pytest.raises(TypeError, match="must define a `name`"):
 
         class ConcreteNameless(AbstractNameless):
-            loss_factor = 1.0
+            def distribution(self, f):
+                return torch.distributions.Normal(f, 1.0)
 
-            def loss_fn(self, reduction="sum"):
-                return nn.MSELoss(reduction=reduction)
 
-            def check_targets(self, f, y):
-                return None
+def test_default_loss_matches_builtin_gaussian():
+    f = torch.randn(6, 3, dtype=torch.float64)
+    y = torch.randn(6, 3, dtype=torch.float64)
 
-            def output_hessian(self, f):
-                return f
+    g = GaussianLikelihood()
+    expected = g.loss_factor * g.loss(f, y) + g.log_normalizer(
+        6, 3, torch.tensor(1.0, dtype=torch.float64)
+    )
 
-            def sample(self, f, generator=None):
-                return f
+    lik = DistributionOnlyGaussian()
+    assert torch.allclose(lik.loss(f, y), expected)
+    assert torch.allclose(lik.loss_fn("mean")(f, y), expected / 18)
 
-            def output_gradient(self, f, y):
-                return f - y
+
+def test_default_loss_matches_builtin_categorical():
+    f = torch.randn(6, 4, dtype=torch.float64)
+    y = torch.randint(4, (6,))
+
+    assert torch.allclose(
+        DistributionOnlyCategorical().loss(f, y), CategoricalLikelihood().loss(f, y)
+    )
+
+
+def test_default_check_targets():
+    with pytest.raises(ValueError, match="expects"):
+        DistributionOnlyGaussian().check_targets(torch.randn(6, 3), torch.randn(6))
+
+    cat = DistributionOnlyCategorical()
+    f = torch.randn(6, 4)
+    cat.check_targets(f, torch.randint(4, (6,)))
+
+    with pytest.raises(ValueError, match="expects"):
+        cat.check_targets(f, torch.randint(4, (6, 4)))
+
+
+def test_default_inverse_link_and_gradient():
+    f = torch.randn(6, 4, dtype=torch.float64)
+
+    y = torch.randn(6, 4, dtype=torch.float64)
+    gauss, builtin = DistributionOnlyGaussian(), GaussianLikelihood()
+    assert torch.allclose(gauss.inverse_link(f), builtin.inverse_link(f))
+    assert torch.allclose(gauss.output_gradient(f, y), builtin.output_gradient(f, y))
+
+    yc = torch.randint(4, (6,))
+    cat, builtin = DistributionOnlyCategorical(), CategoricalLikelihood()
+    onehot = nn.functional.one_hot(yc, 4).to(f.dtype)
+    assert torch.allclose(
+        cat.output_gradient(f, yc), builtin.output_gradient(f, onehot)
+    )
+
+
+@pytest.mark.parametrize("shape", [(50, 3), (4, 5, 3)])
+def test_default_output_hessian_enumerates_discrete(shape):
+    f = torch.randn(*shape, dtype=torch.float64)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        H = DistributionOnlyCategorical().output_hessian(f)
+
+    expected = CategoricalLikelihood().output_hessian(f)
+    assert H.shape == expected.shape
+    assert H.dtype == f.dtype
+    assert torch.allclose(H, expected, atol=1e-10)
+
+
+@pytest.mark.parametrize("chunk_size", [10, 7])
+def test_default_output_hessian_is_mc_fisher(chunk_size):
+    class ManySamples(DistributionOnlyGaussian):
+        fisher_samples = 20000
+        fisher_chunk_size = chunk_size
+
+    torch.manual_seed(0)
+    f = torch.randn(50, 3, dtype=torch.float64)
+
+    with pytest.warns(UserWarning, match="Fisher"):
+        H = ManySamples().output_hessian(f)
+
+    assert H.shape == (50, 3, 3)
+    assert H.dtype == f.dtype
+    assert torch.allclose(H.mean(0), torch.eye(3, dtype=torch.float64), atol=0.05)
+
+
+def test_defaults_work_without_grad_and_on_graph_outputs():
+    model = nn.Linear(2, 3).double()
+    x = torch.randn(5, 2, dtype=torch.float64)
+    yc = torch.randint(3, (5,))
+    y = torch.randn(5, 3, dtype=torch.float64)
+
+    cat, gauss = DistributionOnlyCategorical(), DistributionOnlyGaussian()
+    expected_H = CategoricalLikelihood().output_hessian(model(x).detach())
+
+    # Inside `no_grad`, as in the fit loops
+    with torch.no_grad():
+        f = model(x)
+        H = cat.output_hessian(f)
+        g = cat.output_gradient(f, yc)
+
+        with pytest.warns(UserWarning, match="Fisher"):
+            gauss.output_hessian(f)
+
+    assert torch.allclose(H, expected_H, atol=1e-10)
+    assert g.shape == f.shape
+
+    # On an output that is part of the model graph
+    f = model(x)
+    H = cat.output_hessian(f, yc)
+    g = gauss.output_gradient(f, y)
+
+    with pytest.warns(UserWarning, match="Fisher"):
+        H_mc = gauss.output_hessian(f, y)
+
+    for out in (H, g, H_mc):
+        assert not out.requires_grad
+        assert out.grad_fn is None
+
+    assert torch.allclose(H, expected_H, atol=1e-10)
+    assert torch.allclose(g, f.detach() - y)
+    assert all(p.grad is None for p in model.parameters())
+
+
+def test_default_sample_generator():
+    f = torch.randn(6, 3, dtype=torch.float64)
+    state = torch.get_rng_state()
+
+    lik = DistributionOnlyGaussian()
+    y1 = lik.sample(f, generator=torch.Generator().manual_seed(3))
+    y2 = lik.sample(f, generator=torch.Generator().manual_seed(3))
+
+    assert torch.equal(torch.get_rng_state(), state)
+    assert torch.equal(y1, y2)
+    assert y1.dtype == torch.float64
+    assert y1.shape == f.shape
+
+    yc = DistributionOnlyCategorical().sample(
+        f, generator=torch.Generator().manual_seed(3)
+    )
+    assert yc.shape == f.shape[:-1]
+    assert torch.equal(torch.get_rng_state(), state)
+
+
+def test_builtin_distributions():
+    f = torch.randn(6, 3, dtype=torch.float64)
+
+    dist = GaussianLikelihood().distribution(f)
+    assert isinstance(dist, torch.distributions.Normal)
+    assert torch.equal(dist.mean, f)
+    assert torch.all(dist.scale == 1)
+
+    for lik in (CategoricalLikelihood(), BradleyTerryLikelihood()):
+        dist = lik.distribution(f)
+        assert isinstance(dist, torch.distributions.Categorical)
+        assert torch.allclose(dist.probs, torch.softmax(f, dim=-1))
+
+
+@pytest.mark.parametrize(
+    "lik", [GaussianLikelihood(), CategoricalLikelihood(), BradleyTerryLikelihood()]
+)
+def test_output_hessian_accepts_targets(lik):
+    f = torch.randn(6, 3, dtype=torch.float64)
+    y = torch.randint(3, (6,))
+
+    assert torch.equal(lik.output_hessian(f, y), lik.output_hessian(f))
 
 
 @pytest.mark.parametrize("shape", [(7, 3, 4), (50, 10)])
@@ -341,8 +474,8 @@ def test_old_enum_import_path_and_pickle():
 
 def test_subclass_equals_its_builtin_by_name():
     class Doubled(CategoricalLikelihood):
-        def output_hessian(self, f):
-            return 2 * super().output_hessian(f)
+        def output_hessian(self, f, y=None):
+            return 2 * super().output_hessian(f, y)
 
     assert Doubled() == Likelihood.CLASSIFICATION
     assert Likelihood.CLASSIFICATION == Doubled()
