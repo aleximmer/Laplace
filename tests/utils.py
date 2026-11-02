@@ -236,6 +236,15 @@ class DistributionOnlyCategorical(Likelihood):
         return torch.distributions.Categorical(logits=f)
 
 
+class DistributionOnlyBernoulli(Likelihood):
+    """Bernoulli per logit that defines only `name` and `distribution`."""
+
+    name = "dist_bernoulli"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Bernoulli(logits=f)
+
+
 class ScaledGaussian(Likelihood):
     """Gaussian with a fixed scale \\(s\\) and the closed-form output Hessian
     \\(I / s^2\\).

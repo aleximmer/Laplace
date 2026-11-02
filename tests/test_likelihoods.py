@@ -13,7 +13,11 @@ from laplace import (
     Likelihood,
     get_likelihood,
 )
-from tests.utils import DistributionOnlyCategorical, DistributionOnlyGaussian
+from tests.utils import (
+    DistributionOnlyBernoulli,
+    DistributionOnlyCategorical,
+    DistributionOnlyGaussian,
+)
 
 
 @pytest.mark.parametrize(
@@ -269,6 +273,9 @@ def test_default_inverse_link_and_gradient():
     yc = torch.randint(4, (6,))
     cat, builtin = DistributionOnlyCategorical(), CategoricalLikelihood()
     onehot = nn.functional.one_hot(yc, 4).to(f.dtype)
+    p = cat.inverse_link(f)
+    assert not torch.isnan(p).any()
+    assert torch.allclose(p, builtin.inverse_link(f))
     assert torch.allclose(
         cat.output_gradient(f, yc), builtin.output_gradient(f, onehot)
     )
@@ -286,6 +293,19 @@ def test_default_output_hessian_enumerates_discrete(shape):
     assert H.shape == expected.shape
     assert H.dtype == f.dtype
     assert torch.allclose(H, expected, atol=1e-10)
+
+
+def test_default_output_hessian_enumerates_independent_outputs():
+    f = torch.randn(50, 3, dtype=torch.float64)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        H = DistributionOnlyBernoulli().output_hessian(f)
+
+    p = torch.sigmoid(f)
+    assert H.shape == (50, 3, 3)
+    assert H.dtype == torch.float64
+    assert torch.allclose(H, torch.diag_embed(p * (1 - p)), atol=1e-10)
 
 
 @pytest.mark.parametrize("chunk_size", [10, 7])

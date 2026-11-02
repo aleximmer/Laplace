@@ -83,7 +83,8 @@ class Likelihood(metaclass=_LikelihoodMeta):
     - `check_targets`: raises a `ValueError` unless the targets have the
       distribution's shape.
     - `n_observations`: the number of entries in the batch dims of `f`.
-    - `inverse_link`: the mean of the distribution.
+    - `inverse_link`: the mean of the distribution, or the class probabilities of a
+      `Categorical`.
     - `sample`: a draw from the distribution.
     - `output_gradient`: the gradient of the negative log likelihood, by autograd.
     - `output_hessian`: the Fisher of the distribution w.r.t. `f`, see below.
@@ -341,9 +342,15 @@ class Likelihood(metaclass=_LikelihoodMeta):
         return F / self.fisher_samples
 
     def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
-        """Map the outputs `f` to the mean of the targets. By default, this is the
-        mean of `distribution(f)`."""
-        return self.distribution(f).mean
+        """Map the outputs `f` to the mean of the targets: by default the mean of
+        `distribution(f)`, or its class probabilities for a `Categorical`."""
+        dist = self.distribution(f)
+
+        # The mean of a `Categorical` is NaN, since its classes are unordered
+        if isinstance(dist, torch.distributions.Categorical):
+            return dist.probs
+
+        return dist.mean
 
     def sample(
         self, f: torch.Tensor, generator: torch.Generator | None = None
@@ -662,7 +669,7 @@ class BradleyTerryLikelihood(Likelihood):
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None
     ) -> torch.Tensor:
-        return self._fit.output_hessian(f)
+        return self._fit.output_hessian(f, y)
 
     def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
         return self._fit.inverse_link(f)
