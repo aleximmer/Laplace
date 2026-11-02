@@ -101,7 +101,7 @@ class LLLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -429,7 +429,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -552,7 +552,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         n_subset: int,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,

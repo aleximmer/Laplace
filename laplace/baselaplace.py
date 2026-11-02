@@ -103,10 +103,12 @@ class BaseLaplace:
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-        determines the log likelihood Hessian approximation. Strings and
-        `Likelihood` members become the matching likelihood object, which is
-        stored in `self.likelihood`.
+    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'} or nn.Module
+        determines the log likelihood Hessian approximation. Strings, `Likelihood`
+        members, and the torch criteria `nn.MSELoss` and `nn.CrossEntropyLoss`
+        become the matching likelihood object, which is stored in
+        `self.likelihood`. A `nn.CrossEntropyLoss` keeps its `weight`,
+        `ignore_index`, and `label_smoothing`.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -146,7 +148,7 @@ class BaseLaplace:
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -235,8 +237,9 @@ class BaseLaplace:
         return self._likelihood
 
     @likelihood.setter
-    def likelihood(self, likelihood: Likelihood | str) -> None:
-        """Set the likelihood from an object, a `Likelihood` member, or a name.
+    def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
+        """Set the likelihood from an object, a `Likelihood` member, a name, or a
+        torch criterion, see `get_likelihood`.
 
         The cached backend is rebuilt on next use if the fit likelihood changes.
         """
@@ -1204,7 +1207,7 @@ class ParametricLaplace(BaseLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -2043,7 +2046,7 @@ class FullLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -2181,7 +2184,7 @@ class KronLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -2367,7 +2370,7 @@ class LowRankLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         backend: type[CurvatureInterface] = AsdfghjklHessian
         if find_spec("asdfghjkl") is not None
         else CurvatureInterface,
@@ -3116,7 +3119,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         n_subset: int,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
@@ -4141,7 +4144,7 @@ class ELLA(BaseFunctionalLaplace):
     def __init__(
         self,
         model: torch.nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         subsample_size: int,
         n_eigenvalues: int,
         sigma_noise: float | torch.Tensor = 1.0,
@@ -5110,7 +5113,7 @@ class VaLLA(BaseFunctionalLaplace):
     def __init__(
         self,
         model: torch.nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         inducing_locations: torch.Tensor | MutableMapping | str,
         num_inducing: int | None = None,
         inducing_classes: torch.Tensor | None = None,

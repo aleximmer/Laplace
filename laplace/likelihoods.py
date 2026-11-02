@@ -32,8 +32,9 @@ class _LikelihoodMeta(ABCMeta):
             if likelihood is args[0]:
                 return likelihood
 
-            # Like an enum member, a built-in likelihood is a single shared instance
-            return next(m for m in cls if m == likelihood)
+            # Like an enum member, a built-in likelihood is a single shared instance.
+            # A criterion with non-default options matches none of them.
+            return next((m for m in cls if m == likelihood), likelihood)
 
         return super().__call__(*args, **kwargs)
 
@@ -574,23 +575,113 @@ class CategoricalLikelihood(Likelihood):
     class axis at dim 1. Every token is then an observation; the class dim of
     probability targets does not count.
 
-    The output Hessian of the negative log likelihood is
+    The options `weight`, `ignore_index`, and `label_smoothing` are those of
+    `nn.CrossEntropyLoss`, with the same defaults and meaning. Let \\(q\\) be the
+    one-hot index target or the probability target, smoothed as
+    \\(q \\leftarrow (1 - \\varepsilon)\\, q + \\varepsilon / C\\) with
+    \\(\\varepsilon\\) the label smoothing. With class weights \\(w\\), the loss of a
+    token is
 
     $$
-        \\nabla^2_f \\left(-\\log p(y \\mid f)\\right) = \\operatorname{diag}(p) - p p^\\top,
+        \\ell(f, y) = -m \\sum_c w_c q_c \\log p_c,
     $$
 
-    the inverse link is the softmax, samples are one-hot draws
-    \\(y \\sim \\operatorname{Cat}(p)\\), and the output gradient is \\(p - y\\).
+    where \\(m = [y \\neq \\text{ignore\\_index}]\\) for index targets and \\(m = 1\\)
+    for probability targets, as in torch. Without weights, \\(w = 1\\). Only tokens
+    with \\(m = 1\\) count as observations. With the per-token scale
+    \\(s = w^\\top q\\), or \\(s = 1\\) without weights, the output gradient is
+
+    $$
+        \\nabla_f \\ell = m \\left(s\\, p - w \\odot q\\right),
+    $$
+
+    which is \\(p - y\\) for one-hot \\(y\\) and default options, and the output
+    Hessian is
+
+    $$
+        \\nabla^2_f \\ell = m\\, s \\left(\\operatorname{diag}(p) - p p^\\top\\right).
+    $$
+
+    Without targets, `output_hessian` returns \\(\\operatorname{diag}(p) - p p^\\top\\)
+    without \\(m\\) and \\(s\\). The weight is cast to the dtype and device of the
+    logits wherever it is used. Class weights and label smoothing make this a
+    generalized likelihood, so `log_marginal_likelihood` is no longer a true model
+    evidence.
+
+    `distribution`, the inverse link (the softmax), and `sample` (one-hot draws
+    \\(y \\sim \\operatorname{Cat}(p)\\)) ignore the options, since they describe the
+    model's predictive, which the options leave unchanged.
+
+    Parameters
+    ----------
+    weight : torch.Tensor, optional
+        class weights of shape `(C,)`, as in `nn.CrossEntropyLoss`.
+    ignore_index : int, default=-100
+        index target whose tokens do not count, as in `nn.CrossEntropyLoss`.
+    label_smoothing : float, default=0.0
+        label smoothing \\(\\varepsilon \\in [0, 1]\\), as in `nn.CrossEntropyLoss`.
     """
 
     name: ClassVar[str] = "classification"
+
+    # Class-level defaults keep subclasses working that override `__init__` without
+    # calling `super().__init__()`
+    weight: torch.Tensor | None = None
+    """Class weights `(C,)`, or `None` for equal weights."""
+
+    ignore_index: int = -100
+    """Index target whose tokens do not count."""
+
+    label_smoothing: float = 0.0
+    """Label smoothing \\(\\varepsilon\\)."""
+
+    def __init__(
+        self,
+        weight: torch.Tensor | None = None,
+        ignore_index: int = -100,
+        label_smoothing: float = 0.0,
+    ) -> None:
+        self.weight = weight
+        self.ignore_index = ignore_index
+        self.label_smoothing = label_smoothing
+
+    def hyperparameters(self) -> dict[str, Any]:
+        hyperparameters: dict[str, Any] = {}
+
+        if self.weight is not None:
+            hyperparameters["weight"] = self.weight
+
+        if self.ignore_index != -100:
+            hyperparameters["ignore_index"] = self.ignore_index
+
+        if self.label_smoothing != 0.0:
+            hyperparameters["label_smoothing"] = self.label_smoothing
+
+        return hyperparameters
 
     def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
         return torch.distributions.Categorical(logits=f)
 
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
-        return nn.CrossEntropyLoss(reduction=reduction)
+        return self._criterion(reduction, self.weight)
+
+    def _criterion(
+        self, reduction: str, weight: torch.Tensor | None
+    ) -> nn.CrossEntropyLoss:
+        """`nn.CrossEntropyLoss` with the options of this likelihood and `weight`."""
+        return nn.CrossEntropyLoss(
+            weight=weight,
+            ignore_index=self.ignore_index,
+            label_smoothing=self.label_smoothing,
+            reduction=reduction,
+        )
+
+    def _weight_like(self, f: torch.Tensor) -> torch.Tensor | None:
+        """The class weights with the dtype and device of the logits `f`."""
+        if self.weight is None:
+            return None
+
+        return self.weight.to(dtype=f.dtype, device=f.device)
 
     @property
     def loss_factor(self) -> float:
@@ -615,17 +706,74 @@ class CategoricalLikelihood(Likelihood):
             y = y.reshape(-1, f.shape[-1]) if y.ndim == f.ndim else y.reshape(-1)
             f = f.reshape(-1, f.shape[-1])
 
-        return self.loss_fn()(f, y)
+        return self._criterion("sum", self._weight_like(f))(f, y)
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        return (y.shape[:-1] if y.ndim == f.ndim else y.shape).numel()
+        if y.ndim == f.ndim:
+            return y.shape[:-1].numel()
+
+        return int((y != self.ignore_index).sum())
+
+    def _targets(
+        self, f: torch.Tensor, y: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+        """Smoothed target distribution \\(q\\) and mask \\(m\\) of the targets `y`.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            logits `(batch, ..., C)`
+        y : torch.Tensor
+            class indices `(batch, ...)` or class probabilities `(batch, ..., C)`
+
+        Returns
+        -------
+        q : torch.Tensor
+            `(batch, ..., C)`, with the dtype of `f`.
+        m : torch.Tensor or None
+            `(batch, ...)` mask of the tokens that count, or `None` for probability
+            targets, which have no ignored tokens.
+
+        Raises
+        ------
+        ValueError
+            if the targets do not fit the logits, see `check_targets`.
+        """
+        self.check_targets(f, y)
+        C = f.shape[-1]
+
+        if y.ndim == f.ndim:
+            q, m = y.to(f.dtype), None
+        else:
+            m = y != self.ignore_index
+            # Ignored tokens may hold an index outside the classes, e.g. -100
+            idx = torch.where(m, y, torch.zeros_like(y))
+            q = nn.functional.one_hot(idx, C).to(f.dtype)
+
+        if self.label_smoothing != 0.0:
+            q = (1 - self.label_smoothing) * q + self.label_smoothing / C
+
+        return q, m
 
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None
     ) -> torch.Tensor:
         p = self.inverse_link(f)
+        H = torch.diag_embed(p) - torch.einsum("...k,...c->...kc", p, p)
 
-        return torch.diag_embed(p) - torch.einsum("...k,...c->...kc", p, p)
+        if y is None:
+            return H
+
+        q, m = self._targets(f, y)
+        weight = self._weight_like(f)
+
+        if weight is not None:
+            H = (q @ weight)[..., None, None] * H
+
+        if m is not None:
+            H = m[..., None, None] * H
+
+        return H
 
     def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
         return torch.softmax(f, dim=-1)
@@ -640,7 +788,19 @@ class CategoricalLikelihood(Likelihood):
         return y.reshape(f.shape)
 
     def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return self.inverse_link(f) - y
+        p = self.inverse_link(f)
+        q, m = self._targets(f, y)
+        weight = self._weight_like(f)
+
+        if weight is None:
+            g = p - q
+        else:
+            g = (q @ weight)[..., None] * p - weight * q
+
+        if m is not None:
+            g = m[..., None] * g
+
+        return g
 
 
 class BradleyTerryLikelihood(Likelihood):
@@ -748,8 +908,8 @@ def hyperparameters_equal(a: dict[str, Any], b: dict[str, Any]) -> bool:
     Parameters
     ----------
     a, b : dict
-        values are plain Python objects or tensors, compared with `torch.equal` if
-        either is a tensor.
+        values are plain Python objects or tensors, compared with `_tensors_equal`
+        if either is a tensor.
 
     Returns
     -------
@@ -765,13 +925,28 @@ def hyperparameters_equal(a: dict[str, Any], b: dict[str, Any]) -> bool:
             if not (
                 isinstance(value, torch.Tensor)
                 and isinstance(other, torch.Tensor)
-                and torch.equal(value, other)
+                and _tensors_equal(value, other)
             ):
                 return False
         elif value != other:
             return False
 
     return True
+
+
+def _tensors_equal(a: torch.Tensor, b: torch.Tensor) -> bool:
+    """`torch.equal` that also compares tensors on different devices.
+
+    Tensors on different devices are compared on the CPU. A tensor on the meta
+    device holds no values, so it only equals itself.
+    """
+    if a.is_meta or b.is_meta:
+        return a is b
+
+    if a.device != b.device:
+        a, b = a.cpu(), b.cpu()
+
+    return torch.equal(a, b)
 
 
 def _name_of(name: str) -> str:
@@ -795,14 +970,18 @@ def _zero_like(x: torch.Tensor | float) -> torch.Tensor:
     return torch.zeros((), dtype=_float_dtype(x), device=device)
 
 
-def get_likelihood(likelihood: Likelihood | str) -> Likelihood:
-    """Turn a likelihood name into a likelihood object.
+def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
+    """Turn a likelihood name or a torch criterion into a likelihood object.
 
     Parameters
     ----------
-    likelihood : Likelihood or str
-        an instance, which is returned as is, or one of `'regression'`,
-        `'classification'`, and `'reward_modeling'`.
+    likelihood : Likelihood or str or nn.Module
+        an instance, which is returned as is, one of `'regression'`,
+        `'classification'`, and `'reward_modeling'`, or a torch criterion.
+        `nn.MSELoss` becomes a `GaussianLikelihood` and `nn.CrossEntropyLoss` a
+        `CategoricalLikelihood` with the criterion's `weight`, `ignore_index`, and
+        `label_smoothing`. The criterion's `reduction` is ignored, since Laplace
+        always sums the loss.
 
     Returns
     -------
@@ -811,7 +990,8 @@ def get_likelihood(likelihood: Likelihood | str) -> Likelihood:
     Raises
     ------
     ValueError
-        if `likelihood` is neither a likelihood instance nor a known name.
+        if `likelihood` is neither a likelihood instance, a known name, nor one of
+        the two criteria above. Subclasses of the criteria are not accepted.
     """
     if isinstance(likelihood, Likelihood):
         return likelihood
@@ -820,6 +1000,16 @@ def get_likelihood(likelihood: Likelihood | str) -> Likelihood:
         for cls in (GaussianLikelihood, CategoricalLikelihood, BradleyTerryLikelihood):
             if cls.name == _name_of(likelihood):
                 return cls()
+
+    if type(likelihood) is nn.MSELoss:
+        return GaussianLikelihood()
+
+    if type(likelihood) is nn.CrossEntropyLoss:
+        return CategoricalLikelihood(
+            weight=likelihood.weight,
+            ignore_index=likelihood.ignore_index,
+            label_smoothing=likelihood.label_smoothing,
+        )
 
     raise ValueError(f"Invalid likelihood type {likelihood}")
 

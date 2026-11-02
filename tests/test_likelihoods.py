@@ -526,3 +526,179 @@ def test_equality_compares_tensor_hyperparameters():
     assert Weighted(torch.ones(2)) != Weighted(torch.zeros(2))
     assert Weighted(torch.ones(2)) != Weighted(torch.ones(3))
     assert Weighted(torch.ones(2)) != CategoricalLikelihood()
+
+
+_CE_WEIGHT = torch.tensor([0.5, 2.0, 1.5], dtype=torch.float64)
+
+_CE_OPTIONS = [
+    {},
+    {"weight": _CE_WEIGHT},
+    {"ignore_index": 1},
+    {"label_smoothing": 0.1},
+    {"weight": _CE_WEIGHT, "ignore_index": 1, "label_smoothing": 0.1},
+]
+
+
+def _ce_targets(opts: dict, B: int = 4, L: int = 5, C: int = 3) -> list:
+    """Index targets, with some ignored tokens if `ignore_index` is set, and
+    probability targets if it is not, since torch ignores `ignore_index` for them."""
+    y = torch.randint(C, (B, L))
+
+    if "ignore_index" in opts:
+        y[0, :2] = opts["ignore_index"]
+        return [y]
+
+    q = torch.softmax(torch.randn(B, L, C, dtype=torch.float64), dim=-1)
+
+    return [y, q]
+
+
+@pytest.mark.parametrize("opts", _CE_OPTIONS)
+def test_categorical_options_mirror_cross_entropy(opts):
+    torch.manual_seed(0)
+    B, L, C = 4, 5, 3
+    f = torch.randn(B, L, C, dtype=torch.float64)
+
+    lik = CategoricalLikelihood(**opts)
+    ce = nn.CrossEntropyLoss(**opts, reduction="sum")
+
+    for y in _ce_targets(opts):
+        y_flat = y.reshape(-1, C) if y.ndim == f.ndim else y.reshape(-1)
+        assert torch.allclose(lik.loss(f, y), ce(f.reshape(-1, C), y_flat))
+
+
+@pytest.mark.parametrize("opts", _CE_OPTIONS)
+def test_categorical_option_gradient_and_hessian_match_autograd(opts):
+    torch.manual_seed(0)
+    B, L, C = 4, 5, 3
+    f = torch.randn(B, L, C, dtype=torch.float64)
+
+    lik = CategoricalLikelihood(**opts)
+    ce = nn.CrossEntropyLoss(**opts, reduction="sum")
+    ignore_index = opts.get("ignore_index", -100)
+
+    for y in _ce_targets(opts):
+        probs = y.ndim == f.ndim
+        y_flat = y.reshape(-1, C) if probs else y.reshape(-1)
+
+        grad = torch.func.grad(lambda f_: ce(f_.reshape(-1, C), y_flat))(f)
+        assert torch.allclose(lik.output_gradient(f, y), grad)
+
+        H_ref = torch.zeros(B * L, C, C, dtype=f.dtype)
+
+        for t, (f_t, y_t) in enumerate(zip(f.reshape(-1, C), y_flat)):
+            if not probs and y_t == ignore_index:
+                continue
+
+            def token_loss(f_: torch.Tensor, y_t: torch.Tensor = y_t) -> torch.Tensor:
+                return ce(f_[None], y_t[None])
+
+            H_ref[t] = torch.func.hessian(token_loss)(f_t)
+
+        assert torch.allclose(lik.output_hessian(f, y), H_ref.reshape(B, L, C, C))
+
+
+def test_categorical_n_observations_excludes_ignored():
+    f = torch.randn(4, 5, 3)
+    y = torch.zeros(4, 5, dtype=torch.long)
+    y.view(-1)[:7] = 2
+
+    assert CategoricalLikelihood(ignore_index=2).n_observations(f, y) == 13
+    assert CategoricalLikelihood().n_observations(f, y) == 20
+
+    # Torch ignores `ignore_index` for probability targets
+    q = torch.softmax(f, dim=-1)
+    assert CategoricalLikelihood(ignore_index=2).n_observations(f, q) == 20
+
+
+def test_categorical_hyperparameters_are_non_default():
+    w = torch.tensor([1.0, 2.0])
+
+    assert CategoricalLikelihood().hyperparameters() == {}
+    assert CategoricalLikelihood(weight=None, ignore_index=-100).hyperparameters() == {}
+    assert CategoricalLikelihood(label_smoothing=0.1).hyperparameters() == {
+        "label_smoothing": 0.1
+    }
+    assert CategoricalLikelihood(ignore_index=1).hyperparameters() == {
+        "ignore_index": 1
+    }
+    assert CategoricalLikelihood(weight=w).hyperparameters()["weight"] is w
+
+    assert CategoricalLikelihood(ignore_index=1) != Likelihood.CLASSIFICATION
+    assert CategoricalLikelihood(ignore_index=1) == "classification"
+    assert CategoricalLikelihood(weight=w) == CategoricalLikelihood(weight=w.clone())
+    assert CategoricalLikelihood(weight=w) != CategoricalLikelihood(weight=2 * w)
+    assert BradleyTerryLikelihood().fit_likelihood == Likelihood.CLASSIFICATION
+
+    # Tensors on different devices compare by value instead of raising
+    assert CategoricalLikelihood(weight=w) == CategoricalLikelihood(
+        weight=w.to("cpu", copy=True)
+    )
+    assert CategoricalLikelihood(weight=w) != CategoricalLikelihood(weight=w.to("meta"))
+
+    if torch.cuda.is_available():
+        assert CategoricalLikelihood(weight=w) == CategoricalLikelihood(weight=w.cuda())
+
+
+def test_weight_dtype_and_device_follow_logits():
+    torch.manual_seed(0)
+    f = torch.randn(4, 5, 3, dtype=torch.float64)
+    y = torch.randint(3, (4, 5))
+    w = torch.tensor([0.5, 2.0, 1.5])
+
+    lik = CategoricalLikelihood(weight=w, label_smoothing=0.1)
+    ref = CategoricalLikelihood(weight=w.double(), label_smoothing=0.1)
+
+    for method in ("loss", "output_gradient", "output_hessian"):
+        out = getattr(lik, method)(f, y)
+
+        assert out.dtype == torch.float64
+        assert torch.allclose(out, getattr(ref, method)(f, y))
+
+    # The stored weight stays as given
+    assert lik.weight is w
+
+
+def test_get_likelihood_from_criterion():
+    w = torch.tensor([1.0, 2.0, 3.0, 4.0])
+
+    assert type(get_likelihood(nn.MSELoss())) is GaussianLikelihood
+
+    criterion = nn.CrossEntropyLoss(
+        weight=w, ignore_index=3, label_smoothing=0.2, reduction="mean"
+    )
+    lik = get_likelihood(criterion)
+
+    assert type(lik) is CategoricalLikelihood
+    assert lik == CategoricalLikelihood(weight=w, ignore_index=3, label_smoothing=0.2)
+    assert type(get_likelihood(nn.CrossEntropyLoss())) is CategoricalLikelihood
+    assert get_likelihood(nn.CrossEntropyLoss()) == Likelihood.CLASSIFICATION
+
+    # The enum-style lookup accepts criteria too
+    assert Likelihood(nn.CrossEntropyLoss()) is Likelihood.CLASSIFICATION
+    assert Likelihood(criterion) == lik
+
+    with pytest.raises(ValueError, match="Invalid likelihood type"):
+        get_likelihood(nn.L1Loss())
+
+
+def test_categorical_curvature_checks_targets():
+    lik = CategoricalLikelihood()
+    f, y = torch.randn(4, 3, 2, 5), torch.randint(5, (4, 2, 3))
+
+    with pytest.raises(ValueError, match="targets have shape"):
+        lik.output_hessian(f, y)
+
+    with pytest.raises(ValueError, match="targets have shape"):
+        lik.output_gradient(f, y)
+
+
+def test_categorical_subclass_without_super_init_has_default_options():
+    class Custom(CategoricalLikelihood):
+        def __init__(self, scale: float = 1.0) -> None:
+            self.scale = scale
+
+    f, y = torch.randn(4, 3), torch.randint(3, (4,))
+
+    assert Custom().hyperparameters() == {}
+    assert torch.allclose(Custom().loss(f, y), CategoricalLikelihood().loss(f, y))

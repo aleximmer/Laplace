@@ -85,7 +85,7 @@ class SubnetLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         subnetwork_indices: torch.LongTensor,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,

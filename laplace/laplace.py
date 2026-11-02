@@ -13,7 +13,7 @@ from laplace.utils.enums import (
 
 def Laplace(
     model: torch.nn.Module,
-    likelihood: Likelihood | str,
+    likelihood: Likelihood | str | torch.nn.Module,
     subset_of_weights: SubsetOfWeights | str = SubsetOfWeights.LAST_LAYER,
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
     *args,
@@ -27,10 +27,11 @@ def Laplace(
     ----------
     model : torch.nn.Module
         Pretrained network around which to approximate the posterior.
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
+    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'} or torch.nn.Module
         Likelihood used for fitting, either a likelihood object such as
-        `CategoricalLikelihood()` or its name. Reward modeling requires an
-        estimator that supports pairwise preferences, such as ELLA or VaLLA.
+        `CategoricalLikelihood()`, its name, or a torch criterion: `nn.MSELoss` or
+        `nn.CrossEntropyLoss`, whose options carry over. Reward modeling requires
+        an estimator that supports pairwise preferences, such as ELLA or VaLLA.
     subset_of_weights : SubsetOfWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER
         subset of weights to consider for inference
     hessian_structure : HessianStructure or str in {'diag', 'kron', 'full', 'lowrank', 'gp'}, default=HessianStructure.KRON

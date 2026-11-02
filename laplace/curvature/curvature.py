@@ -91,8 +91,9 @@ class CurvatureInterface:
         return self._likelihood
 
     @likelihood.setter
-    def likelihood(self, likelihood: Likelihood | str) -> None:
-        """Set the likelihood from an object, a `Likelihood` member, or a name.
+    def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
+        """Set the likelihood from an object, a `Likelihood` member, a name, or a
+        torch criterion, see `get_likelihood`.
 
         Raises
         ------
