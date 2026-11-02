@@ -109,21 +109,85 @@ pred = la(x, pred_type="glm", link_approx="probit")
 
 ### Likelihoods
 
-The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `"reward_modeling"`) or a likelihood object.
-The two forms are interchangeable, so `likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
+The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `"reward_modeling"`), a likelihood object, or a PyTorch criterion.
+`likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
 `Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, and `Likelihood.REWARD_MODELING` are the built-in likelihood objects.
-To define your own, subclass `Likelihood`; its docstring lists the methods you need to implement.
-A custom likelihood can only be fit if its `name` is `"regression"` or `"classification"`, since the curvature backends choose their code path by name.
-FunctionalLaplace, ELLA, and VaLLA use the subclass's overrides, such as `output_hessian`.
-Most curvature methods of the Curvlinops, ASDL, and BackPACK backends use their own loss instead, so weight-space Laplace with these backends supports only the built-in likelihoods for now and raises a `ValueError` for a custom one.
+
+#### Cross-entropy options
+
+`CategoricalLikelihood` takes the `weight`, `ignore_index`, and `label_smoothing` options of `nn.CrossEntropyLoss`, with the same defaults and meaning.
+You can also pass the criterion you trained with.
+An `nn.CrossEntropyLoss` becomes a `CategoricalLikelihood` with the same options, and an `nn.MSELoss` becomes a `GaussianLikelihood`.
+The criterion's `reduction` is ignored, since Laplace always sums the loss.
+Ignored tokens don't count as observations.
 
 ```python
+from torch import nn
 from laplace import CategoricalLikelihood, Laplace
 
-la = Laplace(model, CategoricalLikelihood(),
-             subset_of_weights="all",
-             hessian_structure="diag")
+# Token classification with padding and label smoothing
+criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.1)
+la = Laplace(model, criterion, subset_of_weights="all", hessian_structure="diag")
+
+# The same as
+la = Laplace(model, CategoricalLikelihood(label_smoothing=0.1),
+             subset_of_weights="all", hessian_structure="diag")
+la.fit(train_loader)
 ```
+
+Class weights and label smoothing turn the cross-entropy into a generalized likelihood.
+With them, `log_marginal_likelihood()` is no longer the model evidence in the strict sense.
+
+Not every backend computes the curvature with every option:
+
+| Hessian structure | Options | Support |
+|---|---|---|
+| `diag`, `full` with a GGN or EF backend | all | Every backend. If a backend's library can't handle an option, Laplace falls back to its own torch.func implementation, which is slower. |
+| `kron` | `label_smoothing` | Curvlinops (but not with `stochastic=True`), ASDL, and BackPACK GGN. Asdfghjkl doesn't support it. |
+| `kron` | `weight`, `ignore_index` | None |
+| `full` with a Hessian backend | all | `CurvlinopsHessian` and `AsdlHessian` |
+| `stochastic=True` (Monte Carlo Fisher) | `label_smoothing` | `CurvlinopsGGN` with `full` only |
+
+An unsupported combination raises a `ValueError` that points you to a GGN or EF backend with the `diag` or `full` structure.
+
+#### Custom likelihoods
+
+To define your own likelihood, subclass `Likelihood`, set a `name`, and implement `distribution(f)`.
+It returns the distribution of the targets given the model outputs `f` as a `torch.distributions.Distribution`.
+Everything else has a default built on it, including the output Hessian, which is the Fisher of the distribution with respect to `f`.
+For distributions with finite support, such as the Bernoulli or the categorical, the Fisher is computed exactly by enumerating the support.
+For other distributions, it is a Monte Carlo estimate, and a warning says so.
+If you know the Fisher in closed form, override `output_hessian` to make it exact and cheap.
+The `Likelihood` docstring lists every member you can override.
+
+```python
+import torch
+from laplace import Laplace, Likelihood
+
+class PoissonLikelihood(Likelihood):
+    name = "poisson"
+
+    def distribution(self, f):
+        return torch.distributions.Poisson(rate=f.exp())
+
+    # Optional: with a log link, the Fisher is exp(f)
+    def output_hessian(self, f, y=None):
+        return torch.diag_embed(f.exp())
+
+la = Laplace(model, PoissonLikelihood(),
+             subset_of_weights="all", hessian_structure="diag")
+la.fit(train_loader)
+la.optimize_prior_precision()
+rate = la(x, pred_type="glm", n_samples=1000)
+```
+
+Fit a custom likelihood with the `diag` or `full` structure and a GGN or EF backend.
+For a Gaussian likelihood, the GLM predictive returns the moments of \(f\), and for classification it returns class probabilities.
+For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\mu, \Sigma_f)\) from the GLM predictive and averages the `inverse_link` \(g\) over them, a Monte Carlo estimate of \(\mathbb{E}[g(f)]\).
+`link_approx` has no effect there.
+In the example above, the result is the expected Poisson rate.
+Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
+FunctionalLaplace, ELLA, and VaLLA only accept likelihoods named `"regression"`, `"classification"`, or `"reward_modeling"`, which includes a `CategoricalLikelihood` with options.
 
 ### Marginal likelihood
 

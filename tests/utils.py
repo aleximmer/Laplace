@@ -277,3 +277,14 @@ class ScaledGaussian(Likelihood):
     @property
     def predictive_likelihood(self) -> Likelihood:
         return GaussianLikelihood()
+
+
+class PoissonLog(Likelihood):
+    """Poisson likelihood with a log link, \\(y \\sim \\operatorname{Poisson}(e^f)\\),
+    that defines only `name` and `distribution`. Its predictive likelihood is itself,
+    so the GLM predictive integrates \\(e^f\\) by Monte Carlo."""
+
+    name = "poisson_log"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Poisson(rate=f.exp())

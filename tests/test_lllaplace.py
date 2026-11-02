@@ -23,6 +23,7 @@ from tests.utils import (
     BackPackGGN,
     CustomCategorical,
     ListDataset,
+    ScaledGaussian,
     ScaledModel,
     dict_data_collator,
     jacobians_naive,
@@ -935,3 +936,14 @@ def test_lllaplace_custom_categorical_nn_predictive_is_softmaxed(laplace, model)
     samples = lap._nn_predictive_samples(X, n_samples=3)
 
     assert torch.allclose(samples.sum(-1), torch.ones(3, 4))
+
+
+def test_custom_likelihood_full_lllaplace(model, reg_loader):
+    la = FullLLLaplace(model, ScaledGaussian(2.0))
+    la.fit(reg_loader)
+
+    ref = FullLLLaplace(model, "regression")
+    ref.fit(reg_loader)
+
+    # The output Hessian is I / s^2 instead of I
+    torch.testing.assert_close(la.H, ref.H / 4)

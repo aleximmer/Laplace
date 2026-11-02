@@ -122,13 +122,13 @@ class Likelihood(metaclass=_LikelihoodMeta):
     takes the classification code paths, even though it does not equal
     `Likelihood.CLASSIFICATION`.
 
-    A custom subclass can only be fit if its `name` is `"regression"` or
-    `"classification"`, because the curvature backends pick their code path by name.
-    FunctionalLaplace, ELLA, and VaLLA use the subclass's overrides, such as
-    `output_hessian`. Most curvature methods of the Curvlinops, ASDL, and BackPACK
-    backends use their own loss instead, so weight-space Laplace with these backends
-    supports only the built-in likelihoods for now and raises a `ValueError` for a
-    custom one.
+    Weight-space Laplace fits a custom likelihood with the `diag` or `full`
+    structure and a GGN or EF backend, which use its `output_hessian` and `loss_fn`.
+    The `kron` structure and the Hessian backends raise a `ValueError` for it. The
+    GLM predictive of a likelihood that is neither Gaussian nor categorical is the
+    Monte Carlo average of `inverse_link` over the GLM predictive of the outputs.
+    FunctionalLaplace, ELLA, and VaLLA only accept the built-in names, but a
+    subclass that keeps one of them may override members such as `output_hessian`.
     """
 
     name: ClassVar[str]

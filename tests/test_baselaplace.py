@@ -12,6 +12,7 @@ from math import e, prod, sqrt
 import numpy as np
 import pytest
 import torch
+import torchmetrics
 from torch import nn
 from torch.distributions import Categorical, Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
@@ -30,6 +31,7 @@ from laplace import (
     LowRankLaplace,
 )
 from laplace.baselaplace import BaseLaplace
+from laplace.curvature import GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import (
     BradleyTerryLikelihood,
@@ -44,6 +46,8 @@ from tests.utils import (
     BackPackEF,
     BackPackGGN,
     ListDataset,
+    PoissonLog,
+    ScaledGaussian,
     dict_data_collator,
     jacobians_naive,
     requires_asdl,
@@ -2608,3 +2612,168 @@ def test_parameterized_builtin_subclass_keeps_classification_paths(model, class_
     tempered.fit(class_loader)
     probs = tempered(X, pred_type="glm", link_approx="probit")
     torch.testing.assert_close(probs.sum(-1), torch.ones(len(X)))
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
+def test_custom_likelihood_end_to_end(laplace, model, reg_loader):
+    la = laplace(model, ScaledGaussian(2.0))
+    la.fit(reg_loader)
+
+    ref = laplace(model, "regression")
+    ref.fit(reg_loader)
+
+    # The output Hessian is I / s^2 instead of I
+    torch.testing.assert_close(la.H, ref.H / 4)
+
+    X, y = reg_loader.dataset.tensors
+
+    with torch.no_grad():
+        f = model(X)
+
+    torch.testing.assert_close(la.log_likelihood, Normal(f, 2.0).log_prob(y).sum())
+    assert torch.isfinite(la.log_marginal_likelihood())
+
+    f_mu, f_var = la(X, pred_type="glm")
+    assert f_mu.shape == (len(X), 2)
+    assert f_var.shape == (len(X), 2, 2)
+
+    mean, var = la(X, pred_type="nn", link_approx="mc", n_samples=5)
+    assert mean.shape == (len(X), 2)
+    assert var.shape == (len(X), 2)
+
+
+def _token_loader(ignore_index: int) -> DataLoader:
+    """Token classification data: inputs `(B, L, D)` and class indices `(B, L)` of
+    3 classes, with some tokens set to `ignore_index`."""
+    X = torch.randn(10, 5, 4)
+    y = torch.randint(3, (10, 5))
+    y[::3, 1] = ignore_index
+    y[1, ::2] = ignore_index
+
+    return DataLoader(TensorDataset(X, y), batch_size=4)
+
+
+def _categorical_options(name: str) -> dict:
+    """Options of `CategoricalLikelihood` by test id."""
+    weight = torch.tensor([0.5, 1.0, 2.0])
+
+    return {
+        "weight": dict(weight=weight),
+        "ignore_index": dict(ignore_index=2),
+        "label_smoothing": dict(label_smoothing=0.1),
+        "all": dict(weight=weight, ignore_index=2, label_smoothing=0.1),
+    }[name]
+
+
+def _assert_same_curvature(la: BaseLaplace, ref: BaseLaplace) -> None:
+    """Compare the Hessians of two fitted Laplace approximations."""
+    if isinstance(la, KronLaplace):
+        for facs, facs_ref in zip(la.H_facs.kfacs, ref.H_facs.kfacs):
+            for F, F_ref in zip(facs, facs_ref):
+                torch.testing.assert_close(F, F_ref)
+    else:
+        torch.testing.assert_close(la.H, ref.H)
+
+
+@pytest.mark.parametrize(
+    "laplace,options",
+    [
+        (laplace, options)
+        for laplace in [FullLaplace, DiagLaplace]
+        for options in ["weight", "ignore_index", "label_smoothing", "all"]
+    ]
+    + [(KronLaplace, "label_smoothing")],
+)
+def test_categorical_options_end_to_end(laplace, options):
+    lik = CategoricalLikelihood(**_categorical_options(options))
+    loader = _token_loader(lik.ignore_index)
+    model = nn.Linear(4, 3)
+
+    la = laplace(model, lik)
+    la.fit(loader)
+
+    _, y = loader.dataset.tensors
+    assert la.n_obs == int((y != lik.ignore_index).sum())
+
+    if laplace is KronLaplace:
+        # The type-2 KFAC does not see the targets, so label smoothing leaves it as
+        # it is with the default options
+        ref = KronLaplace(model, "classification")
+        ref.fit(loader)
+        _assert_same_curvature(la, ref)
+    else:
+        # The torch.func GGN with the same likelihood, summed over the batches as in
+        # `ParametricLaplace.fit`
+        backend = GGNInterface(model, lik)
+        method = "full" if laplace is FullLaplace else "diag"
+        H_ref = sum(getattr(backend, method)(X, y)[1] for X, y in loader)
+        torch.testing.assert_close(la.H, H_ref)
+
+    # A configured criterion gives the same likelihood as the object
+    default_loader = _token_loader(-100)
+    from_criterion = laplace(model, nn.CrossEntropyLoss(ignore_index=-100))
+    from_object = laplace(model, CategoricalLikelihood())
+    assert from_criterion.likelihood == from_object.likelihood
+
+    from_criterion.fit(default_loader)
+    from_object.fit(default_loader)
+    assert from_criterion.n_obs == from_object.n_obs
+    _assert_same_curvature(from_criterion, from_object)
+
+
+def test_glm_mc_predictive_for_custom_link():
+    torch.manual_seed(7)
+    X = torch.randn(50, 3)
+    y = torch.poisson(torch.exp(0.5 * X[:, :1]))
+    loader = DataLoader(TensorDataset(X, y), batch_size=10)
+
+    model = nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1))
+    la = DiagLaplace(model, PoissonLog(), prior_precision=10.0)
+
+    # `PoissonLog` has no closed-form Fisher, so the fit estimates it
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        la.fit(loader)
+
+    X_test = X[:8]
+    f_mu, f_var = la._glm_predictive_distribution(X_test)
+
+    # The lognormal mean of exp(f) for f ~ N(f_mu, f_var)
+    expected = torch.exp(f_mu + 0.5 * f_var.diagonal(dim1=-2, dim2=-1))
+
+    mc = la(X_test, pred_type="glm", link_approx="mc", n_samples=20000)
+    assert mc.shape == (8, 1)
+    torch.testing.assert_close(mc, expected, rtol=0.05, atol=0.0)
+
+    # `link_approx` only selects among the categorical approximations
+    default = la(X_test, pred_type="glm", n_samples=20000)
+    assert default.shape == (8, 1)
+    torch.testing.assert_close(default, expected, rtol=0.05, atol=0.0)
+
+
+def test_kron_rejects_unhonoured(model, reg_loader, class_loader):
+    with pytest.raises(ValueError, match="diag"):
+        KronLaplace(model, ScaledGaussian()).fit(reg_loader)
+
+    with pytest.raises(ValueError, match="diag"):
+        KronLaplace(model, CategoricalLikelihood(ignore_index=1)).fit(class_loader)
+
+
+def test_gridsearch_requires_loss_for_custom(model, reg_loader):
+    la = DiagLaplace(model, ScaledGaussian())
+    la.fit(reg_loader)
+
+    kwargs = dict(
+        pred_type="glm",
+        method="gridsearch",
+        val_loader=reg_loader,
+        grid_size=3,
+        n_samples=10,
+    )
+
+    with pytest.raises(ValueError, match="pass `loss`"):
+        la.optimize_prior_precision(**kwargs)
+
+    la.optimize_prior_precision(
+        loss=torchmetrics.MeanSquaredError(num_outputs=2), **kwargs
+    )
+    assert torch.isfinite(la.prior_precision).all()

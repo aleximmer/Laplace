@@ -10,7 +10,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace.baselaplace import FullLaplace, FunctionalLaplace
+from laplace.baselaplace import ELLA, FullLaplace, FunctionalLaplace
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.likelihoods import (
     CategoricalLikelihood,
@@ -22,6 +22,7 @@ from tests.utils import (
     BackPackGGN,
     DoubledCategorical,
     ListDataset,
+    ScaledGaussian,
     dict_data_collator,
     requires_backpack,
     toy_classification_dataset,
@@ -327,3 +328,25 @@ def test_functional_uses_likelihood_output_hessian():
     _, var_doubled = doubled._glm_predictive_distribution(X_test)
 
     assert not torch.allclose(var_default, var_doubled)
+
+
+def test_functional_rejects_custom_likelihood_name():
+    model = torch.nn.Sequential(torch.nn.Linear(3, 4), torch.nn.Linear(4, 2))
+    match = "FunctionalLaplace, ELLA, and VaLLA"
+
+    with pytest.raises(ValueError, match=match):
+        FunctionalLaplace(model, ScaledGaussian(), n_subset=5)
+
+    with pytest.raises(ValueError, match=match):
+        ELLA(model, ScaledGaussian(), subsample_size=5, n_eigenvalues=2)
+
+    la = FunctionalLaplace(model, "regression", n_subset=5)
+
+    with pytest.raises(ValueError, match=match):
+        la.likelihood = ScaledGaussian()
+
+    # Built-in names pass, also with options
+    la = FunctionalLaplace(
+        model, CategoricalLikelihood(label_smoothing=0.1), n_subset=5
+    )
+    assert la.likelihood == CategoricalLikelihood(label_smoothing=0.1)

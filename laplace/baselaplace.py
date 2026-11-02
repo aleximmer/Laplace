@@ -70,6 +70,14 @@ __all__ = [
     "LowRankLaplace",
 ]
 
+# Names of the built-in likelihoods, which the library has code paths for
+_BUILTIN_NAMES = frozenset(likelihood.name for likelihood in Likelihood)
+
+# Names whose GLM predictive uses the categorical link approximations
+_CATEGORICAL_NAMES = frozenset(
+    (Likelihood.CLASSIFICATION.name, Likelihood.REWARD_MODELING.name)
+)
+
 
 def _same_likelihood(likelihood: Likelihood, state_dict: dict[str, Any]) -> bool:
     """Whether a checkpoint was saved with the same likelihood.
@@ -567,7 +575,8 @@ class BaseLaplace:
             loss function to use for CV. If callable, the loss is computed offline (memory intensive).
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
-            reward modeling, running `MeanSquaredError()` for regression.
+            reward modeling, running `MeanSquaredError()` for regression. Other
+            likelihoods have no default, so `loss` is required for them.
         log_prior_prec_min : float, default=-4
             exponent of the lower bound of the gridsearch interval.
         log_prior_prec_max : float, default=4
@@ -654,6 +663,12 @@ class BaseLaplace:
                 grid_size,
                 base=log_prior_prec_base,
             )
+
+            if loss is None and likelihood.name not in _BUILTIN_NAMES:
+                raise ValueError(
+                    f"There is no default gridsearch loss for the likelihood "
+                    f"{likelihood.name!r}, so pass `loss`, e.g. a torchmetrics metric."
+                )
 
             if loss is None:
                 loss = (
@@ -782,12 +797,16 @@ class BaseLaplace:
 
         likelihood : Likelihood or str
             likelihood of the predictive. A Gaussian one returns the predictive
-            moments, any other is treated as categorical and returns class
-            probabilities.
+            moments. Classification and reward modeling return class probabilities
+            from `link_approx`. Any other likelihood returns the Monte Carlo
+            estimate of \\(\\mathbb{E}[g(f)]\\) under the GLM predictive
+            \\(f \\sim \\mathcal{N}(f_\\mu, \\Sigma_f)\\), where \\(g\\) is its
+            `inverse_link`, from `n_samples` draws.
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
+            For `pred_type='nn'`, only 'mc' is possible. Likelihoods other than
+            classification and reward modeling always use Monte Carlo.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -797,11 +816,13 @@ class BaseLaplace:
             Only available for regression and GLM predictive.
 
         n_samples : int
-            number of samples for `link_approx='mc'`.
+            number of samples for `link_approx='mc'` and for the Monte Carlo
+            predictive of other likelihoods.
 
         diagonal_output : bool
             whether to use a diagonalized posterior predictive on the outputs.
-            Only works for `pred_type='glm'` and `link_approx='mc'`.
+            Only works for `pred_type='glm'` and `link_approx='mc'`, or for the
+            Monte Carlo predictive of other likelihoods.
 
         Returns
         -------
@@ -813,6 +834,9 @@ class BaseLaplace:
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+            For any other likelihood, a torch.Tensor is returned with the predictive
+            mean of the targets, with the shape of the outputs, e.g.
+            `(batch, outputs)`.
 
         Warns
         -----
@@ -840,13 +864,21 @@ class BaseLaplace:
         Covariance backpropagation is not reliable in this regime. A
         RuntimeWarning is emitted when covariance gradients are tracked.
         """
-        is_gaussian = get_likelihood(likelihood).is_gaussian
+        likelihood = get_likelihood(likelihood)
+        is_gaussian = likelihood.is_gaussian
         f_mu, f_var = self._glm_predictive_distribution(x, joint=joint and is_gaussian)
 
         if is_gaussian:
             if diagonal_output and not joint:
                 f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
             return f_mu, f_var
+
+        if likelihood.name not in _CATEGORICAL_NAMES:
+            # No closed form to approximate, so integrate the inverse link by MC
+            f_samples = self._glm_functional_samples(
+                f_mu, f_var, n_samples, diagonal_output
+            )
+            return likelihood.inverse_link(f_samples).mean(dim=0)
 
         # Every leading dim of the logits but the last is a batch dim, e.g. `(B, L, C)`
         # for sequences. The link approximations work on `(N, C)`, so flatten them.
@@ -2615,6 +2647,38 @@ class BaseFunctionalLaplace(BaseLaplace):
     state. This class handles output links, sampling, and checkpoint settings
     for ``FunctionalLaplace``, ``ELLA``, and ``VaLLA``.
     """
+
+    @property
+    def likelihood(self) -> Likelihood:
+        """The likelihood object."""
+        return self._likelihood
+
+    @likelihood.setter
+    def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
+        """Set the likelihood, as in `BaseLaplace`, but only one with a built-in
+        name.
+
+        The function-space methods pick their formulas, e.g. for the marginal
+        likelihood and the predictive, by the likelihood's name. A subclass of a
+        built-in likelihood that keeps its name is fine, and so are the options of
+        `CategoricalLikelihood`.
+
+        Raises
+        ------
+        ValueError
+            if the name is not `"regression"`, `"classification"`, or
+            `"reward_modeling"`.
+        """
+        likelihood = get_likelihood(likelihood)
+
+        if likelihood.name not in _BUILTIN_NAMES:
+            raise ValueError(
+                "FunctionalLaplace, ELLA, and VaLLA support only the likelihoods "
+                f"named {sorted(_BUILTIN_NAMES)}, not {likelihood.name!r}. Use a "
+                "parametric Laplace with the `diag` or `full` structure instead."
+            )
+
+        BaseLaplace.likelihood.fset(self, likelihood)
 
     @staticmethod
     def _check_output_dims(out: torch.Tensor) -> None:

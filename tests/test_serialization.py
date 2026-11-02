@@ -442,20 +442,17 @@ def test_deepcopy_and_pickle_object_likelihood(
 
 
 def test_checkpoint_stores_likelihood_hyperparameters(model, reg_loader):
-    la = FunctionalLaplace(model, ScaledGaussian(2.0), n_subset=10)
+    la = DiagLaplace(model, ScaledGaussian(2.0))
+    la.fit(reg_loader)
     state_dict = la.state_dict()
 
     assert state_dict["likelihood"] == "scaled_gaussian"
     assert state_dict["likelihood_hyperparameters"] == {"scale": 2.0}
 
-    FunctionalLaplace(model, ScaledGaussian(2.0), n_subset=10).load_state_dict(
-        state_dict
-    )
+    DiagLaplace(model, ScaledGaussian(2.0)).load_state_dict(state_dict)
 
     with pytest.raises(ValueError, match="Different likelihoods"):
-        FunctionalLaplace(model, ScaledGaussian(1.0), n_subset=10).load_state_dict(
-            state_dict
-        )
+        DiagLaplace(model, ScaledGaussian(1.0)).load_state_dict(state_dict)
 
     default = DiagLaplace(model, "regression")
     default.fit(reg_loader)
