@@ -1,20 +1,31 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+from importlib.util import find_spec
 from typing import Any
 
 import torch
-from backpack import backpack, extend, memory_cleanup
-from backpack.context import CTX
-from backpack.extensions import (
-    KFAC,
-    KFLR,
-    BatchGrad,
-    DiagGGNExact,
-    DiagGGNMC,
-    SumGradSquared,
-)
 from torch import nn
+
+try:
+    from backpack import backpack, extend, memory_cleanup
+    from backpack.context import CTX
+    from backpack.extensions import (
+        KFAC,
+        KFLR,
+        BatchGrad,
+        DiagGGNExact,
+        DiagGGNMC,
+        SumGradSquared,
+    )
+except ModuleNotFoundError as err:
+    if find_spec("backpack") is not None:
+        raise
+
+    raise ImportError(
+        "The BackPACK backends need the backpack package. Install it with: "
+        'pip install "laplace-torch[backpack]"'
+    ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, Likelihood
@@ -273,6 +284,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
@@ -294,6 +307,8 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        self._check_builtin_likelihood()
+
         context = KFAC if self.stochastic else KFLR
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
@@ -317,6 +332,8 @@ class BackPackEF(BackPackInterface, EFInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))

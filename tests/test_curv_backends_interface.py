@@ -8,14 +8,17 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import (
-    AsdlEF,
-    AsdlGGN,
-    BackPackEF,
-    BackPackGGN,
     CurvatureInterface,
+    CurvlinopsGGN,
     EFInterface,
     GGNInterface,
 )
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
+from tests.utils import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
 
 
 @pytest.fixture
@@ -489,3 +492,107 @@ def test_batchgrad_data_dependent_control_flow(class_Xy, model):
 
     with pytest.raises(ValueError, match="data-dependent control flow"):
         backend.gradients({"input_ids": X, "labels": y}, y)
+
+
+@pytest.mark.parametrize("backend_cls", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
+@pytest.mark.parametrize("structure", ["diag", "kron", "full"])
+@pytest.mark.parametrize(
+    "name,likelihood",
+    [
+        ("regression", GaussianLikelihood()),
+        ("classification", CategoricalLikelihood()),
+    ],
+)
+def test_backend_accepts_likelihood_object(
+    backend_cls, structure, name, likelihood, model, class_Xy, reg_Xy
+):
+    X, y = reg_Xy if name == "regression" else class_Xy
+
+    extra = (len(X),) if structure == "kron" else ()
+
+    loss_str, H_str = getattr(backend_cls(model, name), structure)(X, y, *extra)
+    loss_obj, H_obj = getattr(backend_cls(model, likelihood), structure)(X, y, *extra)
+
+    assert torch.allclose(loss_str, loss_obj)
+
+    if structure == "kron":
+        H_str, H_obj = H_str.to_matrix(), H_obj.to_matrix()
+
+    assert torch.allclose(H_str, H_obj)
+
+
+@pytest.mark.parametrize("likelihood", [BradleyTerryLikelihood(), "reward_modeling"])
+def test_backend_rejects_unsupported_likelihood(likelihood, model):
+    with pytest.raises(ValueError, match="support only regression and classification"):
+        CurvatureInterface(model, likelihood)
+
+
+def test_backend_rejects_invalid_likelihood_name(model):
+    with pytest.raises(ValueError, match="Invalid likelihood type"):
+        CurvatureInterface(model, "foo")
+
+
+@pytest.mark.parametrize("backend_cls", [CurvlinopsGGN, AsdlGGN])
+def test_regression_rejects_target_with_fewer_dims(backend_cls):
+    # f is `(B, 1)` and y is `(B,)`: MSELoss would silently broadcast to `(B, B)`
+    torch.manual_seed(711)
+    X, y = torch.randn(10, 3), torch.randn(10)
+    net = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 1))
+
+    with pytest.raises(ValueError, match="dims but the target has"):
+        backend_cls(net, "regression").diag(X, y)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+@pytest.mark.parametrize(
+    "name,likelihood",
+    [
+        ("regression", GaussianLikelihood()),
+        ("classification", CategoricalLikelihood()),
+    ],
+)
+def test_mc_fisher_str_vs_object(structure, name, likelihood, model, class_Xy, reg_Xy):
+    # `stochastic=True` samples targets in `_get_mc_functional_fisher`
+    X, y = reg_Xy if name == "regression" else class_Xy
+
+    outs = []
+    for lik in (name, likelihood):
+        backend = GGNInterface(model, lik, stochastic=True, num_samples=3)
+
+        torch.manual_seed(0)
+        outs.append(getattr(backend, structure)(X, y))
+
+    (loss_str, H_str), (loss_obj, H_obj) = outs
+
+    assert torch.allclose(loss_str, loss_obj)
+    assert torch.equal(H_str, H_obj)
+
+
+def test_backend_likelihood_setter_coerces_str(model):
+    backend = CurvlinopsGGN(model, "regression")
+
+    backend.likelihood = "classification"
+    assert type(backend.likelihood) is CategoricalLikelihood
+
+    with pytest.raises(ValueError, match="support only regression and classification"):
+        backend.likelihood = "reward_modeling"
+
+
+def test_backend_legacy_pickle_state(model, class_Xy):
+    X, y = class_Xy
+    backend = CurvlinopsGGN(model, "classification")
+    loss, H = backend.diag(X, y)
+
+    # Pickles made before likelihood objects stored a plain string
+    state = dict(vars(backend))
+    state["likelihood"] = str(state.pop("_likelihood"))
+
+    legacy = CurvlinopsGGN.__new__(CurvlinopsGGN)
+    legacy.__setstate__(state)
+
+    assert type(legacy.likelihood) is CategoricalLikelihood
+    assert "likelihood" not in vars(legacy)
+
+    loss_legacy, H_legacy = legacy.diag(X, y)
+    assert torch.allclose(loss, loss_legacy)
+    assert torch.allclose(H, H_legacy)

@@ -13,7 +13,13 @@ from torch.utils.data import (
 )
 
 from laplace import Laplace
-from laplace.curvature import AsdlGGN, BackPackGGN, CurvlinopsGGN
+from laplace.curvature import CurvlinopsGGN
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
+from tests.utils import AsdlGGN, BackPackGGN, requires_backpack
 
 torch.set_num_threads(1)
 
@@ -843,6 +849,7 @@ def test_functional_methods_reject_invalid_val_steps(data, val_steps):
         estimator.fit(loader, iterations=1, val_steps=val_steps)
 
 
+@requires_backpack
 def test_functional_methods_reject_frozen_parameters_with_backpack_subclass():
 
     class AlternateGGN(BackPackGGN):
@@ -995,3 +1002,74 @@ def test_seeded_valla_regression_reference():
         covariance, torch.tensor([[[0.4]], [[0.6]]]), rtol=0.0001, atol=1e-05
     )
     assert estimator.fit_history_["objective"] == pytest.approx([3.631515], rel=0.0001)
+
+
+@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+def test_valla_likelihood_object_equivalence(data, likelihood):
+    x, loader, model = data
+    if likelihood == "regression":
+        model = torch.nn.Sequential(torch.nn.Linear(2, 1))
+        loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
+        as_object = GaussianLikelihood()
+    else:
+        as_object = CategoricalLikelihood()
+
+    estimators = []
+    for lik in (likelihood, as_object):
+        torch.manual_seed(3)
+        estimator = make_valla(
+            deepcopy(model), lik, inducing_locations=x[:2].clone(), seed=1
+        )
+        estimator.fit(loader, iterations=2, lr=0.1)
+        estimators.append(estimator)
+
+    by_name, by_object = estimators
+    mean_name, cov_name = by_name.predictive_moments(x)
+    mean_object, cov_object = by_object.predictive_moments(x)
+
+    torch.testing.assert_close(mean_name, mean_object)
+    torch.testing.assert_close(cov_name, cov_object)
+    torch.testing.assert_close(by_name(x), by_object(x))
+
+
+def test_valla_reward_likelihood_object_equivalence():
+    torch.manual_seed(10)
+    pairs = torch.randn(6, 2, 2)
+    labels = torch.randint(0, 2, (6,))
+    loader = DataLoader(TensorDataset(pairs, labels), batch_size=2)
+    model = RewardModel()
+
+    estimators = []
+    for lik in ("reward_modeling", BradleyTerryLikelihood()):
+        torch.manual_seed(3)
+        estimator = make_valla(
+            deepcopy(model), lik, inducing_locations=pairs[:2, 0].clone(), seed=1
+        )
+        estimator.fit(loader, iterations=2, lr=0.1)
+        estimators.append(estimator)
+
+    by_name, by_object = estimators
+    mean_name, cov_name = by_name(pairs[:2, 0])
+    mean_object, cov_object = by_object(pairs[:2, 0])
+
+    torch.testing.assert_close(mean_name, mean_object)
+    torch.testing.assert_close(cov_name, cov_object)
+    torch.testing.assert_close(
+        by_name(pairs[:2], fitting=True), by_object(pairs[:2], fitting=True)
+    )
+
+
+def test_valla_checkpoint_likelihood_is_str(data):
+    x, loader, model = data
+    estimator = make_valla(model, inducing_locations=x[:2].clone())
+    estimator.fit(loader, iterations=1, lr=0.1)
+    state = estimator.state_dict()
+
+    assert type(state["likelihood"]) is str
+
+    restored = make_valla(
+        deepcopy(model), CategoricalLikelihood(), inducing_locations=x[:2].clone()
+    )
+    restored.load_state_dict(state)
+
+    assert restored.likelihood == "classification"

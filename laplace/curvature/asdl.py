@@ -2,22 +2,33 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
+from importlib.util import find_spec
 from typing import Any, Callable
 
 import torch
-from asdl.fisher import FisherConfig, get_fisher_maker
-from asdl.grad_maker import LOSS_CROSS_ENTROPY, LOSS_MSE
-from asdl.gradient import batch_gradient
-from asdl.hessian import HessianConfig, HessianMaker
-from asdl.matrices import (
-    FISHER_EMP,
-    FISHER_EXACT,
-    FISHER_MC,
-    SHAPE_DIAG,
-    SHAPE_FULL,
-    SHAPE_KRON,
-)
 from torch import nn
+
+try:
+    from asdl.fisher import FisherConfig, get_fisher_maker
+    from asdl.grad_maker import LOSS_CROSS_ENTROPY, LOSS_MSE
+    from asdl.gradient import batch_gradient
+    from asdl.hessian import HessianConfig, HessianMaker
+    from asdl.matrices import (
+        FISHER_EMP,
+        FISHER_EXACT,
+        FISHER_MC,
+        SHAPE_DIAG,
+        SHAPE_FULL,
+        SHAPE_KRON,
+    )
+except ModuleNotFoundError as err:
+    if find_spec("asdl") is not None:
+        raise
+
+    raise ImportError(
+        "The ASDL backends need the asdl package. Install it with: "
+        'pip install "laplace-torch[asdl]"'
+    ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, Likelihood, _is_batchnorm
@@ -246,6 +257,8 @@ class AsdlInterface(CurvatureInterface):
             # outputs. With multidim outputs, use the Jacobian-based GGN instead.
             return super(AsdlInterface, self).diag(x, y, **kwargs)
 
+        self._check_builtin_likelihood()
+
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
 
@@ -411,6 +424,8 @@ class AsdlInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        self._check_builtin_likelihood()
+
         if self.likelihood == Likelihood.REGRESSION and y.ndim > 2:
             raise NotImplementedError(
                 "Kronecker-factored curvature with ASDL does not support regression "
@@ -486,6 +501,8 @@ class AsdlHessian(AsdlInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
 

@@ -7,7 +7,6 @@ First, we set up the training data for the problem with observation noise \(\sig
 
 ```python
 from laplace.baselaplace import FullLaplace
-from laplace.curvature.backpack import BackPackGGN
 import numpy as np
 import torch
 
@@ -105,7 +104,7 @@ Below, we use this method and plot the corresponding predictive uncertainties ag
 model = get_model()
 la, model, margliks, losses = marglik_training(
     model=model, train_loader=train_loader, likelihood="regression",
-    hessian_structure="full", backend=BackPackGGN, n_epochs=n_epochs,
+    hessian_structure="full", n_epochs=n_epochs,
     optimizer_kwargs={"lr": 1e-2}, prior_structure="scalar"
 )
 

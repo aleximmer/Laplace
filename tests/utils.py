@@ -1,10 +1,16 @@
 from collections import UserDict
 from collections.abc import MutableMapping
+from importlib.util import find_spec
 from typing import Any, List
 
+import pytest
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset, TensorDataset
+
+import laplace.curvature
+from laplace.curvature import CurvatureInterface
+from laplace.likelihoods import CategoricalLikelihood, GaussianLikelihood, Likelihood
 
 
 def toy_regression_dataset_1d(sigma, n_train=150, n_test=500, batch_size=150):
@@ -139,3 +145,132 @@ class ScaledModel(nn.Module):
 
     def forward(self, x: torch.Tensor, scale: float = 1.0) -> torch.Tensor:
         return self.fc2(scale * self.fc1(x))
+
+
+requires_asdl = pytest.mark.skipif(
+    find_spec("asdl") is None, reason="asdl not installed"
+)
+requires_backpack = pytest.mark.skipif(
+    find_spec("backpack") is None, reason="backpack not installed"
+)
+
+
+def _optional_backend(name: str) -> type[CurvatureInterface]:
+    """Get an optional backend class, or a stand-in if its package is missing.
+
+    The stand-in has the same name and a `_missing_package` attribute. Building
+    it skips the running test, and `tests/conftest.py` skips tests that take it
+    as a parameter before they run.
+
+    Parameters
+    ----------
+    name : str
+        Name of the backend class in `laplace.curvature`, e.g. `"AsdlGGN"`.
+
+    Returns
+    -------
+    type[CurvatureInterface]
+        The backend class or its stand-in.
+    """
+    try:
+        return getattr(laplace.curvature, name)
+    except ImportError:
+        module = laplace.curvature._OPTIONAL_BACKENDS[name]
+        package = laplace.curvature._OPTIONAL_PACKAGES[module]
+
+        # Installed but broken: fail loudly instead of skipping every test.
+        if find_spec(package) is not None:
+            raise
+
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            pytest.skip(f"{package} not installed")
+
+        return type(
+            name,
+            (CurvatureInterface,),
+            {"__init__": __init__, "_missing_package": package},
+        )
+
+
+AsdlInterface = _optional_backend("AsdlInterface")
+AsdlGGN = _optional_backend("AsdlGGN")
+AsdlEF = _optional_backend("AsdlEF")
+AsdlHessian = _optional_backend("AsdlHessian")
+BackPackInterface = _optional_backend("BackPackInterface")
+BackPackGGN = _optional_backend("BackPackGGN")
+BackPackEF = _optional_backend("BackPackEF")
+
+
+class DoubledCategorical(CategoricalLikelihood):
+    """Categorical likelihood with twice the output Hessian, to check that a custom
+    likelihood's `output_hessian` is used."""
+
+    def output_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        return 2 * super().output_hessian(f, y)
+
+
+class CustomCategorical(CategoricalLikelihood):
+    """Categorical likelihood under a name that no backend knows."""
+
+    name = "custom_categorical"
+
+
+class DistributionOnlyGaussian(Likelihood):
+    """Unit-variance Gaussian that defines only `name` and `distribution`, so every
+    other member comes from the defaults."""
+
+    name = "dist_gaussian"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Normal(f, 1.0)
+
+
+class DistributionOnlyCategorical(Likelihood):
+    """Categorical over the logits that defines only `name` and `distribution`."""
+
+    name = "dist_categorical"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Categorical(logits=f)
+
+
+class DistributionOnlyBernoulli(Likelihood):
+    """Bernoulli per logit that defines only `name` and `distribution`."""
+
+    name = "dist_bernoulli"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Bernoulli(logits=f)
+
+
+class ScaledGaussian(Likelihood):
+    """Gaussian with a fixed scale \\(s\\) and the closed-form output Hessian
+    \\(I / s^2\\).
+
+    Parameters
+    ----------
+    scale : float, default=2.0
+        standard deviation \\(s\\) of the Gaussian.
+    """
+
+    name = "scaled_gaussian"
+
+    def __init__(self, scale: float = 2.0) -> None:
+        self.scale = scale
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Normal(f, self.scale)
+
+    def output_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        K = f.shape[-1]
+        eye = torch.eye(K, device=f.device, dtype=f.dtype) / self.scale**2
+
+        return eye.expand(*f.shape[:-1], K, K)
+
+    @property
+    def predictive_likelihood(self) -> Likelihood:
+        return GaussianLikelihood()

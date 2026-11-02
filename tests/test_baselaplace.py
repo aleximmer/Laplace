@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import pickle
 import warnings
 from collections.abc import MutableMapping
 from copy import deepcopy
@@ -29,11 +30,24 @@ from laplace import (
     LowRankLaplace,
 )
 from laplace.baselaplace import BaseLaplace
-from laplace.curvature import AsdlEF, AsdlGGN, BackPackGGN
-from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
 from laplace.utils import KronDecomposed
-from tests.utils import ListDataset, dict_data_collator, jacobians_naive
+from laplace.utils.enums import Likelihood
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    BackPackEF,
+    BackPackGGN,
+    ListDataset,
+    dict_data_collator,
+    jacobians_naive,
+    requires_asdl,
+)
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
@@ -1552,6 +1566,7 @@ def test_multidim_functional_laplace_raises(likelihood):
         lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
 
 
+@requires_asdl
 def test_asdl_sum_rows_per_observation():
     A = torch.arange(12.0).reshape(6, 2)
     assert torch.equal(AsdlGGN._sum_rows_per_observation(A, 6), A)
@@ -2374,3 +2389,190 @@ def test_joint_glm_samples_multidim(laplace):
 
     assert samples_multidim.shape == (n_samples, N, K)
     assert torch.allclose(samples_flat, samples_multidim)
+
+
+def _hessian_matrix(lap):
+    """Dense view of the fitted Hessian of any parametric flavor."""
+    if isinstance(lap, KronLaplace):
+        return lap.H.to_matrix()
+
+    if isinstance(lap, LowRankLaplace):
+        V, eigvals = lap.H
+        return V @ torch.diag(eigvals) @ V.T
+
+    return lap.H
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize(
+    "name, likelihood",
+    [
+        ("regression", GaussianLikelihood()),
+        ("classification", CategoricalLikelihood()),
+        ("reward_modeling", BradleyTerryLikelihood()),
+    ],
+)
+def test_likelihood_object_equivalence(
+    laplace,
+    name,
+    likelihood,
+    model,
+    reg_loader,
+    class_loader,
+    reward_model,
+    reward_loader,
+    reward_test_X,
+):
+    if name == "reward_modeling" and laplace == LowRankLaplace:
+        pytest.skip(
+            "The asdfghjkl backend of LowRankLaplace keeps the stale `output_size` of "
+            "the pairwise fit, so its GLM predictive fails for reward models."
+        )
+
+    if name == "reward_modeling":
+        net, loader, X = reward_model, reward_loader, reward_test_X
+    else:
+        net = model
+        loader = reg_loader if name == "regression" else class_loader
+        X = next(iter(loader))[0]
+
+    # LowRankLaplace finds its eigenpairs by power iteration from random vectors, so
+    # both fits start from the same RNG state
+    torch.manual_seed(0)
+    la_str = laplace(net, name)
+    la_str.fit(loader)
+
+    torch.manual_seed(0)
+    la_obj = laplace(deepcopy(net), likelihood)
+    la_obj.fit(loader)
+
+    assert torch.allclose(_hessian_matrix(la_str), _hessian_matrix(la_obj))
+    assert torch.allclose(la_str.log_likelihood, la_obj.log_likelihood)
+    assert torch.allclose(
+        la_str.log_marginal_likelihood(), la_obj.log_marginal_likelihood()
+    )
+
+    # The nn predictive draws from the global generator
+    for pred_type, kwargs in [("glm", {}), ("nn", {"n_samples": 10})]:
+        torch.manual_seed(7)
+        pred_str = la_str(X, pred_type=pred_type, link_approx="mc", **kwargs)
+        torch.manual_seed(7)
+        pred_obj = la_obj(X, pred_type=pred_type, link_approx="mc", **kwargs)
+
+        pred_str = pred_str if isinstance(pred_str, tuple) else (pred_str,)
+        pred_obj = pred_obj if isinstance(pred_obj, tuple) else (pred_obj,)
+        for p_str, p_obj in zip(pred_str, pred_obj):
+            assert torch.allclose(p_str, p_obj)
+
+    torch.manual_seed(7)
+    samples_str = la_str.predictive_samples(X, pred_type="nn", n_samples=10)
+    torch.manual_seed(7)
+    samples_obj = la_obj.predictive_samples(X, pred_type="nn", n_samples=10)
+    assert torch.allclose(samples_str, samples_obj)
+
+
+@pytest.mark.parametrize("likelihood", ["regression", Likelihood.REGRESSION])
+def test_likelihood_attr_backcompat(likelihood, model):
+    lap = DiagLaplace(model, likelihood)
+
+    assert isinstance(lap.likelihood, GaussianLikelihood)
+    assert lap.likelihood == "regression"
+    assert lap.likelihood == Likelihood.REGRESSION
+
+
+def test_sigma_noise_non_gaussian_object(model):
+    with pytest.raises(ValueError, match="Sigma noise != 1"):
+        DiagLaplace(model, CategoricalLikelihood(), sigma_noise=2)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_likelihood_assignment_from_str(laplace, model, class_loader):
+    X, _ = next(iter(class_loader))
+
+    lap = laplace(model, CategoricalLikelihood())
+    lap.fit(class_loader)
+    probs = lap(X, pred_type="glm", link_approx="probit")
+
+    lap.likelihood = "regression"
+    assert type(lap.likelihood) is GaussianLikelihood
+    assert lap._backend is None
+    assert type(lap.backend.likelihood) is GaussianLikelihood
+
+    lap.likelihood = "classification"
+    assert type(lap.likelihood) is CategoricalLikelihood
+
+    torch.testing.assert_close(lap(X, pred_type="glm", link_approx="probit"), probs)
+
+
+def test_likelihood_assignment_keeps_backend_with_same_fit_likelihood(model):
+    lap = DiagLaplace(model, "reward_modeling")
+    backend = lap.backend
+
+    # Same object, so the fit likelihood does not change
+    lap.likelihood = lap.likelihood
+    assert lap._backend is backend
+
+
+def test_likelihood_assignment_keeps_subnetwork(model, class_loader):
+    indices = torch.tensor([0, 4, 11], dtype=torch.long)
+    lap = DiagSubnetLaplace(model, "regression", subnetwork_indices=indices)
+
+    lap.likelihood = "classification"
+    lap.fit(class_loader)
+
+    assert torch.equal(lap.backend.subnetwork_indices, indices)
+    assert lap.H.shape == (3,)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_legacy_pickle_with_str_likelihood(
+    laplace, likelihood, model, class_loader, reg_loader
+):
+    loader = class_loader if likelihood == "classification" else reg_loader
+    X, _ = next(iter(loader))
+
+    lap = laplace(model, likelihood)
+    lap.fit(loader)
+    pred = lap(X, pred_type="glm")
+
+    # Pickles made before likelihood objects stored plain strings, also in the
+    # cached backend
+    state = dict(vars(lap))
+    state["likelihood"] = str(state.pop("_likelihood"))
+    backend = state["_backend"]
+    backend.__dict__["likelihood"] = str(backend.__dict__.pop("_likelihood"))
+
+    legacy = laplace.__new__(laplace)
+    legacy.__setstate__(state)
+
+    assert type(legacy.likelihood) is type(lap.likelihood)
+    assert type(legacy.backend.likelihood) is type(lap.likelihood)
+
+    pred_legacy = legacy(X, pred_type="glm")
+    for a, b in zip(
+        pred if isinstance(pred, tuple) else (pred,),
+        pred_legacy if isinstance(pred_legacy, tuple) else (pred_legacy,),
+    ):
+        torch.testing.assert_close(a, b)
+
+    # And through an actual pickle round trip
+    restored = pickle.loads(pickle.dumps(legacy))
+    pred_restored = restored(X, pred_type="glm")
+    for a, b in zip(
+        pred if isinstance(pred, tuple) else (pred,),
+        pred_restored if isinstance(pred_restored, tuple) else (pred_restored,),
+    ):
+        torch.testing.assert_close(a, b)
+
+
+def test_deepcopy_and_state_dict_keep_likelihood(model, class_loader):
+    lap = DiagLaplace(model, "classification")
+    lap.fit(class_loader)
+
+    assert lap.state_dict()["likelihood"] == "classification"
+    assert "likelihood" not in vars(lap)
+
+    lap2 = deepcopy(lap)
+    assert type(lap2.likelihood) is CategoricalLikelihood
+    assert lap2.likelihood is not lap.likelihood

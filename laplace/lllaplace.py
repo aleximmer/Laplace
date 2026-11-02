@@ -16,7 +16,6 @@ from laplace.baselaplace import (
     KronLaplace,
     ParametricLaplace,
 )
-from laplace.curvature import BackPackGGN
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.utils import FeatureExtractor, Kron
 from laplace.utils.enums import Likelihood
@@ -59,7 +58,8 @@ class LLLaplace(ParametricLaplace):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : Likelihood or {'classification', 'regression'}
-        determines the log likelihood Hessian approximation
+        determines the log likelihood Hessian approximation. A likelihood
+        object is accepted as well as a name.
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification
     prior_precision : torch.Tensor or float, default=1
@@ -313,10 +313,7 @@ class LLLaplace(ParametricLaplace):
     ) -> torch.Tensor:
         fs = self._nn_functional_samples(X, n_samples, generator, **model_kwargs)
 
-        if self.likelihood == Likelihood.CLASSIFICATION:
-            fs = torch.softmax(fs, dim=-1)
-
-        return fs
+        return self.likelihood.predictive_likelihood.inverse_link(fs)
 
     def _nn_predictive_classification(
         self,
@@ -566,7 +563,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
         last_layer_name: str | None = None,
-        backend: type[CurvatureInterface] | None = BackPackGGN,
+        backend: type[CurvatureInterface] | None = None,
         backend_kwargs: dict[str, Any] | None = None,
         independent_outputs: bool = False,
         seed: int = 0,

@@ -1,5 +1,7 @@
 import os
+import pickle
 from collections import OrderedDict
+from copy import deepcopy
 from importlib.util import find_spec
 
 import pytest
@@ -23,6 +25,11 @@ from laplace import (
     LLLaplace,
     LowRankLaplace,
     SubnetLaplace,
+)
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
 )
 
 # These tests load only checkpoints written by the same test process.
@@ -364,3 +371,67 @@ def test_map_location(
     f_mean2, f_var2 = la2(X.to(map_location))
     assert torch.allclose(f_mean.to("cpu"), f_mean2.to("cpu"))
     assert torch.allclose(f_var.to("cpu"), f_var2.to("cpu"))
+
+
+@pytest.fixture
+def class_loader():
+    X = torch.randn(10, 3)
+    y = torch.randint(2, (10,))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_load_old_string_checkpoint(laplace, model, class_loader):
+    la = laplace(model, "classification")
+    la.fit(class_loader)
+    state_dict = la.state_dict()
+    state_dict["likelihood"] = "classification"
+
+    la2 = laplace(model, CategoricalLikelihood())
+    la2.load_state_dict(state_dict)
+    assert isinstance(la2.likelihood, CategoricalLikelihood)
+
+    X, _ = next(iter(class_loader))
+    assert torch.allclose(la(X), la2(X))
+
+    state_dict["likelihood"] = "regression"
+    with pytest.raises(ValueError, match="Different likelihoods"):
+        laplace(model, CategoricalLikelihood()).load_state_dict(state_dict)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("likelihood", ["regression", GaussianLikelihood()])
+def test_state_dict_likelihood_is_str(laplace, likelihood, model, reg_loader):
+    la = laplace(model, likelihood)
+    la.fit(reg_loader)
+    state_dict = la.state_dict()
+
+    assert type(state_dict["likelihood"]) is str
+    assert state_dict["likelihood"] == "regression"
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), BradleyTerryLikelihood()]
+)
+def test_deepcopy_and_pickle_object_likelihood(
+    laplace, likelihood, model, class_loader
+):
+    if likelihood == "reward_modeling":
+        X_train = torch.randn(10, 2, 3)
+        net = nn.Sequential(nn.Linear(3, 1), nn.Flatten(1))
+        loader = DataLoader(
+            TensorDataset(X_train, torch.randint(2, (10,))), batch_size=3
+        )
+        X = X_train[:4]
+    else:
+        net, loader = model, class_loader
+        X = next(iter(class_loader))[0]
+
+    la = laplace(net, likelihood)
+    la.fit(loader)
+
+    for la2 in [deepcopy(la), pickle.loads(pickle.dumps(la))]:
+        assert la2.likelihood == likelihood
+        assert la2.likelihood is not la.likelihood
+        assert torch.allclose(la(X, fitting=True), la2(X, fitting=True))

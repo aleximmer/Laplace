@@ -838,6 +838,18 @@ wheels = [
 ]
 
 [[package]]
+name = "griffe-inherited-docstrings"
+version = "1.1.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "griffelib" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/61/1dd4a7c59618c5e9ee0f61eb9fb934ba11163fa66932c8e2cc99d74f3d7b/griffe_inherited_docstrings-1.1.4.tar.gz", hash = "sha256:ac98890a4505d986254302325959de6c82716968ec499aca009cb91c1d75eecb", size = 32495, upload-time = "2026-10-06T09:07:03.147Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/35/364ed24b4cba404a6f02998b381c872f99480a26f0c57687537578d4b5ad/griffe_inherited_docstrings-1.1.4-py3-none-any.whl", hash = "sha256:6c813c567f6f7396d6e1a78575fb7ad0d5b472fc02c1b782f830fcf26ab7254d", size = 10888, upload-time = "2026-10-06T09:07:02.095Z" },
+]
+
+[[package]]
 name = "griffecli"
 version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1024,8 +1036,6 @@ name = "laplace-torch"
 version = "0.4"
 source = { editable = "." }
 dependencies = [
-    { name = "asdfghjkl" },
-    { name = "backpack-for-pytorch" },
     { name = "curvlinops-for-pytorch" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
@@ -1039,6 +1049,16 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "asdfghjkl" },
+    { name = "backpack-for-pytorch" },
+]
+asdl = [
+    { name = "asdfghjkl" },
+]
+backpack = [
+    { name = "backpack-for-pytorch" },
+]
 dev = [
     { name = "coveralls" },
     { name = "pytest" },
@@ -1053,6 +1073,7 @@ dev = [
 [package.dev-dependencies]
 docs = [
     { name = "black" },
+    { name = "griffe-inherited-docstrings" },
     { name = "matplotlib" },
     { name = "mkdocs" },
     { name = "mkdocs-material" },
@@ -1063,10 +1084,11 @@ docs = [
 
 [package.metadata]
 requires-dist = [
-    { name = "asdfghjkl", specifier = "==0.1a5" },
-    { name = "backpack-for-pytorch" },
+    { name = "asdfghjkl", marker = "extra == 'asdl'", specifier = "==0.1a5" },
+    { name = "backpack-for-pytorch", marker = "extra == 'backpack'" },
     { name = "coveralls", marker = "extra == 'dev'" },
     { name = "curvlinops-for-pytorch", specifier = "==3.0.1" },
+    { name = "laplace-torch", extras = ["asdl", "backpack"], marker = "extra == 'all'" },
     { name = "numpy" },
     { name = "opt-einsum" },
     { name = "pytest", marker = "extra == 'dev'" },
@@ -1081,11 +1103,12 @@ requires-dist = [
     { name = "torchvision", specifier = ">=0.15" },
     { name = "tqdm", specifier = ">=4.66" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["asdl", "backpack", "all", "dev"]
 
 [package.metadata.requires-dev]
 docs = [
     { name = "black" },
+    { name = "griffe-inherited-docstrings", specifier = "==1.1.4" },
     { name = "matplotlib" },
     { name = "mkdocs", specifier = "==1.6.1" },
     { name = "mkdocs-material", specifier = "==9.7.7" },

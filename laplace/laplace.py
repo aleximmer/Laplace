@@ -28,8 +28,9 @@ def Laplace(
     model : torch.nn.Module
         Pretrained network around which to approximate the posterior.
     likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-        Likelihood used for fitting. Reward modeling requires an estimator
-        that supports pairwise preferences, such as ELLA or VaLLA.
+        Likelihood used for fitting, either a likelihood object such as
+        `CategoricalLikelihood()` or its name. Reward modeling requires an
+        estimator that supports pairwise preferences, such as ELLA or VaLLA.
     subset_of_weights : SubsetOfWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER
         subset of weights to consider for inference
     hessian_structure : HessianStructure or str in {'diag', 'kron', 'full', 'lowrank', 'gp'}, default=HessianStructure.KRON

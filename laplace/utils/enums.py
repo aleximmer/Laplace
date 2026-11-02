@@ -1,5 +1,8 @@
 from enum import Enum
 
+# `Likelihood` used to be an enum here; it is now the likelihood base class
+from laplace.likelihoods import Likelihood as Likelihood
+
 
 class SubsetOfWeights(str, Enum):
     """Valid options for `subset_of_weights`."""
@@ -44,19 +47,6 @@ class FunctionalApproximation(str, Enum):
 
     VARIATIONAL = "variational"
     """Variational inducing-output approximation implemented by VaLLA."""
-
-
-class Likelihood(str, Enum):
-    """Valid options for `likelihood`."""
-
-    REGRESSION = "regression"
-    """Homoskedastic regression, assuming `loss_fn = nn.MSELoss()`."""
-
-    CLASSIFICATION = "classification"
-    """Classification, assuming `loss_fn = nn.CrossEntropyLoss()`."""
-
-    REWARD_MODELING = "reward_modeling"
-    """Bradley-Terry likelihood, for preference learning / reward modeling."""
 
 
 class PredType(str, Enum):

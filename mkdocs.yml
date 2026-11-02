@@ -24,6 +24,7 @@ nav:
       - ELLA: api_reference/ella.md
       - VaLLA: api_reference/valla.md
       - Laplace Options: api_reference/enums.md
+      - Likelihoods: api_reference/likelihoods.md
       - Base Laplace: api_reference/baselaplace.md
       - Parametric Laplace: api_reference/parametriclaplace.md
       - Functional Laplace: api_reference/functionallaplace.md
@@ -107,6 +108,9 @@ plugins:
           options:
             docstring_style: numpy
             docstring_section_style: list
+            # Overrides without a docstring show the base class's
+            extensions:
+              - griffe_inherited_docstrings
             docstring_options:
               ignore_init_summary: true
             filters: []

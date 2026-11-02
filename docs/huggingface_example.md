@@ -260,3 +260,5 @@ Instead, choose one of the following backends:
 - `CurvlinopsEF` for `hessian_factorization = {"kron"}`
 - `AsdlGGN` for `hessian_factorization = {"kron", "diag"}`
 - `AsdlEF` for `hessian_factorization = {"kron", "diag"}`
+
+The ASDL backends need the asdl extra: `pip install "laplace-torch[asdl]"`.

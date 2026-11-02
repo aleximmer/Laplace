@@ -37,7 +37,19 @@ To install laplace with `pip`, run the following:
 pip install laplace-torch
 ```
 
-Additionally, if you want to use the `asdfghjkl` backend, please install it via:
+The default backend, Curvlinops, is always installed. The ASDL and BackPACK
+backends are optional extras:
+
+```bash
+pip install "laplace-torch[asdl]"      # AsdlGGN, AsdlEF, AsdlHessian
+pip install "laplace-torch[backpack]"  # BackPackGGN, BackPackEF
+pip install "laplace-torch[all]"       # both
+```
+
+Extras can be combined, e.g. `pip install "laplace-torch[asdl,backpack]"`.
+Curvlinops currently depends on BackPACK, so a plain install still pulls it in.
+
+The old `asdfghjkl` backend, which `LowRankLaplace` needs, is not on PyPI. Install it via:
 
 ```bash
 pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl
@@ -93,6 +105,24 @@ la.optimize_prior_precision(
 
 # User-specified predictive approx.
 pred = la(x, pred_type="glm", link_approx="probit")
+```
+
+### Likelihoods
+
+The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `"reward_modeling"`) or a likelihood object.
+The two forms are interchangeable, so `likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
+`Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, and `Likelihood.REWARD_MODELING` are the built-in likelihood objects.
+To define your own, subclass `Likelihood`; its docstring lists the methods you need to implement.
+A custom likelihood can only be fit if its `name` is `"regression"` or `"classification"`, since the curvature backends choose their code path by name.
+FunctionalLaplace, ELLA, and VaLLA use the subclass's overrides, such as `output_hessian`.
+Most curvature methods of the Curvlinops, ASDL, and BackPACK backends use their own loss instead, so weight-space Laplace with these backends supports only the built-in likelihoods for now and raises a `ValueError` for a custom one.
+
+```python
+from laplace import CategoricalLikelihood, Laplace
+
+la = Laplace(model, CategoricalLikelihood(),
+             subset_of_weights="all",
+             hessian_structure="diag")
 ```
 
 ### Marginal likelihood
@@ -207,7 +237,7 @@ lora_la = Laplace(
     likelihood="classification",
     subset_of_weights="all",
     hessian_structure="diag",
-    backend=AsdlGGN,
+    backend=AsdlGGN,  # needs laplace-torch[asdl]
 )
 
 test_data = next(iter(dataloader))
@@ -347,7 +377,8 @@ torch.load(..., map_location="cpu")
 - **Small, simple MLP, or last-layer Laplace:** Any backend should work well.
   `CurvlinopsGGN` or `CurvlinopsEF` is recommended if
   `hessian_factorization = 'kron'`, but it's inefficient for other factorizations.
-- **LLMs with PEFT (e.g. LoRA):** `AsdlGGN` and `AsdlEF` are recommended.
+- **LLMs with PEFT (e.g. LoRA):** `AsdlGGN` and `AsdlEF` are recommended. They need
+  `pip install "laplace-torch[asdl]"`.
 - **Continuous Bayesian optimization:** `CurvlinopsGGN/EF` and `BackpackGGN/EF` are
   recommended since they are the only ones supporting backprop over Jacobians.
 

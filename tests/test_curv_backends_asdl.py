@@ -5,7 +5,16 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    BackPackEF,
+    BackPackGGN,
+    DoubledCategorical,
+    requires_asdl,
+)
+
+pytestmark = requires_asdl
 
 
 @pytest.fixture
@@ -447,3 +456,16 @@ def test_kron_normalization_ggn_reg(reg_Xy, model):
     loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
+
+
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
+def test_custom_likelihood_rejected_by_curvature(class_Xy, model, Backend):
+    X, y = class_Xy
+    backend = Backend(model, DoubledCategorical())
+
+    with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
+        backend.diag(X, y)
+
+    if Backend is AsdlGGN:
+        with pytest.raises(ValueError, match="Custom likelihoods aren't supported"):
+            backend.kron(X, y, N=len(X))

@@ -19,11 +19,11 @@ from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
 
+from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
-from laplace.curvature.asdl import AsdlGGN, AsdlInterface
-from laplace.curvature.backpack import BackPackGGN, BackPackInterface
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.curvlinops import CurvlinopsGGN
+from laplace.likelihoods import get_likelihood
 from laplace.utils import SoDSampler
 from laplace.utils.enums import (
     Likelihood,
@@ -78,7 +78,9 @@ class BaseLaplace:
     ----------
     model : torch.nn.Module
     likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-        determines the log likelihood Hessian approximation.
+        determines the log likelihood Hessian approximation. Strings and
+        `Likelihood` members become the matching likelihood object, which is
+        stored in `self.likelihood`.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -130,11 +132,9 @@ class BaseLaplace:
         backend_kwargs: dict[str, Any] | None = None,
         asdl_fisher_kwargs: dict[str, Any] | None = None,
     ) -> None:
-        if likelihood not in [lik.value for lik in Likelihood]:
-            raise ValueError(f"Invalid likelihood type {likelihood}")
-
         self.model: nn.Module = model
-        self.likelihood: Likelihood | str = likelihood
+        self._backend: CurvatureInterface | None = None
+        self.likelihood = likelihood
 
         # Only do Laplace on params that require grad
         self.params: list[torch.Tensor] = []
@@ -149,7 +149,7 @@ class BaseLaplace:
         self.n_layers: int = len(self.params)
         self.prior_precision: float | torch.Tensor = prior_precision
         self.prior_mean: float | torch.Tensor = prior_mean
-        if sigma_noise != 1 and likelihood != Likelihood.REGRESSION:
+        if sigma_noise != 1 and not self.likelihood.is_gaussian:
             raise ValueError("Sigma noise != 1 only available for regression.")
 
         self.sigma_noise: float | torch.Tensor = sigma_noise
@@ -163,15 +163,16 @@ class BaseLaplace:
         if backend is None:
             backend = CurvlinopsGGN
         else:
-            if self.is_subset_params and issubclass(
-                backend, (BackPackInterface, AsdfghjklInterface)
+            if self.is_subset_params and (
+                issubclass(backend, AsdfghjklInterface)
+                or _is_optional_backend(backend, "BackPackInterface")
             ):
                 raise ValueError(
                     "If some grad are switched off, the BackPACK and Asdfghjkl backends"
                     " are not supported."
                 )
 
-        self._backend: CurvatureInterface | None = None
+        self._backend = None
         self._backend_cls: type[CurvatureInterface] = backend
         self._backend_kwargs: dict[str, Any] = (
             dict() if backend_kwargs is None else backend_kwargs
@@ -203,16 +204,64 @@ class BaseLaplace:
         return next(self.model.parameters()).dtype
 
     @property
+    def likelihood(self) -> Likelihood:
+        """The likelihood object."""
+        return self._likelihood
+
+    @likelihood.setter
+    def likelihood(self, likelihood: Likelihood | str) -> None:
+        """Set the likelihood from an object, a `Likelihood` member, or a name.
+
+        The cached backend is rebuilt on next use if the fit likelihood changes.
+        """
+        likelihood = get_likelihood(likelihood)
+
+        if (
+            self._backend is not None
+            and self._backend.likelihood is not likelihood.fit_likelihood
+        ):
+            self._backend = None
+
+        self._likelihood = likelihood
+
+    def _stage_likelihood(self, fitting: bool) -> Likelihood:
+        """The fit likelihood while fitting, else the predictive likelihood. The two
+        differ only for reward modeling.
+        """
+        if fitting:
+            return self.likelihood.fit_likelihood
+
+        return self.likelihood.predictive_likelihood
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore a pickled instance.
+
+        Pickles made before likelihood objects existed store the likelihood as a
+        string under `likelihood`. It is turned into a likelihood object here.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            the pickled `__dict__`.
+        """
+        state = dict(state)
+
+        if "likelihood" in state:
+            state["_likelihood"] = get_likelihood(state.pop("likelihood"))
+
+        backend = state.get("_backend")
+        if backend is not None and "likelihood" in vars(backend):
+            # A cached backend from an old pickle that skipped its own `__setstate__`
+            backend.__setstate__(vars(backend))
+
+        self.__dict__.update(state)
+
+    @property
     def backend(self) -> CurvatureInterface:
         if self._backend is None:
-            likelihood = (
-                "classification"
-                if self.likelihood == "reward_modeling"
-                else self.likelihood
-            )
             self._backend = self._backend_cls(
                 self.model,
-                likelihood,
+                self.likelihood.fit_likelihood,
                 dict_key_x=self.dict_key_x,
                 dict_key_y=self.dict_key_y,
                 **self._backend_kwargs,
@@ -249,22 +298,17 @@ class BaseLaplace:
         log_likelihood : torch.Tensor
         """
         factor = -self._H_factor
-        if self.likelihood == "regression":
-            # loss used is just MSE, need to add normalizer for gaussian likelihood
-            c = (
-                (self.n_obs or self.n_data)
-                * self.n_outputs
-                * torch.log(
-                    torch.as_tensor(
-                        self.sigma_noise, device=self._device, dtype=self._dtype
-                    )
-                    * sqrt(2 * pi)
-                )
-            )
-            return factor * self.loss - c
-        else:
-            # for classification Xent == log Cat
-            return factor * self.loss
+        sigma_noise = torch.as_tensor(
+            self.sigma_noise, device=self._device, dtype=self._dtype
+        )
+
+        # The loss is scaled to the negative log likelihood up to a constant, e.g.
+        # the MSE needs the Gaussian normalizer, while the cross-entropy needs none
+        c = self.likelihood.log_normalizer(
+            self.n_obs or self.n_data, self.n_outputs, sigma_noise
+        )
+
+        return factor * self.loss - c
 
     def __call__(
         self,
@@ -517,11 +561,7 @@ class BaseLaplace:
             `log_prior_prec_base` raised to `log_prior_prec_min` and
             `log_prior_prec_max`.
         """
-        likelihood = (
-            Likelihood.CLASSIFICATION
-            if self.likelihood == Likelihood.REWARD_MODELING
-            else self.likelihood
-        )
+        likelihood = self.likelihood.fit_likelihood
 
         if likelihood == Likelihood.CLASSIFICATION:
             warnings.warn(
@@ -711,8 +751,10 @@ class BaseLaplace:
             `(batch_size, input_shape)` if tensor. If MutableMapping, must contain
             the said tensor.
 
-        likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-            determines the log likelihood Hessian approximation.
+        likelihood : Likelihood or str
+            likelihood of the predictive. A Gaussian one returns the predictive
+            moments, any other is treated as categorical and returns class
+            probabilities.
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
@@ -769,11 +811,10 @@ class BaseLaplace:
         Covariance backpropagation is not reliable in this regime. A
         RuntimeWarning is emitted when covariance gradients are tracked.
         """
-        f_mu, f_var = self._glm_predictive_distribution(
-            x, joint=joint and likelihood == Likelihood.REGRESSION
-        )
+        is_gaussian = get_likelihood(likelihood).is_gaussian
+        f_mu, f_var = self._glm_predictive_distribution(x, joint=joint and is_gaussian)
 
-        if likelihood == Likelihood.REGRESSION:
+        if is_gaussian:
             if diagonal_output and not joint:
                 f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
             return f_mu, f_var
@@ -1105,11 +1146,7 @@ class BaseLaplace:
             f_mu, f_var, n_samples, diagonal_output, generator
         )
 
-        # Reward models predict rewards, which are regression outputs
-        if self.likelihood == Likelihood.CLASSIFICATION:
-            return torch.softmax(f_samples, dim=-1)
-        else:
-            return f_samples
+        return self.likelihood.predictive_likelihood.inverse_link(f_samples)
 
 
 class ParametricLaplace(BaseLaplace):
@@ -1248,13 +1285,11 @@ class ParametricLaplace(BaseLaplace):
                 X, y = data
                 X, y = X.to(self._device), y.to(self._device)
 
-            if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
-                raise ValueError(
-                    f"The model's output has {out.ndim} dims but "
-                    f"the target has {y.ndim} dims."
-                )
-
-            if self.likelihood == Likelihood.CLASSIFICATION:
+            # `out` comes from a single datum, so only the number of dims can be
+            # checked here. The backends check the exact shapes of every batch.
+            if self.likelihood == Likelihood.REGRESSION:
+                self.likelihood.check_targets(out, y)
+            elif self.likelihood == Likelihood.CLASSIFICATION:
                 self._check_classification_targets(out, y)
 
             if (
@@ -1274,13 +1309,7 @@ class ParametricLaplace(BaseLaplace):
 
             # Every token (extra dims between the batch and output dims) is an
             # observation. Count per batch since the sequence length can vary.
-            # The last dim of regression targets and of class probabilities is the
-            # output dim.
-            has_output_dim = self.likelihood == Likelihood.REGRESSION or (
-                self.likelihood == Likelihood.CLASSIFICATION and y.ndim == out.ndim
-            )
-            y_obs_shape = y.shape[:-1] if has_output_dim else y.shape
-            self.n_obs += y_obs_shape.numel()
+            self.n_obs += self.likelihood.n_observations(out, y)
 
         self.n_data += N
 
@@ -1429,7 +1458,7 @@ class ParametricLaplace(BaseLaplace):
 
         # update sigma_noise (useful when iterating on marglik)
         if sigma_noise is not None:
-            if self.likelihood != Likelihood.REGRESSION:
+            if not self.likelihood.is_gaussian:
                 raise ValueError("Can only change sigma_noise for regression.")
 
             self.sigma_noise = sigma_noise
@@ -1547,16 +1576,14 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        likelihood = self.likelihood
-        if likelihood == Likelihood.REWARD_MODELING:
-            likelihood = Likelihood.CLASSIFICATION if fitting else Likelihood.REGRESSION
+        likelihood = self._stage_likelihood(fitting)
 
         if pred_type == PredType.GLM:
             return self._glm_forward_call(
                 x, likelihood, joint, link_approx, n_samples, diagonal_output
             )
         else:
-            if likelihood == Likelihood.REGRESSION:
+            if likelihood.is_gaussian:
                 samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
                 return samples.mean(dim=0), samples.var(dim=0)
             else:  # classification; the average is computed online
@@ -1693,10 +1720,7 @@ class ParametricLaplace(BaseLaplace):
                 x, pred_type, n_samples, diagonal_output, generator, joint=True
             )
 
-            if self.likelihood == Likelihood.CLASSIFICATION:
-                return torch.softmax(f_samples, dim=-1)
-            else:
-                return f_samples
+            return self.likelihood.predictive_likelihood.inverse_link(f_samples)
         elif pred_type == PredType.GLM:
             f_mu, f_var = self._glm_predictive_distribution(x)
             return self._glm_predictive_samples(
@@ -1776,10 +1800,7 @@ class ParametricLaplace(BaseLaplace):
     ) -> torch.Tensor:
         fs = self._nn_functional_samples(X, n_samples, generator, **model_kwargs)
 
-        if self.likelihood == Likelihood.CLASSIFICATION:
-            fs = torch.softmax(fs, dim=-1)
-
-        return fs
+        return self.likelihood.predictive_likelihood.inverse_link(fs)
 
     def _nn_predictive_classification(
         self,
@@ -1926,7 +1947,7 @@ class ParametricLaplace(BaseLaplace):
             "n_data": self.n_data,
             "n_obs": self.n_obs,
             "n_outputs": self.n_outputs,
-            "likelihood": self.likelihood,
+            "likelihood": str(self.likelihood),
             "temperature": self.temperature,
             "enable_backprop": self.enable_backprop,
             "cls_name": self.__class__.__name__,
@@ -1974,7 +1995,6 @@ class ParametricLaplace(BaseLaplace):
         self.n_obs = state_dict.get("n_obs", self.n_data)
         self.n_outputs = state_dict["n_outputs"]
         setattr(self.model, "output_size", self.n_outputs)
-        self.likelihood = state_dict["likelihood"]
         self.temperature = state_dict["temperature"]
         self.enable_backprop = state_dict["enable_backprop"]
 
@@ -2387,11 +2407,8 @@ class LowRankLaplace(ParametricLaplace):
             except (TypeError, AttributeError):
                 out = self.model(X.to(self._device))
 
-        if self.likelihood == Likelihood.REGRESSION and y.ndim != out.ndim:
-            raise ValueError(
-                f"The model's output has {out.ndim} dims but "
-                f"the target has {y.ndim} dims."
-            )
+        if self.likelihood == Likelihood.REGRESSION:
+            self.likelihood.check_targets(out, y)
 
         self.n_outputs = out.shape[-1]
         setattr(self.model, "output_size", self.n_outputs)
@@ -2614,12 +2631,12 @@ class BaseFunctionalLaplace(BaseLaplace):
     @property
     def _uses_backpack_backend(self) -> bool:
         """Whether the curvature backend extends modules using BackPACK."""
-        return issubclass(self._backend_cls, BackPackInterface)
+        return _is_optional_backend(self._backend_cls, "BackPackInterface")
 
     @property
     def _uses_asdl_backend(self) -> bool:
         """Whether the curvature backend computes Jacobians using ASDL."""
-        return issubclass(self._backend_cls, AsdlInterface)
+        return _is_optional_backend(self._backend_cls, "AsdlInterface")
 
     def _glm_predictive_distribution(
         self, x: torch.Tensor | MutableMapping, joint: bool = False
@@ -2824,9 +2841,7 @@ class BaseFunctionalLaplace(BaseLaplace):
             or generator.device != self._device
         ):
             raise ValueError("Invalid random generator (check type and device).")
-        likelihood = self.likelihood
-        if likelihood == Likelihood.REWARD_MODELING:
-            likelihood = Likelihood.CLASSIFICATION if fitting else Likelihood.REGRESSION
+        likelihood = self._stage_likelihood(fitting)
         if likelihood == Likelihood.CLASSIFICATION and link_approx == LinkApprox.MC:
             return self.predictive_samples(
                 x,
@@ -2988,11 +3003,9 @@ class BaseFunctionalLaplace(BaseLaplace):
         samples = self.functional_samples(
             x, pred_type, n_samples, diagonal_output, generator, joint
         )
-        if self.likelihood == Likelihood.CLASSIFICATION or (
-            self.likelihood == Likelihood.REWARD_MODELING and fitting
-        ):
-            return samples.softmax(dim=-1)
-        return samples
+        likelihood = self._stage_likelihood(fitting)
+
+        return likelihood.inverse_link(samples)
 
 
 class FunctionalLaplace(BaseFunctionalLaplace):
@@ -3020,7 +3033,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
     likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-        determines the log likelihood Hessian approximation.
+        determines the log likelihood Hessian approximation. A likelihood
+        object is accepted as well as a name.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -3078,12 +3092,17 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         enable_backprop: bool = False,
         dict_key_x="input_ids",
         dict_key_y="labels",
-        backend: type[CurvatureInterface] | None = BackPackGGN,
+        backend: type[CurvatureInterface] | None = None,
         backend_kwargs: dict[str, Any] | None = None,
         independent_outputs: bool = False,
         seed: int = 0,
     ):
-        assert backend in [BackPackGGN, AsdlGGN, CurvlinopsGGN]
+        assert (
+            backend is None
+            or issubclass(backend, CurvlinopsGGN)
+            or _is_optional_backend(backend, "BackPackGGN")
+            or _is_optional_backend(backend, "AsdlGGN")
+        )
         self._check_prior_precision(prior_precision)
         super().__init__(
             model,
@@ -3115,7 +3134,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.L = None
 
         # Posterior mean (used in regression marginal likelihood)
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.mean = parameters_to_vector(self.params).detach()
 
         self._fitted = False
         self._recompute_Sigma = True
@@ -3264,11 +3283,33 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             )
         self._recompute_Sigma = False
 
+    def _batch_inputs(
+        self, data: tuple[torch.Tensor, ...] | MutableMapping
+    ) -> torch.Tensor | MutableMapping:
+        """Get the model inputs from a training batch.
+
+        Parameters
+        ----------
+        data : tuple or MutableMapping
+            A batch from the training loader, either `(X, y)` or a mapping.
+
+        Returns
+        -------
+        torch.Tensor or MutableMapping
+            `X` on the model's device, or the whole mapping, which the model
+            reads its inputs from.
+        """
+        if isinstance(data, MutableMapping):
+            return data
+
+        return data[0].to(self._device)
+
     def _get_SoD_data_loader(self, train_loader: DataLoader) -> DataLoader:
         """Subset-of-Datapoints data loader"""
         return DataLoader(
             dataset=train_loader.dataset,
             batch_size=train_loader.batch_size,
+            collate_fn=train_loader.collate_fn,
             sampler=SoDSampler(
                 N=len(train_loader.dataset), M=self.n_subset, seed=self.seed
             ),
@@ -3294,12 +3335,12 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         data = next(iter(train_loader))
         with torch.no_grad():
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
-                if "backpack" in self._backend_cls.__name__.lower():
+                if self._uses_backpack_backend:
                     raise ValueError(
                         "Currently BackPACK backend is not supported "
                         + "for custom models with non-tensor inputs "
-                        + "(https://github.com/pytorch/functorch/issues/159). Consider "
-                        + "using AsdlGGN backend instead."
+                        + "(https://github.com/pytorch/functorch/issues/159). Use "
+                        + "CurvlinopsGGN, the default backend, instead."
                     )
 
                 out = self.model(data)
@@ -3361,19 +3402,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                 )
 
             with torch.no_grad():
-                loss_batch = self.backend.factor * self.backend.lossfunc(f_batch, y)
-
-            if self.likelihood == Likelihood.REGRESSION:
-                b, C = f_batch.shape
-                lambdas_batch = torch.unsqueeze(
-                    torch.eye(C, device=self._device, dtype=self._dtype), 0
-                ).repeat(b, 1, 1)
-            else:
-                # second derivative of log lik is diag(p) - pp^T
-                ps = torch.softmax(f_batch, dim=-1)
-                lambdas_batch = torch.diag_embed(ps) - torch.einsum(
-                    "mk,mc->mck", ps, ps
+                loss_batch = self.backend.factor * self.likelihood.fit_likelihood.loss(
+                    f_batch, y
                 )
+
+            lambdas_batch = self.likelihood.fit_likelihood.output_hessian(f_batch, y)
 
             self.loss += loss_batch
             lambdas.append(lambdas_batch)
@@ -3381,9 +3414,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             mu.append(
                 self._mean_scatter_term_batch(Js_batch, f_batch, y)
             )  # needed for marginal likelihood
-            for j, (X2, _) in enumerate(train_loader):
+            for j, data2 in enumerate(train_loader):
                 if j >= i:
-                    X2 = X2.to(self._device)
+                    X2 = self._batch_inputs(data2)
                     K_batch = self._kernel_batch(Js_batch, X2)
                     self._store_K_batch(K_batch, i, j)
 
@@ -3449,12 +3482,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         # Compute K_{*M}
         K_M_star = []
-        for X_batch, _ in self.train_loader:
+        for data in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
-                Js_star, X_batch.to(self._device)
+                Js_star, self._batch_inputs(data)
             )
             K_M_star.append(K_M_star_batch)
-            del X_batch
 
         # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star)
@@ -3488,12 +3520,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         # Compute K_{*M}
         K_M_star = []
-        for X_batch, _ in self.train_loader:
+        for data in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
-                Js_star, X_batch.to(self._device)
+                Js_star, self._batch_inputs(data)
             )
             K_M_star.append(K_M_star_batch)
-            del X_batch
 
         # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star, joint=True)
@@ -3946,7 +3977,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             "sigma_noise": self.sigma_noise,
             "n_data": self.n_data,
             "n_outputs": self.n_outputs,
-            "likelihood": self.likelihood,
+            "likelihood": str(self.likelihood),
             "temperature": self.temperature,
             "enable_backprop": self.enable_backprop,
             "cls_name": self.__class__.__name__,
@@ -4005,7 +4036,6 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.n_data = state_dict["n_data"]
         self.n_outputs = state_dict["n_outputs"]
         setattr(self.model, "output_size", self.n_outputs)
-        self.likelihood = state_dict["likelihood"]
         self.temperature = state_dict["temperature"]
         self.enable_backprop = state_dict["enable_backprop"]
 
@@ -4023,7 +4053,8 @@ class ELLA(BaseFunctionalLaplace):
     model : torch.nn.Module
         Pretrained network to linearize.
     likelihood : Likelihood or str
-        ``"classification"``, ``"regression"``, or ``"reward_modeling"``.
+        A likelihood object, or ``"classification"``, ``"regression"``, or
+        ``"reward_modeling"``.
     subsample_size : int
         Number of training inputs used to construct the Nyström basis.
     n_eigenvalues : int
@@ -4522,10 +4553,7 @@ class ELLA(BaseFunctionalLaplace):
                     "bck,bcl->kl", features, features
                 ).detach()
             else:
-                probs = output.softmax(dim=-1)
-                hessian = torch.diag_embed(probs) - probs.unsqueeze(
-                    -1
-                ) * probs.unsqueeze(-2)
+                hessian = self.likelihood.fit_likelihood.output_hessian(output)
                 self.feature_gram += torch.einsum(
                     "bck,bcd,bdl->kl", features, hessian, features
                 ).detach()
@@ -4904,7 +4932,7 @@ class ELLA(BaseFunctionalLaplace):
             "cls_name": type(self).__name__,
             "n_params": self.n_params,
             "model_fingerprint": _model_fingerprint(self.model),
-            "likelihood": self.likelihood,
+            "likelihood": str(self.likelihood),
             "subsample_size": self.subsample_size,
             "n_eigenvalues": self.n_eigenvalues,
             "dual_directions": self.dual_directions.detach().clone()
@@ -4978,7 +5006,8 @@ class VaLLA(BaseFunctionalLaplace):
     model : torch.nn.Module
         Pretrained network to linearize.
     likelihood : Likelihood or str
-        ``"classification"``, ``"regression"``, or ``"reward_modeling"``.
+        A likelihood object, or ``"classification"``, ``"regression"``, or
+        ``"reward_modeling"``.
     inducing_locations : torch.Tensor, MutableMapping, or str
         Initial inputs, or ``"random"`` or ``"kmeans"`` to select them from
         the training loader. Floating-point tensor locations are optimized;
@@ -5969,7 +5998,7 @@ class VaLLA(BaseFunctionalLaplace):
             "cls_name": type(self).__name__,
             "n_params": self.n_params,
             "model_fingerprint": _model_fingerprint(self.model),
-            "likelihood": self.likelihood,
+            "likelihood": str(self.likelihood),
             "inducing_locations": self.inducing_locations.detach().clone()
             if isinstance(self.inducing_locations, torch.Tensor)
             else deepcopy(self.inducing_locations),

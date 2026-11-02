@@ -1,5 +1,7 @@
 """Factory and cross-estimator function-space contracts."""
 
+from copy import deepcopy
+
 import pytest
 import torch
 from torch.utils.data import (
@@ -8,6 +10,11 @@ from torch.utils.data import (
 )
 
 from laplace import ELLA, FunctionalLaplace, Laplace, VaLLA
+from laplace.likelihoods import (
+    CategoricalLikelihood,
+    GaussianLikelihood,
+    Likelihood,
+)
 
 torch.set_num_threads(1)
 
@@ -92,3 +99,26 @@ def test_predictive_alias_preserves_argument_order_for_weight_space(data):
         estimator.predictive(x[:2], "glm", "probit", 10),
         estimator(x[:2], pred_type="glm", link_approx="probit", n_samples=10),
     )
+
+
+@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+def test_functional_factory_likelihood_object_equivalence(data, likelihood):
+    x, loader, model = data
+    if likelihood == "regression":
+        model = torch.nn.Sequential(torch.nn.Linear(2, 1))
+        loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
+        as_object = GaussianLikelihood()
+    else:
+        as_object = CategoricalLikelihood()
+
+    by_name = make_ella(deepcopy(model), likelihood)
+    by_object = make_ella(deepcopy(model), as_object)
+
+    assert type(by_name) is type(by_object)
+    assert by_name.likelihood == by_object.likelihood
+    assert isinstance(by_object.likelihood, Likelihood)
+
+    by_name.fit(loader)
+    by_object.fit(loader)
+
+    torch.testing.assert_close(by_name(x), by_object(x))

@@ -11,10 +11,9 @@ from torchvision.models import wide_resnet50_2
 
 from laplace import DiagSubnetLaplace, FullSubnetLaplace, Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
-from laplace.curvature.asdl import AsdlEF, AsdlGGN, AsdlHessian
-from laplace.curvature.backpack import BackPackEF, BackPackGGN
 from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
+from laplace.likelihoods import BradleyTerryLikelihood, CategoricalLikelihood
 from laplace.utils import (
     LargestMagnitudeSubnetMask,
     LargestVarianceDiagLaplaceSubnetMask,
@@ -25,7 +24,17 @@ from laplace.utils import (
     RandomSubnetMask,
     SubnetMask,
 )
-from tests.utils import ListDataset, dict_data_collator
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    AsdlHessian,
+    BackPackEF,
+    BackPackGGN,
+    CustomCategorical,
+    ListDataset,
+    dict_data_collator,
+    requires_asdl,
+)
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
@@ -83,6 +92,7 @@ def reg_loader():
     return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
+@requires_asdl
 @pytest.mark.parametrize("stochastic", [False, True])
 def test_asdl_diag_with_unused_module(class_loader, stochastic):
     class PartiallyUsedModel(nn.Module):
@@ -124,6 +134,7 @@ def test_asdl_diag_with_unused_module(class_loader, stochastic):
     assert torch.allclose(selected_diag, full_diag[reference_indices])
 
 
+@requires_asdl
 def test_asdl_diag_rejects_selected_parameters_without_fisher(class_loader):
     class Scale(nn.Module):
         def __init__(self):
@@ -1171,3 +1182,41 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
     assert torch.allclose(
         torch.corrcoef(flat.T), cov / torch.outer(std, std), atol=0.05
     )
+
+
+def test_subnetmask_accepts_object():
+    masks = []
+
+    for lik in ("classification", CategoricalLikelihood()):
+        torch.manual_seed(0)
+        model = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
+        X = torch.randn(12, 3)
+        y = torch.randint(2, (12,))
+        loader = DataLoader(TensorDataset(X, y), batch_size=4)
+
+        mask = LargestVarianceSWAGSubnetMask(
+            model, n_params_subnet=7, likelihood=lik, swag_n_snapshots=3
+        )
+        masks.append(mask.select(loader).clone())
+
+    assert torch.equal(masks[0], masks[1])
+
+
+def test_subnetmask_accepts_custom_object():
+    model = nn.Linear(3, 2)
+
+    mask = LargestVarianceSWAGSubnetMask(
+        model, 2, likelihood=CustomCategorical(), swag_n_snapshots=2
+    )
+
+    assert isinstance(mask.likelihood, CustomCategorical)
+
+
+def test_subnetmask_rejects_reward_modeling():
+    model = nn.Linear(3, 2)
+
+    for lik in ("reward_modeling", BradleyTerryLikelihood()):
+        with pytest.raises(
+            ValueError, match="Only available for classification and regression!"
+        ):
+            LargestVarianceSWAGSubnetMask(model, 2, likelihood=lik)

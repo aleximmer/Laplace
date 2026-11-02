@@ -138,6 +138,8 @@ class AsdfghjklInterface(CurvatureInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         with torch.no_grad():
             if self.last_layer:
                 f, x = self.model.forward_with_features(x)
@@ -159,6 +161,8 @@ class AsdfghjklInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        self._check_builtin_likelihood()
+
         with torch.no_grad():
             if self.last_layer:
                 f, x = self.model.forward_with_features(x)
@@ -204,6 +208,8 @@ class AsdfghjklHessian(AsdfghjklInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         hessian_for_loss(self.model, self.lossfunc, SHAPE_FULL, x, y)
         H = self._model.hessian.data
         loss = self.lossfunc(self.model(x), y).detach()
@@ -212,6 +218,8 @@ class AsdfghjklHessian(AsdfghjklInterface):
     def eig_lowrank(
         self, data_loader: DataLoader
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self._check_builtin_likelihood()
+
         # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
         eigvals, eigvecs = hessian_eigenvalues(
             self.model,
@@ -267,7 +275,7 @@ class AsdfghjklEF(AsdfghjklInterface, EFInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | None,
+        likelihood: Likelihood | str | None,
         last_layer: bool = False,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
