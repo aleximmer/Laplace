@@ -33,7 +33,7 @@ ARGS = {
     "calibration_example.py": ["--n_train", "256", "--n_test", "256", "--tiny_model"],
     "calibration_gp_example.py": [
         *("--n_train", "256", "--n_test", "256", "--tiny_model"),
-        *("--subset_sizes", "50", "--prior_precision", "1"),
+        *("--subset_sizes", "50"),
     ],
     "huggingface_example.py": ["--model", "hf-internal-testing/tiny-random-gpt2"],
 }

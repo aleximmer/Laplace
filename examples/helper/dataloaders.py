@@ -76,17 +76,6 @@ def CIFAR10(
     return data_utils.DataLoader(dataset, batch_size=batch_size, shuffle=train)
 
 
-def FashionMNIST(
-    train: bool = True, batch_size: int = 128, n_data: int | None = None
-) -> data_utils.DataLoader:
-    split = "train" if train else "test"
-    dataset = HFImageDataset(
-        "zalando-datasets/fashion_mnist", split, "image", transforms.ToTensor(), n_data
-    )
-
-    return data_utils.DataLoader(dataset, batch_size=batch_size, shuffle=train)
-
-
 def get_sinusoid_example(n_data=150, sigma_noise=0.3, batch_size=150):
     # create simple sinusoid data set
     X_train = (torch.rand(n_data) * 8).unsqueeze(-1)

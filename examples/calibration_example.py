@@ -12,11 +12,11 @@ from netcal.metrics import ECE  # noqa: E402
 
 from laplace import Laplace  # noqa: E402
 
-# Data subsets and a tiny random model, for quick test runs. The defaults use all data
-# and the pretrained ResNet-18.
+# A slice of the data is enough to show the effect. Smaller slices and a tiny random
+# model are for quick test runs.
 parser = argparse.ArgumentParser()
-parser.add_argument("--n_train", type=int, default=None)
-parser.add_argument("--n_test", type=int, default=None)
+parser.add_argument("--n_train", type=int, default=5000)
+parser.add_argument("--n_test", type=int, default=2000)
 parser.add_argument("--tiny_model", action="store_true")
 args = parser.parse_args()
 

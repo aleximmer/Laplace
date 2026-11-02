@@ -22,8 +22,9 @@ torch.backends.cudnn.benchmark = True
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-train_loader = dl.CIFAR10(train=True)
-test_loader = dl.CIFAR10(train=False)
+# A slice of CIFAR-10 is enough to see the effect
+train_loader = dl.CIFAR10(train=True, n_data=5000)
+test_loader = dl.CIFAR10(train=False, n_data=2000)
 targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 ```
 
@@ -66,10 +67,10 @@ nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 print(f"[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}")
 ```
 
-Running this snippet, we would get:
+Running this snippet, we get something like:
 
 ```
-[MAP] Acc.: 95.0%; ECE: 2.9%; NLL: 0.204
+[MAP] Acc.: 95.1%; ECE: 3.5%; NLL: 0.218
 ```
 
 ## The calibration of Laplace
@@ -96,10 +97,10 @@ nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 print(f"[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}")
 ```
 
-Running this snippet, we obtain:
+Running this snippet, we get something like:
 
 ```
-[Laplace] Acc.: 95.0%; ECE: 1.9%; NLL: 0.173
+[Laplace] Acc.: 95.1%; ECE: 1.8%; NLL: 0.179
 ```
 
 Notice that the last-layer LA does not do any harm to the accuracy, yet it improves the calibration of the MAP model substantially.

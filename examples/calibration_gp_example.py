@@ -10,13 +10,12 @@ from netcal.metrics import ECE
 
 from laplace import Laplace
 
-# Data subsets, GP subset sizes, and a tiny random model, for quick test runs. The
-# defaults use all data and the pretrained ResNet-18.
+# A slice of the data is enough to show the effect. Smaller slices, GP subset sizes,
+# and a tiny random model are for quick test runs.
 parser = argparse.ArgumentParser()
-parser.add_argument("--n_train", type=int, default=None)
-parser.add_argument("--n_test", type=int, default=None)
+parser.add_argument("--n_train", type=int, default=5000)
+parser.add_argument("--n_test", type=int, default=2000)
 parser.add_argument("--subset_sizes", type=int, nargs="+", default=[200, 800])
-parser.add_argument("--prior_precision", type=float, default=0.1)
 parser.add_argument("--tiny_model", action="store_true")
 args = parser.parse_args()
 
@@ -70,7 +69,7 @@ for m in args.subset_sizes:
         hessian_structure="gp",
         independent_outputs=True,
         n_subset=m,
-        prior_precision=args.prior_precision,
+        prior_precision=1.0,
     )
     la.fit(train_loader)
 
