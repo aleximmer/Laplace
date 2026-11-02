@@ -34,7 +34,7 @@ from laplace.utils import (
 def marglik_training(
     model: torch.nn.Module,
     train_loader: DataLoader,
-    likelihood: Likelihood | str = Likelihood.CLASSIFICATION,
+    likelihood: Likelihood | str | torch.nn.Module = Likelihood.CLASSIFICATION,
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
     backend: Type[CurvatureInterface] = CurvlinopsGGN,
     optimizer_cls: Type[Optimizer] = Adam,
@@ -92,8 +92,9 @@ def marglik_training(
         torch neural network model (needs to comply with Backend choice)
     train_loader : DataLoader
         pytorch dataloader that implements `len(train_loader.dataset)` to obtain number of data points
-    likelihood : Likelihood or str, default=Likelihood.CLASSIFICATION
-        a likelihood object, or 'classification' or 'regression'
+    likelihood : Likelihood or str or torch.nn.Module, default=Likelihood.CLASSIFICATION
+        a likelihood object, 'classification' or 'regression', or a torch
+        criterion such as `nn.CrossEntropyLoss`, see `get_likelihood`.
     hessian_structure : {'diag', 'kron', 'full'}, default='kron'
         structure of the Hessian approximation
     backend : Backend, default=CurvlinopsGGN
@@ -185,6 +186,10 @@ def marglik_training(
         )
 
     criterion = lik.loss_fn("mean")
+
+    # Cast buffers like class weights to the model, e.g. float32 weights to float64
+    if isinstance(criterion, torch.nn.Module):
+        criterion = criterion.to(device=device, dtype=dtype)
 
     if not lik.is_gaussian:
         sigma_noise = 1.0

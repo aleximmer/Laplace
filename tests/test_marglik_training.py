@@ -75,3 +75,26 @@ def test_marglik_training_rejects_reward_modeling(model):
         marglik_training(
             model, _loader("classification"), likelihood="reward_modeling", n_epochs=1
         )
+
+
+@pytest.mark.parametrize("hessian_structure", ["diag", "full"])
+def test_marglik_training_casts_class_weights(model, hessian_structure):
+    loader = _loader("classification")
+    X, y = loader.dataset.tensors
+    loader = DataLoader(TensorDataset(X.double(), y), batch_size=8)
+
+    # Float32 class weights for a float64 model
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
+
+    _, _, margliks, losses = marglik_training(
+        model.double(),
+        loader,
+        likelihood=weighted,
+        hessian_structure=hessian_structure,
+        n_epochs=2,
+        n_epochs_burnin=1,
+    )
+
+    assert len(margliks) > 0
+    assert all(math.isfinite(m) for m in margliks)
+    assert all(math.isfinite(loss) for loss in losses)
