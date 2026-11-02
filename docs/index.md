@@ -119,7 +119,10 @@ The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `
 You can also pass the criterion you trained with.
 An `nn.CrossEntropyLoss` becomes a `CategoricalLikelihood` with the same options, and an `nn.MSELoss` becomes a `GaussianLikelihood`.
 The criterion's `reduction` is ignored, since Laplace always sums the loss.
-Ignored tokens don't count as observations.
+Tokens whose index target equals `ignore_index`, such as padding with the default `-100`, don't count as observations.
+The `diag` and `full` structures also leave them out of the curvature.
+The `kron` structure can't do that, because KFAC sums its input factors over every token.
+So Laplace scales the Kronecker factors by the number of all tokens, padding included, and warns.
 
 ```python
 from torch import nn
@@ -144,10 +147,10 @@ Not every backend computes the curvature with every option:
 |---|---|---|
 | `diag`, `full` with a deterministic GGN or EF backend of Curvlinops, ASDL, or BackPACK | all | Supported. If a backend's library can't handle an option, Laplace falls back to its own torch.func implementation, which is slower. |
 | Asdfghjkl backends | any | `diag` falls back to torch.func. `full`, `kron`, and low-rank raise. |
-| `kron` | `label_smoothing` | Curvlinops (deterministic only), ASDL, and BackPACK GGN |
+| `kron` | `label_smoothing` | Curvlinops (deterministic only), ASDL GGN and EF, and BackPACK GGN |
 | `kron` | `weight`, `ignore_index` | None |
 | `full` with a Hessian backend | all | `CurvlinopsHessian` and `AsdlHessian` |
-| `stochastic=True` (Monte Carlo Fisher) | `label_smoothing` | `CurvlinopsGGN` with `full`, and ASDL GGN with `kron` |
+| `stochastic=True` (Monte Carlo Fisher) | `label_smoothing` | `CurvlinopsGGN` with `full`, ASDL GGN and BackPACK GGN with `diag` and `kron` |
 | `stochastic=True` (Monte Carlo Fisher) | `weight`, `ignore_index` | None |
 
 An unsupported combination raises a `ValueError` that points you to a GGN or EF backend with the `diag` or `full` structure.
@@ -189,7 +192,9 @@ For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\m
 `link_approx` has no effect there.
 In the example above, the result is the expected Poisson rate.
 Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
-FunctionalLaplace, ELLA, and VaLLA only accept likelihoods named `"regression"`, `"classification"`, or `"reward_modeling"`, which includes a `CategoricalLikelihood` with options.
+FunctionalLaplace, ELLA, and VaLLA only accept likelihoods named `"regression"`, `"classification"`, or `"reward_modeling"`.
+FunctionalLaplace also accepts a `CategoricalLikelihood` with options.
+ELLA and VaLLA don't support likelihood options yet and raise a `ValueError` for them.
 
 ### Marginal likelihood
 

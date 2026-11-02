@@ -971,3 +971,22 @@ def test_ella_checkpoint_likelihood_is_str(data, likelihood):
     restored.load_state_dict(state)
 
     assert restored.likelihood == likelihood
+
+
+def test_ella_rejects_likelihood_options_on_construction(data):
+    _, _, model = data
+
+    with pytest.raises(ValueError, match="ELLA doesn't support likelihood options"):
+        make_ella(model, CategoricalLikelihood(label_smoothing=0.1))
+
+
+def test_ella_rejects_likelihood_options_on_assignment(data):
+    _, _, model = data
+    estimator = make_ella(model)
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]), ignore_index=3)
+
+    with pytest.raises(ValueError, match="ignore_index, weight"):
+        estimator.likelihood = weighted
+
+    # The likelihood stays as it was
+    assert estimator.likelihood == CategoricalLikelihood()

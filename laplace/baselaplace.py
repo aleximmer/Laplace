@@ -7,7 +7,7 @@ from copy import deepcopy
 from importlib.util import find_spec
 from math import frexp, isfinite, log, pi, sqrt
 from numbers import Integral
-from typing import Any, Callable
+from typing import Any, Callable, ClassVar
 
 import numpy as np
 import torch
@@ -21,9 +21,13 @@ from torch.utils.data import DataLoader
 
 from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
-from laplace.curvature.curvature import CurvatureInterface
+from laplace.curvature.curvature import CurvatureInterface, _ignored_tokens
 from laplace.curvature.curvlinops import CurvlinopsGGN
-from laplace.likelihoods import get_likelihood, hyperparameters_equal
+from laplace.likelihoods import (
+    CategoricalLikelihood,
+    get_likelihood,
+    hyperparameters_equal,
+)
 from laplace.utils import SoDSampler
 from laplace.utils.enums import (
     Likelihood,
@@ -77,6 +81,24 @@ _BUILTIN_NAMES = frozenset(likelihood.name for likelihood in Likelihood)
 _CATEGORICAL_NAMES = frozenset(
     (Likelihood.CLASSIFICATION.name, Likelihood.REWARD_MODELING.name)
 )
+
+
+def _checkpoint_hyperparameters(likelihood: Likelihood) -> dict[str, Any]:
+    """The hyperparameters of a likelihood for a checkpoint, with tensors detached
+    and copied, so that later changes to the likelihood don't reach the checkpoint.
+
+    Parameters
+    ----------
+    likelihood : Likelihood
+
+    Returns
+    -------
+    hyperparameters : dict[str, Any]
+    """
+    return {
+        k: v.detach().clone() if torch.is_tensor(v) else v
+        for k, v in likelihood.hyperparameters().items()
+    }
 
 
 def _same_likelihood(likelihood: Likelihood, state_dict: dict[str, Any]) -> bool:
@@ -575,7 +597,8 @@ class BaseLaplace:
             loss function to use for CV. If callable, the loss is computed offline (memory intensive).
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
-            reward modeling, running `MeanSquaredError()` for regression. Other
+            reward modeling, with the `ignore_index` of a `CategoricalLikelihood`,
+            and running `MeanSquaredError()` for regression. Other
             likelihoods have no default, so `loss` is required for them.
         log_prior_prec_min : float, default=-4
             exponent of the lower bound of the gridsearch interval.
@@ -670,14 +693,16 @@ class BaseLaplace:
                     f"{likelihood.name!r}, so pass `loss`, e.g. a torchmetrics metric."
                 )
 
-            if loss is None:
-                loss = (
-                    torchmetrics.MeanSquaredError(num_outputs=self.n_outputs).to(
-                        self._device
-                    )
-                    if likelihood.name == Likelihood.REGRESSION.name
-                    else RunningNLLMetric().to(self._device)
+            if loss is None and likelihood.name == Likelihood.REGRESSION.name:
+                loss = torchmetrics.MeanSquaredError(num_outputs=self.n_outputs)
+                loss = loss.to(self._device)
+            elif loss is None:
+                ignore_index = (
+                    likelihood.ignore_index
+                    if isinstance(likelihood, CategoricalLikelihood)
+                    else -100
                 )
+                loss = RunningNLLMetric(ignore_index=ignore_index).to(self._device)
 
             self.prior_precision = self._gridsearch(
                 loss,
@@ -786,6 +811,7 @@ class BaseLaplace:
         link_approx: LinkApprox | str = LinkApprox.PROBIT,
         n_samples: int = 100,
         diagonal_output: bool = False,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """Compute the posterior predictive on input data `x` for "glm" pred type.
 
@@ -823,6 +849,9 @@ class BaseLaplace:
             whether to use a diagonalized posterior predictive on the outputs.
             Only works for `pred_type='glm'` and `link_approx='mc'`, or for the
             Monte Carlo predictive of other likelihoods.
+
+        generator : torch.Generator, optional
+            random number generator for the Monte Carlo samples.
 
         Returns
         -------
@@ -876,7 +905,7 @@ class BaseLaplace:
         if likelihood.name not in _CATEGORICAL_NAMES:
             # No closed form to approximate, so integrate the inverse link by MC
             f_samples = self._glm_functional_samples(
-                f_mu, f_var, n_samples, diagonal_output
+                f_mu, f_var, n_samples, diagonal_output, generator
             )
             return likelihood.inverse_link(f_samples).mean(dim=0)
 
@@ -887,7 +916,7 @@ class BaseLaplace:
         f_var = f_var.reshape(-1, *f_var.shape[-2:])
 
         probs = self._glm_classification_link(
-            f_mu, f_var, link_approx, n_samples, diagonal_output
+            f_mu, f_var, link_approx, n_samples, diagonal_output, generator
         )
         return probs.reshape(*batch_shape, probs.shape[-1])
 
@@ -898,6 +927,7 @@ class BaseLaplace:
         link_approx: LinkApprox | str,
         n_samples: int,
         diagonal_output: bool,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Approximate the predictive class probabilities from the GLM predictive
         `f_mu` `(batch, classes)` and `f_var` `(batch, classes, classes)`. See
@@ -909,6 +939,7 @@ class BaseLaplace:
                 f_var,
                 n_samples=n_samples,
                 diagonal_output=diagonal_output,
+                generator=generator,
             ).mean(dim=0)
         elif link_approx == LinkApprox.PROBIT:
             kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
@@ -1647,7 +1678,7 @@ class ParametricLaplace(BaseLaplace):
 
         if pred_type == PredType.GLM:
             return self._glm_forward_call(
-                x, likelihood, joint, link_approx, n_samples, diagonal_output
+                x, likelihood, joint, link_approx, n_samples, diagonal_output, generator
             )
         else:
             if likelihood.is_gaussian:
@@ -2024,7 +2055,7 @@ class ParametricLaplace(BaseLaplace):
             "n_obs": self.n_obs,
             "n_outputs": self.n_outputs,
             "likelihood": str(self.likelihood),
-            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
+            "likelihood_hyperparameters": _checkpoint_hyperparameters(self.likelihood),
             "temperature": self.temperature,
             "enable_backprop": self.enable_backprop,
             "cls_name": self.__class__.__name__,
@@ -2243,6 +2274,11 @@ class KronLaplace(ParametricLaplace):
     ):
         self.damping: bool = damping
         self.H_facs: Kron | None = None
+
+        # Tokens that the Kronecker factors sum over, see `fit`
+        self._n_kron_tokens: int = 0
+        self._n_ignored_batch_tokens: int = 0
+
         super().__init__(
             model,
             likelihood,
@@ -2273,6 +2309,9 @@ class KronLaplace(ParametricLaplace):
         y: torch.Tensor,
         N: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        # KFAC sums over the ignored tokens too, so `fit` counts them, see there
+        self._n_ignored_batch_tokens += _ignored_tokens(self.backend.likelihood, y)
+
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
     @staticmethod
@@ -2288,31 +2327,50 @@ class KronLaplace(ParametricLaplace):
         override: bool = True,
         progress_bar: bool = False,
     ) -> None:
+        """Fit the Kronecker factors, see `ParametricLaplace.fit`.
+
+        The backends sum the input factors over all tokens and divide them by the
+        number of data. KFAC can't drop the tokens that a categorical likelihood
+        ignores, e.g. padding, from its input factors. So the factors are
+        normalized by the number of tokens they sum over, ignored ones included.
+        `n_obs` leaves those out and stays as it is for everything else. The
+        backends warn if there are ignored tokens.
+        """
         if override:
             self.H_facs = None
 
         n_obs_old: int = 0 if self.H_facs is None else self.n_obs
+        # Pickles from older versions have no token count
+        n_tokens_old: int = (
+            0 if self.H_facs is None else getattr(self, "_n_kron_tokens", self.n_obs)
+        )
+
         n_data_new: int = len(train_loader.dataset)
         if self.H_facs is not None:
             self._init_H()  # re-init H non-decomposed
 
+        self._n_ignored_batch_tokens = 0
         super().fit(train_loader, override=override, progress_bar=progress_bar)
 
         # The backends sum the input factors over all tokens, e.g. `B * L` for
         # outputs `(B, L, K)`, and divide by `n_data_new`. Every token is an
         # observation, so divide by the number of tokens instead. This also holds
         # when the sequence length varies between batches.
-        n_obs_new: int = self.n_obs - n_obs_old
-        if n_obs_new > 0:
-            self.H = self._rescale_factors(self.H, n_data_new / n_obs_new)
+        n_tokens_new: int = self.n_obs - n_obs_old + self._n_ignored_batch_tokens
+        if n_tokens_new > 0:
+            self.H = self._rescale_factors(self.H, n_data_new / n_tokens_new)
+
+        n_tokens_total = n_tokens_old + n_tokens_new
+        self._n_kron_tokens = n_tokens_total
 
         if self.H_facs is None:
             self.H_facs = self.H
         else:
-            # Weight previous and new Kronecker factors by their number of observations
-            n_obs_total = n_obs_old + n_obs_new
-            self.H_facs = self._rescale_factors(self.H_facs, n_obs_old / n_obs_total)
-            self.H_facs += self._rescale_factors(self.H, n_obs_new / n_obs_total)
+            # Weight previous and new Kronecker factors by their number of tokens
+            self.H_facs = self._rescale_factors(
+                self.H_facs, n_tokens_old / n_tokens_total
+            )
+            self.H_facs += self._rescale_factors(self.H, n_tokens_new / n_tokens_total)
 
         # Decompose to self.H for all required quantities but keep H_facs for further inference
         self.H = self.H_facs.decompose(damping=self.damping)
@@ -2381,11 +2439,17 @@ class KronLaplace(ParametricLaplace):
         state_dict = super().state_dict()
         assert isinstance(self.H_facs, Kron)
         state_dict["H"] = self.H_facs.kfacs
+        state_dict["n_kron_tokens"] = self._n_kron_tokens
         return state_dict
 
     def load_state_dict(self, state_dict: dict[str, Any]):
         super().load_state_dict(state_dict)
+
+        # Older checkpoints have no ignored tokens in the count
+        self._n_kron_tokens = state_dict.get("n_kron_tokens", self.n_obs)
+
         self._init_H()
+
         assert isinstance(self.H, Kron)
         self.H_facs = self.H
         self.H_facs.kfacs = state_dict["H"]
@@ -2660,6 +2724,10 @@ class BaseFunctionalLaplace(BaseLaplace):
     for ``FunctionalLaplace``, ``ELLA``, and ``VaLLA``.
     """
 
+    _supports_likelihood_options: ClassVar[bool] = False
+    """Whether the method takes likelihoods with options, i.e. a non-empty
+    `Likelihood.hyperparameters`."""
+
     @property
     def likelihood(self) -> Likelihood:
         """The likelihood object."""
@@ -2672,14 +2740,16 @@ class BaseFunctionalLaplace(BaseLaplace):
 
         The function-space methods pick their formulas, e.g. for the marginal
         likelihood and the predictive, by the likelihood's name. A subclass of a
-        built-in likelihood that keeps its name is fine, and so are the options of
-        `CategoricalLikelihood`.
+        built-in likelihood that keeps its name is fine. FunctionalLaplace also
+        takes the options of `CategoricalLikelihood`, while ELLA and VaLLA don't
+        support likelihood options yet.
 
         Raises
         ------
         ValueError
             if the name is not `"regression"`, `"classification"`, or
-            `"reward_modeling"`.
+            `"reward_modeling"`, or if the likelihood has options that the method
+            doesn't support.
         """
         likelihood = get_likelihood(likelihood)
 
@@ -2688,6 +2758,15 @@ class BaseFunctionalLaplace(BaseLaplace):
                 "FunctionalLaplace, ELLA, and VaLLA support only the likelihoods "
                 f"named {sorted(_BUILTIN_NAMES)}, not {likelihood.name!r}. Use a "
                 "parametric Laplace with the `diag` or `full` structure instead."
+            )
+
+        options = likelihood.hyperparameters()
+
+        if options and not self._supports_likelihood_options:
+            raise ValueError(
+                f"{type(self).__name__} doesn't support likelihood options yet, but "
+                f"{likelihood!r} sets {', '.join(sorted(options))}. Use "
+                "FunctionalLaplace or a parametric Laplace instead."
             )
 
         BaseLaplace.likelihood.fset(self, likelihood)
@@ -2963,7 +3042,7 @@ class BaseFunctionalLaplace(BaseLaplace):
                 fitting=fitting,
             ).mean(dim=0)
         return self._glm_forward_call(
-            x, likelihood, joint, link_approx, n_samples, diagonal_output
+            x, likelihood, joint, link_approx, n_samples, diagonal_output, generator
         )
 
     def _glm_functional_samples(
@@ -3191,6 +3270,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ("all", "gp")
+
+    # The formulas take the options of `CategoricalLikelihood`
+    _supports_likelihood_options = True
 
     def __init__(
         self,
@@ -4093,7 +4175,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             "n_data": self.n_data,
             "n_outputs": self.n_outputs,
             "likelihood": str(self.likelihood),
-            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
+            "likelihood_hyperparameters": _checkpoint_hyperparameters(self.likelihood),
             "temperature": self.temperature,
             "enable_backprop": self.enable_backprop,
             "cls_name": self.__class__.__name__,
@@ -5049,7 +5131,7 @@ class ELLA(BaseFunctionalLaplace):
             "n_params": self.n_params,
             "model_fingerprint": _model_fingerprint(self.model),
             "likelihood": str(self.likelihood),
-            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
+            "likelihood_hyperparameters": _checkpoint_hyperparameters(self.likelihood),
             "subsample_size": self.subsample_size,
             "n_eigenvalues": self.n_eigenvalues,
             "dual_directions": self.dual_directions.detach().clone()
@@ -6116,7 +6198,7 @@ class VaLLA(BaseFunctionalLaplace):
             "n_params": self.n_params,
             "model_fingerprint": _model_fingerprint(self.model),
             "likelihood": str(self.likelihood),
-            "likelihood_hyperparameters": self.likelihood.hyperparameters(),
+            "likelihood_hyperparameters": _checkpoint_hyperparameters(self.likelihood),
             "inducing_locations": self.inducing_locations.detach().clone()
             if isinstance(self.inducing_locations, torch.Tensor)
             else deepcopy(self.inducing_locations),

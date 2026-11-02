@@ -1073,3 +1073,23 @@ def test_valla_checkpoint_likelihood_is_str(data):
     restored.load_state_dict(state)
 
     assert restored.likelihood == "classification"
+
+
+def test_valla_rejects_likelihood_options_on_construction(data):
+    x, _, model = data
+    smoothed = CategoricalLikelihood(label_smoothing=0.1)
+
+    with pytest.raises(ValueError, match="VaLLA doesn't support likelihood options"):
+        make_valla(model, smoothed, inducing_locations=x[:2].clone())
+
+
+def test_valla_rejects_likelihood_options_on_assignment(data):
+    x, _, model = data
+    estimator = make_valla(model, inducing_locations=x[:2].clone())
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]), ignore_index=3)
+
+    with pytest.raises(ValueError, match="ignore_index, weight"):
+        estimator.likelihood = weighted
+
+    # The likelihood stays as it was
+    assert estimator.likelihood == CategoricalLikelihood()

@@ -471,3 +471,33 @@ def test_old_checkpoint_without_hyperparameters_loads(laplace, model, class_load
 
     X, _ = next(iter(class_loader))
     assert torch.allclose(la(X), la2(X))
+
+
+@pytest.mark.parametrize("laplace", [DiagLaplace, FunctionalLaplace])
+def test_checkpoint_copies_tensor_hyperparameters(laplace, model, class_loader):
+    weight = torch.tensor([1.0, 2.0])
+    kwargs = {"n_subset": 5} if laplace is FunctionalLaplace else {}
+    la = laplace(model, CategoricalLikelihood(weight=weight), **kwargs)
+    la.fit(class_loader)
+
+    stored = la.state_dict()["likelihood_hyperparameters"]["weight"]
+    assert stored is not weight
+    assert torch.equal(stored, weight)
+
+    # Later changes to the weight don't reach the checkpoint
+    weight.mul_(3.0)
+    assert torch.equal(stored, torch.tensor([1.0, 2.0]))
+
+
+def test_kron_checkpoint_without_token_count_loads(model, class_loader):
+    la = KronLaplace(model, "classification")
+    la.fit(class_loader)
+    state_dict = la.state_dict()
+    del state_dict["n_kron_tokens"]
+
+    la2 = KronLaplace(model, "classification")
+    la2.load_state_dict(state_dict)
+    assert la2._n_kron_tokens == la.n_obs
+
+    X, _ = next(iter(class_loader))
+    assert torch.allclose(la(X), la2(X))

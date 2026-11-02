@@ -350,3 +350,8 @@ def test_functional_rejects_custom_likelihood_name():
         model, CategoricalLikelihood(label_smoothing=0.1), n_subset=5
     )
     assert la.likelihood == CategoricalLikelihood(label_smoothing=0.1)
+
+    # Unlike ELLA and VaLLA, FunctionalLaplace takes options on assignment too
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
+    la.likelihood = weighted
+    assert la.likelihood == weighted

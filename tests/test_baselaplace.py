@@ -2619,6 +2619,9 @@ def test_custom_likelihood_end_to_end(laplace, model, reg_loader):
     la = laplace(model, ScaledGaussian(2.0))
     la.fit(reg_loader)
 
+    # One observation per datum, from the targets of each batch
+    assert la.n_obs == len(reg_loader.dataset)
+
     ref = laplace(model, "regression")
     ref.fit(reg_loader)
 
@@ -2690,16 +2693,28 @@ def test_categorical_options_end_to_end(laplace, options):
     model = nn.Linear(4, 3)
 
     la = laplace(model, lik)
-    la.fit(loader)
+
+    if laplace is KronLaplace:
+        # The default `ignore_index=-100` drops the padded tokens, which KFAC can't
+        with pytest.warns(UserWarning, match="ignored tokens"):
+            la.fit(loader)
+    else:
+        la.fit(loader)
 
     _, y = loader.dataset.tensors
     assert la.n_obs == int((y != lik.ignore_index).sum())
 
     if laplace is KronLaplace:
         # The type-2 KFAC does not see the targets, so label smoothing leaves it as
-        # it is with the default options
+        # it is with the default options. Neither do the padded tokens change it: the
+        # factors sum over all tokens and are normalized by their number, so they
+        # are the same as for data without padding.
+        X, y = loader.dataset.tensors
+        unpadded = DataLoader(
+            TensorDataset(X, y.clamp(min=0)), batch_size=loader.batch_size
+        )
         ref = KronLaplace(model, "classification")
-        ref.fit(loader)
+        ref.fit(unpadded)
         _assert_same_curvature(la, ref)
     else:
         # The torch.func GGN with the same likelihood, summed over the batches as in
@@ -2808,3 +2823,134 @@ def test_nn_predictive_for_custom_link():
     assert pred.shape == (8, 1)
     torch.testing.assert_close(pred, fs.exp().mean(0))
     assert not torch.allclose(pred, torch.ones_like(pred))
+
+
+def _padded_loaders() -> tuple[DataLoader, DataLoader]:
+    """Class targets for 12 inputs with a third of them padded with the default
+    `ignore_index=-100`, and the same data with valid classes in place of the
+    padding."""
+    X = torch.randn(12, 3)
+    y = torch.randint(2, (12,))
+    y_pad = y.clone()
+    y_pad[::3] = -100
+
+    return (
+        DataLoader(TensorDataset(X, y_pad), batch_size=4),
+        DataLoader(TensorDataset(X, y), batch_size=4),
+    )
+
+
+@pytest.mark.parametrize(
+    "backend", [CurvlinopsGGN, AsdlGGN, BackPackGGN], ids=lambda b: b.__name__
+)
+def test_kron_counts_padded_tokens(backend, model):
+    padded, unpadded = _padded_loaders()
+
+    la = KronLaplace(deepcopy(model), "classification", backend=backend)
+
+    with pytest.warns(UserWarning, match="ignored tokens"):
+        la.fit(padded)
+
+    ref = KronLaplace(deepcopy(model), "classification", backend=backend)
+    ref.fit(unpadded)
+
+    # The type-2 KFAC sums over the padded tokens like over the others, and the
+    # factors are normalized by all of them, as before padding was dropped from
+    # the observations. So the padded and the unpadded fits agree, a ratio of 1.
+    _assert_same_curvature(la, ref)
+
+    # Everywhere else, the padding doesn't count
+    assert la.n_obs == 8
+    assert ref.n_obs == 12
+
+
+def test_kron_online_and_checkpoint_keep_token_count(model):
+    padded, unpadded = _padded_loaders()
+
+    la = KronLaplace(model, "classification")
+    ref = KronLaplace(model, "classification")
+
+    with pytest.warns(UserWarning, match="ignored tokens"):
+        la.fit(padded)
+        la.fit(padded, override=False)
+
+    ref.fit(unpadded)
+    ref.fit(unpadded, override=False)
+
+    _assert_same_curvature(la, ref)
+
+    # A checkpoint keeps the number of tokens for later online updates
+    restored = KronLaplace(model, "classification")
+    restored.load_state_dict(la.state_dict())
+
+    with pytest.warns(UserWarning, match="ignored tokens"):
+        restored.fit(padded, override=False)
+
+    ref.fit(unpadded, override=False)
+    _assert_same_curvature(restored, ref)
+
+
+def test_custom_likelihood_counts_observations(model):
+    # Inputs `(B, L, D)` and targets `(B, L, K)`: every token is an observation
+    X = torch.randn(6, 5, 3)
+    y = torch.randn(6, 5, 2)
+    loader = DataLoader(TensorDataset(X, y), batch_size=4)
+
+    la = DiagLaplace(model, ScaledGaussian(2.0))
+    la.fit(loader)
+
+    assert la.n_obs == 30
+
+
+def test_glm_mc_predictive_is_reproducible(model, class_loader):
+    X, _ = class_loader.dataset.tensors
+
+    la = DiagLaplace(model, "classification")
+    la.fit(class_loader)
+
+    def predict(seed: int | None) -> torch.Tensor:
+        generator = None if seed is None else torch.Generator().manual_seed(seed)
+        return la(
+            X, pred_type="glm", link_approx="mc", n_samples=5, generator=generator
+        )
+
+    torch.testing.assert_close(predict(1), predict(1))
+    assert not torch.allclose(predict(1), predict(2))
+
+    # Likelihoods without a closed-form link use the same Monte Carlo samples
+    loader = _poisson_loader()
+    poisson = DiagLaplace(
+        nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1)), PoissonLog()
+    )
+
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        poisson.fit(loader)
+
+    X = loader.dataset.tensors[0][:8]
+    preds = [
+        poisson(
+            X, pred_type="glm", n_samples=5, generator=torch.Generator().manual_seed(3)
+        )
+        for _ in range(2)
+    ]
+    torch.testing.assert_close(preds[0], preds[1])
+
+
+def test_gridsearch_default_metric_uses_ignore_index(model, class_loader):
+    X, y = class_loader.dataset.tensors
+    y = y.clone()
+    y[::4] = -1
+    loader = DataLoader(TensorDataset(X, y), batch_size=3)
+
+    la = DiagLaplace(model, CategoricalLikelihood(ignore_index=-1))
+    la.fit(loader)
+
+    # The default metric would fail on the class -1 if it didn't ignore it
+    la.optimize_prior_precision(
+        method="gridsearch",
+        pred_type="glm",
+        link_approx="probit",
+        val_loader=loader,
+        grid_size=3,
+    )
+    assert torch.isfinite(la.prior_precision).all()
