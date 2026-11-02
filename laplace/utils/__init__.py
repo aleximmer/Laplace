@@ -1,7 +1,6 @@
 from laplace.utils.enums import (
     FunctionalApproximation,
     HessianStructure,
-    Likelihood,
     LinkApprox,
     PredType,
     PriorStructure,
@@ -45,6 +44,7 @@ from laplace.utils.utils import (
     expand_prior_precision,
     fix_prior_prec_structure,
     get_nll,
+    hyperparameters_equal,
     invsqrt_precision,
     kron,
     normal_samples,
@@ -61,6 +61,7 @@ __all__ = [
     "kron",
     "diagonal_add_scalar",
     "symeig",
+    "hyperparameters_equal",
     "block_diag",
     "normal_samples",
     "batch_size",
@@ -102,3 +103,13 @@ __all__ = [
     "TuningMethod",
     "PriorStructure",
 ]
+
+
+def __getattr__(name: str) -> object:
+    """Resolve `Likelihood` lazily; see `laplace.utils.enums`."""
+    if name == "Likelihood":
+        from laplace.likelihoods import Likelihood
+
+        return Likelihood
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

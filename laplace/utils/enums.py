@@ -1,8 +1,5 @@
 from enum import Enum
 
-# `Likelihood` used to be an enum here; it is now the likelihood base class
-from laplace.likelihoods import Likelihood as Likelihood
-
 
 class SubsetOfWeights(str, Enum):
     """Valid options for `subset_of_weights`."""
@@ -103,3 +100,15 @@ class PriorStructure(str, Enum):
     LAYERWISE = "layerwise"
     """Layerwise prior precision, i.e. a single scalar prior precision for each block 
     (corresponding to each the NN's layer) of the diagonal prior-precision matrix.."""
+
+
+def __getattr__(name: str) -> object:
+    """Resolve `Likelihood` lazily. It used to be an enum here and is now the
+    likelihood base class in `laplace.likelihoods`, which imports from this
+    package, so importing it eagerly would be circular."""
+    if name == "Likelihood":
+        from laplace.likelihoods import Likelihood
+
+        return Likelihood
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -8,6 +8,7 @@
             - "kron"
             - "diagonal_add_scalar"
             - "symeig"
+            - "hyperparameters_equal"
             - "block_diag"
             - "normal_samples"
             - "batch_size"

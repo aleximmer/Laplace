@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import MutableMapping
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -29,6 +29,7 @@ __all__ = [
     "block_diag",
     "expand_prior_precision",
     "SoDSampler",
+    "hyperparameters_equal",
 ]
 
 
@@ -375,3 +376,65 @@ def normal_samples(
         return (mean.unsqueeze(-1) + scaled_samples).permute((2, 0, 1))
     else:
         raise ValueError("Invalid input shapes.")
+
+
+def hyperparameters_equal(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    """Compare two hyperparameter dicts by keys, then by values.
+
+    Parameters
+    ----------
+    a, b : dict
+        values are plain Python objects or tensors, compared with `_tensors_equal`
+        if either is a tensor.
+
+    Returns
+    -------
+    equal : bool
+    """
+    if a.keys() != b.keys():
+        return False
+
+    for key, value in a.items():
+        other = b[key]
+
+        if isinstance(value, torch.Tensor) or isinstance(other, torch.Tensor):
+            if not (
+                isinstance(value, torch.Tensor)
+                and isinstance(other, torch.Tensor)
+                and _tensors_equal(value, other)
+            ):
+                return False
+        elif value != other:
+            return False
+
+    return True
+
+
+def _tensors_equal(a: torch.Tensor, b: torch.Tensor) -> bool:
+    """`torch.equal` that also compares tensors on different devices.
+
+    Tensors on different devices are compared on the CPU. A tensor on the meta
+    device holds no values, so it only equals itself.
+    """
+    if a.is_meta or b.is_meta:
+        return a is b
+
+    if a.device != b.device:
+        a, b = a.cpu(), b.cpu()
+
+    return torch.equal(a, b)
+
+
+def _float_dtype(x: torch.Tensor | float) -> torch.dtype:
+    """Dtype of `x` if it is a floating tensor, else the default dtype."""
+    if isinstance(x, torch.Tensor) and x.is_floating_point():
+        return x.dtype
+
+    return torch.get_default_dtype()
+
+
+def _zero_like(x: torch.Tensor | float) -> torch.Tensor:
+    """0-dim zero with the floating dtype and the device of `x`."""
+    device = x.device if isinstance(x, torch.Tensor) else None
+
+    return torch.zeros((), dtype=_float_dtype(x), device=device)

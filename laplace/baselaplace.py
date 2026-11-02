@@ -23,12 +23,8 @@ from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.curvature import CurvatureInterface, _ignored_tokens
 from laplace.curvature.curvlinops import CurvlinopsGGN
-from laplace.likelihoods import (
-    CategoricalLikelihood,
-    get_likelihood,
-    hyperparameters_equal,
-)
-from laplace.utils import SoDSampler
+from laplace.likelihoods import CategoricalLikelihood, get_likelihood
+from laplace.utils import SoDSampler, hyperparameters_equal
 from laplace.utils.enums import (
     Likelihood,
     LinkApprox,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
@@ -8,9 +9,11 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
 
 import laplace
-from laplace.utils.enums import Likelihood
 from laplace.utils.feature_extractor import FeatureExtractor
 from laplace.utils.swag import fit_diagonal_swag_var
+
+if TYPE_CHECKING:
+    from laplace.likelihoods import Likelihood
 
 __all__ = [
     "SubnetMask",
@@ -271,13 +274,13 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         self,
         model: nn.Module,
         n_params_subnet: int,
-        likelihood: Likelihood | str = Likelihood.CLASSIFICATION,
+        likelihood: Likelihood | str = "classification",
         swag_n_snapshots: int = 40,
         swag_snapshot_freq: int = 1,
         swag_lr: float = 0.01,
     ):
         # Imported here since laplace.likelihoods imports laplace.utils.
-        from laplace.likelihoods import get_likelihood
+        from laplace.likelihoods import Likelihood, get_likelihood
 
         try:
             lik = get_likelihood(likelihood)
