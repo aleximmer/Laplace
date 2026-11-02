@@ -1242,7 +1242,7 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
 
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
 def test_asdl_different_numbers_of_rows_raises(backend):
-    # Token-wise layer (B * L rows), then a head after pooling over tokens (B rows)
+    # Position-wise layer (B * L rows), then a head after pooling over positions (B rows)
     B, L, D, K = 4, 3, 5, 2
 
     class PooledModel(nn.Module):
@@ -1267,8 +1267,8 @@ def test_asdl_different_numbers_of_rows_raises(backend):
     [(AsdlGGN, CurvlinopsGGN), (AsdlEF, CurvlinopsEF)],
 )
 def test_asdl_pooled_outputs_match_curvlinops(asdl_backend, curvlinops_backend):
-    # Tokens `(B, L, D)` -> shared layer -> pooled over tokens `(B, K)`: the
-    # observations are the sequences, not the tokens
+    # Inputs `(B, L, D)` -> shared layer -> pooled over positions `(B, K)`: the
+    # observations are the sequences, not the positions
     B, L, D, K = 4, 3, 5, 2
 
     class PooledModel(nn.Module):
@@ -1389,7 +1389,7 @@ def _dense(H: torch.Tensor | KronDecomposed) -> torch.Tensor:
 def test_multidim_classification_equivalent_to_flat(laplace, backend, model_type):
     """Classification with logits `(B, L, C)` and targets `(B, L)`, e.g. next-token
     prediction, must give the same posterior and predictive as the flat data set with
-    logits `(B * L, C)`, since every token is an observation."""
+    logits `(B * L, C)`, since every position is an observation."""
     N, L, D, C = 12, 3, 4, 5
     X, y = torch.randn(N, D), torch.randint(C, (N,))
     X_multidim, y_multidim = X.reshape(N // L, L, D), y.reshape(N // L, L)
@@ -1519,7 +1519,7 @@ def test_multidim_classification_probability_targets_raise():
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
 def test_multidim_classification_kron_online_equivalent_to_flat(backend):
     # Two online fits with different sequence lengths must give the factors of a
-    # single fit on all tokens
+    # single fit on all positions
     D, C = 4, 3
     X1, y1 = torch.randn(4, 2, D), torch.randint(C, (4, 2))
     X2, y2 = torch.randn(2, 5, D), torch.randint(C, (2, 5))
@@ -2135,7 +2135,7 @@ def test_multidim_equivalent_to_flat(laplace, backend, model_type):
     la_multidim = laplace(model_multidim, "regression", backend=backend)
     la_multidim.fit(loader_multidim)
 
-    # Posterior: `n_data` counts sequences, but the likelihood counts all "tokens"
+    # Posterior: `n_data` counts sequences, but the likelihood counts all "positions"
     # Count `n_obs` instead, i.e., in the case of `(N, L, D)` data, `n_obs = N*L`.
     assert la_multidim.n_data == N // L
     assert la_flat.n_obs == la_multidim.n_obs
@@ -2645,9 +2645,9 @@ def test_custom_likelihood_end_to_end(laplace, model, reg_loader):
     assert var.shape == (len(X), 2)
 
 
-def _token_loader(ignore_index: int) -> DataLoader:
-    """Token classification data: inputs `(B, L, D)` and class indices `(B, L)` of
-    3 classes, with some tokens set to `ignore_index`."""
+def _padded_loader(ignore_index: int) -> DataLoader:
+    """Per-position classification data: inputs `(B, L, D)` and class indices `(B, L)` of
+    3 classes, with some positions set to `ignore_index`."""
     X = torch.randn(10, 5, 4)
     y = torch.randint(3, (10, 5))
     y[::3, 1] = ignore_index
@@ -2689,14 +2689,14 @@ def _assert_same_curvature(la: BaseLaplace, ref: BaseLaplace) -> None:
 )
 def test_categorical_options_end_to_end(laplace, options):
     lik = CategoricalLikelihood(**_categorical_options(options))
-    loader = _token_loader(lik.ignore_index)
+    loader = _padded_loader(lik.ignore_index)
     model = nn.Linear(4, 3)
 
     la = laplace(model, lik)
 
     if laplace is KronLaplace:
-        # The default `ignore_index=-100` drops the padded tokens, which KFAC can't
-        with pytest.warns(UserWarning, match="ignored tokens"):
+        # The default `ignore_index=-100` drops the padded positions, which KFAC can't
+        with pytest.warns(UserWarning, match="ignored positions"):
             la.fit(loader)
     else:
         la.fit(loader)
@@ -2706,8 +2706,8 @@ def test_categorical_options_end_to_end(laplace, options):
 
     if laplace is KronLaplace:
         # The type-2 KFAC does not see the targets, so label smoothing leaves it as
-        # it is with the default options. Neither do the padded tokens change it: the
-        # factors sum over all tokens and are normalized by their number, so they
+        # it is with the default options. Neither do the padded positions change it: the
+        # factors sum over all positions and are normalized by their number, so they
         # are the same as for data without padding.
         X, y = loader.dataset.tensors
         unpadded = DataLoader(
@@ -2725,7 +2725,7 @@ def test_categorical_options_end_to_end(laplace, options):
         torch.testing.assert_close(la.H, H_ref)
 
     # A configured criterion gives the same likelihood as the object
-    default_loader = _token_loader(-100)
+    default_loader = _padded_loader(-100)
     from_criterion = laplace(model, nn.CrossEntropyLoss(ignore_index=-100))
     from_object = laplace(model, CategoricalLikelihood())
     assert from_criterion.likelihood == from_object.likelihood
@@ -2843,18 +2843,18 @@ def _padded_loaders() -> tuple[DataLoader, DataLoader]:
 @pytest.mark.parametrize(
     "backend", [CurvlinopsGGN, AsdlGGN, BackPackGGN], ids=lambda b: b.__name__
 )
-def test_kron_counts_padded_tokens(backend, model):
+def test_kron_counts_padded_positions(backend, model):
     padded, unpadded = _padded_loaders()
 
     la = KronLaplace(deepcopy(model), "classification", backend=backend)
 
-    with pytest.warns(UserWarning, match="ignored tokens"):
+    with pytest.warns(UserWarning, match="ignored positions"):
         la.fit(padded)
 
     ref = KronLaplace(deepcopy(model), "classification", backend=backend)
     ref.fit(unpadded)
 
-    # The type-2 KFAC sums over the padded tokens like over the others, and the
+    # The type-2 KFAC sums over the padded positions like over the others, and the
     # factors are normalized by all of them, as before padding was dropped from
     # the observations. So the padded and the unpadded fits agree, a ratio of 1.
     _assert_same_curvature(la, ref)
@@ -2864,13 +2864,13 @@ def test_kron_counts_padded_tokens(backend, model):
     assert ref.n_obs == 12
 
 
-def test_kron_online_and_checkpoint_keep_token_count(model):
+def test_kron_online_and_checkpoint_keep_position_count(model):
     padded, unpadded = _padded_loaders()
 
     la = KronLaplace(model, "classification")
     ref = KronLaplace(model, "classification")
 
-    with pytest.warns(UserWarning, match="ignored tokens"):
+    with pytest.warns(UserWarning, match="ignored positions"):
         la.fit(padded)
         la.fit(padded, override=False)
 
@@ -2879,11 +2879,11 @@ def test_kron_online_and_checkpoint_keep_token_count(model):
 
     _assert_same_curvature(la, ref)
 
-    # A checkpoint keeps the number of tokens for later online updates
+    # A checkpoint keeps the number of positions for later online updates
     restored = KronLaplace(model, "classification")
     restored.load_state_dict(la.state_dict())
 
-    with pytest.warns(UserWarning, match="ignored tokens"):
+    with pytest.warns(UserWarning, match="ignored positions"):
         restored.fit(padded, override=False)
 
     ref.fit(unpadded, override=False)
@@ -2891,7 +2891,7 @@ def test_kron_online_and_checkpoint_keep_token_count(model):
 
 
 def test_custom_likelihood_counts_observations(model):
-    # Inputs `(B, L, D)` and targets `(B, L, K)`: every token is an observation
+    # Inputs `(B, L, D)` and targets `(B, L, K)`: every position is an observation
     X = torch.randn(6, 5, 3)
     y = torch.randn(6, 5, 2)
     loader = DataLoader(TensorDataset(X, y), batch_size=4)

@@ -540,7 +540,7 @@ _CE_OPTIONS = [
 
 
 def _ce_targets(opts: dict, B: int = 4, L: int = 5, C: int = 3) -> list:
-    """Index targets, with some ignored tokens if `ignore_index` is set, and
+    """Index targets, with some ignored positions if `ignore_index` is set, and
     probability targets if it is not, since torch ignores `ignore_index` for them."""
     y = torch.randint(C, (B, L))
 
@@ -590,10 +590,12 @@ def test_categorical_option_gradient_and_hessian_match_autograd(opts):
             if not probs and y_t == ignore_index:
                 continue
 
-            def token_loss(f_: torch.Tensor, y_t: torch.Tensor = y_t) -> torch.Tensor:
+            def position_loss(
+                f_: torch.Tensor, y_t: torch.Tensor = y_t
+            ) -> torch.Tensor:
                 return ce(f_[None], y_t[None])
 
-            H_ref[t] = torch.func.hessian(token_loss)(f_t)
+            H_ref[t] = torch.func.hessian(position_loss)(f_t)
 
         assert torch.allclose(lik.output_hessian(f, y), H_ref.reshape(B, L, C, C))
 

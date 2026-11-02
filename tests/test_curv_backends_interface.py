@@ -454,7 +454,7 @@ def test_batchgrad_nested_dict_inputs(dict_cls, likelihood, multidim, model):
 @pytest.mark.parametrize("backend_cls", [GGNInterface, EFInterface])
 @pytest.mark.parametrize("structure", ["full", "diag"])
 def test_multidim_classification_equivalent_to_flat(backend_cls, structure):
-    # Logits `(B, L, C)` with the class axis last and targets `(B, L)`: every token is
+    # Logits `(B, L, C)` with the class axis last and targets `(B, L)`: every position is
     # an observation, so the curvature must equal that of the flat `(B * L, C)` data
     torch.manual_seed(711)
     B, L, D, C = 4, 3, 5, 6
@@ -852,7 +852,7 @@ def _padded_data() -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return X, y, y != -100
 
 
-# Backend, method, and stochastic. None of these libraries masks padded tokens in
+# Backend, method, and stochastic. None of these libraries masks padded positions in
 # these methods, so the backends must fall back to torch.func, except for the
 # deterministic Curvlinops and EF ones, which mask them natively.
 _PADDED_CELLS = [
@@ -874,7 +874,7 @@ _PADDED_CELLS = [
     _PADDED_CELLS,
     ids=lambda v: v.__name__ if isinstance(v, type) else None,
 )
-def test_padded_tokens_match_reference(backend_cls, method, stochastic):
+def test_padded_positions_match_reference(backend_cls, method, stochastic):
     X, y, keep = _padded_data()
     likelihood = CategoricalLikelihood()
 
@@ -899,7 +899,7 @@ def test_padded_tokens_match_reference(backend_cls, method, stochastic):
         assert torch.allclose(H, H_kept)
 
 
-def test_mc_fisher_masks_padded_tokens():
+def test_mc_fisher_masks_padded_positions():
     X, y, keep = _padded_data()
     backend = GGNInterface(_options_model(False), "classification", stochastic=True)
 
@@ -918,11 +918,11 @@ def test_mc_fisher_masks_padded_tokens():
     [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF, BackPackGGN],
     ids=lambda v: v.__name__,
 )
-def test_kron_warns_for_padded_tokens(backend_cls):
+def test_kron_warns_for_padded_positions(backend_cls):
     X, y, keep = _padded_data()
     backend = backend_cls(_options_model(False), "classification")
 
-    with pytest.warns(UserWarning, match="ignored tokens"):
+    with pytest.warns(UserWarning, match="ignored positions"):
         backend.kron(X, y, len(X))
 
     # No padding, no warning
@@ -930,7 +930,7 @@ def test_kron_warns_for_padded_tokens(backend_cls):
         warnings.simplefilter("always")
         backend.kron(X[keep], y[keep], int(keep.sum()))
 
-    assert not any("ignored tokens" in str(w.message) for w in caught)
+    assert not any("ignored positions" in str(w.message) for w in caught)
 
 
 def test_honours_counts_padding_as_ignore_index(model, class_Xy):
@@ -945,6 +945,6 @@ def test_honours_counts_padding_as_ignore_index(model, class_Xy):
     assert not backend._honours("full", y)
     assert backend._honours("full")
 
-    # Probability targets have no ignored tokens
+    # Probability targets have no ignored positions
     q = torch.nn.functional.one_hot(y.clamp(min=0), 2).float()
     assert backend._honours("full", q)

@@ -45,7 +45,7 @@ class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
     # The dense operators differentiate `lossfunc` at the observed targets. KFAC
-    # counts ignored tokens in its input factors and has no class weights.
+    # counts ignored positions in its input factors and has no class weights.
     _honoured = {"full": _ALL_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(
@@ -145,9 +145,9 @@ class CurvlinopsInterface(CurvatureInterface):
         linop.compute_kronecker_factors()
 
         kron = self._get_kron_factors(linop, model)
-        # Curvlinops averages the input factors over the tokens of the batch, e.g.
-        # `B * L` for outputs `(B, L, K)`. Undo it, so that they sum over the tokens
-        # like with ASDL. `KronLaplace.fit` normalizes by the number of tokens.
+        # Curvlinops averages the input factors over the positions of the batch, e.g.
+        # `B * L` for outputs `(B, L, K)`. Undo it, so that they sum over the positions
+        # like with ASDL. `KronLaplace.fit` normalizes by the number of positions.
         kron = self._rescale_kron_factors(kron, f.shape[:-1].numel(), N)
         kron *= self.factor
 

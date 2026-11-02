@@ -25,8 +25,11 @@ _ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
 _TARGET_FREE_OPTIONS = frozenset({"label_smoothing"})
 
 
-def _ignored_tokens(likelihood: Likelihood, y: torch.Tensor) -> int:
-    """Number of tokens that a categorical likelihood ignores in the targets `y`.
+def _ignored_positions(likelihood: Likelihood, y: torch.Tensor) -> int:
+    """Number of positions that a categorical likelihood ignores in the targets `y`.
+
+    For outputs `(B, ..., K)`, a position is an entry of the dims between the batch
+    dim `B` and the output dim `K`, e.g. a sequence position or a pixel.
 
     Only index targets can be ignored. They are integers, while probability targets
     are floats, as in `nn.CrossEntropyLoss`. This holds for the default
@@ -214,8 +217,8 @@ class CurvatureInterface:
         member, e.g. `output_hessian`, which the library cannot see.
 
         With the targets `y`, the option `ignore_index` also counts as set if `y`
-        holds ignored tokens, even with the default `-100`. Libraries that don't
-        honour it would count those tokens, e.g. padding.
+        holds ignored positions, even with the default `-100`. Libraries that don't
+        honour it would count those positions, e.g. padding.
 
         Parameters
         ----------
@@ -233,16 +236,16 @@ class CurvatureInterface:
 
         options = set(self.likelihood.hyperparameters())
 
-        if y is not None and _ignored_tokens(self.likelihood, y) > 0:
+        if y is not None and _ignored_positions(self.likelihood, y) > 0:
             options.add("ignore_index")
 
         return options <= self._honoured_options(method)
 
     def _warn_kron_ignored(self, y: torch.Tensor) -> None:
-        """Warn that KFAC counts the tokens that the likelihood ignores in `y`.
+        """Warn that KFAC counts the positions that the likelihood ignores in `y`.
 
-        The Kronecker factors keep their behaviour from before ignored tokens were
-        dropped from the number of observations: they sum over all tokens, and
+        The Kronecker factors keep their behaviour from before ignored positions were
+        dropped from the number of observations: they sum over all positions, and
         `KronLaplace` normalizes them by that count.
 
         Parameters
@@ -250,11 +253,11 @@ class CurvatureInterface:
         y : torch.Tensor
             targets of the batch.
         """
-        if _ignored_tokens(self.likelihood, y) == 0:
+        if _ignored_positions(self.likelihood, y) == 0:
             return
 
         warnings.warn(
-            f"{type(self).__name__}.kron can't drop the ignored tokens, e.g. "
+            f"{type(self).__name__}.kron can't drop the ignored positions, e.g. "
             f"padding, from the input factors of KFAC, so they count like the "
             f"others. Use the `diag` or `full` structure to mask them exactly.",
             UserWarning,
@@ -487,7 +490,7 @@ class CurvatureInterface:
         Returns
         -------
         Gs : torch.Tensor
-            gradients `(batch * tokens, parameters)`, where `tokens` is the number
+            gradients `(batch * positions, parameters)`, where `positions` is the number
             of leading output dims per datum (1 if there are none)
         loss : torch.Tensor
         """
@@ -510,24 +513,24 @@ class CurvatureInterface:
             return tree_map(lambda v: v.unsqueeze(0) if torch.is_tensor(v) else v, x)
 
         def loss_single(params_dict, buffers_dict, x, y):
-            """Compute the loss of each token of a single sample."""
+            """Compute the loss of each position of a single sample."""
             x, y = unsqueeze(x), y.unsqueeze(0)  # vmap removes the batch dimension
             output = torch.func.functional_call(
                 self.model, (params_dict, buffers_dict), x
             )
             self._check_targets(output, y)
 
-            # Every leading dim of the output is a "token" with its own loss
+            # Every leading dim of the output is a "position" with its own loss
             n_lead = output.ndim - 1
             output = output.flatten(end_dim=n_lead - 1)
             y = y.reshape(output.shape[0], *y.shape[n_lead:])
 
-            def loss_token(output_t, y_t):
+            def loss_position(output_t, y_t):
                 return torch.func.functional_call(
                     self.lossfunc, {}, (output_t.unsqueeze(0), y_t.unsqueeze(0))
                 )
 
-            losses = torch.func.vmap(loss_token)(output, y)
+            losses = torch.func.vmap(loss_position)(output, y)
             return losses, losses.sum()
 
         jac_fn = torch.func.jacrev(loss_single, argnums=0, has_aux=True)
@@ -548,7 +551,7 @@ class CurvatureInterface:
                 + "Consider using a GGN backend, e.g. `CurvlinopsGGN`, instead."
             ) from e
 
-        # (batch * tokens, parameters)
+        # (batch * positions, parameters)
         Gs = torch.cat([bg.flatten(start_dim=2) for bg in batch_grad.values()], dim=2)
         Gs = Gs.flatten(end_dim=1)
 
@@ -693,10 +696,10 @@ class GGNInterface(CurvatureInterface):
         """Make sure the Monte Carlo Fisher supports the likelihood.
 
         It draws targets from the likelihood and uses `output_gradient` at them. So
-        it cannot see the observed targets, which class weights and ignored tokens
+        it cannot see the observed targets, which class weights and ignored positions
         refer to. `output_gradient` would also smooth the sampled targets, which
         changes the expected outer product. Custom likelihoods are fine, since the
-        sampled gradients estimate their Fisher. Tokens with the default ignore
+        sampled gradients estimate their Fisher. Positions with the default ignore
         index, e.g. padding, are masked with the observed targets.
 
 
@@ -727,7 +730,7 @@ class GGNInterface(CurvatureInterface):
         f : torch.Tensor
             model outputs `(batch, ..., outputs)`
         y : torch.Tensor, optional
-            observed targets. The tokens that a categorical likelihood ignores in
+            observed targets. The positions that a categorical likelihood ignores in
             them, e.g. padding, get a zero Fisher.
 
         Returns
@@ -747,7 +750,7 @@ class GGNInterface(CurvatureInterface):
                 * torch.einsum("...c,...k->...ck", grad_sample, grad_sample)
             )
 
-        if y is not None and _ignored_tokens(self.likelihood, y) > 0:
+        if y is not None and _ignored_positions(self.likelihood, y) > 0:
             mask = (y != self.likelihood.ignore_index).reshape(f.shape[:-1])
             F = mask[..., None, None] * F
 

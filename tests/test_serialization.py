@@ -489,15 +489,15 @@ def test_checkpoint_copies_tensor_hyperparameters(laplace, model, class_loader):
     assert torch.equal(stored, torch.tensor([1.0, 2.0]))
 
 
-def test_kron_checkpoint_without_token_count_loads(model, class_loader):
+def test_kron_checkpoint_without_position_count_loads(model, class_loader):
     la = KronLaplace(model, "classification")
     la.fit(class_loader)
     state_dict = la.state_dict()
-    del state_dict["n_kron_tokens"]
+    del state_dict["n_kron_positions"]
 
     la2 = KronLaplace(model, "classification")
     la2.load_state_dict(state_dict)
-    assert la2._n_kron_tokens == la.n_obs
+    assert la2._n_kron_positions == la.n_obs
 
     X, _ = next(iter(class_loader))
     assert torch.allclose(la(X), la2(X))

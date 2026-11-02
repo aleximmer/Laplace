@@ -113,47 +113,31 @@ The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `
 `likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
 `Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, and `Likelihood.REWARD_MODELING` are the built-in likelihood objects.
 
-#### Cross-entropy options
+#### Options
 
-`CategoricalLikelihood` takes the `weight`, `ignore_index`, and `label_smoothing` options of `nn.CrossEntropyLoss`, with the same defaults and meaning.
+The built-in likelihoods take the options of the matching PyTorch criterion, with the same names, defaults, and meaning.
+For example, `CategoricalLikelihood(weight, ignore_index, label_smoothing)` mirrors `nn.CrossEntropyLoss`.
 You can also pass the criterion you trained with.
-An `nn.CrossEntropyLoss` becomes a `CategoricalLikelihood` with the same options, and an `nn.MSELoss` becomes a `GaussianLikelihood`.
-The criterion's `reduction` is ignored, since Laplace always sums the loss.
-Tokens whose index target equals `ignore_index`, such as padding with the default `-100`, don't count as observations.
-The `diag` and `full` structures also leave them out of the curvature.
-The `kron` structure can't do that, because KFAC sums its input factors over every token.
-So Laplace scales the Kronecker factors by the number of all tokens, padding included, and warns.
+Its `reduction` is ignored, since Laplace always sums the loss.
 
 ```python
 from torch import nn
-from laplace import CategoricalLikelihood, Laplace
+from laplace import Laplace
 
-# Token classification with padding and label smoothing
 criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.1)
 la = Laplace(model, criterion, subset_of_weights="all", hessian_structure="diag")
-
-# The same as
-la = Laplace(model, CategoricalLikelihood(label_smoothing=0.1),
-             subset_of_weights="all", hessian_structure="diag")
 la.fit(train_loader)
 ```
 
-Class weights and label smoothing turn the cross-entropy into a generalized likelihood.
-With them, `log_marginal_likelihood()` is no longer the model evidence in the strict sense.
+Some caveats:
 
-Not every backend computes the curvature with every option:
-
-| Hessian structure | Options | Support |
-|---|---|---|
-| `diag`, `full` with a deterministic GGN or EF backend of Curvlinops, ASDL, or BackPACK | all | Supported. If a backend's library can't handle an option, Laplace falls back to its own torch.func implementation, which is slower. |
-| Asdfghjkl backends | any | `diag` falls back to torch.func. `full`, `kron`, and low-rank raise. |
-| `kron` | `label_smoothing` | Curvlinops (deterministic only), ASDL GGN and EF, and BackPACK GGN |
-| `kron` | `weight`, `ignore_index` | None |
-| `full` with a Hessian backend | all | `CurvlinopsHessian` and `AsdlHessian` |
-| `stochastic=True` (Monte Carlo Fisher) | `label_smoothing` | `CurvlinopsGGN` with `full`, ASDL GGN and BackPACK GGN with `diag` and `kron` |
-| `stochastic=True` (Monte Carlo Fisher) | `weight`, `ignore_index` | None |
-
-An unsupported combination raises a `ValueError` that points you to a GGN or EF backend with the `diag` or `full` structure.
+- Not every curvature backend handles every option.
+  With `diag` or `full` and a GGN or EF backend, Laplace falls back to its own, slower torch.func implementation when the library can't.
+  `kron`, the Hessian backends, and the Monte Carlo Fisher (`stochastic=True`) raise a `ValueError` for the options they can't handle.
+- Ignored targets, such as padding, don't count as observations.
+  KFAC can't drop them from its Kronecker factors, so `kron` keeps them there and warns.
+- Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
+  `log_marginal_likelihood()` is then no longer the model evidence in the strict sense.
 
 #### Custom likelihoods
 

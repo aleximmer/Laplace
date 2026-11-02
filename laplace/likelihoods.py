@@ -112,7 +112,7 @@ class Likelihood(metaclass=_LikelihoodMeta):
     Fisher in closed form, override `output_hessian` to make it exact and cheap.
     `output_hessian` also gets the targets `y` when the caller has them, for
     likelihoods whose curvature depends on them, e.g. through class weights or
-    ignored tokens. It is `None` when the caller has no targets.
+    ignored positions. It is `None` when the caller has no targets.
 
     The built-in likelihoods override all of these with closed forms and the exact
     torch losses. Their `distribution` is the model's predictive, so it does not
@@ -599,7 +599,7 @@ class CategoricalLikelihood(Likelihood):
     The targets are class indices `(batch, ...)` or class probabilities with the
     shape of the logits. For logits with extra batch dims, e.g. `(B, L, C)` for
     sequences, `loss` flattens the batch dims, since `CrossEntropyLoss` expects the
-    class axis at dim 1. Every token is then an observation; the class dim of
+    class axis at dim 1. Every position is then an observation; the class dim of
     probability targets does not count.
 
     The options `weight`, `ignore_index`, and `label_smoothing` are those of
@@ -607,15 +607,15 @@ class CategoricalLikelihood(Likelihood):
     one-hot index target or the probability target, smoothed as
     \\(q \\leftarrow (1 - \\varepsilon)\\, q + \\varepsilon / C\\) with
     \\(\\varepsilon\\) the label smoothing. With class weights \\(w\\), the loss of a
-    token is
+    position is
 
     $$
         \\ell(f, y) = -m \\sum_c w_c q_c \\log p_c,
     $$
 
     where \\(m = [y \\neq \\text{ignore\\_index}]\\) for index targets and \\(m = 1\\)
-    for probability targets, as in torch. Without weights, \\(w = 1\\). Only tokens
-    with \\(m = 1\\) count as observations. With the per-token scale
+    for probability targets, as in torch. Without weights, \\(w = 1\\). Only positions
+    with \\(m = 1\\) count as observations. With the per-position scale
     \\(s = w^\\top q\\), or \\(s = 1\\) without weights, the output gradient is
 
     $$
@@ -644,7 +644,7 @@ class CategoricalLikelihood(Likelihood):
     weight : torch.Tensor, optional
         class weights of shape `(C,)`, as in `nn.CrossEntropyLoss`.
     ignore_index : int, default=-100
-        index target whose tokens do not count, as in `nn.CrossEntropyLoss`.
+        index target to leave out, as in `nn.CrossEntropyLoss`.
     label_smoothing : float, default=0.0
         label smoothing \\(\\varepsilon \\in [0, 1]\\), as in `nn.CrossEntropyLoss`.
 
@@ -662,7 +662,7 @@ class CategoricalLikelihood(Likelihood):
     """Class weights `(C,)`, or `None` for equal weights."""
 
     ignore_index: int = -100
-    """Index target whose tokens do not count."""
+    """Index target to leave out."""
 
     label_smoothing: float = 0.0
     """Label smoothing \\(\\varepsilon\\)."""
@@ -774,8 +774,8 @@ class CategoricalLikelihood(Likelihood):
         q : torch.Tensor
             `(batch, ..., C)`, with the dtype of `f`.
         m : torch.Tensor or None
-            `(batch, ...)` mask of the tokens that count, or `None` for probability
-            targets, which have no ignored tokens.
+            `(batch, ...)` mask of the positions that count, or `None` for probability
+            targets, which have no ignored positions.
 
         Raises
         ------
@@ -789,7 +789,7 @@ class CategoricalLikelihood(Likelihood):
             q, m = y.to(f.dtype), None
         else:
             m = y != self.ignore_index
-            # Ignored tokens may hold an index outside the classes, e.g. -100
+            # Ignored positions may hold an index outside the classes, e.g. -100
             idx = torch.where(m, y, torch.zeros_like(y))
             q = nn.functional.one_hot(idx, C).to(f.dtype)
 

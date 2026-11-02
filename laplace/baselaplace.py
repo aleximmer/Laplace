@@ -21,7 +21,7 @@ from torch.utils.data import DataLoader
 
 from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
-from laplace.curvature.curvature import CurvatureInterface, _ignored_tokens
+from laplace.curvature.curvature import CurvatureInterface, _ignored_positions
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.likelihoods import CategoricalLikelihood, get_likelihood
 from laplace.utils import SoDSampler, hyperparameters_equal
@@ -240,7 +240,9 @@ class BaseLaplace:
         self.n_outputs: int = 0
         self.n_data: int = 0
         # Number of observations in the likelihood. Differs from `n_data` only when
-        # each datum has extra (e.g. sequence) dims: then it counts all tokens.
+        # the outputs `(B, ..., K)` have extra dims between the batch dim `B` and the
+        # output dim `K`, e.g. sequence positions or pixels. Each entry of those
+        # dims is a position, and every position that isn't ignored counts.
         self.n_obs: int = 0
 
         # Declare attributes
@@ -1395,8 +1397,8 @@ class ParametricLaplace(BaseLaplace):
             self.loss += loss_batch
             self.H += H_batch
 
-            # Every token (extra dims between the batch and output dims) is an
-            # observation. Count per batch since the sequence length can vary.
+            # Every position (an entry of the dims between the batch and output dims)
+            # is an observation. Count per batch since the sequence length can vary.
             self.n_obs += self.likelihood.n_observations(out, y)
 
         self.n_data += N
@@ -2247,6 +2249,12 @@ class KronLaplace(ParametricLaplace):
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
     Damping can be enabled by setting `damping=True`.
+
+    For outputs `(B, ..., K)`, a position is an entry of the dims between the batch
+    dim `B` and the output dim `K`, e.g. one of the `L` positions of a sequence
+    `(B, L, K)` or a pixel of an image `(B, H, W, K)`. KFAC sums its input factors
+    over all positions, so the factors are normalized by the number of positions,
+    including those a categorical likelihood ignores.
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
@@ -2271,9 +2279,9 @@ class KronLaplace(ParametricLaplace):
         self.damping: bool = damping
         self.H_facs: Kron | None = None
 
-        # Tokens that the Kronecker factors sum over, see `fit`
-        self._n_kron_tokens: int = 0
-        self._n_ignored_batch_tokens: int = 0
+        # Positions that the Kronecker factors sum over, see `fit`
+        self._n_kron_positions: int = 0
+        self._n_ignored_batch_positions: int = 0
 
         super().__init__(
             model,
@@ -2305,8 +2313,10 @@ class KronLaplace(ParametricLaplace):
         y: torch.Tensor,
         N: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        # KFAC sums over the ignored tokens too, so `fit` counts them, see there
-        self._n_ignored_batch_tokens += _ignored_tokens(self.backend.likelihood, y)
+        # KFAC sums over the ignored positions too, so `fit` counts them, see there
+        self._n_ignored_batch_positions += _ignored_positions(
+            self.backend.likelihood, y
+        )
 
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
@@ -2325,48 +2335,50 @@ class KronLaplace(ParametricLaplace):
     ) -> None:
         """Fit the Kronecker factors, see `ParametricLaplace.fit`.
 
-        The backends sum the input factors over all tokens and divide them by the
-        number of data. KFAC can't drop the tokens that a categorical likelihood
+        The backends sum the input factors over all positions and divide them by the
+        number of data. KFAC can't drop the positions that a categorical likelihood
         ignores, e.g. padding, from its input factors. So the factors are
-        normalized by the number of tokens they sum over, ignored ones included.
+        normalized by the number of positions they sum over, ignored ones included.
         `n_obs` leaves those out and stays as it is for everything else. The
-        backends warn if there are ignored tokens.
+        backends warn if there are ignored positions.
         """
         if override:
             self.H_facs = None
 
         n_obs_old: int = 0 if self.H_facs is None else self.n_obs
-        # Pickles from older versions have no token count
-        n_tokens_old: int = (
-            0 if self.H_facs is None else getattr(self, "_n_kron_tokens", self.n_obs)
+        # Pickles from older versions have no position count
+        n_positions_old: int = (
+            0 if self.H_facs is None else getattr(self, "_n_kron_positions", self.n_obs)
         )
 
         n_data_new: int = len(train_loader.dataset)
         if self.H_facs is not None:
             self._init_H()  # re-init H non-decomposed
 
-        self._n_ignored_batch_tokens = 0
+        self._n_ignored_batch_positions = 0
         super().fit(train_loader, override=override, progress_bar=progress_bar)
 
-        # The backends sum the input factors over all tokens, e.g. `B * L` for
-        # outputs `(B, L, K)`, and divide by `n_data_new`. Every token is an
-        # observation, so divide by the number of tokens instead. This also holds
+        # The backends sum the input factors over all positions, e.g. `B * L` for
+        # outputs `(B, L, K)`, and divide by `n_data_new`. Every position is an
+        # observation, so divide by the number of positions instead. This also holds
         # when the sequence length varies between batches.
-        n_tokens_new: int = self.n_obs - n_obs_old + self._n_ignored_batch_tokens
-        if n_tokens_new > 0:
-            self.H = self._rescale_factors(self.H, n_data_new / n_tokens_new)
+        n_positions_new: int = self.n_obs - n_obs_old + self._n_ignored_batch_positions
+        if n_positions_new > 0:
+            self.H = self._rescale_factors(self.H, n_data_new / n_positions_new)
 
-        n_tokens_total = n_tokens_old + n_tokens_new
-        self._n_kron_tokens = n_tokens_total
+        n_positions_total = n_positions_old + n_positions_new
+        self._n_kron_positions = n_positions_total
 
         if self.H_facs is None:
             self.H_facs = self.H
         else:
-            # Weight previous and new Kronecker factors by their number of tokens
+            # Weight previous and new Kronecker factors by their number of positions
             self.H_facs = self._rescale_factors(
-                self.H_facs, n_tokens_old / n_tokens_total
+                self.H_facs, n_positions_old / n_positions_total
             )
-            self.H_facs += self._rescale_factors(self.H, n_tokens_new / n_tokens_total)
+            self.H_facs += self._rescale_factors(
+                self.H, n_positions_new / n_positions_total
+            )
 
         # Decompose to self.H for all required quantities but keep H_facs for further inference
         self.H = self.H_facs.decompose(damping=self.damping)
@@ -2435,14 +2447,14 @@ class KronLaplace(ParametricLaplace):
         state_dict = super().state_dict()
         assert isinstance(self.H_facs, Kron)
         state_dict["H"] = self.H_facs.kfacs
-        state_dict["n_kron_tokens"] = self._n_kron_tokens
+        state_dict["n_kron_positions"] = self._n_kron_positions
         return state_dict
 
     def load_state_dict(self, state_dict: dict[str, Any]):
         super().load_state_dict(state_dict)
 
-        # Older checkpoints have no ignored tokens in the count
-        self._n_kron_tokens = state_dict.get("n_kron_tokens", self.n_obs)
+        # Older checkpoints have no ignored positions in the count
+        self._n_kron_positions = state_dict.get("n_kron_positions", self.n_obs)
 
         self._init_H()
 

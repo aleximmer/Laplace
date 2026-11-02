@@ -42,7 +42,7 @@ class AsdlInterface(CurvatureInterface):
 
     # The exact and MC Fishers build their own loss from enumerated or sampled
     # classes, so they can't see class weights or ignored targets. KFAC counts
-    # ignored tokens in its input factors.
+    # ignored positions in its input factors.
     _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(
@@ -118,8 +118,8 @@ class AsdlInterface(CurvatureInterface):
 
         Js = torch.stack(Js, dim=1)  # (n_rows, n_outputs, n_params)
 
-        # ASDL returns one row per row of the layers' inputs, e.g. per token. Sum those
-        # belonging to the same observation, e.g. when the outputs are pooled over tokens.
+        # ASDL returns one row per row of the layers' inputs, e.g. per position. Sum those
+        # belonging to the same observation, e.g. when the outputs are pooled over positions.
         n_obs = f.shape[:-1].numel()
         Js = self._sum_rows_per_observation(Js, n_obs)
 
@@ -170,8 +170,8 @@ class AsdlInterface(CurvatureInterface):
 
     def _batch_gradient(self, closure: Callable[[], Any]) -> tuple[torch.Tensor, Any]:
         """ASDL's `batch_gradient` with a clearer error for models whose layers have
-        different numbers of gradient rows, e.g., token-wise layers followed by a
-        head applied after pooling over tokens.
+        different numbers of gradient rows, e.g., position-wise layers followed by a
+        head applied after pooling over positions.
         """
         try:
             return batch_gradient(self.model, closure, return_outputs=True)
@@ -180,13 +180,13 @@ class AsdlInterface(CurvatureInterface):
                 raise
             raise RuntimeError(
                 "ASDL returned different numbers of gradient rows for different layers, "
-                "e.g., for outputs pooled over tokens. Use a Curvlinops backend "
+                "e.g., for outputs pooled over positions. Use a Curvlinops backend "
                 "(`CurvlinopsGGN` or `CurvlinopsEF`) for such models."
             ) from e
 
     @staticmethod
     def _sum_rows_per_observation(A: torch.Tensor, n_obs: int) -> torch.Tensor:
-        """ASDL returns one row per row of the layers' inputs (e.g. per token), but
+        """ASDL returns one row per row of the layers' inputs (e.g. per position), but
         an observation can span several of them (e.g. pooled outputs, or pairs in
         reward modeling). Sum the rows that belong to the same observation.
 
@@ -481,8 +481,8 @@ class AsdlInterface(CurvatureInterface):
         loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
-        # ASDL sums the input factors over all tokens, e.g. `B * L` rows for logits
-        # `(B, L, C)`. `KronLaplace.fit` normalizes by the number of tokens.
+        # ASDL sums the input factors over all positions, e.g. `B * L` rows for logits
+        # `(B, L, C)`. `KronLaplace.fit` normalizes by the number of positions.
         kron = self._rescale_kron_factors(kron, N)
         if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
             curv_factor = 0.5  # correct scaling for diag ef
@@ -574,7 +574,7 @@ class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl."""
 
     # The empirical Fisher differentiates `lossfunc` at the observed targets. KFAC
-    # counts ignored tokens in its input factors.
+    # counts ignored positions in its input factors.
     _honoured = {"diag": _ALL_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(

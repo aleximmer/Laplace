@@ -254,7 +254,7 @@ class BackPackInterface(CurvatureInterface):
 class BackPackGGN(BackPackInterface, GGNInterface):
     """Implementation of the `GGNInterface` using Backpack."""
 
-    # BackPACK raises for class weights and ignored tokens. Its GGN does not
+    # BackPACK raises for class weights and ignored positions. Its GGN does not
     # depend on the targets, so it ignores label smoothing correctly.
     _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
