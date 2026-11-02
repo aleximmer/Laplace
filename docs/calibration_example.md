@@ -69,7 +69,7 @@ print(f"[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}")
 Running this snippet, we would get:
 
 ```
-[MAP] Acc.: 94.8%; ECE: 2.0%; NLL: 0.172
+[MAP] Acc.: 95.0%; ECE: 2.9%; NLL: 0.204
 ```
 
 ## The calibration of Laplace
@@ -99,7 +99,7 @@ print(f"[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_lap
 Running this snippet, we obtain:
 
 ```
-[Laplace] Acc.: 94.8%; ECE: 0.8%; NLL: 0.157
+[Laplace] Acc.: 95.0%; ECE: 1.9%; NLL: 0.173
 ```
 
 Notice that the last-layer LA does not do any harm to the accuracy, yet it improves the calibration of the MAP model substantially.

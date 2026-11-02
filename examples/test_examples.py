@@ -5,8 +5,8 @@ exit cleanly. New scripts and pages are picked up automatically. Run with:
 
     pytest examples/test_examples.py -m "not slow"
 
-The `slow` ones are doc pages that train or evaluate on full datasets. CI runs them
-on a schedule.
+The `slow` ones are doc pages that use large pretrained models or full datasets. CI runs
+them once a month, not on pull requests.
 """
 
 from __future__ import annotations
@@ -30,16 +30,16 @@ SLOW_TIMEOUT = 3600
 # and smaller models.
 ARGS = {
     "bayesopt_example.py": ["--exp_len", "3"],
-    "calibration_example.py": ["--n_train", "256", "--n_test", "256"],
+    "calibration_example.py": ["--n_train", "256", "--n_test", "256", "--tiny_model"],
     "calibration_gp_example.py": [
-        *("--n_train", "1024", "--n_test", "256"),
-        *("--epochs", "1", "--subset_sizes", "50"),
+        *("--n_train", "256", "--n_test", "256", "--tiny_model"),
+        *("--subset_sizes", "50", "--prior_precision", "1"),
     ],
     "huggingface_example.py": ["--model", "hf-internal-testing/tiny-random-gpt2"],
 }
 
-# Doc snippets take no arguments, so these run on the full data.
-SLOW = {"calibration_example.md", "calibration_gp_example.md"}
+# Doc snippets take no arguments, so these run with the real models and full data.
+SLOW = {"calibration_example.md", "calibration_gp_example.md", "huggingface_example.md"}
 
 # Doc pages whose snippets are excerpts, not a complete program.
 SKIP = {

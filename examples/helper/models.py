@@ -18,3 +18,18 @@ def load_cifar10_resnet18() -> nn.Module:
     model.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
 
     return model
+
+
+def tiny_cifar10_cnn() -> nn.Module:
+    """A small, randomly initialized CNN for CIFAR-10-shaped inputs.
+
+    It stands in for the pretrained ResNet-18 in quick test runs, where only the code
+    path matters and not the numbers.
+    """
+    return nn.Sequential(
+        nn.Conv2d(3, 8, kernel_size=3, padding=1),
+        nn.ReLU(),
+        nn.AdaptiveAvgPool2d(4),
+        nn.Flatten(),
+        nn.Linear(8 * 4 * 4, 10),
+    )

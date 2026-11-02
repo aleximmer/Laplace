@@ -83,10 +83,11 @@ Pull requests are very welcome. Please follow these guidelines:
     pytest examples/test_examples.py -m "not slow"
     ```
 
-    If a script is slow, give it command-line options for fewer iterations, a data subset
-    or a smaller model, and set them in `ARGS` in `examples/test_examples.py`. Doc snippets
-    can't take arguments, so pages that need a full dataset go in `SLOW`. CI runs those
-    once a week.
+    CI only checks that the code runs, so it should be fast. If a script is slow, give it
+    command-line options for fewer iterations, a data subset or a tiny model, and set them
+    in `ARGS` in `examples/test_examples.py`. Doc snippets can't take arguments, so pages
+    that need a large model or a full dataset go in `SLOW`. CI runs those once a month
+    instead of on every pull request. To run them yourself, use `-m slow`.
 
 !!! warning
 

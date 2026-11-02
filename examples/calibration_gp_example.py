@@ -5,17 +5,19 @@ import helper.dataloaders as dl
 import numpy as np
 import torch
 import torch.distributions as dists
+from helper.models import load_cifar10_resnet18, tiny_cifar10_cnn
 from netcal.metrics import ECE
-from torch import nn
 
 from laplace import Laplace
 
-# Data subsets, training length, and GP subset sizes, e.g. for a quick test run
+# Data subsets, GP subset sizes, and a tiny random model, for quick test runs. The
+# defaults use all data and the pretrained ResNet-18.
 parser = argparse.ArgumentParser()
 parser.add_argument("--n_train", type=int, default=None)
 parser.add_argument("--n_test", type=int, default=None)
-parser.add_argument("--epochs", type=int, default=5)
-parser.add_argument("--subset_sizes", type=int, nargs="+", default=[50, 200, 800, 1600])
+parser.add_argument("--subset_sizes", type=int, nargs="+", default=[200, 800])
+parser.add_argument("--prior_precision", type=float, default=0.1)
+parser.add_argument("--tiny_model", action="store_true")
 args = parser.parse_args()
 
 np.random.seed(7777)
@@ -28,39 +30,15 @@ warnings.simplefilter("ignore", UserWarning)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-train_loader = dl.FashionMNIST(train=True, n_data=args.n_train)
-test_loader = dl.FashionMNIST(train=False, n_data=args.n_test)
+# No augmentation: the GP fit passes over the data several times and needs the same
+# inputs each time, see https://github.com/aleximmer/Laplace/issues/330
+train_loader = dl.CIFAR10(train=True, augm_flag=False, n_data=args.n_train)
+test_loader = dl.CIFAR10(train=False, n_data=args.n_test)
 targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 
-# A small CNN. With L2 regularization, MAP training matches a Gaussian prior with
-# precision `PRIOR_PRECISION`; the mean loss divides it by the number of data points.
-PRIOR_PRECISION = 100.0
-
-model = nn.Sequential(
-    nn.Conv2d(1, 16, kernel_size=5, padding=2),
-    nn.ReLU(),
-    nn.MaxPool2d(2),
-    nn.Conv2d(16, 32, kernel_size=5, padding=2),
-    nn.ReLU(),
-    nn.MaxPool2d(2),
-    nn.Flatten(),
-    nn.Linear(32 * 7 * 7, 10),
-).to(device)
-
-optimizer = torch.optim.Adam(
-    model.parameters(),
-    lr=1e-3,
-    weight_decay=PRIOR_PRECISION / len(train_loader.dataset),
-)
-
-for epoch in range(args.epochs):
-    for x, y in train_loader:
-        optimizer.zero_grad()
-        loss = nn.functional.cross_entropy(model(x.to(device)), y.to(device))
-        loss.backward()
-        optimizer.step()
-
-model.eval()
+# A ResNet-18 pretrained on CIFAR-10, from the Hugging Face Hub
+model = tiny_cifar10_cnn() if args.tiny_model else load_cifar10_resnet18()
+model = model.to(device).eval()
 
 
 @torch.no_grad()
@@ -88,11 +66,11 @@ for m in args.subset_sizes:
     la = Laplace(
         model,
         "classification",
-        subset_of_weights="all",
+        subset_of_weights="last_layer",
         hessian_structure="gp",
         independent_outputs=True,
         n_subset=m,
-        prior_precision=PRIOR_PRECISION,
+        prior_precision=args.prior_precision,
     )
     la.fit(train_loader)
 

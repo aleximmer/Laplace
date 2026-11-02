@@ -5,8 +5,8 @@ on:
   push:
     branches: [main]
   schedule:
-    # Mondays, 04:00 UTC. The calibration doc pages train and evaluate on full datasets.
-    - cron: "0 4 * * 1"
+    # 1st of every month, 04:00 UTC: the doc pages with large models and full data
+    - cron: "0 4 1 * *"
   workflow_dispatch:
 
 jobs:
@@ -33,7 +33,7 @@ jobs:
         run: .venv/bin/python -m pytest examples/test_examples.py -m "not slow" -v
 
   examples-slow:
-    name: calibration doc pages
+    name: doc pages with large models
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 180
@@ -47,7 +47,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
-          key: hf-hub-calibration
+          key: hf-hub-examples-slow
       - name: Install the project and the example dependencies
         run: |
           uv venv

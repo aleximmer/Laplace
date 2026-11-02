@@ -7,15 +7,17 @@ import helper.dataloaders as dl
 import numpy as np
 import torch
 import torch.distributions as dists
-from helper.models import load_cifar10_resnet18
+from helper.models import load_cifar10_resnet18, tiny_cifar10_cnn
 from netcal.metrics import ECE  # noqa: E402
 
 from laplace import Laplace  # noqa: E402
 
-# Subsets of the data, e.g. for a quick test run. The default uses all of it.
+# Data subsets and a tiny random model, for quick test runs. The defaults use all data
+# and the pretrained ResNet-18.
 parser = argparse.ArgumentParser()
 parser.add_argument("--n_train", type=int, default=None)
 parser.add_argument("--n_test", type=int, default=None)
+parser.add_argument("--tiny_model", action="store_true")
 args = parser.parse_args()
 
 np.random.seed(7777)
@@ -30,7 +32,8 @@ test_loader = dl.CIFAR10(train=False, n_data=args.n_test)
 targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 
 # A ResNet-18 pretrained on CIFAR-10, from the Hugging Face Hub
-model = load_cifar10_resnet18().to(device).eval()
+model = tiny_cifar10_cnn() if args.tiny_model else load_cifar10_resnet18()
+model = model.to(device).eval()
 
 
 @torch.no_grad()
