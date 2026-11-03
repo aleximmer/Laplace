@@ -29,7 +29,7 @@ SLOW_TIMEOUT = 3600
 # Command-line arguments that shrink the slow scripts: fewer iterations, data subsets,
 # and smaller models.
 ARGS = {
-    "bayesopt_example.py": ["--exp_len", "3"],
+    "bayesopt_example.py": ["--n_steps", "3"],
     "calibration_example.py": ["--n_train", "256", "--n_test", "256", "--tiny_model"],
     "calibration_gp_example.py": [
         *("--n_train", "256", "--n_test", "256", "--tiny_model"),
