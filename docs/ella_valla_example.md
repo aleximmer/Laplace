@@ -108,6 +108,9 @@ with zero mean. ELLA has no GP marginal likelihood, so to tune the prior
 precision on its own you need held-out data:
 
 ```python
+# Held-out data: a fresh draw from the same distribution
+_, _, val_loader, _ = get_sinusoid_example(sigma_noise=0.3)
+
 ella.optimize_prior_precision(method="gridsearch", val_loader=val_loader)
 ```
 

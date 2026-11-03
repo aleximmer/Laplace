@@ -1,27 +1,27 @@
 !!! caution
 
-    To follow this tutorial, you need to install `deepobs` and `netcal` dependencies.
+    To follow this tutorial, you need to install the `netcal` dependency.
 
 Applying the General-Gauss-Newton (GGN) approximation to the Hessian in the Laplace approximation (LA) of the BNN posterior
 turns the underlying probabilistic model from a BNN into a generalized linear model (GLM).
 This GLM is equivalent to a Gaussian Process (GP) with a particular kernel [1, 2].
 
-In this notebook, we will show how to use `laplace` library to perform GP inference on top of a _pre-trained_ neural network.
+In this notebook, we will show how to use `laplace` library to perform GP inference on top of a _pre-trained_ neural network. We use the last layer only: its GP kernel is the inner product of the network's features, which keeps the computation cheap even for a deep network.
 
-Note that a GPU with CUDA support is needed for this example. We recommend using a GPU with at least 24 GB of memory. If less memory is available, we suggest reducing `BATCH_SIZE` below.
+The code runs on the CPU, but a GPU makes it much faster.
 
 ## Data loading
 
-First, let us load the FMIST dataset. The helper scripts for FMNIST and pre-trained CNN are available in the `examples/helper` directory in the main repository.
+First, let us load a slice of the CIFAR-10 dataset from the Hugging Face Hub, which is enough to see the effect. The helper scripts for the data and the model are in the `examples/helper` directory of the main repository.
 
 ```python
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 import torch.distributions as dists
 from netcal.metrics import ECE
 
-from helper.util_gp import get_dataset, CIFAR10Net
+import helper.dataloaders as dl
+from helper.models import load_cifar10_resnet18
 from laplace import Laplace
 
 np.random.seed(7777)
@@ -29,30 +29,24 @@ torch.manual_seed(7777)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = True
 
-assert torch.cuda.is_available()
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-DATASET = 'FMNIST'
-BATCH_SIZE = 256
-ds_train, ds_test = get_dataset(DATASET, False, 'cuda')
-train_loader = DataLoader(ds_train, batch_size=BATCH_SIZE, shuffle=True)
-test_loader = DataLoader(ds_test, batch_size=BATCH_SIZE, shuffle=False)
+# No augmentation: the GP fit passes over the data several times and needs the same
+# inputs each time, see https://github.com/aleximmer/Laplace/issues/330
+train_loader = dl.CIFAR10(train=True, augm_flag=False, n_data=5000)
+test_loader = dl.CIFAR10(train=False, n_data=2000)
 targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 ```
 
 ## Load a pre-trained model
 
-Next, we load a pre-trained CNN model. The code to train the model can be found in [BNN-predictions repo](https://github.com/AlexImmer/BNN-predictions).
+Next, we load a ResNet-18 pretrained on CIFAR-10 from the [Hugging Face Hub](https://huggingface.co/edadaltocg/resnet18_cifar10).
 
 ```python
-MODEL_NAME = 'FMNIST_CNN_10_2.2e+02.pt'
-model = CIFAR10Net(ds_train.channels, ds_train.K, use_tanh=True).to('cuda')
-state = torch.load(f'helper/models/{MODEL_NAME}')
-model.load_state_dict(state['model'])
-model = model.cuda()
-prior_precision = state['delta']
+model = load_cifar10_resnet18().to(device).eval()
 ```
 
-To simplify the downstream tasks, we will use the following helper function to make predictions. It simply iterates through all minibatches and obtains the predictive probabilities of the FMNIST classes.
+To simplify the downstream tasks, we will use the following helper function to make predictions. It simply iterates through all minibatches and obtains the predictive probabilities of the CIFAR-10 classes.
 
 ```python
 @torch.no_grad()
@@ -61,11 +55,11 @@ def predict(dataloader, model, laplace=False):
 
     for x, _ in dataloader:
         if laplace:
-            py.append(model(x.cuda()))
+            py.append(model(x.to(device)))
         else:
-            py.append(torch.softmax(model(x.cuda()), dim=-1))
+            py.append(torch.softmax(model(x.to(device)), dim=-1))
 
-    return torch.cat(py).cpu().numpy()
+    return torch.cat(py).cpu()
 ```
 
 ## The calibration of MAP
@@ -74,8 +68,6 @@ We are now ready to see how calibrated is the model. The metrics we use are the 
 
 First, let us inspect the MAP model. We shall use the [`netcal`](https://github.com/fabiankueppers/calibration-framework) library to easily compute the ECE.
 
-```python
-probs_map = predict(test_loader, model, laplace=False)
 acc_map = (probs_map.argmax(-1) == targets).float().mean()
 ece_map = ECE(bins=15).measure(probs_map.numpy(), targets.numpy())
 nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
@@ -83,27 +75,28 @@ nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}')
 ```
 
-Running this snippet, we would get:
+Running this snippet, we get something like:
 
 ```
-[MAP] Acc.: 91.7%; ECE: 1.6%; NLL: 0.253
+[MAP] Acc.: 95.1%; ECE: 3.5%; NLL: 0.218
 ```
 
 ## The calibration of Laplace
 
-Next, we run Laplace-GP inference to calibrate neural network's predictions. Since running exact GP inference is computationally infeasible, we perform Subset-of-Datapoints (SoD) [3] approximation here. In the code below, `m`denotes the number of datapoints used in the SoD posterior.
-
-Execution of the cell below can take up to 5min (depending on the exact hardware used).
+Next, we run Laplace-GP inference to calibrate neural network's predictions. Since running exact GP inference is computationally infeasible, we perform Subset-of-Datapoints (SoD) [3] approximation here. In the code below, `m` denotes the number of datapoints used in the SoD posterior. The prior precision sets the scale of the GP kernel: a smaller value means a wider prior over the last-layer weights.
 
 ```python
-for m in [50, 200, 800, 1600]:
-    print(f'Fitting Laplace-GP for m={m}')
-    la = Laplace(model, 'classification',
-                 subset_of_weights='all',
-                 hessian_structure='gp',
-                 independent_outputs=True,
-                 n_subset=m,
-                 prior_precision=prior_precision)
+for m in [200, 800]:
+    print(f"Fitting Laplace-GP for m={m}")
+    la = Laplace(
+        model,
+        "classification",
+        subset_of_weights="last_layer",
+        hessian_structure="gp",
+        independent_outputs=True,
+        n_subset=m,
+        prior_precision=1.0,
+    )
     la.fit(train_loader)
 
     probs_laplace = predict(test_loader, la, laplace=True)
@@ -111,18 +104,14 @@ for m in [50, 200, 800, 1600]:
     ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
     nll_laplace = -dists.Categorical(probs_laplace).log_prob(targets).mean()
 
-    print(f'[Laplace-GP, m={m}] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
+    print(f"[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}")
 ```
 
 ```
-Fitting Laplace-GP for m=50
-[Laplace] Acc.: 91.6%; ECE: 1.5%; NLL: 0.252
 Fitting Laplace-GP for m=200
-[Laplace] Acc.: 91.5%; ECE: 1.1%; NLL: 0.252
+[Laplace] Acc.: 95.1%; ECE: 2.5%; NLL: 0.182
 Fitting Laplace-GP for m=800
-[Laplace] Acc.: 91.4%; ECE: 0.8%; NLL: 0.254
-Fitting Laplace-GP for m=1600
-[Laplace] Acc.: 91.3%; ECE: 0.7%; NLL: 0.257
+[Laplace] Acc.: 95.0%; ECE: 2.2%; NLL: 0.18
 ```
 
 Notice that the post-hoc Laplace-GP inference does not have a significant impact on the accuracy, yet it improves the calibration (in terms of ECE) of the MAP model substantially.

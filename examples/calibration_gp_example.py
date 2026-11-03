@@ -1,13 +1,23 @@
+import argparse
 import warnings
 
+import helper.dataloaders as dl
 import numpy as np
 import torch
 import torch.distributions as dists
-from helper.util_gp import CIFAR10Net, download_pretrained_model, get_dataset
+from helper.models import load_cifar10_resnet18, tiny_cifar10_cnn
 from netcal.metrics import ECE
-from torch.utils.data import DataLoader
 
 from laplace import Laplace
+
+# A slice of the data is enough to show the effect. Smaller slices, GP subset sizes,
+# and a tiny random model are for quick test runs.
+parser = argparse.ArgumentParser()
+parser.add_argument("--n_train", type=int, default=5000)
+parser.add_argument("--n_test", type=int, default=2000)
+parser.add_argument("--subset_sizes", type=int, nargs="+", default=[200, 800])
+parser.add_argument("--tiny_model", action="store_true")
+args = parser.parse_args()
 
 np.random.seed(7777)
 torch.manual_seed(7777)
@@ -17,22 +27,17 @@ torch.backends.cudnn.benchmark = True
 warnings.simplefilter("ignore", UserWarning)
 
 
-assert torch.cuda.is_available()
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-DATASET = "FMNIST"
-BATCH_SIZE = 25
-ds_train, ds_test = get_dataset(DATASET, False, "cuda")
-train_loader = DataLoader(ds_train, batch_size=BATCH_SIZE, shuffle=True)
-test_loader = DataLoader(ds_test, batch_size=BATCH_SIZE, shuffle=False)
+# No augmentation: the GP fit passes over the data several times and needs the same
+# inputs each time, see https://github.com/aleximmer/Laplace/issues/330
+train_loader = dl.CIFAR10(train=True, augm_flag=False, n_data=args.n_train)
+test_loader = dl.CIFAR10(train=False, n_data=args.n_test)
 targets = torch.cat([y for x, y in test_loader], dim=0).cpu()
 
-MODEL_NAME = "FMNIST_CNN_10_2.2e+02.pt"
-model = CIFAR10Net(ds_train.channels, ds_train.K, use_tanh=True).to("cuda")
-download_pretrained_model()
-state = torch.load(f"./temp/{MODEL_NAME}")
-model.load_state_dict(state["model"])
-model = model.cuda()
-prior_precision = state["delta"]
+# A ResNet-18 pretrained on CIFAR-10, from the Hugging Face Hub
+model = tiny_cifar10_cnn() if args.tiny_model else load_cifar10_resnet18()
+model = model.to(device).eval()
 
 
 @torch.no_grad()
@@ -41,9 +46,9 @@ def predict(dataloader, model, laplace=False):
 
     for x, _ in dataloader:
         if laplace:
-            py.append(model(x.cuda()))
+            py.append(model(x.to(device)))
         else:
-            py.append(torch.softmax(model(x.cuda()), dim=-1))
+            py.append(torch.softmax(model(x.to(device)), dim=-1))
 
     return torch.cat(py).cpu()
 
@@ -55,16 +60,16 @@ nll_map = -dists.Categorical(probs_map).log_prob(targets).mean()
 
 print(f"[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}")
 
-for m in [50, 200, 800, 1600]:
+for m in args.subset_sizes:
     print(f"Fitting Laplace-GP for m={m}")
     la = Laplace(
         model,
         "classification",
-        subset_of_weights="all",
+        subset_of_weights="last_layer",
         hessian_structure="gp",
         independent_outputs=True,
         n_subset=m,
-        prior_precision=prior_precision,
+        prior_precision=1.0,
     )
     la.fit(train_loader)
 
