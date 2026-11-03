@@ -39,7 +39,12 @@ ARGS = {
 }
 
 # Scripts that also run once a month without `ARGS`, at the size the doc page shows
-FULL = {"calibration_example.py", "calibration_gp_example.py", "huggingface_example.py"}
+FULL = {
+    "bayesopt_example.py",
+    "calibration_example.py",
+    "calibration_gp_example.py",
+    "huggingface_example.py",
+}
 
 MARKDOWN_CELL = "# %% [markdown]"
 

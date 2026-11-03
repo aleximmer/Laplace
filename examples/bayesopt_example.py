@@ -239,7 +239,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--test_func", choices=["ackley", "branin"], default="branin")
 parser.add_argument("--acqf", choices=["EI", "UCB", "qEI"], default="EI")
 parser.add_argument("--init_data", type=int, default=20)
-parser.add_argument("--exp_len", type=int, default=500)
+parser.add_argument("--exp_len", type=int, default=20)
 parser.add_argument("--randseed", type=int, default=1)
 args, _ = parser.parse_known_args()
 
@@ -369,6 +369,23 @@ for model_name, model in models.items():
         )
 
 # %% [markdown]
+# With the defaults (Branin, EI, 20 initial points, 20 steps), the run takes about a
+# minute and a half on a CPU, most of it retraining the Laplace surrogate. The last
+# progress line of each surrogate reads something like:
+#
+# ```
+# [RandomSearch, MSE = -1.000; Best f(x) = 0.423, curr f(x) = 8.475]
+# [BNN-LA, MSE = 271.419; Best f(x) = 1.077, curr f(x) = 18.972]
+# [GP, MSE = 2497.565; Best f(x) = 1.824, curr f(x) = 4.446]
+# ```
+#
+# Branin's global minimum is about 0.398. Random search has no model, hence the
+# placeholder MSE of -1. Its best value comes from luck: with one seed and 20 steps,
+# the best values are noisy, so rerun with other `--randseed` values before drawing
+# conclusions. The test error is more telling. The Laplace surrogate fits the
+# function far better than the GP, although this script never fits the GP's
+# hyperparameters, which leaves the GP at a disadvantage.
+#
 # The joint predictive is what makes batch acquisition functions like qEI work: the
 # `q` points of a batch are correlated under the posterior, so the batch spreads out
 # instead of piling up at one spot. The
