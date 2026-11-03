@@ -2,13 +2,14 @@
 # # Huggingface LLMs
 #
 # In this example, we will see how to apply Laplace on a GPT2 Huggingface (HF) model.
-# Laplace only has lightweight requirements for this; namely that the model's `forward`
-# method must only take a single dict-like object (`dict`, `UserDict`, or in general,
-# `collections.abc.MutableMapping`). This is entirely compatible with HF since HF's
-# data loaders are assumed to emit an object derived from `UserDict`. However, you
-# need to ensure this yourself --- you need to wrap the standard HF model to conform
-# to that requirement. Also, you need to e.g. do `torch.to(device)` _inside_ the
-# said `forward` method.
+# Laplace only has lightweight requirements for this: the model's `forward` method
+# must take a single input. That can be a tensor or, as in this example, a single
+# dict-like object (`dict`, `UserDict`, or in general, `collections.abc.MutableMapping`).
+# The dict-like input fits HF well, since HF's data loaders are assumed to emit an
+# object derived from `UserDict`. However, you need to ensure this yourself --- you need
+# to wrap the standard HF model so that it takes the whole batch object. Also, you need
+# to move the tensors to the device, e.g. with `tensor.to(device)`, _inside_ the said
+# `forward` method.
 #
 # Let's start with as usual with importing stuff.
 
@@ -55,6 +56,9 @@ args, _ = parser.parse_known_args()
 
 tokenizer = GPT2Tokenizer.from_pretrained(args.model)
 tokenizer.pad_token_id = tokenizer.eos_token_id
+# Pad on the left, so that the last token of every sequence is a real one. Laplace's
+# `feature_reduction="pick_last"` below takes the last position.
+tokenizer.padding_side = "left"
 
 data = [
     {"text": "Today is hot, but I will manage!!!!", "label": 1},
@@ -137,8 +141,6 @@ class MyGPT2(nn.Module):
         output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
         return output_dict.logits
 
-
-model = MyGPT2(tokenizer)
 
 # %% [markdown]
 # Now, let's apply Laplace. Let's do a last-layer Laplace first.
@@ -271,7 +273,7 @@ print(f"[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.")
 #
 # Instead, choose one of the following backends:
 #
-# - `CurvlinopsGGN` for `hessian_factorization = {"kron", "diag"}`
-# - `CurvlinopsEF` for `hessian_factorization = {"kron"}`
-# - `AsdlGGN` for `hessian_factorization = {"kron", "diag"}`
-# - `AsdlEF` for `hessian_factorization = {"kron", "diag"}`
+# - `CurvlinopsGGN` for `hessian_structure = {"kron", "diag"}`
+# - `CurvlinopsEF` for `hessian_structure = {"kron"}`
+# - `AsdlGGN` for `hessian_structure = {"kron", "diag"}`
+# - `AsdlEF` for `hessian_structure = {"kron", "diag"}`

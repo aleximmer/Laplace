@@ -8,7 +8,7 @@
 # VaLLA fits a sparse variational GP with inducing points.
 #
 # In this example we fit both to the sinusoidal regression task from the
-# [regression example](regression_example.py) and compare them with exact LA.
+# [regression example](../regression_example/) and compare them with exact LA.
 # Both methods leave the network weights alone. You train a MAP network as usual
 # and fit the posterior afterwards.
 
@@ -52,7 +52,7 @@ for i in range(1000):
 # `sigma_noise` and only tune the prior precision. This assumes the aleatoric
 # noise is known. If it isn't, optimize the noise together with the prior
 # precision through the marginal likelihood, as in the
-# [regression example](regression_example.py).
+# [regression example](../regression_example/).
 
 # %%
 la = Laplace(
@@ -113,7 +113,12 @@ ella.fit(train_loader)
 # Held-out data: a fresh draw from the same distribution
 _, _, val_loader, _ = get_sinusoid_example(sigma_noise=0.3)
 
+shared_prior = ella.prior_precision.clone()
 ella.optimize_prior_precision(method="gridsearch", val_loader=val_loader)
+print(f"Tuned prior precision: {ella.prior_precision.item():.3g}")
+
+# Back to the shared prior, so the comparison below stays like for like
+ella.prior_precision = shared_prior
 
 # %% [markdown]
 # Passing validation data also makes `ella.fit_history_` record the validation

@@ -97,8 +97,10 @@ print(
 # ## Bayesian predictive
 #
 # Now we compare the MAP prediction with the LA prediction. The LA has a closed-form
-# Gaussian predictive on the output $f$,
-# $\mathcal{N}(f(x;\theta_{MAP}), \mathbb{V}[f] + \sigma^2)$.
+# Gaussian predictive on the output $f$, $\mathcal{N}(f(x;\theta_{MAP}), \mathbb{V}[f])$,
+# which is what `la(X_test)` returns. For a noisy observation $y$, add the observation
+# noise: $\mathcal{N}(f(x;\theta_{MAP}), \mathbb{V}[f] + \sigma^2)$. The plots below
+# show the latter.
 #
 # There are two flavors. The marginal predictive treats each test point on its own:
 # the mean has shape `(m, k)` and the variance `(m, k, k)`. The joint predictive

@@ -172,6 +172,9 @@ def test_rendered_markdown_is_portable(script: str) -> None:
     assert "\\(" not in text and "\\[" not in text
     assert ".md)" not in text and "!!!" not in text
 
+    # Notebook pages don't rewrite links, so a source file name is a dead link
+    assert not re.search(r"\]\([\w./-]+\.(md|py)(#[\w-]*)?\)", text)
+
     for img in re.findall(r"\]\(\.\./assets/([^)]+)\)", text):
         assert (DOCS_DIR / "assets" / img).exists(), img
 

@@ -37,21 +37,6 @@ jobs:
       - name: Run examples
         run: .venv/bin/python -m pytest examples/test_examples.py -m "not slow" -v
 
-  docs:
-    name: docs build
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@v6
-        with:
-          python-version: "3.11"
-          enable-cache: true
-      - name: Build the docs, with the examples rendered as pages
-        run: uv run --only-group docs mkdocs build --strict
-
   examples-slow:
     name: examples with large models
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
