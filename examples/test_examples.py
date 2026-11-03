@@ -1,12 +1,12 @@
-"""Smoke tests that run every example script and the Python snippets of every doc page.
+"""Smoke tests that run every example script and check the ones rendered as doc pages.
 
-Each one runs in a fresh subprocess, inside a temporary working directory, and must
-exit cleanly. New scripts and pages are picked up automatically. Run with:
+Each script runs in a fresh subprocess, inside a temporary working directory, and must
+exit cleanly. New scripts are picked up automatically. Run with:
 
     pytest examples/test_examples.py -m "not slow"
 
-The `slow` ones are doc pages that use large pretrained models or full datasets. CI runs
-them once a month, not on pull requests.
+The `slow` ones run the scripts in `FULL` without arguments, with the large pretrained
+models and the full data. CI runs them once a month, not on pull requests.
 """
 
 from __future__ import annotations
@@ -38,19 +38,10 @@ ARGS = {
     "huggingface_example.py": ["--model", "hf-internal-testing/tiny-random-gpt2"],
 }
 
-# Doc snippets take no arguments, so these run with the real models and full data.
-SLOW: set[str] = set()
-
-# Doc pages whose snippets are excerpts, not a complete program.
-SKIP = {
-    "index.md": "excerpts that call placeholder functions",
-}
+# Scripts that also run once a month without `ARGS`, at the size the doc page shows
+FULL = {"calibration_example.py", "calibration_gp_example.py", "huggingface_example.py"}
 
 MARKDOWN_CELL = "# %% [markdown]"
-
-PYTHON_BLOCK = re.compile(
-    r"^```python[^\n]*\n(.*?)^```", flags=re.DOTALL | re.MULTILINE
-)
 
 
 def _scripts() -> list[str]:
@@ -58,12 +49,6 @@ def _scripts() -> list[str]:
         p.name
         for p in EXAMPLES_DIR.glob("*.py")
         if p.name not in ("conftest.py", "test_examples.py")
-    )
-
-
-def _pages() -> list[str]:
-    return sorted(
-        p.name for p in DOCS_DIR.glob("*.md") if PYTHON_BLOCK.search(p.read_text())
     )
 
 
@@ -91,16 +76,17 @@ def markdown_cells(source: str) -> list[str]:
     return cells
 
 
-def _params(names: list[str]) -> list:
-    return [
-        pytest.param(name, marks=pytest.mark.slow) if name in SLOW else name
-        for name in names
+def _params() -> list:
+    """Each script with its shrinking `ARGS`, plus a slow `[full]` run for `FULL`."""
+    params = [
+        pytest.param(name, ARGS.get(name, []), TIMEOUT, id=name) for name in _scripts()
+    ]
+    params += [
+        pytest.param(name, [], SLOW_TIMEOUT, id=f"{name}[full]", marks=pytest.mark.slow)
+        for name in sorted(FULL)
     ]
 
-
-def extract_snippets(markdown: str) -> str:
-    """Join the top-level ```` ```python ```` blocks of a doc page into one script."""
-    return "\n\n".join(PYTHON_BLOCK.findall(markdown))
+    return params
 
 
 def run_example(
@@ -130,47 +116,21 @@ def _check(result: subprocess.CompletedProcess) -> None:
     assert result.returncode == 0, result.stderr[-3000:]
 
 
-@pytest.mark.parametrize("script", _params(_scripts()))
-def test_example_runs(script: str, tmp_path: Path) -> None:
-    timeout = SLOW_TIMEOUT if script in SLOW else TIMEOUT
-    result = run_example(EXAMPLES_DIR / script, tmp_path, ARGS.get(script, ()), timeout)
-
-    _check(result)
-
-
-@pytest.mark.parametrize("page", _params(_pages()))
-def test_doc_snippets_run(page: str, tmp_path: Path) -> None:
-    if page in SKIP:
-        pytest.skip(SKIP[page])
-
-    script = tmp_path / page.replace(".md", ".py")
-    script.write_text(extract_snippets((DOCS_DIR / page).read_text()))
-
-    timeout = SLOW_TIMEOUT if page in SLOW else TIMEOUT
-    _check(run_example(script, tmp_path, timeout=timeout))
+@pytest.mark.parametrize(("script", "args", "timeout"), _params())
+def test_example_runs(
+    script: str, args: list[str], timeout: float, tmp_path: Path
+) -> None:
+    _check(run_example(EXAMPLES_DIR / script, tmp_path, args, timeout))
 
 
 def test_all_examples_collected() -> None:
-    scripts, pages = _scripts(), _pages()
+    scripts = _scripts()
 
     assert "regression_example.py" in scripts
     assert "test_examples.py" not in scripts and "conftest.py" not in scripts
-    assert "index.md" in pages and "devs_guide.md" not in pages
 
     # No stale entries for renamed or deleted files
     assert set(ARGS) <= set(scripts)
-    assert set(SKIP) <= set(pages)
-    assert SLOW <= set(scripts) | set(pages)
-
-
-def test_extract_snippets_skips_other_blocks() -> None:
-    markdown = (
-        "Text\n\n```python\nx = 1\n```\n\n```bash\nls\n```\n\n"
-        '```python title="b.py"\ny = x + 1\n```\n\n'
-        "!!! note\n\n    ```python\n    z = 2\n    ```\n"
-    )
-
-    assert extract_snippets(markdown) == "x = 1\n\n\ny = x + 1\n"
 
 
 def test_runner_reports_timeout(tmp_path: Path) -> None:
@@ -224,3 +184,10 @@ def test_markdown_cells() -> None:
     src = "# %% [markdown]\n# # T\n#\n# a $x$\n\n# %%\nx = 1\n# %% [markdown]\n# b\n"
 
     assert markdown_cells(src) == ["# T\n\na $x$", "b"]
+
+
+def test_full_variants_are_slow() -> None:
+    slow = {p.id for p in _params() if p.marks}
+
+    assert slow == {f"{name}[full]" for name in FULL}
+    assert FULL <= set(ARGS)

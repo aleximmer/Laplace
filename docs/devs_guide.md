@@ -71,12 +71,11 @@ Pull requests are very welcome. Please follow these guidelines:
 1. Follow the [development setup](#setup-dev-environment).
 2. Use [ruff](https://github.com/astral-sh/ruff) as autoformatter. Please refer to the following [makefile](https://github.com/aleximmer/Laplace/blob/main/makefile) and run it via `make ruff`. Please note that the order of `ruff check --fix` and `ruff format` is important!
 3. Also use [ruff](https://github.com/astral-sh/ruff) as linter. Please manually fix all linting errors/warnings before opening a pull request.
-4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) code/markdown examples in the `./examples` subdirectory.
+4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) an example in the `./examples` subdirectory. See [writing an example](#writing-an-example).
    1. See `docs/api_reference/*.md` on how to include a newly added class in the docs.
 5. Provide as many test cases as possible. Make sure all test cases pass.
-6. CI also runs every script in `./examples` and the Python snippets of every page in `./docs`.
-   New scripts and pages are picked up automatically, so make sure they run on a CPU in a few
-   minutes. To run them locally:
+6. CI also runs every script in `./examples`. New scripts are picked up automatically, so
+   make sure they run on a CPU in a few minutes. To run them locally:
 
     ```bash
     uv pip install -r examples/requirements.txt
@@ -85,9 +84,9 @@ Pull requests are very welcome. Please follow these guidelines:
 
     CI only checks that the code runs, so it should be fast. If a script is slow, give it
     command-line options for fewer iterations, a data subset or a tiny model, and set them
-    in `ARGS` in `examples/test_examples.py`. Doc snippets can't take arguments, so pages
-    that need a large model or a full dataset go in `SLOW`. CI runs those once a month
-    instead of on every pull request. To run them yourself, use `-m slow`.
+    in `ARGS` in `examples/test_examples.py`. If the defaults use a large model or a full
+    dataset, also add the script to `FULL`. CI then runs it without arguments once a month
+    instead of on every pull request. To run those yourself, use `-m slow`.
 
 !!! warning
 
@@ -126,6 +125,36 @@ pip install -e ".[dev]"
 # serve the docs locally
 mkdocs serve
 ```
+
+### Writing an example
+
+Each example page on the doc site is a script in `./examples`, so the code you read is
+the code CI runs. The scripts use the [jupytext](https://jupytext.readthedocs.io/)
+percent format: `# %% [markdown]` starts a prose cell, whose lines are Markdown behind
+`# `, and `# %%` starts a code cell. They run as plain Python, and JupyterLab or VS Code
+with jupytext opens them as notebooks (`jupytext --to ipynb` converts one if you prefer).
+
+```python
+# %% [markdown]
+# # My Example
+#
+# Some prose with math, $\sigma = 0.3$.
+
+# %%
+import torch
+```
+
+A script whose first line is `# %% [markdown]` becomes a page at `/<script name>/`. Add
+it to the `nav` in `mkdocs.yml`, or the strict docs build fails. The pages are rendered
+without running the code, so paste important printed output into a prose cell. Prose
+cells don't go through the site's Markdown extensions, so:
+
+- write math as `$...$` and `$$...$$`, not `\(...\)`;
+- link to images as `../assets/<file>` and to other pages as `../<page>/`, not `<page>.md`;
+- use a `> **Note:** ...` blockquote instead of an admonition;
+- parse arguments with `parser.parse_known_args()`, since Jupyter passes its own.
+
+`examples/test_examples.py` checks these rules.
 
 ## Publishing the `laplace-torch` package to PyPI
 
