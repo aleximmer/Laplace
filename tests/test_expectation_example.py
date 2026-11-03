@@ -1,5 +1,6 @@
 """Check the decision-making example and the claims its docs page makes."""
 
+import ast
 import subprocess
 import sys
 from pathlib import Path
@@ -8,16 +9,46 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from examples.expectation_example import (
-    ei_cf,
-    expected_utility,
-    fit_laplace,
-    g,
-    linearized_thompson_sample,
-    thompson_sample,
-)
 from laplace import BaseLaplace, Laplace
 from laplace.utils import LargestMagnitudeSubnetMask
+
+EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "expectation_example.py"
+
+
+def _definitions(path: Path) -> dict:
+    """Run only the imports, functions, and constants of an example script.
+
+    The example is a notebook-style script that runs all of its cells on import, so
+    importing it would fit and optimize everything just to reach the helpers.
+    """
+    tree = ast.parse(path.read_text())
+    keep = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.Import | ast.ImportFrom | ast.FunctionDef)
+        or (
+            isinstance(node, ast.Assign)
+            and all(isinstance(t, ast.Name) and t.id.isupper() for t in node.targets)
+        )
+    ]
+
+    namespace: dict = {}
+    exec(compile(ast.Module(keep, type_ignores=[]), str(path), "exec"), namespace)
+
+    return namespace
+
+
+_example = _definitions(EXAMPLE)
+ei_cf = _example["ei_cf"]
+expected_utility = _example["expected_utility"]
+fit_laplace = _example["fit_laplace"]
+g = _example["g"]
+linearized_thompson_sample = _example["linearized_thompson_sample"]
+thompson_sample = _example["thompson_sample"]
+
+
+def test_definitions_skip_the_cells() -> None:
+    assert callable(fit_laplace) and "la" not in _example and "best" not in _example
 
 
 @pytest.fixture(scope="module")

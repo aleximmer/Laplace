@@ -1,3 +1,16 @@
+# %% [markdown]
+# # Reward Modeling
+#
+# The `laplace-torch` library can also be used to "Bayesianize" a pretrained Bradley-Terry
+# reward model, popular in large language models. See <http://arxiv.org/abs/2009.01325>
+# for a primer in reward modeling.
+#
+# ## Defining a preference dataset
+#
+# First order of business, let's define our comparison dataset. We will use the `datasets`
+# library from Huggingface to handle the data.
+
+# %%
 import logging
 import warnings
 
@@ -29,25 +42,34 @@ data_dict = [
 ]
 dataset = Dataset.from_list(data_dict)
 
+# %% [markdown]
+# ## Defining a reward model
+#
+# Now, let's define the reward model. During training, it assumes that `x` is a tensor
+# of shape `(batch_size, 2, dim)`, which is a concatenation of `x0` and `x1` above.
+# The second dimension of size 2 is preserved through the forward pass, resulting in
+# a logit tensor of shape `(batch_size, 2)` (the network itself is single-output).
+# Then, the standard cross-entropy loss is applied.
+#
+# Note that this requirement is quite weak and can covers general cases. However, if you
+# prefer to use the dict-like inputs as in Huggingface LLM models, this can also be done.
+# Simply combine what you have learned from this example with the Huggingface LLM example
+# provided in this library.
+#
+# During testing, this model behaves like a standard single-output regression
+# model.
 
+
+# %%
 class SimpleRewardModel(nn.Module):
-    """
-    A simple reward model, compatible with the Bradley-Terry likelihood.
-    During training, it assumes that `x` is a tensor of shape `(batch_size, 2, dim)`.
-    The second dimension of size 2 is preserved through the forward pass, resulting in
-    a logit tensor of shape `(batch_size, 2)` (the net itself is single-output).
-    Then, the standard cross-entropy loss is applied.
-
-    During testing, this model behaves like a standard single-output regression model.
-    """
+    """A simple reward model, compatible with the Bradley-Terry likelihood."""
 
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(nn.Linear(3, 100), nn.ReLU(), nn.Linear(100, 1))
 
     def forward(self, x):
-        """
-        Args:
+        """Args:
             x: torch.Tensor
                 If training == True then shape (batch_size, 2, dim)
                 Else shape (batch_size, dim)
@@ -73,6 +95,13 @@ class SimpleRewardModel(nn.Module):
             return logits
 
 
+# %% [markdown]
+# ## Data preprocessing
+#
+# To fulfill the 3D tensor requirement, we need to preprocess the dict-based dataset.
+
+
+# %%
 # Preprocess to coalesce x0 and x1 into a single array/tensor
 def append_x0_x1(row):
     # The tensor values above are automatically casted as lists by `Dataset`
@@ -87,6 +116,12 @@ tensor_dataloader = data_utils.DataLoader(
     data_utils.TensorDataset(columns["x"], columns["label"]), batch_size=3
 )
 
+# %% [markdown]
+# ## MAP training
+#
+# Then, we can train as usual using the cross entropy loss.
+
+# %%
 reward_model = SimpleRewardModel()
 opt = optim.AdamW(reward_model.parameters(), weight_decay=1e-3)
 
@@ -99,12 +134,25 @@ for epoch in range(10):
         loss.backward()
         opt.step()
 
+# %% [markdown]
+# ## Applying Laplace
+#
+# Applying Laplace to this model is a breeze. Simply state that the likelihood is `reward_modeling`.
+
+# %%
 # Laplace !!! Notice the likelihood !!!
 reward_model.eval()
 la = Laplace(reward_model, likelihood="reward_modeling", subset_of_weights="all")
 la.fit(tensor_dataloader)
 la.optimize_prior_precision()
 
+# %% [markdown]
+# As we can see, during prediction, even though we train & fit Laplace using the cross entropy
+# loss (i.e. classification), in test time, the model behaves like a regression model.
+# So, you don't get probability vectors as outputs. Instead, you get two tensors
+# containing the predictive means and predictive variance.
+
+# %%
 x_test = torch.randn(5, 3)
 pred_mean, pred_var = la(x_test)
 print(
@@ -112,3 +160,10 @@ print(
     + f"{tuple(pred_mean.shape)}, predictive covariance of shape "
     + f"{tuple(pred_var.shape)}"
 )
+
+# %% [markdown]
+# Here's the output:
+#
+# ```
+# Input shape (5, 3), predictive mean of shape (5, 1), predictive covariance of shape (5, 1, 1)
+# ```

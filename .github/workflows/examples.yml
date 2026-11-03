@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
   schedule:
-    # 1st of every month, 04:00 UTC: the doc pages with large models and full data
+    # 1st of every month, 04:00 UTC: the examples with large models and full data
     - cron: "0 4 1 * *"
   workflow_dispatch:
 
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   examples:
-    name: examples and doc snippets
+    name: examples
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
@@ -38,7 +38,7 @@ jobs:
         run: .venv/bin/python -m pytest examples/test_examples.py -m "not slow" -v
 
   examples-slow:
-    name: doc pages with large models
+    name: examples with large models
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 180
