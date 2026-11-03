@@ -15,10 +15,10 @@ nav:
   - "Example: GP Inference": calibration_gp_example.md
   - "Example: Decision-Making": expectation_example.md
   - "Example: Huggingface LLMs": huggingface_example.md
-  - "Example: Language Modeling": lm_example.md
-  - "Example: Diffusion Models": diffusion_example.md
-  - "Example: Semantic Segmentation": segmentation_example.md
-  - "Example: Reward Modeling": reward_modeling_example.md
+  - "Example: Language Modeling": lm_example.py
+  - "Example: Diffusion Models": diffusion_example.py
+  - "Example: Semantic Segmentation": segmentation_example.py
+  - "Example: Reward Modeling": reward_modeling_example.py
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
       - ELLA: api_reference/ella.md
