@@ -44,7 +44,6 @@ SLOW: set[str] = set()
 # Doc pages whose snippets are excerpts, not a complete program.
 SKIP = {
     "index.md": "excerpts that call placeholder functions",
-    "expectation_example.md": "excerpts of examples/expectation_example.py",
 }
 
 MARKDOWN_CELL = "# %% [markdown]"
@@ -211,11 +210,9 @@ def test_rendered_markdown_is_portable(script: str) -> None:
     for img in re.findall(r"\]\(\.\./assets/([^)]+)\)", text):
         assert (DOCS_DIR / "assets" / img).exists(), img
 
-    pages = {Path(n).stem for n in _rendered()} | {
-        p.stem for p in DOCS_DIR.glob("*.md")
-    }
-    for page in re.findall(r"(?<!!)\[[^\]]*\]\(\.\./([\w-]+)/", text):
-        assert page in pages, page
+    rendered = {Path(n).stem for n in _rendered()}
+    for page in re.findall(r"(?<!!)\[[^\]]*\]\(\.\./([\w/-]+)/", text):
+        assert page in rendered or (DOCS_DIR / f"{page}.md").exists(), page
 
 
 @pytest.mark.parametrize("script", _rendered())

@@ -1,3 +1,17 @@
+# %% [markdown]
+# # Bayesian Optimization
+#
+# Bayesian optimization looks for the minimum of an expensive black-box function with
+# as few evaluations as possible. It needs a surrogate model with calibrated
+# uncertainty: an acquisition function such as expected improvement trades off
+# exploring uncertain regions against exploiting regions that already look good.
+# Gaussian processes are the usual choice. Here, we use a neural network with a
+# Laplace approximation instead, and plug it into [BoTorch](https://botorch.org/)
+# so that BoTorch's acquisition functions and optimizers work with it unchanged.
+#
+# We compare it with a GP and with random search on a 2D test function.
+
+# %%
 from __future__ import annotations
 
 import warnings
@@ -26,11 +40,29 @@ from torch.nn import functional as F
 
 from laplace import BaseLaplace, Laplace
 
+# %% [markdown]
+# ## A Laplace surrogate for BoTorch
+#
+# BoTorch talks to a surrogate through its `Model` interface. Two methods matter here.
+#
+# `posterior` gets inputs of shape `(batch, q, d)`: `batch` candidate sets with `q`
+# points each, which acquisition functions such as qEI score jointly. It must return a
+# Gaussian over the `q` outputs of every candidate set. We get it from the joint GLM
+# predictive `la(X, joint=True)` over all `batch * q` points at once, then keep the
+# `q * k` by `q * k` block of each candidate set. A small jitter keeps the covariance
+# positive definite.
+#
+# `condition_on_observations` adds new evaluations to the data set. The wrapper then
+# continues training the network on all data and fits a new Laplace approximation
+# over all weights, with a Kronecker-factored Hessian and `enable_backprop=True`, so
+# that BoTorch can optimize the acquisition function with gradients.
 
+
+# %%
 class LaplaceBNN(Model):
     """
-    Install first:
-    pip install laplace-torch
+    BoTorch model whose posterior is the GLM predictive of a Laplace-approximated
+    neural network.
     """
 
     def __init__(
@@ -193,126 +225,152 @@ class LaplaceBNN(Model):
         )
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--test_func", choices=["ackley", "branin"], default="branin")
-    parser.add_argument("--acqf", choices=["EI", "UCB", "qEI"], default="EI")
-    parser.add_argument("--init_data", type=int, default=20)
-    parser.add_argument("--exp_len", type=int, default=500)
-    parser.add_argument("--randseed", type=int, default=1)
-    args = parser.parse_args()
+# %% [markdown]
+# ## The test problem
+#
+# The command-line options pick the test function (Branin or Ackley, both from
+# BoTorch), the acquisition function (EI, UCB, or qEI), the number of initial
+# evaluations, and the number of optimization steps. We start from random
+# evaluations inside the bounds and keep 10,000 more random points to measure how
+# well each surrogate fits the function.
 
+# %%
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_func", choices=["ackley", "branin"], default="branin")
+parser.add_argument("--acqf", choices=["EI", "UCB", "qEI"], default="EI")
+parser.add_argument("--init_data", type=int, default=20)
+parser.add_argument("--exp_len", type=int, default=500)
+parser.add_argument("--randseed", type=int, default=1)
+args, _ = parser.parse_known_args()
+
+np.random.seed(args.randseed)
+torch.set_default_dtype(torch.float64)
+torch.manual_seed(args.randseed)
+
+if args.test_func == "ackley":
+    true_f = Ackley(dim=2)
+    bounds = torch.tensor([[-32.768, 32.768], [-32.768, 32.768]]).T.double()
+else:
+    true_f = Branin()
+    bounds = torch.tensor([[-5, 10], [0, 15]]).T.double()
+
+print(f"Test Function: {args.test_func}")
+
+train_x = torch.cat(
+    [
+        dists.Uniform(*bounds.T[i]).sample((args.init_data, 1))
+        for i in range(2)  # for each dimension
+    ],
+    dim=1,
+)
+train_y = true_f(train_x).reshape(-1, 1)
+
+test_x = torch.cat(
+    [
+        dists.Uniform(*bounds.T[i]).sample((10000, 1))
+        for i in range(2)  # for each dimension
+    ],
+    dim=1,
+)
+test_y = true_f(test_x)
+
+# %% [markdown]
+# ## The surrogates
+#
+# Random search needs no model. The Laplace surrogate trains its network and fits
+# Laplace when we create it. The GP is BoTorch's `SingleTaskGP`. The test error of each
+# surrogate is its mean squared error on the held-out points; for the Laplace
+# surrogate, we predict them in batches with the marginal (not joint) predictive.
+
+# %%
+models = {
+    "RandomSearch": None,
+    "BNN-LA": LaplaceBNN(train_x, train_y),
+    "GP": SingleTaskGP(train_x, train_y),
+}
+
+
+def evaluate_model(model_name, model):
+    if model_name == "GP":
+        pred = model.posterior(test_x).mean.squeeze()
+    elif model_name == "BNN-LA":
+        pred, _ = model._get_prediction(test_x, use_test_loader=True, joint=False)
+    else:
+        return -1
+
+    return F.mse_loss(pred, test_y).squeeze().item()
+
+
+# %% [markdown]
+# ## The optimization loop
+#
+# Each step asks the acquisition function for a new input, evaluates the test
+# function there, and conditions the surrogate on the result. BoTorch maximizes
+# acquisition functions by default, and we want a minimum, hence `maximize=False`.
+# With qEI, every step proposes a batch of 5 inputs. The progress bar shows the
+# surrogate's test error and the best value found so far.
+
+# %%
+for model_name, model in models.items():
     np.random.seed(args.randseed)
     torch.set_default_dtype(torch.float64)
     torch.manual_seed(args.randseed)
 
-    if args.test_func == "ackley":
-        true_f = Ackley(dim=2)
-        bounds = torch.tensor([[-32.768, 32.768], [-32.768, 32.768]]).T.double()
-    elif args.test_func == "branin":
-        true_f = Branin()
-        bounds = torch.tensor([[-5, 10], [0, 15]]).T.double()
-    else:
-        print("Invalid test function!")
-        sys.exit(1)
-
-    print()
-    print(f"Test Function: {args.test_func}")
-    print("-------------------------------------")
-    print()
-
-    train_data_points = 20
-
-    train_x = torch.cat(
-        [
-            dists.Uniform(*bounds.T[i]).sample((train_data_points, 1))
-            for i in range(2)  # for each dimension
-        ],
-        dim=1,
+    best_y = train_y.min().item()
+    trace_best_y = []
+    pbar = tqdm.trange(args.exp_len)
+    pbar.set_description(
+        f"[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}]"
     )
-    train_y = true_f(train_x).reshape(-1, 1)
 
-    test_x = torch.cat(
-        [
-            dists.Uniform(*bounds.T[i]).sample((10000, 1))
-            for i in range(2)  # for each dimension
-        ],
-        dim=1,
-    )
-    test_y = true_f(test_x)
-
-    models = {
-        "RandomSearch": None,
-        "BNN-LA": LaplaceBNN(train_x, train_y),
-        "GP": SingleTaskGP(train_x, train_y),
-    }
-
-    def evaluate_model(model_name, model):
-        if model_name == "GP":
-            pred = model.posterior(test_x).mean.squeeze()
-        elif model_name == "BNN-LA":
-            pred, _ = model._get_prediction(test_x, use_test_loader=True, joint=False)
+    for i in pbar:
+        if model_name == "RandomSearch":
+            new_x = torch.cat(
+                [
+                    dists.Uniform(*bounds.T[i]).sample((1, 1))
+                    for i in range(len(bounds))  # for each dimension
+                ],
+                dim=1,
+            ).squeeze()
         else:
-            return -1
+            if args.acqf == "EI":
+                acq_f = ExpectedImprovement(model, best_f=best_y, maximize=False)
+            elif args.acqf == "UCB":
+                acq_f = UpperConfidenceBound(model, beta=0.2, maximize=False)
+            else:
+                acq_f = qExpectedImprovement(model, best_f=best_y, maximize=False)
 
-        return F.mse_loss(pred, test_y).squeeze().item()
+            # Get a proposal for new x
+            new_x, val = optimize_acqf(
+                acq_f,
+                bounds=bounds,
+                q=1 if args.acqf not in ["qEI"] else 5,
+                num_restarts=10,
+                raw_samples=20,
+            )
 
-    for model_name, model in models.items():
-        np.random.seed(args.randseed)
-        torch.set_default_dtype(torch.float64)
-        torch.manual_seed(args.randseed)
+        if len(new_x.shape) == 1:
+            new_x = new_x.unsqueeze(0)
 
-        best_y = train_y.min().item()
-        trace_best_y = []
-        pbar = tqdm.trange(args.exp_len)
+        # Evaluate the objective on the proposed x
+        new_y = true_f(new_x).unsqueeze(-1)  # (q, 1)
+
+        # Update posterior
+        if model_name != "RandomSearch":
+            model = model.condition_on_observations(new_x, new_y)
+
+        # Update the current best y
+        if new_y.min().item() <= best_y:
+            best_y = new_y.min().item()
+
+        trace_best_y.append(best_y)
         pbar.set_description(
-            f"[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}]"
+            f"[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}, curr f(x) = {new_y.min().item():.3f}]"
         )
 
-        for i in pbar:
-            if model_name == "RandomSearch":
-                new_x = torch.cat(
-                    [
-                        dists.Uniform(*bounds.T[i]).sample((1, 1))
-                        for i in range(len(bounds))  # for each dimension
-                    ],
-                    dim=1,
-                ).squeeze()
-            else:
-                if args.acqf == "EI":
-                    acq_f = ExpectedImprovement(model, best_f=best_y, maximize=False)
-                elif args.acqf == "UCB":
-                    acq_f = UpperConfidenceBound(model, beta=0.2, maximize=False)
-                elif args.acqf == "qEI":
-                    acq_f = qExpectedImprovement(model, best_f=best_y, maximize=False)
-                else:
-                    print("Invalid acquisition function!")
-                    sys.exit(1)
-
-                # Get a proposal for new x
-                new_x, val = optimize_acqf(
-                    acq_f,
-                    bounds=bounds,
-                    q=1 if args.acqf not in ["qEI"] else 5,
-                    num_restarts=10,
-                    raw_samples=20,
-                )
-
-            if len(new_x.shape) == 1:
-                new_x = new_x.unsqueeze(0)
-
-            # Evaluate the objective on the proposed x
-            new_y = true_f(new_x).unsqueeze(-1)  # (q, 1)
-
-            # Update posterior
-            if model_name != "RandomSearch":
-                model = model.condition_on_observations(new_x, new_y)
-
-            # Update the current best y
-            if new_y.min().item() <= best_y:
-                best_y = new_y.min().item()
-
-            trace_best_y.append(best_y)
-            pbar.set_description(
-                f"[{model_name}, MSE = {evaluate_model(model_name, model):.3f}; Best f(x) = {best_y:.3f}, curr f(x) = {new_y.min().item():.3f}]"
-            )
+# %% [markdown]
+# The joint predictive is what makes batch acquisition functions like qEI work: the
+# `q` points of a batch are correlated under the posterior, so the batch spreads out
+# instead of piling up at one spot. The
+# [decision-making example](../expectation_example/) shows how to build your own
+# acquisition functions from Laplace samples, including ones without a closed form.
