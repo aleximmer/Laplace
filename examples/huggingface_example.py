@@ -29,7 +29,7 @@ numpy.random.seed(0)
 
 # Any GPT-2 checkpoint works, e.g. a tiny random one for a quick test run
 parser = argparse.ArgumentParser()
-parser.add_argument("--model", default="gpt2")
+parser.add_argument("--model", default="gpt2", help="a base GPT-2 checkpoint")
 args = parser.parse_args()
 
 tokenizer = GPT2Tokenizer.from_pretrained(args.model)

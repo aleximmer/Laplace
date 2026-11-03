@@ -49,6 +49,17 @@ def CIFAR10(
     augm_flag: bool = True,
     n_data: int | None = None,
 ) -> data_utils.DataLoader:
+    """CIFAR-10 from the Hugging Face Hub, as `(image, label)` batches.
+
+    Images are normalized with `CIFAR10_MEAN` and `CIFAR10_STD`. With `augm_flag`, the
+    train split also gets random flips and crops, so an image differs between passes.
+
+    Args:
+        train: Use the train split, shuffled; otherwise the test split.
+        batch_size: Defaults to 128 for train and 100 for test.
+        augm_flag: Augment the train split. Ignored for the test split.
+        n_data: Keep only the first `n_data` images of the split. `None` keeps all.
+    """
     if batch_size is None:
         if train:
             batch_size = train_batch_size

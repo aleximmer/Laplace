@@ -9,6 +9,9 @@ on:
     - cron: "0 4 1 * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   examples:
     name: examples and doc snippets
@@ -16,6 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
@@ -28,7 +33,7 @@ jobs:
       - name: Install the project and the example dependencies
         run: |
           uv venv
-          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra all -r examples/requirements.txt
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev -r examples/requirements.txt
       - name: Run examples
         run: .venv/bin/python -m pytest examples/test_examples.py -m "not slow" -v
 
@@ -39,6 +44,8 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.11"
@@ -51,6 +58,6 @@ jobs:
       - name: Install the project and the example dependencies
         run: |
           uv venv
-          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra all -r examples/requirements.txt
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev -r examples/requirements.txt
       - name: Run slow examples
         run: .venv/bin/python -m pytest examples/test_examples.py -m slow -v
