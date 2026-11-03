@@ -15,9 +15,11 @@ jobs:
         include:
           - name: default
             python: "3.11"
+          # The rest of the suite doesn't depend on asdfghjkl and runs in the default job
           - name: old-asdfghjkl
             python: "3.11"
             old_asdfghjkl: true
+            pytest_args: -m asdfghjkl
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -30,9 +32,12 @@ jobs:
           uv pip install --torch-backend cpu ${{ matrix.torch }} -r pyproject.toml --extra dev
       - name: Install the old asdfghjkl
         if: matrix.old_asdfghjkl
-        run: uv pip install git+https://github.com/wiseodd/asdl@9c7640f8a870e82d5b439e6da59d753b207003b0
+        run: |
+          uv pip install git+https://github.com/wiseodd/asdl@9c7640f8a870e82d5b439e6da59d753b207003b0
+          uv pip check
+          .venv/bin/python -c "import laplace; from laplace.curvature import AsdfghjklGGN, AsdfghjklEF, AsdfghjklHessian"
       - name: Test with pytest
-        run: .venv/bin/python -m pytest tests
+        run: .venv/bin/python -m pytest tests ${{ matrix.pytest_args }}
 
   docs:
     name: build docs

@@ -74,6 +74,16 @@ Pull requests are very welcome. Please follow these guidelines:
 4. Fully document your changes in the form of Python docstrings, typehinting, and (if applicable) an example in the `./examples` subdirectory. See [writing an example](#writing-an-example).
    1. See `docs/api_reference/*.md` on how to include a newly added class in the docs.
 5. Provide as many test cases as possible. Make sure all test cases pass.
+
+    Tests that use `LowRankLaplace` or an `Asdfghjkl*` backend as a parameter, and those in
+    `tests/test_curv_backends_asdfghjkl.py`, get the `asdfghjkl` marker automatically. CI runs
+    only these against the old asdfghjkl package. To do the same locally:
+
+    ```bash
+    uv pip install git+https://github.com/wiseodd/asdl@asdfghjkl
+    pytest tests -m asdfghjkl
+    ```
+
 6. CI also runs every script in `./examples`. New scripts are picked up automatically, so
    make sure they run on a CPU in a few minutes. To run them locally:
 

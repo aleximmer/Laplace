@@ -77,6 +77,7 @@ docs = [
 [tool.pytest.ini_options]
 testpaths = "tests"
 markers = [
+  "asdfghjkl: depends on the old asdfghjkl package; run alone in the old-asdfghjkl CI job",
   "cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU",
   "default_dtype(dtype): torch default dtype for the test (float32 if unmarked)",
   "seed(n): torch RNG seed for the test (0 if unmarked)",

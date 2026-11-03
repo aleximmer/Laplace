@@ -3,6 +3,41 @@ from collections.abc import Iterator
 import pytest
 import torch
 
+from laplace import LowRankLaplace
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Mark the tests that depend on the old asdfghjkl package with `asdfghjkl`.
+
+    These are the tests in `test_curv_backends_asdfghjkl.py` and every test
+    parametrized with `LowRankLaplace` or an `Asdfghjkl*` backend. The
+    old-asdfghjkl CI job runs only them, with `pytest -m asdfghjkl`.
+
+    Parameters
+    ----------
+    config : pytest.Config
+        The pytest config (unused).
+    items : list[pytest.Item]
+        The collected tests, marked in place.
+    """
+    for item in items:
+        callspec = getattr(item, "callspec", None)
+        params = callspec.params.values() if callspec is not None else []
+
+        depends_on_asdfghjkl = (
+            item.path.name == "test_curv_backends_asdfghjkl.py"
+            or any(
+                param is LowRankLaplace
+                or (isinstance(param, type) and param.__name__.startswith("Asdfghjkl"))
+                for param in params
+            )
+        )
+
+        if depends_on_asdfghjkl:
+            item.add_marker(pytest.mark.asdfghjkl)
+
 
 @pytest.fixture(autouse=True)
 def _isolate_global_torch_state(request: pytest.FixtureRequest) -> Iterator[None]:
