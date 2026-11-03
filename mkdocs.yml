@@ -11,10 +11,10 @@ nav:
   - Developer's Guide: devs_guide.md
   - "Example: Regression": regression_example.py
   - "Example: ELLA and VaLLA": ella_valla_example.md
-  - "Example: Calibration": calibration_example.md
-  - "Example: GP Inference": calibration_gp_example.md
+  - "Example: Calibration": calibration_example.py
+  - "Example: GP Inference": calibration_gp_example.py
   - "Example: Decision-Making": expectation_example.md
-  - "Example: Huggingface LLMs": huggingface_example.md
+  - "Example: Huggingface LLMs": huggingface_example.py
   - "Example: Language Modeling": lm_example.py
   - "Example: Diffusion Models": diffusion_example.py
   - "Example: Semantic Segmentation": segmentation_example.py

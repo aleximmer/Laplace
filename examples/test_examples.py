@@ -39,7 +39,7 @@ ARGS = {
 }
 
 # Doc snippets take no arguments, so these run with the real models and full data.
-SLOW = {"calibration_example.md", "calibration_gp_example.md", "huggingface_example.md"}
+SLOW: set[str] = set()
 
 # Doc pages whose snippets are excerpts, not a complete program.
 SKIP = {
@@ -156,7 +156,7 @@ def test_all_examples_collected() -> None:
 
     assert "regression_example.py" in scripts
     assert "test_examples.py" not in scripts and "conftest.py" not in scripts
-    assert "calibration_example.md" in pages and "devs_guide.md" not in pages
+    assert "index.md" in pages and "devs_guide.md" not in pages
 
     # No stale entries for renamed or deleted files
     assert set(ARGS) <= set(scripts)
