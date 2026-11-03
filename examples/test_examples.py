@@ -191,3 +191,9 @@ def test_full_variants_are_slow() -> None:
 
     assert slow == {f"{name}[full]" for name in FULL}
     assert FULL <= set(ARGS)
+
+
+def test_docs_server_watches_examples() -> None:
+    config = (EXAMPLES_DIR.parent / "mkdocs.yml").read_text()
+
+    assert re.search(r"^watch:\n  - examples$", config, flags=re.MULTILINE)

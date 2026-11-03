@@ -58,38 +58,46 @@ def g(y: torch.Tensor) -> torch.Tensor:
 
 # %% [markdown]
 # We query the simulator 20 times, train a small two-output network on the results, and fit a Laplace approximation on top.
+# The steps sit in a function so that we can refit with another seed.
+
 
 # %%
-torch.manual_seed(123)
+def fit_laplace(seed: int = 123) -> tuple[BaseLaplace, torch.Tensor, torch.Tensor]:
+    torch.manual_seed(seed)
 
-X_train = torch.rand(20, 2)
-Y_train = true_fn(X_train)
+    X_train = torch.rand(20, 2)
+    Y_train = true_fn(X_train)
 
-model = nn.Sequential(
-    nn.Linear(2, 50), nn.Tanh(), nn.Linear(50, 50), nn.Tanh(), nn.Linear(50, 2)
-)
-opt = optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-4)
+    model = nn.Sequential(
+        nn.Linear(2, 50), nn.Tanh(), nn.Linear(50, 50), nn.Tanh(), nn.Linear(50, 2)
+    )
+    opt = optim.Adam(model.parameters(), lr=1e-2, weight_decay=1e-4)
 
-for _ in range(1000):
-    opt.zero_grad()
-    loss = ((model(X_train) - Y_train) ** 2).mean()
-    loss.backward()
-    opt.step()
+    for _ in range(1000):
+        opt.zero_grad()
+        loss = ((model(X_train) - Y_train) ** 2).mean()
+        loss.backward()
+        opt.step()
 
-train_loader = data_utils.DataLoader(
-    data_utils.TensorDataset(X_train, Y_train), batch_size=20
-)
+    train_loader = data_utils.DataLoader(
+        data_utils.TensorDataset(X_train, Y_train), batch_size=20
+    )
 
-la = Laplace(
-    model,
-    Likelihood.REGRESSION,
-    subset_of_weights=SubsetOfWeights.ALL,
-    hessian_structure=HessianStructure.KRON,
-    sigma_noise=0.05,
-    enable_backprop=True,
-)
-la.fit(train_loader)
-la.optimize_prior_precision(PredType.GLM)
+    la = Laplace(
+        model,
+        Likelihood.REGRESSION,
+        subset_of_weights=SubsetOfWeights.ALL,
+        hessian_structure=HessianStructure.KRON,
+        sigma_noise=0.05,
+        enable_backprop=True,
+    )
+    la.fit(train_loader)
+    la.optimize_prior_precision(PredType.GLM)
+
+    return la, X_train, Y_train
+
+
+la, X_train, Y_train = fit_laplace()
 
 # %% [markdown]
 # The simulator is noise-free, so we set `sigma_noise` small.

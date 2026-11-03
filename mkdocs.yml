@@ -99,6 +99,10 @@ markdown_extensions:
 hooks:
   - mkdocs_hooks.py
 
+# The example pages live outside docs/, so `mkdocs serve` must watch them too
+watch:
+  - examples
+
 plugins:
   - search
   - mkdocs-jupyter:
