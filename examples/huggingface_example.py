@@ -138,7 +138,12 @@ class MyGPT2(nn.Module):
         device = next(self.parameters()).device
         input_ids = data["input_ids"].to(device)
         attn_mask = data["attention_mask"].to(device)
-        output_dict = self.hf_model(input_ids=input_ids, attention_mask=attn_mask)
+
+        # With left padding, count positions from the first real token
+        position_ids = (attn_mask.cumsum(-1) - 1).clamp(min=0)
+        output_dict = self.hf_model(
+            input_ids=input_ids, attention_mask=attn_mask, position_ids=position_ids
+        )
         return output_dict.logits
 
 
