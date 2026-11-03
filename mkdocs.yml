@@ -9,7 +9,7 @@ site_dir: site/laplace
 nav:
   - Introduction: index.md
   - Developer's Guide: devs_guide.md
-  - "Example: Regression": regression_example.md
+  - "Example: Regression": regression_example.py
   - "Example: ELLA and VaLLA": ella_valla_example.md
   - "Example: Calibration": calibration_example.md
   - "Example: GP Inference": calibration_gp_example.md
@@ -95,8 +95,14 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
 
+hooks:
+  - mkdocs_hooks.py
+
 plugins:
   - search
+  - mkdocs-jupyter:
+      include: ["*.py"]
+      execute: false
   - mkdocstrings:
       enabled: true
       default_handler: python
@@ -135,6 +141,7 @@ extra:
 
 extra_css:
   - css/mkdocstrings.css
+  - css/notebooks.css
 
 extra_javascript:
   - javascripts/mathjax.js

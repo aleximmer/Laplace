@@ -138,4 +138,6 @@ state_dict.bin
 
 .pdm-python
 
-docs/superpowers/
+
+# mkdocs-jupyter build cache
+.cache/

@@ -47,6 +47,8 @@ SKIP = {
     "expectation_example.md": "excerpts of examples/expectation_example.py",
 }
 
+MARKDOWN_CELL = "# %% [markdown]"
+
 PYTHON_BLOCK = re.compile(
     r"^```python[^\n]*\n(.*?)^```", flags=re.DOTALL | re.MULTILINE
 )
@@ -64,6 +66,30 @@ def _pages() -> list[str]:
     return sorted(
         p.name for p in DOCS_DIR.glob("*.md") if PYTHON_BLOCK.search(p.read_text())
     )
+
+
+def _rendered() -> list[str]:
+    """Examples that mkdocs renders as doc pages: jupytext scripts opening with prose."""
+    return sorted(
+        name
+        for name in _scripts()
+        if (EXAMPLES_DIR / name).read_text().startswith(MARKDOWN_CELL)
+    )
+
+
+def markdown_cells(source: str) -> list[str]:
+    """Return the text of each markdown cell in a jupytext percent script."""
+    cells = []
+
+    for cell in re.split(r"^(?=# %%)", source, flags=re.MULTILINE):
+        header, _, body = cell.partition("\n")
+        if header.strip() != MARKDOWN_CELL:
+            continue
+
+        lines = [re.sub(r"^# ?", "", line) for line in body.splitlines()]
+        cells.append("\n".join(lines).strip())
+
+    return cells
 
 
 def _params(names: list[str]) -> list:
@@ -130,7 +156,7 @@ def test_all_examples_collected() -> None:
 
     assert "regression_example.py" in scripts
     assert "test_examples.py" not in scripts and "conftest.py" not in scripts
-    assert "regression_example.md" in pages and "devs_guide.md" not in pages
+    assert "calibration_example.md" in pages and "devs_guide.md" not in pages
 
     # No stale entries for renamed or deleted files
     assert set(ARGS) <= set(scripts)
@@ -164,3 +190,40 @@ def test_runner_reports_failure(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "ModuleNotFoundError" in result.stderr
+
+
+def test_rendered_examples_are_in_nav() -> None:
+    nav = (EXAMPLES_DIR.parent / "mkdocs.yml").read_text()
+
+    assert "regression_example.py" in _rendered()
+    assert all(f": {name}" in nav for name in _rendered())
+
+
+@pytest.mark.parametrize("script", _rendered())
+def test_rendered_markdown_is_portable(script: str) -> None:
+    cells = markdown_cells((EXAMPLES_DIR / script).read_text())
+    text = "\n".join(cells)
+
+    assert cells, "needs at least one markdown cell"
+    assert "\\(" not in text and "\\[" not in text
+    assert ".md)" not in text and "!!!" not in text
+
+    for img in re.findall(r"\]\(\.\./assets/([^)]+)\)", text):
+        assert (DOCS_DIR / "assets" / img).exists(), img
+
+    pages = {Path(n).stem for n in _rendered()} | {
+        p.stem for p in DOCS_DIR.glob("*.md")
+    }
+    for page in re.findall(r"(?<!!)\[[^\]]*\]\(\.\./([\w-]+)/", text):
+        assert page in pages, page
+
+
+@pytest.mark.parametrize("script", _rendered())
+def test_rendered_example_runs_in_jupyter(script: str) -> None:
+    assert ".parse_args()" not in (EXAMPLES_DIR / script).read_text()
+
+
+def test_markdown_cells() -> None:
+    src = "# %% [markdown]\n# # T\n#\n# a $x$\n\n# %%\nx = 1\n# %% [markdown]\n# b\n"
+
+    assert markdown_cells(src) == ["# T\n\na $x$", "b"]

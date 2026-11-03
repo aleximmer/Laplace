@@ -5,7 +5,7 @@ larger networks but using subsampled data. ELLA builds a low-rank Nyström basis
 VaLLA fits a sparse variational GP with inducing points.
 
 In this example we fit both to the sinusoidal regression task from the
-[regression example](regression_example.md) and compare them with exact LA.
+[regression example](regression_example.py) and compare them with exact LA.
 Both methods leave the network weights alone. You train a MAP network as usual
 and fit the posterior afterwards.
 
@@ -50,7 +50,7 @@ We generated the data with noise \(\sigma = 0.3\), so we pass that value as
 `sigma_noise` and only tune the prior precision. This assumes the aleatoric
 noise is known. If it isn't, optimize the noise together with the prior
 precision through the marginal likelihood, as in the
-[regression example](regression_example.md).
+[regression example](regression_example.py).
 
 ```python
 la = Laplace(
