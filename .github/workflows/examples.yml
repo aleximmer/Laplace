@@ -1,0 +1,63 @@
+name: examples
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # 1st of every month, 04:00 UTC: the examples with large models and full data
+    - cron: "0 4 1 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  examples:
+    name: examples
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Cache Hugging Face models and datasets
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-hub-examples
+      - name: Install the project and the example dependencies
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra asdl -r examples/requirements.txt
+      - name: Run examples
+        run: .venv/bin/python -m pytest examples/test_examples.py -m "not slow" -v
+
+  examples-slow:
+    name: examples with large models
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Cache Hugging Face models and datasets
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-hub-examples-slow
+      - name: Install the project and the example dependencies
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra asdl -r examples/requirements.txt
+      - name: Run slow examples
+        run: .venv/bin/python -m pytest examples/test_examples.py -m slow -v

@@ -134,7 +134,7 @@ ml.backward()
 !!! tip
 
     This library also supports Huggingface models and parameter-efficient fine-tuning.
-    See [Huggingface LLM example](huggingface_example.md) for the full exposition.
+    See [Huggingface LLM example](huggingface_example.py) for the full exposition.
 
 First, we need to wrap the pretrained model so that the `forward` method takes a
 dict-like input. Note that when you iterate over a Huggingface dataloader,

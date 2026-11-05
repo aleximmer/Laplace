@@ -1,0 +1,6 @@
+/* Example pages are rendered from notebooks that are never executed, so the
+   "In [ ]:" prompts carry no information. The selector outranks the notebook
+   styles, which load after this file and show the prompt on code cells. */
+.jupyter-wrapper .jp-CodeCell .jp-Cell-inputWrapper .jp-InputArea .jp-InputPrompt {
+  display: none;
+}
