@@ -3335,15 +3335,23 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.train_loader = train_loader
         self._prior_factor_sod = self.n_subset / self.n_data
 
+        # Materialise the subset batches once and reuse them for every
+        # K_MM block below. Re-iterating the loader instead would return
+        # different inputs whenever the dataset is stochastic (e.g. random
+        # data augmentation), making K_MM non-symmetric and not positive
+        # semi-definite. The subset has at most `n_subset` points, so this
+        # does not materialise the full training set.
+        subset_batches = list(train_loader)
+
         self._init_K_MM()
         self._init_Sigma_inv()
 
         f, lambdas, mu = [], [], []
 
         if progress_bar:
-            loader = enumerate(tqdm.tqdm(train_loader, desc="Fitting"))
+            loader = enumerate(tqdm.tqdm(subset_batches, desc="Fitting"))
         else:
-            loader = enumerate(train_loader)
+            loader = enumerate(subset_batches)
 
         for i, data in loader:
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
@@ -3381,9 +3389,12 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             mu.append(
                 self._mean_scatter_term_batch(Js_batch, f_batch, y)
             )  # needed for marginal likelihood
-            for j, (X2, _) in enumerate(train_loader):
+            for j, data2 in enumerate(subset_batches):
                 if j >= i:
-                    X2 = X2.to(self._device)
+                    if isinstance(data2, MutableMapping):
+                        X2 = data2
+                    else:
+                        X2 = data2[0].to(self._device)
                     K_batch = self._kernel_batch(Js_batch, X2)
                     self._store_K_batch(K_batch, i, j)
 

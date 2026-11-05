@@ -2,7 +2,7 @@ import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 from laplace.baselaplace import FunctionalLaplace
 from laplace.curvature.asdl import AsdlGGN
@@ -425,3 +425,32 @@ def test_dtype(laplace, backend, dtype, independent_outputs, likelihood):
             assert False  # Fail the test
         else:
             pass  # Ignore
+
+
+class NoisyDataset(Dataset):
+    """Dataset whose inputs change on every access, like random augmentation."""
+
+    def __init__(self, X, y, noise):
+        self.X = X
+        self.y = y
+        self.noise = noise
+
+    def __len__(self):
+        return len(self.X)
+
+    def __getitem__(self, i):
+        return self.X[i] + self.noise * torch.randn_like(self.X[i]), self.y[i]
+
+
+def test_fit_stochastic_loader_symmetric_K_MM():
+    # Regression test for #330: fit must not re-iterate the subset loader
+    # for every K_MM block, or a stochastic loader makes K_MM non-symmetric.
+    torch.manual_seed(0)
+    X, y = torch.randn(64, 10), torch.randint(3, (64,))
+    model = nn.Sequential(nn.Linear(10, 20), nn.ReLU(), nn.Linear(20, 3))
+
+    la = FunctionalLaplace(model, "classification", n_subset=32)
+    la.fit(DataLoader(NoisyDataset(X, y, noise=0.1), batch_size=8))
+
+    assert torch.allclose(la.K_MM, la.K_MM.T)
+    assert torch.linalg.eigvalsh(la.K_MM).min() >= -1e-8
