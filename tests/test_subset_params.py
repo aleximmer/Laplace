@@ -75,6 +75,7 @@ def test_compatible_backend(laplace, lh, backend, model):
 
 
 @requires_backpack
+@pytest.mark.asdfghjkl
 @pytest.mark.parametrize(
     "laplace,lh", product(flavors, ["classification", "regression"])
 )

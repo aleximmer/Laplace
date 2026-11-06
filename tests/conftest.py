@@ -4,6 +4,9 @@ from typing import Any
 import pytest
 import torch
 
+from laplace import LowRankLaplace
+from laplace.curvature.asdfghjkl import AsdfghjklInterface
+
 
 @pytest.fixture(autouse=True)
 def _isolate_global_torch_state(request: pytest.FixtureRequest) -> Iterator[None]:
@@ -59,13 +62,44 @@ def _missing_packages(value: Any) -> set[str]:
     }
 
 
+def _uses_old_asdfghjkl(value: Any) -> bool:
+    """Check whether a test parameter is `LowRankLaplace` or an asdfghjkl backend.
+
+    Parameters
+    ----------
+    value : Any
+        A parameter value; tuples and lists are searched one level deep.
+
+    Returns
+    -------
+    bool
+        True if `value` is, or holds, `LowRankLaplace` or a subclass of
+        `AsdfghjklInterface`.
+    """
+    values = value if isinstance(value, (tuple, list)) else [value]
+
+    return any(
+        v is LowRankLaplace or issubclass(v, AsdfghjklInterface)
+        for v in values
+        if isinstance(v, type)
+    )
+
+
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
-    """Skip parametrized tests that use a backend whose package isn't installed."""
+    """Mark and skip parametrized tests by the backends their parameters use.
+
+    Tests that use `LowRankLaplace` or an asdfghjkl backend get the
+    `asdfghjkl` marker. Tests that use a backend whose package isn't
+    installed are skipped.
+    """
     for item in items:
         callspec = getattr(item, "callspec", None)
 
         if callspec is None:
             continue
+
+        if any(map(_uses_old_asdfghjkl, callspec.params.values())):
+            item.add_marker(pytest.mark.asdfghjkl)
 
         missing = set().union(*map(_missing_packages, callspec.params.values()))
 
