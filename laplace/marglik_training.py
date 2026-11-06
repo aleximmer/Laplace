@@ -185,7 +185,10 @@ def marglik_training(
             "Marginal-likelihood training does not support reward modeling."
         )
 
-    criterion = lik.loss_fn("mean")
+    # Class weights and ignored targets change the denominator of a "mean" loss, so the
+    # non-Gaussian data term is summed and divided by the batch size in the loop below,
+    # matching the summed loss that `Laplace.fit` uses
+    criterion = lik.loss_fn("mean" if lik.is_gaussian else "sum")
 
     # Cast buffers like class weights to the model, e.g. float32 weights to float64
     if isinstance(criterion, torch.nn.Module):
@@ -264,7 +267,11 @@ def marglik_training(
             delta = expand_prior_precision(prior_prec, model)
 
             f = model(X)
-            loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
+            data_loss = criterion(f, y)
+            if not lik.is_gaussian:
+                data_loss = data_loss / len(y)
+
+            loss = data_loss + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()
             optimizer.step()
             epoch_loss += loss.cpu().item() * len(y)

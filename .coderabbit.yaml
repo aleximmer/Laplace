@@ -30,6 +30,36 @@ reviews:
   estimate_code_review_effort: false
   poem: false
 
+  pre_merge_checks:
+    # The built-in check counts every function, including private helpers and
+    # overrides. Overrides leave out docstrings on purpose, so the API reference
+    # shows the base-class docs through `griffe_inherited_docstrings`.
+    docstrings:
+      mode: "off"
+    custom_checks:
+      - name: "Public API docstrings"
+        mode: "warning"
+        instructions: |
+          Only check Python code under `laplace/` that this PR adds or changes. Skip
+          `tests/`, `examples/`, and `docs/`.
+
+          A callable is public API when it is listed in `laplace/__init__.py` or
+          `laplace/utils/__init__.py`, or rendered in `docs/api_reference/*.md`, or
+          it is a public method or property of such a class. A name starting with an
+          underscore is private, and so are its methods.
+
+          Fail when a public class, function, method, or property added or changed
+          in this PR has no docstring. Classes document their constructor arguments
+          in the class docstring, so `__init__` needs none.
+
+          Pass in these cases, even with no docstring:
+          - a method that overrides one of the same name in a base class in
+            `laplace/` that has a docstring;
+          - dunder methods other than `__init__`;
+          - private names and nested functions.
+
+          When it fails, list each callable as `path:line name`.
+
   tools:
     # Ruff covers linting for this repo; these would duplicate or contradict it.
     pylint:

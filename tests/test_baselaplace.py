@@ -1240,6 +1240,30 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     assert len(f_mu) == len(reward_test_X)
 
 
+@pytest.mark.parametrize("laplace", [KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("diagonal_output", [False, True])
+def test_reward_modeling_fitting_mc_gives_probabilities(
+    laplace, diagonal_output, reward_model, reward_loader
+):
+    lap = laplace(reward_model, "reward_modeling")
+    lap.fit(reward_loader)
+    X, _ = next(iter(reward_loader))
+
+    # While fitting, the likelihood is categorical over the pair
+    probs = lap(
+        X,
+        fitting=True,
+        link_approx="mc",
+        n_samples=20,
+        diagonal_output=diagonal_output,
+        generator=torch.Generator().manual_seed(0),
+    )
+
+    assert probs.shape == (len(X), 2)
+    assert (probs >= 0).all()
+    torch.testing.assert_close(probs.sum(dim=-1), torch.ones(len(X)))
+
+
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
 def test_asdl_different_numbers_of_rows_raises(backend):
     # Position-wise layer (B * L rows), then a head after pooling over positions (B rows)
@@ -2526,6 +2550,27 @@ def test_likelihood_assignment_keeps_subnetwork(model, class_loader):
 
     assert torch.equal(lap.backend.subnetwork_indices, indices)
     assert lap.H.shape == (3,)
+
+
+def test_legacy_subnet_pickle_keeps_subnetwork(model, class_loader, reg_loader):
+    indices = torch.tensor([0, 4, 11], dtype=torch.long)
+    lap = DiagSubnetLaplace(model, "regression", subnetwork_indices=indices)
+
+    # Pickles made before `_subnetwork_indices` kept the indices only on the backend
+    state = dict(vars(lap))
+    del state["_subnetwork_indices"]
+
+    legacy = DiagSubnetLaplace.__new__(DiagSubnetLaplace)
+    legacy.__setstate__(state)
+    restored = pickle.loads(pickle.dumps(legacy))
+
+    for la, likelihood in [(legacy, "classification"), (restored, "regression")]:
+        # Reassigning drops the backend, unless the fit likelihood stays the same
+        la.likelihood = likelihood
+        la.fit(class_loader if likelihood == "classification" else reg_loader)
+
+        assert torch.equal(la.backend.subnetwork_indices, indices)
+        assert la.H.shape == (3,)
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])

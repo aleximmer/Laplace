@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Type
+from typing import Any, Type
 
 import torch
 from torch import nn
@@ -135,6 +135,23 @@ class SubnetLaplace(ParametricLaplace):
             backend.subnetwork_indices = getattr(self, "_subnetwork_indices", None)
 
         return super().backend
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore a pickled instance.
+
+        Pickles made before `_subnetwork_indices` existed keep the indices only on the
+        cached backend. They are copied over, so that rebuilding the backend (e.g.
+        after a likelihood change) keeps the subnetwork.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            the pickled `__dict__`.
+        """
+        super().__setstate__(state)
+
+        if "_subnetwork_indices" not in vars(self) and self._backend is not None:
+            self._subnetwork_indices = self._backend.subnetwork_indices
 
     def _check_subnetwork_indices(
         self, subnetwork_indices: torch.LongTensor | None

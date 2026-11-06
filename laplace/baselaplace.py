@@ -914,7 +914,7 @@ class BaseLaplace:
         f_var = f_var.reshape(-1, *f_var.shape[-2:])
 
         probs = self._glm_classification_link(
-            f_mu, f_var, link_approx, n_samples, diagonal_output, generator
+            f_mu, f_var, likelihood, link_approx, n_samples, diagonal_output, generator
         )
         return probs.reshape(*batch_shape, probs.shape[-1])
 
@@ -922,23 +922,22 @@ class BaseLaplace:
         self,
         f_mu: torch.Tensor,
         f_var: torch.Tensor,
+        likelihood: Likelihood,
         link_approx: LinkApprox | str,
         n_samples: int,
         diagonal_output: bool,
         generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Approximate the predictive class probabilities from the GLM predictive
-        `f_mu` `(batch, classes)` and `f_var` `(batch, classes, classes)`. See
-        `_glm_forward_call` for the arguments.
+        `f_mu` `(batch, classes)` and `f_var` `(batch, classes, classes)`. `likelihood`
+        is the staged likelihood, categorical while fitting a reward model. See
+        `_glm_forward_call` for the other arguments.
         """
         if link_approx == LinkApprox.MC:
-            return self._glm_predictive_samples(
-                f_mu,
-                f_var,
-                n_samples=n_samples,
-                diagonal_output=diagonal_output,
-                generator=generator,
-            ).mean(dim=0)
+            f_samples = self._glm_functional_samples(
+                f_mu, f_var, n_samples, diagonal_output, generator
+            )
+            return likelihood.inverse_link(f_samples).mean(dim=0)
         elif link_approx == LinkApprox.PROBIT:
             kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=1, dim2=2))
             return torch.softmax(kappa * f_mu, dim=-1)

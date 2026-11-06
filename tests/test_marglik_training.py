@@ -98,3 +98,45 @@ def test_marglik_training_casts_class_weights(model, hessian_structure):
     assert len(margliks) > 0
     assert all(math.isfinite(m) for m in margliks)
     assert all(math.isfinite(loss) for loss in losses)
+
+
+def _first_epoch_loss(model, loader, likelihood):
+    # Zero learning rate and a negligible prior: the loss is the data term alone
+    _, _, _, losses = marglik_training(
+        model,
+        loader,
+        likelihood=likelihood,
+        hessian_structure="diag",  # the default, kron, rejects class weights
+        n_epochs=1,
+        prior_prec_init=1e-12,
+        optimizer_kwargs={"lr": 0.0},
+    )
+
+    return losses[0]
+
+
+def test_marglik_training_sums_weighted_categorical_loss(model):
+    loader = _loader("classification")
+    X, y = loader.dataset.tensors
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 3.0]))
+
+    with torch.no_grad():
+        expected = torch.nn.functional.cross_entropy(
+            model(X), y, weight=weighted.weight, reduction="sum"
+        ).item() / len(X)
+
+    loss = _first_epoch_loss(model, loader, weighted)
+
+    assert math.isclose(loss, expected, rel_tol=1e-5)
+
+
+def test_marglik_training_unweighted_categorical_loss_is_the_mean(model):
+    loader = _loader("classification")
+    X, y = loader.dataset.tensors
+
+    with torch.no_grad():
+        expected = torch.nn.functional.cross_entropy(model(X), y).item()
+
+    loss = _first_epoch_loss(model, loader, CategoricalLikelihood())
+
+    assert math.isclose(loss, expected, rel_tol=1e-5)
