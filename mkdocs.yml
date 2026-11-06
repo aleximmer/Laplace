@@ -9,16 +9,17 @@ site_dir: site/laplace
 nav:
   - Introduction: index.md
   - Developer's Guide: devs_guide.md
-  - "Example: Regression": regression_example.md
-  - "Example: ELLA and VaLLA": ella_valla_example.md
-  - "Example: Calibration": calibration_example.md
-  - "Example: GP Inference": calibration_gp_example.md
-  - "Example: Decision-Making": expectation_example.md
-  - "Example: Huggingface LLMs": huggingface_example.md
-  - "Example: Language Modeling": lm_example.md
-  - "Example: Diffusion Models": diffusion_example.md
-  - "Example: Semantic Segmentation": segmentation_example.md
-  - "Example: Reward Modeling": reward_modeling_example.md
+  - "Example: Regression": regression_example.py
+  - "Example: ELLA and VaLLA": ella_valla_example.py
+  - "Example: Calibration": calibration_example.py
+  - "Example: GP Inference": calibration_gp_example.py
+  - "Example: Decision-Making": expectation_example.py
+  - "Example: Bayesian Optimization": bayesopt_example.py
+  - "Example: Huggingface LLMs": huggingface_example.py
+  - "Example: Language Modeling": lm_example.py
+  - "Example: Diffusion Models": diffusion_example.py
+  - "Example: Semantic Segmentation": segmentation_example.py
+  - "Example: Reward Modeling": reward_modeling_example.py
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
       - ELLA: api_reference/ella.md
@@ -96,8 +97,18 @@ markdown_extensions:
   - pymdownx.arithmatex:
       generic: true
 
+hooks:
+  - mkdocs_hooks.py
+
+# The example pages live outside docs/, so `mkdocs serve` must watch them too
+watch:
+  - examples
+
 plugins:
   - search
+  - mkdocs-jupyter:
+      include: ["*.py"]
+      execute: false
   - mkdocstrings:
       enabled: true
       default_handler: python
@@ -139,6 +150,7 @@ extra:
 
 extra_css:
   - css/mkdocstrings.css
+  - css/notebooks.css
 
 extra_javascript:
   - javascripts/mathjax.js

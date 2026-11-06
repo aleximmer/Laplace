@@ -1,19 +1,16 @@
-import os.path
-import urllib.request
+import os
+from pathlib import Path
 
 import matplotlib.pyplot as plt
 
+EXAMPLES_DIR = Path(__file__).resolve().parents[1]
 
-def download_pretrained_model():
-    # Download pre-trained model if necessary
-    if not os.path.isfile("CIFAR10_plain.pt"):
-        if not os.path.exists("./temp"):
-            os.makedirs("./temp")
-
-        urllib.request.urlretrieve(
-            "https://nc.mlcloud.uni-tuebingen.de/index.php/s/2PBDYDsiotN76mq/download",
-            "./temp/CIFAR10_plain.pt",
-        )
+# Set `LAPLACE_EXAMPLES_ASSETS_DIR` to write the plots elsewhere, e.g. in tests.
+ASSETS_DIR = Path(
+    os.environ.get(
+        "LAPLACE_EXAMPLES_ASSETS_DIR", EXAMPLES_DIR.parent / "docs" / "assets"
+    )
+)
 
 
 def plot_regression(
@@ -47,4 +44,5 @@ def plot_regression(
     if plot:
         plt.show()
     else:
-        plt.savefig(f"docs/assets/{file_name}.png")
+        ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+        plt.savefig(ASSETS_DIR / f"{file_name}.png")

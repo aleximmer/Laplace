@@ -1,11 +1,4 @@
-"""
-.. include:: ../README.md
-
-.. include:: ../examples/regression_example.md
-.. include:: ../examples/calibration_example.md
-.. include:: ../examples/huggingface_example.md
-.. include:: ../examples/reward_modeling_example.md
-"""
+"""Laplace approximations for PyTorch networks."""
 
 from laplace.baselaplace import (
     ELLA,

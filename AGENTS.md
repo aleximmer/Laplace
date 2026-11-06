@@ -36,7 +36,7 @@ Optional `asdfghjkl` backend: `pip install git+https://git@github.com/wiseodd/as
 - `laplace/lllaplace.py`, `laplace/subnetlaplace.py`: last-layer and subnetwork variants.
 - `laplace/curvature/`: Hessian/GGN backends (Curvlinops, BackPACK, ASDL, asdfghjkl).
 - `laplace/utils/`: feature extractor, Kronecker matrices, subnet masks, enums, functional helpers.
-- `tests/`, `examples/`, `docs/` (incl. `docs/api_reference/*.md`).
+- `tests/`, `examples/` (also the example doc pages, via `mkdocs_hooks.py`), `docs/` (incl. `docs/api_reference/*.md`).
 
 ## Commands
 
@@ -58,6 +58,7 @@ uv run mkdocs build --strict     # docs, as checked in CI
 - Add docstrings and type hints for all changes. New public classes go in `docs/api_reference/*.md`
   and the `mkdocs.yml` nav.
 - Add an example under `examples/` when introducing new features, see the current examples. Use it as both tutorial and API explanation. Make the writing flow.
+  Examples are jupytext percent scripts rendered as doc pages; follow "Writing an example" in `docs/devs_guide.md`.
 - Run docstrings, comments, and docs through the
   [humanizer](https://github.com/blader/humanizer) skill to strip AI-sounding prose.
 - Add tests for every change; all must pass.
