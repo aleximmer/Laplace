@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import pickle
 import warnings
 from collections.abc import MutableMapping
 from copy import deepcopy
@@ -11,6 +12,7 @@ from math import e, prod, sqrt
 import numpy as np
 import pytest
 import torch
+import torchmetrics
 from torch import nn
 from torch.distributions import Categorical, Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
@@ -29,14 +31,23 @@ from laplace import (
     LowRankLaplace,
 )
 from laplace.baselaplace import BaseLaplace
+from laplace.curvature import GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
 from laplace.utils import KronDecomposed
+from laplace.utils.enums import Likelihood
 from tests.utils import (
     AsdlEF,
     AsdlGGN,
     BackPackEF,
     BackPackGGN,
     ListDataset,
+    PoissonLog,
+    ScaledGaussian,
     dict_data_collator,
     jacobians_naive,
     requires_asdl,
@@ -1229,9 +1240,33 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     assert len(f_mu) == len(reward_test_X)
 
 
+@pytest.mark.parametrize("laplace", [KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("diagonal_output", [False, True])
+def test_reward_modeling_fitting_mc_gives_probabilities(
+    laplace, diagonal_output, reward_model, reward_loader
+):
+    lap = laplace(reward_model, "reward_modeling")
+    lap.fit(reward_loader)
+    X, _ = next(iter(reward_loader))
+
+    # While fitting, the likelihood is categorical over the pair
+    probs = lap(
+        X,
+        fitting=True,
+        link_approx="mc",
+        n_samples=20,
+        diagonal_output=diagonal_output,
+        generator=torch.Generator().manual_seed(0),
+    )
+
+    assert probs.shape == (len(X), 2)
+    assert (probs >= 0).all()
+    torch.testing.assert_close(probs.sum(dim=-1), torch.ones(len(X)))
+
+
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
 def test_asdl_different_numbers_of_rows_raises(backend):
-    # Token-wise layer (B * L rows), then a head after pooling over tokens (B rows)
+    # Position-wise layer (B * L rows), then a head after pooling over positions (B rows)
     B, L, D, K = 4, 3, 5, 2
 
     class PooledModel(nn.Module):
@@ -1256,8 +1291,8 @@ def test_asdl_different_numbers_of_rows_raises(backend):
     [(AsdlGGN, CurvlinopsGGN), (AsdlEF, CurvlinopsEF)],
 )
 def test_asdl_pooled_outputs_match_curvlinops(asdl_backend, curvlinops_backend):
-    # Tokens `(B, L, D)` -> shared layer -> pooled over tokens `(B, K)`: the
-    # observations are the sequences, not the tokens
+    # Inputs `(B, L, D)` -> shared layer -> pooled over positions `(B, K)`: the
+    # observations are the sequences, not the positions
     B, L, D, K = 4, 3, 5, 2
 
     class PooledModel(nn.Module):
@@ -1378,7 +1413,7 @@ def _dense(H: torch.Tensor | KronDecomposed) -> torch.Tensor:
 def test_multidim_classification_equivalent_to_flat(laplace, backend, model_type):
     """Classification with logits `(B, L, C)` and targets `(B, L)`, e.g. next-token
     prediction, must give the same posterior and predictive as the flat data set with
-    logits `(B * L, C)`, since every token is an observation."""
+    logits `(B * L, C)`, since every position is an observation."""
     N, L, D, C = 12, 3, 4, 5
     X, y = torch.randn(N, D), torch.randint(C, (N,))
     X_multidim, y_multidim = X.reshape(N // L, L, D), y.reshape(N // L, L)
@@ -1508,7 +1543,7 @@ def test_multidim_classification_probability_targets_raise():
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
 def test_multidim_classification_kron_online_equivalent_to_flat(backend):
     # Two online fits with different sequence lengths must give the factors of a
-    # single fit on all tokens
+    # single fit on all positions
     D, C = 4, 3
     X1, y1 = torch.randn(4, 2, D), torch.randint(C, (4, 2))
     X2, y2 = torch.randn(2, 5, D), torch.randint(C, (2, 5))
@@ -2124,7 +2159,7 @@ def test_multidim_equivalent_to_flat(laplace, backend, model_type):
     la_multidim = laplace(model_multidim, "regression", backend=backend)
     la_multidim.fit(loader_multidim)
 
-    # Posterior: `n_data` counts sequences, but the likelihood counts all "tokens"
+    # Posterior: `n_data` counts sequences, but the likelihood counts all "positions"
     # Count `n_obs` instead, i.e., in the case of `(N, L, D)` data, `n_obs = N*L`.
     assert la_multidim.n_data == N // L
     assert la_flat.n_obs == la_multidim.n_obs
@@ -2382,3 +2417,585 @@ def test_joint_glm_samples_multidim(laplace):
 
     assert samples_multidim.shape == (n_samples, N, K)
     assert torch.allclose(samples_flat, samples_multidim)
+
+
+def _hessian_matrix(lap):
+    """Dense view of the fitted Hessian of any parametric flavor."""
+    if isinstance(lap, KronLaplace):
+        return lap.H.to_matrix()
+
+    if isinstance(lap, LowRankLaplace):
+        V, eigvals = lap.H
+        return V @ torch.diag(eigvals) @ V.T
+
+    return lap.H
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize(
+    "name, likelihood",
+    [
+        ("regression", GaussianLikelihood()),
+        ("classification", CategoricalLikelihood()),
+        ("reward_modeling", BradleyTerryLikelihood()),
+    ],
+)
+def test_likelihood_object_equivalence(
+    laplace,
+    name,
+    likelihood,
+    model,
+    reg_loader,
+    class_loader,
+    reward_model,
+    reward_loader,
+    reward_test_X,
+):
+    if name == "reward_modeling" and laplace == LowRankLaplace:
+        pytest.skip(
+            "The asdfghjkl backend of LowRankLaplace keeps the stale `output_size` of "
+            "the pairwise fit, so its GLM predictive fails for reward models."
+        )
+
+    if name == "reward_modeling":
+        net, loader, X = reward_model, reward_loader, reward_test_X
+    else:
+        net = model
+        loader = reg_loader if name == "regression" else class_loader
+        X = next(iter(loader))[0]
+
+    # LowRankLaplace finds its eigenpairs by power iteration from random vectors, so
+    # both fits start from the same RNG state
+    torch.manual_seed(0)
+    la_str = laplace(net, name)
+    la_str.fit(loader)
+
+    torch.manual_seed(0)
+    la_obj = laplace(deepcopy(net), likelihood)
+    la_obj.fit(loader)
+
+    assert torch.allclose(_hessian_matrix(la_str), _hessian_matrix(la_obj))
+    assert torch.allclose(la_str.log_likelihood, la_obj.log_likelihood)
+    assert torch.allclose(
+        la_str.log_marginal_likelihood(), la_obj.log_marginal_likelihood()
+    )
+
+    # The nn predictive draws from the global generator
+    for pred_type, kwargs in [("glm", {}), ("nn", {"n_samples": 10})]:
+        torch.manual_seed(7)
+        pred_str = la_str(X, pred_type=pred_type, link_approx="mc", **kwargs)
+        torch.manual_seed(7)
+        pred_obj = la_obj(X, pred_type=pred_type, link_approx="mc", **kwargs)
+
+        pred_str = pred_str if isinstance(pred_str, tuple) else (pred_str,)
+        pred_obj = pred_obj if isinstance(pred_obj, tuple) else (pred_obj,)
+        for p_str, p_obj in zip(pred_str, pred_obj):
+            assert torch.allclose(p_str, p_obj)
+
+    torch.manual_seed(7)
+    samples_str = la_str.predictive_samples(X, pred_type="nn", n_samples=10)
+    torch.manual_seed(7)
+    samples_obj = la_obj.predictive_samples(X, pred_type="nn", n_samples=10)
+    assert torch.allclose(samples_str, samples_obj)
+
+
+@pytest.mark.parametrize("likelihood", ["regression", Likelihood.REGRESSION])
+def test_likelihood_attr_backcompat(likelihood, model):
+    lap = DiagLaplace(model, likelihood)
+
+    assert isinstance(lap.likelihood, GaussianLikelihood)
+    assert lap.likelihood == "regression"
+    assert lap.likelihood == Likelihood.REGRESSION
+
+
+def test_sigma_noise_non_gaussian_object(model):
+    with pytest.raises(ValueError, match="Sigma noise != 1"):
+        DiagLaplace(model, CategoricalLikelihood(), sigma_noise=2)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_likelihood_assignment_from_str(laplace, model, class_loader):
+    X, _ = next(iter(class_loader))
+
+    lap = laplace(model, CategoricalLikelihood())
+    lap.fit(class_loader)
+    probs = lap(X, pred_type="glm", link_approx="probit")
+
+    lap.likelihood = "regression"
+    assert type(lap.likelihood) is GaussianLikelihood
+    assert lap._backend is None
+    assert type(lap.backend.likelihood) is GaussianLikelihood
+
+    lap.likelihood = "classification"
+    assert type(lap.likelihood) is CategoricalLikelihood
+
+    torch.testing.assert_close(lap(X, pred_type="glm", link_approx="probit"), probs)
+
+
+def test_likelihood_assignment_keeps_backend_with_same_fit_likelihood(model):
+    lap = DiagLaplace(model, "reward_modeling")
+    backend = lap.backend
+
+    # Same object, so the fit likelihood does not change
+    lap.likelihood = lap.likelihood
+    assert lap._backend is backend
+
+
+def test_likelihood_assignment_keeps_subnetwork(model, class_loader):
+    indices = torch.tensor([0, 4, 11], dtype=torch.long)
+    lap = DiagSubnetLaplace(model, "regression", subnetwork_indices=indices)
+
+    lap.likelihood = "classification"
+    lap.fit(class_loader)
+
+    assert torch.equal(lap.backend.subnetwork_indices, indices)
+    assert lap.H.shape == (3,)
+
+
+def test_legacy_subnet_pickle_keeps_subnetwork(model, class_loader, reg_loader):
+    indices = torch.tensor([0, 4, 11], dtype=torch.long)
+    lap = DiagSubnetLaplace(model, "regression", subnetwork_indices=indices)
+
+    # Pickles made before `_subnetwork_indices` kept the indices only on the backend
+    state = dict(vars(lap))
+    del state["_subnetwork_indices"]
+
+    legacy = DiagSubnetLaplace.__new__(DiagSubnetLaplace)
+    legacy.__setstate__(state)
+    restored = pickle.loads(pickle.dumps(legacy))
+
+    for la, likelihood in [(legacy, "classification"), (restored, "regression")]:
+        # Reassigning drops the backend, unless the fit likelihood stays the same
+        la.likelihood = likelihood
+        la.fit(class_loader if likelihood == "classification" else reg_loader)
+
+        assert torch.equal(la.backend.subnetwork_indices, indices)
+        assert la.H.shape == (3,)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_legacy_pickle_with_str_likelihood(
+    laplace, likelihood, model, class_loader, reg_loader
+):
+    loader = class_loader if likelihood == "classification" else reg_loader
+    X, _ = next(iter(loader))
+
+    lap = laplace(model, likelihood)
+    lap.fit(loader)
+    pred = lap(X, pred_type="glm")
+
+    # Pickles made before likelihood objects stored plain strings, also in the
+    # cached backend
+    state = dict(vars(lap))
+    state["likelihood"] = str(state.pop("_likelihood"))
+    backend = state["_backend"]
+    backend.__dict__["likelihood"] = str(backend.__dict__.pop("_likelihood"))
+
+    legacy = laplace.__new__(laplace)
+    legacy.__setstate__(state)
+
+    assert type(legacy.likelihood) is type(lap.likelihood)
+    assert type(legacy.backend.likelihood) is type(lap.likelihood)
+
+    pred_legacy = legacy(X, pred_type="glm")
+    for a, b in zip(
+        pred if isinstance(pred, tuple) else (pred,),
+        pred_legacy if isinstance(pred_legacy, tuple) else (pred_legacy,),
+    ):
+        torch.testing.assert_close(a, b)
+
+    # And through an actual pickle round trip
+    restored = pickle.loads(pickle.dumps(legacy))
+    pred_restored = restored(X, pred_type="glm")
+    for a, b in zip(
+        pred if isinstance(pred, tuple) else (pred,),
+        pred_restored if isinstance(pred_restored, tuple) else (pred_restored,),
+    ):
+        torch.testing.assert_close(a, b)
+
+
+def test_deepcopy_and_state_dict_keep_likelihood(model, class_loader):
+    lap = DiagLaplace(model, "classification")
+    lap.fit(class_loader)
+
+    assert lap.state_dict()["likelihood"] == "classification"
+    assert "likelihood" not in vars(lap)
+
+    lap2 = deepcopy(lap)
+    assert type(lap2.likelihood) is CategoricalLikelihood
+    assert lap2.likelihood is not lap.likelihood
+
+
+class TemperedCategorical(CategoricalLikelihood):
+    """Built-in categorical likelihood that reports a temperature as an option."""
+
+    def __init__(self, temperature: float = 1.0) -> None:
+        self.temperature = temperature
+
+    def hyperparameters(self) -> dict:
+        return {} if self.temperature == 1.0 else {"temperature": self.temperature}
+
+
+def test_parameterized_builtin_subclass_keeps_classification_paths(model, class_loader):
+    lik = TemperedCategorical(temperature=1.0)
+    assert lik.name == "classification"
+
+    la = DiagLaplace(model, lik)
+    la.fit(class_loader)
+    ref = DiagLaplace(model, "classification")
+    ref.fit(class_loader)
+
+    X, _ = next(iter(class_loader))
+    probs = la(X, pred_type="glm", link_approx="probit")
+
+    torch.testing.assert_close(probs.sum(-1), torch.ones(len(X)))
+    torch.testing.assert_close(probs, ref(X, pred_type="glm", link_approx="probit"))
+
+    # With an option set, the name still selects the classification paths
+    tempered = DiagLaplace(model, TemperedCategorical(temperature=2.0))
+    tempered.fit(class_loader)
+    probs = tempered(X, pred_type="glm", link_approx="probit")
+    torch.testing.assert_close(probs.sum(-1), torch.ones(len(X)))
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
+def test_custom_likelihood_end_to_end(laplace, model, reg_loader):
+    la = laplace(model, ScaledGaussian(2.0))
+    la.fit(reg_loader)
+
+    # One observation per datum, from the targets of each batch
+    assert la.n_obs == len(reg_loader.dataset)
+
+    ref = laplace(model, "regression")
+    ref.fit(reg_loader)
+
+    # The output Hessian is I / s^2 instead of I
+    torch.testing.assert_close(la.H, ref.H / 4)
+
+    X, y = reg_loader.dataset.tensors
+
+    with torch.no_grad():
+        f = model(X)
+
+    torch.testing.assert_close(la.log_likelihood, Normal(f, 2.0).log_prob(y).sum())
+    assert torch.isfinite(la.log_marginal_likelihood())
+
+    f_mu, f_var = la(X, pred_type="glm")
+    assert f_mu.shape == (len(X), 2)
+    assert f_var.shape == (len(X), 2, 2)
+
+    mean, var = la(X, pred_type="nn", link_approx="mc", n_samples=5)
+    assert mean.shape == (len(X), 2)
+    assert var.shape == (len(X), 2)
+
+
+def _padded_loader(ignore_index: int) -> DataLoader:
+    """Per-position classification data: inputs `(B, L, D)` and class indices `(B, L)` of
+    3 classes, with some positions set to `ignore_index`."""
+    X = torch.randn(10, 5, 4)
+    y = torch.randint(3, (10, 5))
+    y[::3, 1] = ignore_index
+    y[1, ::2] = ignore_index
+
+    return DataLoader(TensorDataset(X, y), batch_size=4)
+
+
+def _categorical_options(name: str) -> dict:
+    """Options of `CategoricalLikelihood` by test id."""
+    weight = torch.tensor([0.5, 1.0, 2.0])
+
+    return {
+        "weight": dict(weight=weight),
+        "ignore_index": dict(ignore_index=2),
+        "label_smoothing": dict(label_smoothing=0.1),
+        "all": dict(weight=weight, ignore_index=2, label_smoothing=0.1),
+    }[name]
+
+
+def _assert_same_curvature(la: BaseLaplace, ref: BaseLaplace) -> None:
+    """Compare the Hessians of two fitted Laplace approximations."""
+    if isinstance(la, KronLaplace):
+        for facs, facs_ref in zip(la.H_facs.kfacs, ref.H_facs.kfacs):
+            for F, F_ref in zip(facs, facs_ref):
+                torch.testing.assert_close(F, F_ref)
+    else:
+        torch.testing.assert_close(la.H, ref.H)
+
+
+@pytest.mark.parametrize(
+    "laplace,options",
+    [
+        (laplace, options)
+        for laplace in [FullLaplace, DiagLaplace]
+        for options in ["weight", "ignore_index", "label_smoothing", "all"]
+    ]
+    + [(KronLaplace, "label_smoothing")],
+)
+def test_categorical_options_end_to_end(laplace, options):
+    lik = CategoricalLikelihood(**_categorical_options(options))
+    loader = _padded_loader(lik.ignore_index)
+    model = nn.Linear(4, 3)
+
+    la = laplace(model, lik)
+
+    if laplace is KronLaplace:
+        # The default `ignore_index=-100` drops the padded positions, which KFAC can't
+        with pytest.warns(UserWarning, match="ignored positions"):
+            la.fit(loader)
+    else:
+        la.fit(loader)
+
+    _, y = loader.dataset.tensors
+    assert la.n_obs == int((y != lik.ignore_index).sum())
+
+    if laplace is KronLaplace:
+        # The type-2 KFAC does not see the targets, so label smoothing leaves it as
+        # it is with the default options. Neither do the padded positions change it: the
+        # factors sum over all positions and are normalized by their number, so they
+        # are the same as for data without padding.
+        X, y = loader.dataset.tensors
+        unpadded = DataLoader(
+            TensorDataset(X, y.clamp(min=0)), batch_size=loader.batch_size
+        )
+        ref = KronLaplace(model, "classification")
+        ref.fit(unpadded)
+        _assert_same_curvature(la, ref)
+    else:
+        # The torch.func GGN with the same likelihood, summed over the batches as in
+        # `ParametricLaplace.fit`
+        backend = GGNInterface(model, lik)
+        method = "full" if laplace is FullLaplace else "diag"
+        H_ref = sum(getattr(backend, method)(X, y)[1] for X, y in loader)
+        torch.testing.assert_close(la.H, H_ref)
+
+    # A configured criterion gives the same likelihood as the object
+    default_loader = _padded_loader(-100)
+    from_criterion = laplace(model, nn.CrossEntropyLoss(ignore_index=-100))
+    from_object = laplace(model, CategoricalLikelihood())
+    assert from_criterion.likelihood == from_object.likelihood
+
+    from_criterion.fit(default_loader)
+    from_object.fit(default_loader)
+    assert from_criterion.n_obs == from_object.n_obs
+    _assert_same_curvature(from_criterion, from_object)
+
+
+def test_glm_mc_predictive_for_custom_link():
+    loader = _poisson_loader()
+    X = loader.dataset.tensors[0]
+
+    model = nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1))
+    la = DiagLaplace(model, PoissonLog(), prior_precision=10.0)
+
+    # `PoissonLog` has no closed-form Fisher, so the fit estimates it
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        la.fit(loader)
+
+    X_test = X[:8]
+    f_mu, f_var = la._glm_predictive_distribution(X_test)
+
+    # The lognormal mean of exp(f) for f ~ N(f_mu, f_var)
+    expected = torch.exp(f_mu + 0.5 * f_var.diagonal(dim1=-2, dim2=-1))
+
+    mc = la(X_test, pred_type="glm", link_approx="mc", n_samples=20000)
+    assert mc.shape == (8, 1)
+    torch.testing.assert_close(mc, expected, rtol=0.05, atol=0.0)
+
+    # `link_approx` only selects among the categorical approximations
+    default = la(X_test, pred_type="glm", n_samples=20000)
+    assert default.shape == (8, 1)
+    torch.testing.assert_close(default, expected, rtol=0.05, atol=0.0)
+
+
+def test_kron_rejects_unhonoured(model, reg_loader, class_loader):
+    with pytest.raises(ValueError, match="diag"):
+        KronLaplace(model, ScaledGaussian()).fit(reg_loader)
+
+    with pytest.raises(ValueError, match="diag"):
+        KronLaplace(model, CategoricalLikelihood(ignore_index=1)).fit(class_loader)
+
+
+def test_gridsearch_requires_loss_for_custom(model, reg_loader):
+    la = DiagLaplace(model, ScaledGaussian())
+    la.fit(reg_loader)
+
+    kwargs = dict(
+        pred_type="glm",
+        method="gridsearch",
+        val_loader=reg_loader,
+        grid_size=3,
+        n_samples=10,
+    )
+
+    with pytest.raises(ValueError, match="pass `loss`"):
+        la.optimize_prior_precision(**kwargs)
+
+    la.optimize_prior_precision(
+        loss=torchmetrics.MeanSquaredError(num_outputs=2), **kwargs
+    )
+    assert torch.isfinite(la.prior_precision).all()
+
+
+def _poisson_loader() -> DataLoader:
+    """Inputs `(50, 3)` and Poisson counts `(50, 1)` with log rate \\(x_1 / 2\\)."""
+    torch.manual_seed(7)
+    X = torch.randn(50, 3)
+    y = torch.poisson(torch.exp(0.5 * X[:, :1]))
+
+    return DataLoader(TensorDataset(X, y), batch_size=10)
+
+
+def test_nn_predictive_for_custom_link():
+    loader = _poisson_loader()
+    model = nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1))
+    la = DiagLaplace(model, PoissonLog(), prior_precision=10.0)
+
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        la.fit(loader)
+
+    X = loader.dataset.tensors[0][:8]
+    pred = la(
+        X,
+        pred_type="nn",
+        link_approx="mc",
+        n_samples=50,
+        generator=torch.Generator().manual_seed(1),
+    )
+
+    # The same weight samples, mapped through exp(f) instead of the softmax
+    fs = la._nn_functional_samples(X, 50, torch.Generator().manual_seed(1))
+    assert pred.shape == (8, 1)
+    torch.testing.assert_close(pred, fs.exp().mean(0))
+    assert not torch.allclose(pred, torch.ones_like(pred))
+
+
+def _padded_loaders() -> tuple[DataLoader, DataLoader]:
+    """Class targets for 12 inputs with a third of them padded with the default
+    `ignore_index=-100`, and the same data with valid classes in place of the
+    padding."""
+    X = torch.randn(12, 3)
+    y = torch.randint(2, (12,))
+    y_pad = y.clone()
+    y_pad[::3] = -100
+
+    return (
+        DataLoader(TensorDataset(X, y_pad), batch_size=4),
+        DataLoader(TensorDataset(X, y), batch_size=4),
+    )
+
+
+@pytest.mark.parametrize(
+    "backend", [CurvlinopsGGN, AsdlGGN, BackPackGGN], ids=lambda b: b.__name__
+)
+def test_kron_counts_padded_positions(backend, model):
+    padded, unpadded = _padded_loaders()
+
+    la = KronLaplace(deepcopy(model), "classification", backend=backend)
+
+    with pytest.warns(UserWarning, match="ignored positions"):
+        la.fit(padded)
+
+    ref = KronLaplace(deepcopy(model), "classification", backend=backend)
+    ref.fit(unpadded)
+
+    # The type-2 KFAC sums over the padded positions like over the others, and the
+    # factors are normalized by all of them, as before padding was dropped from
+    # the observations. So the padded and the unpadded fits agree, a ratio of 1.
+    _assert_same_curvature(la, ref)
+
+    # Everywhere else, the padding doesn't count
+    assert la.n_obs == 8
+    assert ref.n_obs == 12
+
+
+def test_kron_online_and_checkpoint_keep_position_count(model):
+    padded, unpadded = _padded_loaders()
+
+    la = KronLaplace(model, "classification")
+    ref = KronLaplace(model, "classification")
+
+    with pytest.warns(UserWarning, match="ignored positions"):
+        la.fit(padded)
+        la.fit(padded, override=False)
+
+    ref.fit(unpadded)
+    ref.fit(unpadded, override=False)
+
+    _assert_same_curvature(la, ref)
+
+    # A checkpoint keeps the number of positions for later online updates
+    restored = KronLaplace(model, "classification")
+    restored.load_state_dict(la.state_dict())
+
+    with pytest.warns(UserWarning, match="ignored positions"):
+        restored.fit(padded, override=False)
+
+    ref.fit(unpadded, override=False)
+    _assert_same_curvature(restored, ref)
+
+
+def test_custom_likelihood_counts_observations(model):
+    # Inputs `(B, L, D)` and targets `(B, L, K)`: every position is an observation
+    X = torch.randn(6, 5, 3)
+    y = torch.randn(6, 5, 2)
+    loader = DataLoader(TensorDataset(X, y), batch_size=4)
+
+    la = DiagLaplace(model, ScaledGaussian(2.0))
+    la.fit(loader)
+
+    assert la.n_obs == 30
+
+
+def test_glm_mc_predictive_is_reproducible(model, class_loader):
+    X, _ = class_loader.dataset.tensors
+
+    la = DiagLaplace(model, "classification")
+    la.fit(class_loader)
+
+    def predict(seed: int | None) -> torch.Tensor:
+        generator = None if seed is None else torch.Generator().manual_seed(seed)
+        return la(
+            X, pred_type="glm", link_approx="mc", n_samples=5, generator=generator
+        )
+
+    torch.testing.assert_close(predict(1), predict(1))
+    assert not torch.allclose(predict(1), predict(2))
+
+    # Likelihoods without a closed-form link use the same Monte Carlo samples
+    loader = _poisson_loader()
+    poisson = DiagLaplace(
+        nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1)), PoissonLog()
+    )
+
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        poisson.fit(loader)
+
+    X = loader.dataset.tensors[0][:8]
+    preds = [
+        poisson(
+            X, pred_type="glm", n_samples=5, generator=torch.Generator().manual_seed(3)
+        )
+        for _ in range(2)
+    ]
+    torch.testing.assert_close(preds[0], preds[1])
+
+
+def test_gridsearch_default_metric_uses_ignore_index(model, class_loader):
+    X, y = class_loader.dataset.tensors
+    y = y.clone()
+    y[::4] = -1
+    loader = DataLoader(TensorDataset(X, y), batch_size=3)
+
+    la = DiagLaplace(model, CategoricalLikelihood(ignore_index=-1))
+    la.fit(loader)
+
+    # The default metric would fail on the class -1 if it didn't ignore it
+    la.optimize_prior_precision(
+        method="gridsearch",
+        pred_type="glm",
+        link_approx="probit",
+        val_loader=loader,
+        grid_size=3,
+    )
+    assert torch.isfinite(la.prior_precision).all()

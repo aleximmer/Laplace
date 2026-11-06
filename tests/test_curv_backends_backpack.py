@@ -3,7 +3,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from tests.utils import BackPackEF, BackPackGGN, requires_backpack
+from tests.utils import BackPackEF, BackPackGGN, DoubledCategorical, requires_backpack
 
 pytestmark = requires_backpack
 
@@ -245,3 +245,33 @@ def test_kron_normalization_class(class_Xy, model):
     loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_honoured_by_ggn(class_Xy, model, structure):
+    # The custom `output_hessian` is used through the torch.func fallback
+    X, y = class_Xy
+
+    _, H = getattr(BackPackGGN(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(BackPackGGN(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, 2 * H)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_ef_equals_builtin(class_Xy, model, structure):
+    # The EF depends only on the loss, which `DoubledCategorical` keeps
+    X, y = class_Xy
+
+    _, H = getattr(BackPackEF(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(BackPackEF(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, H)
+
+
+def test_custom_likelihood_rejected_by_kron(class_Xy, model):
+    X, y = class_Xy
+    backend = BackPackGGN(model, DoubledCategorical())
+
+    with pytest.raises(ValueError, match="diag"):
+        backend.kron(X, y, N=len(X))

@@ -1,5 +1,7 @@
 import os
+import pickle
 from collections import OrderedDict
+from copy import deepcopy
 from importlib.util import find_spec
 
 import pytest
@@ -24,6 +26,12 @@ from laplace import (
     LowRankLaplace,
     SubnetLaplace,
 )
+from laplace.likelihoods import (
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
+from tests.utils import ScaledGaussian
 
 # These tests load only checkpoints written by the same test process.
 # Explicit pickle loading preserves their intent on PyTorch 2.6 and newer.
@@ -167,7 +175,9 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
     # Make sure no pickle object
     for val in state_dict.values():
         if val is not None:
-            assert isinstance(val, (list, tuple, int, float, str, bool, torch.Tensor))
+            assert isinstance(
+                val, (dict, list, tuple, int, float, str, bool, torch.Tensor)
+            )
 
 
 @pytest.mark.parametrize("laplace", flavors_functional)
@@ -183,7 +193,8 @@ def test_serialize_no_pickle_functional(laplace, model, reg_loader):
     for val in state_dict.values():
         if val is not None:
             assert isinstance(
-                val, (DataLoader, list, tuple, int, float, str, bool, torch.Tensor)
+                val,
+                (DataLoader, dict, list, tuple, int, float, str, bool, torch.Tensor),
             )
 
 
@@ -364,3 +375,129 @@ def test_map_location(
     f_mean2, f_var2 = la2(X.to(map_location))
     assert torch.allclose(f_mean.to("cpu"), f_mean2.to("cpu"))
     assert torch.allclose(f_var.to("cpu"), f_var2.to("cpu"))
+
+
+@pytest.fixture
+def class_loader():
+    X = torch.randn(10, 3)
+    y = torch.randint(2, (10,))
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_load_old_string_checkpoint(laplace, model, class_loader):
+    la = laplace(model, "classification")
+    la.fit(class_loader)
+    state_dict = la.state_dict()
+    state_dict["likelihood"] = "classification"
+
+    la2 = laplace(model, CategoricalLikelihood())
+    la2.load_state_dict(state_dict)
+    assert isinstance(la2.likelihood, CategoricalLikelihood)
+
+    X, _ = next(iter(class_loader))
+    assert torch.allclose(la(X), la2(X))
+
+    state_dict["likelihood"] = "regression"
+    with pytest.raises(ValueError, match="Different likelihoods"):
+        laplace(model, CategoricalLikelihood()).load_state_dict(state_dict)
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize("likelihood", ["regression", GaussianLikelihood()])
+def test_state_dict_likelihood_is_str(laplace, likelihood, model, reg_loader):
+    la = laplace(model, likelihood)
+    la.fit(reg_loader)
+    state_dict = la.state_dict()
+
+    assert type(state_dict["likelihood"]) is str
+    assert state_dict["likelihood"] == "regression"
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), BradleyTerryLikelihood()]
+)
+def test_deepcopy_and_pickle_object_likelihood(
+    laplace, likelihood, model, class_loader
+):
+    if likelihood == "reward_modeling":
+        X_train = torch.randn(10, 2, 3)
+        net = nn.Sequential(nn.Linear(3, 1), nn.Flatten(1))
+        loader = DataLoader(
+            TensorDataset(X_train, torch.randint(2, (10,))), batch_size=3
+        )
+        X = X_train[:4]
+    else:
+        net, loader = model, class_loader
+        X = next(iter(class_loader))[0]
+
+    la = laplace(net, likelihood)
+    la.fit(loader)
+
+    for la2 in [deepcopy(la), pickle.loads(pickle.dumps(la))]:
+        assert la2.likelihood == likelihood
+        assert la2.likelihood is not la.likelihood
+        assert torch.allclose(la(X, fitting=True), la2(X, fitting=True))
+
+
+def test_checkpoint_stores_likelihood_hyperparameters(model, reg_loader):
+    la = DiagLaplace(model, ScaledGaussian(2.0))
+    la.fit(reg_loader)
+    state_dict = la.state_dict()
+
+    assert state_dict["likelihood"] == "scaled_gaussian"
+    assert state_dict["likelihood_hyperparameters"] == {"scale": 2.0}
+
+    DiagLaplace(model, ScaledGaussian(2.0)).load_state_dict(state_dict)
+
+    with pytest.raises(ValueError, match="Different likelihoods"):
+        DiagLaplace(model, ScaledGaussian(1.0)).load_state_dict(state_dict)
+
+    default = DiagLaplace(model, "regression")
+    default.fit(reg_loader)
+    assert default.state_dict()["likelihood_hyperparameters"] == {}
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_old_checkpoint_without_hyperparameters_loads(laplace, model, class_loader):
+    la = laplace(model, "classification")
+    la.fit(class_loader)
+    state_dict = la.state_dict()
+    del state_dict["likelihood_hyperparameters"]
+
+    la2 = laplace(model, "classification")
+    la2.load_state_dict(state_dict)
+
+    X, _ = next(iter(class_loader))
+    assert torch.allclose(la(X), la2(X))
+
+
+@pytest.mark.parametrize("laplace", [DiagLaplace, FunctionalLaplace])
+def test_checkpoint_copies_tensor_hyperparameters(laplace, model, class_loader):
+    weight = torch.tensor([1.0, 2.0])
+    kwargs = {"n_subset": 5} if laplace is FunctionalLaplace else {}
+    la = laplace(model, CategoricalLikelihood(weight=weight), **kwargs)
+    la.fit(class_loader)
+
+    stored = la.state_dict()["likelihood_hyperparameters"]["weight"]
+    assert stored is not weight
+    assert torch.equal(stored, weight)
+
+    # Later changes to the weight don't reach the checkpoint
+    weight.mul_(3.0)
+    assert torch.equal(stored, torch.tensor([1.0, 2.0]))
+
+
+def test_kron_checkpoint_without_position_count_loads(model, class_loader):
+    la = KronLaplace(model, "classification")
+    la.fit(class_loader)
+    state_dict = la.state_dict()
+    del state_dict["n_kron_positions"]
+
+    la2 = KronLaplace(model, "classification")
+    la2.load_state_dict(state_dict)
+    assert la2._n_kron_positions == la.n_obs
+
+    X, _ = next(iter(class_loader))
+    assert torch.allclose(la(X), la2(X))

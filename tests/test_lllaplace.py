@@ -11,6 +11,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
+from laplace.likelihoods import CategoricalLikelihood, GaussianLikelihood
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
@@ -20,7 +21,10 @@ from tests.utils import (
     AsdlGGN,
     BackPackEF,
     BackPackGGN,
+    CustomCategorical,
     ListDataset,
+    PoissonLog,
+    ScaledGaussian,
     ScaledModel,
     dict_data_collator,
     jacobians_naive,
@@ -882,3 +886,94 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
     assert torch.allclose(
         torch.corrcoef(flat.T), cov / torch.outer(std, std), atol=0.05
     )
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+def test_lllaplace_likelihood_object_equivalence(laplace, likelihood):
+    objects = {
+        "regression": GaussianLikelihood(),
+        "classification": CategoricalLikelihood(),
+    }
+    outs = []
+
+    for lik in (likelihood, objects[likelihood]):
+        torch.manual_seed(0)
+        model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
+        setattr(model, "output_size", 2)
+        X = torch.randn(10, 3)
+        y = (
+            torch.randn(10, 2)
+            if likelihood == "regression"
+            else torch.randint(2, (10,))
+        )
+        loader = DataLoader(TensorDataset(X, y), batch_size=3)
+
+        lap = laplace(model, lik)
+        lap.fit(loader)
+
+        outs.append(
+            (
+                lap(X, pred_type="glm"),
+                lap(X, pred_type="nn", link_approx="mc", n_samples=5),
+            )
+        )
+
+    for a, b in zip(outs[0], outs[1]):
+        a = a if isinstance(a, torch.Tensor) else a[0]
+        b = b if isinstance(b, torch.Tensor) else b[0]
+        assert torch.allclose(a, b)
+
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_lllaplace_custom_categorical_nn_predictive_is_softmaxed(laplace, model):
+    lap = laplace(model, "classification")
+    X = torch.randn(10, 3)
+    y = torch.randint(2, (10,))
+    lap.fit(DataLoader(TensorDataset(X, y), batch_size=3))
+    lap.likelihood = CustomCategorical()
+    X = X[:4]
+
+    samples = lap._nn_predictive_samples(X, n_samples=3)
+
+    assert torch.allclose(samples.sum(-1), torch.ones(3, 4))
+
+
+def test_custom_likelihood_full_lllaplace(model, reg_loader):
+    la = FullLLLaplace(model, ScaledGaussian(2.0))
+    la.fit(reg_loader)
+
+    ref = FullLLLaplace(model, "regression")
+    ref.fit(reg_loader)
+
+    # The output Hessian is I / s^2 instead of I
+    torch.testing.assert_close(la.H, ref.H / 4)
+
+
+@pytest.mark.parametrize("laplace", [FullLLLaplace, DiagLLLaplace])
+def test_nn_predictive_for_custom_link_lllaplace(laplace):
+    torch.manual_seed(7)
+    X = torch.randn(50, 3)
+    y = torch.poisson(torch.exp(0.5 * X[:, :1]))
+    loader = DataLoader(TensorDataset(X, y), batch_size=10)
+
+    model = nn.Sequential(nn.Linear(3, 10), nn.Tanh(), nn.Linear(10, 1))
+    la = laplace(model, PoissonLog(), prior_precision=10.0)
+
+    with pytest.warns(UserWarning, match="Monte Carlo"):
+        la.fit(loader)
+
+    X = X[:8]
+    pred = la(
+        X,
+        pred_type="nn",
+        link_approx="mc",
+        n_samples=50,
+        generator=torch.Generator().manual_seed(1),
+    )
+
+    # The same last-layer samples, mapped through exp(f) instead of the softmax
+    fs = la._nn_functional_samples(X, 50, torch.Generator().manual_seed(1))
+    assert pred.shape == (8, 1)
+    torch.testing.assert_close(pred, fs.exp().mean(0))
+    assert not torch.allclose(pred, torch.ones_like(pred))

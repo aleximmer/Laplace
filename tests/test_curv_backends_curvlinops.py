@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
-from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackGGN
+from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackGGN, DoubledCategorical
 
 
 @pytest.fixture
@@ -318,3 +318,64 @@ def test_kron_normalization_ef_class(class_Xy, model):
     loss_test, kron_test = backend.kron(X, y, N=7)
     assert torch.allclose(kron_true.diag(), kron_test.diag())
     assert torch.allclose(loss_true, loss_test)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_honoured_by_curvlinops_ggn(class_Xy, model, structure):
+    # The custom `output_hessian` is used through the torch.func fallback
+    X, y = class_Xy
+
+    _, H = getattr(CurvlinopsGGN(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(CurvlinopsGGN(model, DoubledCategorical()), structure)(X, y)
+
+    # Curvlinops and torch.func round differently in float32
+    assert torch.allclose(H_doubled, 2 * H, atol=1e-6)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+def test_custom_likelihood_curvlinops_ef_equals_builtin(class_Xy, model, structure):
+    # The EF depends only on the loss, which `DoubledCategorical` keeps
+    X, y = class_Xy
+
+    _, H = getattr(CurvlinopsEF(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(CurvlinopsEF(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, H)
+
+
+@pytest.mark.parametrize("Backend", [CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian])
+def test_custom_likelihood_rejected_by_curvlinops_kron_and_hessian(
+    class_Xy, model, Backend
+):
+    X, y = class_Xy
+    backend = Backend(model, DoubledCategorical())
+
+    # Equal to the built-in by name, but still not honoured, since it isn't one
+    assert backend.likelihood == "classification"
+
+    if Backend is CurvlinopsHessian:
+        with pytest.raises(ValueError, match="diag"):
+            backend.full(X, y)
+    else:
+        with pytest.raises(ValueError, match="diag"):
+            backend.kron(X, y, N=len(X))
+
+
+def test_custom_likelihood_used_by_curvlinops_ggn_diag(class_Xy, model):
+    # The diagonal GGN goes through `GGNInterface`, which uses `output_hessian`
+    X, y = class_Xy
+
+    _, diag = CurvlinopsGGN(model, "classification").diag(X, y)
+    _, diag_doubled = CurvlinopsGGN(model, DoubledCategorical()).diag(X, y)
+
+    assert torch.allclose(diag_doubled, 2 * diag)
+
+
+def test_custom_likelihood_jacobians_curvlinops(class_Xy, model):
+    X, _ = class_Xy
+
+    Js, f = CurvlinopsGGN(model, "classification").jacobians(X)
+    Js_doubled, f_doubled = CurvlinopsGGN(model, DoubledCategorical()).jacobians(X)
+
+    assert torch.allclose(Js, Js_doubled)
+    assert torch.allclose(f, f_doubled)

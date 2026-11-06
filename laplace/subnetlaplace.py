@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Type
+from typing import Any, Type
 
 import torch
 from torch import nn
@@ -50,8 +50,9 @@ class SubnetLaplace(ParametricLaplace):
     Parameters
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
-    likelihood : {'classification', 'regression'}
-        determines the log likelihood Hessian approximation
+    likelihood : Likelihood or {'classification', 'regression'}
+        determines the log likelihood Hessian approximation. A likelihood
+        object is accepted as well as a name.
     subnetwork_indices : torch.LongTensor
         indices of the vectorized model parameters
         (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
@@ -84,7 +85,7 @@ class SubnetLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         subnetwork_indices: torch.LongTensor,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
@@ -119,9 +120,38 @@ class SubnetLaplace(ParametricLaplace):
 
         # check validity of subnetwork indices and pass them to backend
         self._check_subnetwork_indices(subnetwork_indices)
+        self._subnetwork_indices = subnetwork_indices
         self.backend.subnetwork_indices = subnetwork_indices
         self.n_params_subnet = len(subnetwork_indices)
         self._init_H()
+
+    @property
+    def backend(self) -> CurvatureInterface:
+        """The curvature backend, restricted to the subnetwork. It is rebuilt with
+        the subnetwork indices if the likelihood changes.
+        """
+        if self._backend is None:
+            backend = super().backend
+            backend.subnetwork_indices = getattr(self, "_subnetwork_indices", None)
+
+        return super().backend
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore a pickled instance.
+
+        Pickles made before `_subnetwork_indices` existed keep the indices only on the
+        cached backend. They are copied over, so that rebuilding the backend (e.g.
+        after a likelihood change) keeps the subnetwork.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            the pickled `__dict__`.
+        """
+        super().__setstate__(state)
+
+        if "_subnetwork_indices" not in vars(self) and self._backend is not None:
+            self._subnetwork_indices = self._backend.subnetwork_indices
 
     def _check_subnetwork_indices(
         self, subnetwork_indices: torch.LongTensor | None

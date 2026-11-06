@@ -28,6 +28,11 @@ except ModuleNotFoundError as err:
     ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.curvature import (
+    _ALL_OPTIONS,
+    _BUILTIN_TYPES,
+    _TARGET_FREE_OPTIONS,
+)
 from laplace.utils import Kron, Likelihood
 
 
@@ -48,7 +53,18 @@ class BackPackInterface(CurvatureInterface):
         )
 
         extend(self._model)
-        extend(self.lossfunc)
+
+    @CurvatureInterface.likelihood.setter
+    def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
+        """Set the likelihood as in `CurvatureInterface`, and extend the loss of a
+        built-in likelihood with BackPACK. BackPACK checks the options of the loss
+        only when it computes the curvature, after the fallback decision. Other
+        likelihoods always fall back, so their losses aren't extended.
+        """
+        CurvatureInterface.likelihood.fset(self, likelihood)
+
+        if type(self.likelihood) in _BUILTIN_TYPES:
+            extend(self.lossfunc)
 
     def jacobians(
         self,
@@ -238,6 +254,10 @@ class BackPackInterface(CurvatureInterface):
 class BackPackGGN(BackPackInterface, GGNInterface):
     """Implementation of the `GGNInterface` using Backpack."""
 
+    # BackPACK raises for class weights and ignored positions. Its GGN does not
+    # depend on the targets, so it ignores label smoothing correctly.
+    _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
+
     def __init__(
         self,
         model: nn.Module,
@@ -284,11 +304,18 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self._honours("diag", y):
+            return super().diag(x, y, **kwargs)
+
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
-        y = y if self.likelihood == "regression" else y.view(-1)
+        f = (
+            f
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else f.view(-1, f.size(-1))
+        )
+        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -305,11 +332,20 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        if not self._honours("kron"):
+            raise self._unsupported_error("kron")
+
+        self._warn_kron_ignored(y)
+
         context = KFAC if self.stochastic else KFLR
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
-        y = y if self.likelihood == "regression" else y.view(-1)
+        f = (
+            f
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else f.view(-1, f.size(-1))
+        )
+        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -322,16 +358,26 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 class BackPackEF(BackPackInterface, EFInterface):
     """Implementation of `EFInterface` using Backpack."""
 
+    # The first-order extensions differentiate `lossfunc` at the observed targets
+    _honoured = {"diag": _ALL_OPTIONS}
+
     def diag(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self._honours("diag", y):
+            return super().diag(x, y, **kwargs)
+
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.likelihood == "regression" else f.view(-1, f.size(-1))
-        y = y if self.likelihood == "regression" else y.view(-1)
+        f = (
+            f
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else f.view(-1, f.size(-1))
+        )
+        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward()

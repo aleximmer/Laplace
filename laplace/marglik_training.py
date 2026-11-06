@@ -10,7 +10,6 @@ import numpy as np
 import torch
 import tqdm
 from torch import nn
-from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 from torch.optim import Adam, Optimizer
 from torch.optim.lr_scheduler import LRScheduler
@@ -21,6 +20,7 @@ from laplace import Laplace
 from laplace.baselaplace import BaseLaplace
 from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.curvature import CurvatureInterface
+from laplace.likelihoods import get_likelihood
 from laplace.utils import (
     HessianStructure,
     Likelihood,
@@ -34,7 +34,7 @@ from laplace.utils import (
 def marglik_training(
     model: torch.nn.Module,
     train_loader: DataLoader,
-    likelihood: Likelihood | str = Likelihood.CLASSIFICATION,
+    likelihood: Likelihood | str | torch.nn.Module = Likelihood.CLASSIFICATION,
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
     backend: Type[CurvatureInterface] = CurvlinopsGGN,
     optimizer_cls: Type[Optimizer] = Adam,
@@ -67,8 +67,8 @@ def marglik_training(
     The settings of standard training can be controlled by passing `train_loader`,
     `optimizer_cls`, `optimizer_kwargs`, `scheduler_cls`, `scheduler_kwargs`, and `n_epochs`.
     The `model` should return logits, i.e., no softmax should be applied.
-    With `likelihood=Likelihood.CLASSIFICATION` or `Likelihood.REGRESSION`, one can choose between
-    categorical likelihood (CrossEntropyLoss) and Gaussian likelihood (MSELoss).
+    `likelihood` is a name, a `Likelihood` member, or a likelihood object, e.g.
+    `CategoricalLikelihood()` (CrossEntropyLoss) or `GaussianLikelihood()` (MSELoss).
 
     As in [1], we optimize prior precision and, for regression, observation noise
     using the marginal likelihood. The prior precision structure can be chosen
@@ -92,8 +92,9 @@ def marglik_training(
         torch neural network model (needs to comply with Backend choice)
     train_loader : DataLoader
         pytorch dataloader that implements `len(train_loader.dataset)` to obtain number of data points
-    likelihood : str, default=Likelihood.CLASSIFICATION
-        Likelihood.CLASSIFICATION or Likelihood.REGRESSION
+    likelihood : Likelihood or str or torch.nn.Module, default=Likelihood.CLASSIFICATION
+        a likelihood object, 'classification' or 'regression', or a torch
+        criterion such as `nn.CrossEntropyLoss`, see `get_likelihood`.
     hessian_structure : {'diag', 'kron', 'full'}, default='kron'
         structure of the Hessian approximation
     backend : Backend, default=CurvlinopsGGN
@@ -158,6 +159,8 @@ def marglik_training(
         warnings.warn("Weight decay is handled and optimized. Will be set to 0.")
         optimizer_kwargs["weight_decay"] = 0.0
 
+    lik = get_likelihood(likelihood)
+
     # get device, data set size N, number of layers H, number of parameters P
     p = next(model.parameters())
     device, dtype = p.device, p.dtype
@@ -177,11 +180,23 @@ def marglik_training(
     hyperparameters.append(log_prior_prec)
 
     # set up loss (and observation noise hyperparam)
-    if likelihood == Likelihood.CLASSIFICATION:
-        criterion = CrossEntropyLoss(reduction="mean")
+    if lik.name == Likelihood.REWARD_MODELING.name:
+        raise ValueError(
+            "Marginal-likelihood training does not support reward modeling."
+        )
+
+    # Class weights and ignored targets change the denominator of a "mean" loss, so the
+    # non-Gaussian data term is summed and divided by the batch size in the loop below,
+    # matching the summed loss that `Laplace.fit` uses
+    criterion = lik.loss_fn("mean" if lik.is_gaussian else "sum")
+
+    # Cast buffers like class weights to the model, e.g. float32 weights to float64
+    if isinstance(criterion, torch.nn.Module):
+        criterion = criterion.to(device=device, dtype=dtype)
+
+    if not lik.is_gaussian:
         sigma_noise = 1.0
-    elif likelihood == Likelihood.REGRESSION:
-        criterion = MSELoss(reduction="mean")
+    else:
         log_sigma_noise_init = np.log(sigma_noise_init)
         log_sigma_noise = log_sigma_noise_init * torch.ones(
             1, device=device, dtype=dtype
@@ -235,7 +250,7 @@ def marglik_training(
 
             optimizer.zero_grad()
 
-            if likelihood == Likelihood.REGRESSION:
+            if lik.is_gaussian:
                 sigma_noise = (
                     torch.exp(log_sigma_noise).detach()
                     if not fix_sigma_noise
@@ -252,12 +267,16 @@ def marglik_training(
             delta = expand_prior_precision(prior_prec, model)
 
             f = model(X)
-            loss = criterion(f, y) + (0.5 * (delta * theta) @ theta) / N / crit_factor
+            data_loss = criterion(f, y)
+            if not lik.is_gaussian:
+                data_loss = data_loss / len(y)
+
+            loss = data_loss + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()
             optimizer.step()
             epoch_loss += loss.cpu().item() * len(y)
 
-            if likelihood == Likelihood.REGRESSION:
+            if lik.is_gaussian:
                 epoch_perf += (f.detach() - y).square().sum()
             else:
                 epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
@@ -279,7 +298,7 @@ def marglik_training(
 
         # optimizer hyperparameters by differentiating marglik
         # 1. fit laplace approximation
-        if likelihood == Likelihood.CLASSIFICATION:
+        if not lik.is_gaussian:
             sigma_noise = 1
         else:
             sigma_noise = (
@@ -288,7 +307,7 @@ def marglik_training(
         prior_prec = torch.exp(log_prior_prec)
         lap = Laplace(
             model,
-            likelihood,
+            lik,
             hessian_structure=hessian_structure,
             sigma_noise=sigma_noise,
             prior_precision=prior_prec,
@@ -303,7 +322,7 @@ def marglik_training(
         # 2. differentiate wrt. hyperparameters for n_hypersteps
         for _ in range(n_hypersteps):
             hyper_optimizer.zero_grad()
-            if likelihood == Likelihood.CLASSIFICATION or fix_sigma_noise:
+            if not lik.is_gaussian or fix_sigma_noise:
                 sigma_noise = None
             else:
                 sigma_noise = torch.exp(log_sigma_noise)
@@ -317,7 +336,7 @@ def marglik_training(
         if margliks[-1] < best_marglik:
             best_model_dict = deepcopy(model.state_dict())
             best_precision = deepcopy(prior_prec.detach())
-            if likelihood == Likelihood.CLASSIFICATION:
+            if not lik.is_gaussian:
                 best_sigma = 1
             else:
                 best_sigma = (
@@ -346,7 +365,7 @@ def marglik_training(
 
     lap = Laplace(
         model,
-        likelihood,
+        lik,
         hessian_structure=hessian_structure,
         sigma_noise=sigma_noise,
         prior_precision=prior_prec,

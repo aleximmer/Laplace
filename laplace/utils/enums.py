@@ -46,19 +46,6 @@ class FunctionalApproximation(str, Enum):
     """Variational inducing-output approximation implemented by VaLLA."""
 
 
-class Likelihood(str, Enum):
-    """Valid options for `likelihood`."""
-
-    REGRESSION = "regression"
-    """Homoskedastic regression, assuming `loss_fn = nn.MSELoss()`."""
-
-    CLASSIFICATION = "classification"
-    """Classification, assuming `loss_fn = nn.CrossEntropyLoss()`."""
-
-    REWARD_MODELING = "reward_modeling"
-    """Bradley-Terry likelihood, for preference learning / reward modeling."""
-
-
 class PredType(str, Enum):
     """Valid options for `pred_type`."""
 
@@ -113,3 +100,15 @@ class PriorStructure(str, Enum):
     LAYERWISE = "layerwise"
     """Layerwise prior precision, i.e. a single scalar prior precision for each block 
     (corresponding to each the NN's layer) of the diagonal prior-precision matrix.."""
+
+
+def __getattr__(name: str) -> object:
+    """Resolve `Likelihood` lazily. It used to be an enum here and is now the
+    likelihood base class in `laplace.likelihoods`, which imports from this
+    package, so importing it eagerly would be circular."""
+    if name == "Likelihood":
+        from laplace.likelihoods import Likelihood
+
+        return Likelihood
+
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

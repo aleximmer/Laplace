@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import MutableMapping
 from importlib.util import find_spec
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import torch
@@ -25,6 +25,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.likelihoods import get_likelihood
 from laplace.utils import Kron, _is_batchnorm
 from laplace.utils.enums import Likelihood
 
@@ -33,6 +34,9 @@ EPS = 1e-6
 
 class AsdfghjklInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
+
+    # Unmaintained and unchecked, so it honours no options
+    _honoured: ClassVar[dict[str, frozenset[str]]] = {}
 
     def jacobians(
         self,
@@ -138,6 +142,13 @@ class AsdfghjklInterface(CurvatureInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        # Fallback to torch.func for options or likelihoods asdfghjkl can't handle
+        if not self._honours("diag", y):
+            if isinstance(self, (GGNInterface, EFInterface)):
+                return super().diag(x, y, **kwargs)
+
+            raise self._unsupported_error("diag")
+
         with torch.no_grad():
             if self.last_layer:
                 f, x = self.model.forward_with_features(x)
@@ -159,6 +170,11 @@ class AsdfghjklInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        if not self._honours("kron"):
+            raise self._unsupported_error("kron")
+
+        self._warn_kron_ignored(y)
+
         with torch.no_grad():
             if self.last_layer:
                 f, x = self.model.forward_with_features(x)
@@ -204,6 +220,9 @@ class AsdfghjklHessian(AsdfghjklInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self._honours("full"):
+            raise self._unsupported_error("full")
+
         hessian_for_loss(self.model, self.lossfunc, SHAPE_FULL, x, y)
         H = self._model.hessian.data
         loss = self.lossfunc(self.model(x), y).detach()
@@ -212,6 +231,9 @@ class AsdfghjklHessian(AsdfghjklInterface):
     def eig_lowrank(
         self, data_loader: DataLoader
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not self._honours("eig_lowrank"):
+            raise self._unsupported_error("eig_lowrank")
+
         # compute truncated eigendecomposition of the Hessian, only keep eigvals > EPS
         eigvals, eigvecs = hessian_eigenvalues(
             self.model,
@@ -249,7 +271,7 @@ class AsdfghjklGGN(AsdfghjklInterface, GGNInterface):
         dict_key_y: str = "labels",
         stochastic: bool = False,
     ) -> None:
-        if likelihood != Likelihood.CLASSIFICATION:
+        if get_likelihood(likelihood).name != Likelihood.CLASSIFICATION.name:
             raise ValueError("This backend only supports classification currently.")
         super().__init__(
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
@@ -267,12 +289,12 @@ class AsdfghjklEF(AsdfghjklInterface, EFInterface):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | None,
+        likelihood: Likelihood | str | None,
         last_layer: bool = False,
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ) -> None:
-        if likelihood != Likelihood.CLASSIFICATION:
+        if get_likelihood(likelihood).name != Likelihood.CLASSIFICATION.name:
             raise ValueError("This backend only supports classification currently.")
 
         super().__init__(model, likelihood, last_layer, None, dict_key_x, dict_key_y)

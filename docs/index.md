@@ -107,6 +107,79 @@ la.optimize_prior_precision(
 pred = la(x, pred_type="glm", link_approx="probit")
 ```
 
+### Likelihoods
+
+The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `"reward_modeling"`), a likelihood object, or a PyTorch criterion.
+`likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
+`Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, and `Likelihood.REWARD_MODELING` are the built-in likelihood objects.
+
+#### Options
+
+The built-in likelihoods take the options of the matching PyTorch criterion, with the same names, defaults, and meaning.
+For example, `CategoricalLikelihood(weight, ignore_index, label_smoothing)` mirrors `nn.CrossEntropyLoss`.
+You can also pass the criterion you trained with.
+Its `reduction` is ignored, since Laplace always sums the loss.
+
+```python
+from torch import nn
+from laplace import Laplace
+
+criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.1)
+la = Laplace(model, criterion, subset_of_weights="all", hessian_structure="diag")
+la.fit(train_loader)
+```
+
+Some caveats:
+
+- Not every curvature backend handles every option.
+  With `diag` or `full` and a GGN or EF backend, Laplace falls back to its own, slower torch.func implementation when the library can't.
+  `kron`, the Hessian backends, and the Monte Carlo Fisher (`stochastic=True`) raise a `ValueError` for the options they can't handle.
+- Ignored targets, such as padding, don't count as observations.
+  KFAC can't drop them from its Kronecker factors, so `kron` keeps them there and warns.
+- Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
+  `log_marginal_likelihood()` is then no longer the model evidence in the strict sense.
+
+#### Custom likelihoods
+
+To define your own likelihood, subclass `Likelihood`, set a `name`, and implement `distribution(f)`.
+It returns the distribution of the targets given the model outputs `f` as a `torch.distributions.Distribution`.
+Everything else has a default built on it, including the output Hessian, which is the Fisher of the distribution with respect to `f`.
+For distributions with finite support, such as the Bernoulli or the categorical, the Fisher is computed exactly by enumerating the support.
+For other distributions, it is a Monte Carlo estimate, and a warning says so.
+If you know the Fisher in closed form, override `output_hessian` to make it exact and cheap.
+The `Likelihood` docstring lists every member you can override.
+
+```python
+import torch
+from laplace import Laplace, Likelihood
+
+class PoissonLikelihood(Likelihood):
+    name = "poisson"
+
+    def distribution(self, f):
+        return torch.distributions.Poisson(rate=f.exp())
+
+    # Optional: with a log link, the Fisher is exp(f)
+    def output_hessian(self, f, y=None):
+        return torch.diag_embed(f.exp())
+
+la = Laplace(model, PoissonLikelihood(),
+             subset_of_weights="all", hessian_structure="diag")
+la.fit(train_loader)
+la.optimize_prior_precision()
+rate = la(x, pred_type="glm", n_samples=1000)
+```
+
+Fit a custom likelihood with the `diag` or `full` structure and a GGN or EF backend.
+For a Gaussian likelihood, the GLM predictive returns the moments of \(f\), and for classification it returns class probabilities.
+For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\mu, \Sigma_f)\) from the GLM predictive and averages the `inverse_link` \(g\) over them, a Monte Carlo estimate of \(\mathbb{E}[g(f)]\).
+`link_approx` has no effect there.
+In the example above, the result is the expected Poisson rate.
+Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
+FunctionalLaplace, ELLA, and VaLLA only accept likelihoods named `"regression"`, `"classification"`, or `"reward_modeling"`.
+FunctionalLaplace also accepts a `CategoricalLikelihood` with options.
+ELLA and VaLLA don't support likelihood options yet and raise a `ValueError` for them.
+
 ### Marginal likelihood
 
 The marginal likelihood can be used for model selection [10] and is differentiable

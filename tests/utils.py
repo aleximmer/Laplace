@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 import laplace.curvature
 from laplace.curvature import CurvatureInterface
+from laplace.likelihoods import CategoricalLikelihood, GaussianLikelihood, Likelihood
 
 
 def toy_regression_dataset_1d(sigma, n_train=150, n_test=500, batch_size=150):
@@ -198,3 +199,92 @@ AsdlHessian = _optional_backend("AsdlHessian")
 BackPackInterface = _optional_backend("BackPackInterface")
 BackPackGGN = _optional_backend("BackPackGGN")
 BackPackEF = _optional_backend("BackPackEF")
+
+
+class DoubledCategorical(CategoricalLikelihood):
+    """Categorical likelihood with twice the output Hessian, to check that a custom
+    likelihood's `output_hessian` is used."""
+
+    def output_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        return 2 * super().output_hessian(f, y)
+
+
+class CustomCategorical(CategoricalLikelihood):
+    """Categorical likelihood under a name that no backend knows."""
+
+    name = "custom_categorical"
+
+
+class DistributionOnlyGaussian(Likelihood):
+    """Unit-variance Gaussian that defines only `name` and `distribution`, so every
+    other member comes from the defaults."""
+
+    name = "dist_gaussian"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Normal(f, 1.0)
+
+
+class DistributionOnlyCategorical(Likelihood):
+    """Categorical over the logits that defines only `name` and `distribution`."""
+
+    name = "dist_categorical"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Categorical(logits=f)
+
+
+class DistributionOnlyBernoulli(Likelihood):
+    """Bernoulli per logit that defines only `name` and `distribution`."""
+
+    name = "dist_bernoulli"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Bernoulli(logits=f)
+
+
+class ScaledGaussian(Likelihood):
+    """Gaussian with a fixed scale \\(s\\) and the closed-form output Hessian
+    \\(I / s^2\\).
+
+    Parameters
+    ----------
+    scale : float, default=2.0
+        standard deviation \\(s\\) of the Gaussian.
+    """
+
+    name = "scaled_gaussian"
+
+    def __init__(self, scale: float = 2.0) -> None:
+        self.scale = scale
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Normal(f, self.scale)
+
+    def hyperparameters(self) -> dict[str, Any]:
+        return {"scale": self.scale}
+
+    def output_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        K = f.shape[-1]
+        eye = torch.eye(K, device=f.device, dtype=f.dtype) / self.scale**2
+
+        return eye.expand(*f.shape[:-1], K, K)
+
+    @property
+    def predictive_likelihood(self) -> Likelihood:
+        return GaussianLikelihood()
+
+
+class PoissonLog(Likelihood):
+    """Poisson likelihood with a log link, \\(y \\sim \\operatorname{Poisson}(e^f)\\),
+    that defines only `name` and `distribution`. Its predictive likelihood is itself,
+    so the GLM predictive integrates \\(e^f\\) by Monte Carlo."""
+
+    name = "poisson_log"
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Poisson(rate=f.exp())

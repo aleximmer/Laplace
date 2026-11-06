@@ -31,6 +31,7 @@ except ModuleNotFoundError as err:
     ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.curvature import _ALL_OPTIONS, _TARGET_FREE_OPTIONS
 from laplace.utils import Kron, Likelihood, _is_batchnorm
 
 EPS = 1e-6
@@ -38,6 +39,11 @@ EPS = 1e-6
 
 class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
+
+    # The exact and MC Fishers build their own loss from enumerated or sampled
+    # classes, so they can't see class weights or ignored targets. KFAC counts
+    # ignored positions in its input factors.
+    _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(
         self,
@@ -55,7 +61,9 @@ class AsdlInterface(CurvatureInterface):
     @property
     def loss_type(self) -> str:
         return (
-            LOSS_MSE if self.likelihood == Likelihood.REGRESSION else LOSS_CROSS_ENTROPY
+            LOSS_MSE
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else LOSS_CROSS_ENTROPY
         )
 
     def jacobians(
@@ -110,8 +118,8 @@ class AsdlInterface(CurvatureInterface):
 
         Js = torch.stack(Js, dim=1)  # (n_rows, n_outputs, n_params)
 
-        # ASDL returns one row per row of the layers' inputs, e.g. per token. Sum those
-        # belonging to the same observation, e.g. when the outputs are pooled over tokens.
+        # ASDL returns one row per row of the layers' inputs, e.g. per position. Sum those
+        # belonging to the same observation, e.g. when the outputs are pooled over positions.
         n_obs = f.shape[:-1].numel()
         Js = self._sum_rows_per_observation(Js, n_obs)
 
@@ -150,7 +158,9 @@ class AsdlInterface(CurvatureInterface):
 
         # The last dim of regression targets is the output dim
         n_obs = (
-            y.shape[:-1] if self.likelihood == Likelihood.REGRESSION else y.shape
+            y.shape[:-1]
+            if self.likelihood.name == Likelihood.REGRESSION.name
+            else y.shape
         ).numel()
         Gs = self._sum_rows_per_observation(Gs, n_obs)
 
@@ -160,8 +170,8 @@ class AsdlInterface(CurvatureInterface):
 
     def _batch_gradient(self, closure: Callable[[], Any]) -> tuple[torch.Tensor, Any]:
         """ASDL's `batch_gradient` with a clearer error for models whose layers have
-        different numbers of gradient rows, e.g., token-wise layers followed by a
-        head applied after pooling over tokens.
+        different numbers of gradient rows, e.g., position-wise layers followed by a
+        head applied after pooling over positions.
         """
         try:
             return batch_gradient(self.model, closure, return_outputs=True)
@@ -170,13 +180,13 @@ class AsdlInterface(CurvatureInterface):
                 raise
             raise RuntimeError(
                 "ASDL returned different numbers of gradient rows for different layers, "
-                "e.g., for outputs pooled over tokens. Use a Curvlinops backend "
+                "e.g., for outputs pooled over positions. Use a Curvlinops backend "
                 "(`CurvlinopsGGN` or `CurvlinopsEF`) for such models."
             ) from e
 
     @staticmethod
     def _sum_rows_per_observation(A: torch.Tensor, n_obs: int) -> torch.Tensor:
-        """ASDL returns one row per row of the layers' inputs (e.g. per token), but
+        """ASDL returns one row per row of the layers' inputs (e.g. per position), but
         an observation can span several of them (e.g. pooled outputs, or pairs in
         reward modeling). Sum the rows that belong to the same observation.
 
@@ -251,6 +261,13 @@ class AsdlInterface(CurvatureInterface):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if "N" in kwargs:
             del kwargs["N"]
+
+        # Fallback to torch.func for options or likelihoods ASDL can't handle
+        if not self._honours("diag", y):
+            if isinstance(self, (GGNInterface, EFInterface)):
+                return super().diag(x, y, **kwargs)
+
+            raise self._unsupported_error("diag")
 
         if self.loss_type == LOSS_MSE and self._ggn_type == FISHER_EXACT and y.ndim > 2:
             # ASDL's exact MSE Fisher loops over `logits[:, i]`, which assumes 2D
@@ -409,7 +426,7 @@ class AsdlInterface(CurvatureInterface):
             # No Fisher values were gathered, as with an empty subnetwork.
             diag_ggn = f.new_empty(0)
 
-        if type(self) is AsdlEF and self.likelihood == "regression":
+        if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
             curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
@@ -422,7 +439,12 @@ class AsdlInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
-        if self.likelihood == Likelihood.REGRESSION and y.ndim > 2:
+        if not self._honours("kron"):
+            raise self._unsupported_error("kron")
+
+        self._warn_kron_ignored(y)
+
+        if self.likelihood.name == Likelihood.REGRESSION.name and y.ndim > 2:
             raise NotImplementedError(
                 "Kronecker-factored curvature with ASDL does not support regression "
                 "targets with more than one batch dimension (e.g. sequences). "
@@ -459,10 +481,10 @@ class AsdlInterface(CurvatureInterface):
         loss = self.lossfunc(f.detach(), y)
         M = len(y)
         kron = self._get_kron_factors(M)
-        # ASDL sums the input factors over all tokens, e.g. `B * L` rows for logits
-        # `(B, L, C)`. `KronLaplace.fit` normalizes by the number of tokens.
+        # ASDL sums the input factors over all positions, e.g. `B * L` rows for logits
+        # `(B, L, C)`. `KronLaplace.fit` normalizes by the number of positions.
         kron = self._rescale_kron_factors(kron, N)
-        if type(self) is AsdlEF and self.likelihood == "regression":
+        if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
             curv_factor = 0.5  # correct scaling for diag ef
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
@@ -470,6 +492,9 @@ class AsdlInterface(CurvatureInterface):
 
 
 class AsdlHessian(AsdlInterface):
+    # ASDL differentiates `lossfunc` twice at the observed targets
+    _honoured = {"full": _ALL_OPTIONS}
+
     def __init__(
         self,
         model: nn.Module,
@@ -497,6 +522,9 @@ class AsdlHessian(AsdlInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if not self._honours("full"):
+            raise self._unsupported_error("full")
+
         if self.last_layer:
             _, x = self.model.forward_with_features(x)
 
@@ -544,6 +572,10 @@ class AsdlGGN(AsdlInterface, GGNInterface):
 
 class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl."""
+
+    # The empirical Fisher differentiates `lossfunc` at the observed targets. KFAC
+    # counts ignored positions in its input factors.
+    _honoured = {"diag": _ALL_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
 
     def __init__(
         self,

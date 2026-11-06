@@ -1,13 +1,55 @@
 from __future__ import annotations
 
-from typing import Any, Callable, MutableMapping
+import warnings
+from typing import Any, Callable, ClassVar, MutableMapping
 
 import torch
 from torch import nn
-from torch.nn import CrossEntropyLoss, MSELoss
 from torch.utils._pytree import tree_map
 
-from laplace.utils import Kron, Likelihood
+from laplace.likelihoods import (
+    CategoricalLikelihood,
+    GaussianLikelihood,
+    Likelihood,
+    get_likelihood,
+)
+from laplace.utils import Kron
+
+_BUILTIN_TYPES = (GaussianLikelihood, CategoricalLikelihood)
+
+# Options of the built-in likelihoods, see `CurvatureInterface._honours`
+_ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
+
+# Options that leave a target-independent curvature unchanged, e.g. the GGN, since
+# label smoothing does not change the Hessian of the cross-entropy w.r.t. the logits
+_TARGET_FREE_OPTIONS = frozenset({"label_smoothing"})
+
+
+def _ignored_positions(likelihood: Likelihood, y: torch.Tensor) -> int:
+    """Number of positions that a categorical likelihood ignores in the targets `y`.
+
+    For outputs `(B, ..., K)`, a position is an entry of the dims between the batch
+    dim `B` and the output dim `K`, e.g. a sequence position or a pixel.
+
+    Only index targets can be ignored. They are integers, while probability targets
+    are floats, as in `nn.CrossEntropyLoss`. This holds for the default
+    `ignore_index=-100` too, e.g. for padded sequences.
+
+    Parameters
+    ----------
+    likelihood : Likelihood
+    y : torch.Tensor
+        targets of a batch.
+
+    Returns
+    -------
+    n_ignored : int
+        zero for other likelihoods and for probability targets.
+    """
+    if not isinstance(likelihood, CategoricalLikelihood) or y.is_floating_point():
+        return 0
+
+    return int((y == likelihood.ignore_index).sum())
 
 
 class CurvatureInterface:
@@ -21,7 +63,10 @@ class CurvatureInterface:
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'}
+    likelihood : {'classification', 'regression'} or Likelihood
+        a name or a likelihood object. Custom likelihoods work as well. A composite
+        likelihood like reward modeling is not supported, pass its
+        `fit_likelihood` instead.
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.LongTensor, default=None
@@ -38,11 +83,26 @@ class CurvatureInterface:
 
     Attributes
     ----------
-    lossfunc : torch.nn.MSELoss or torch.nn.CrossEntropyLoss
+    likelihood : Likelihood
+    lossfunc : torch.nn.Module
+        the loss module built by the likelihood, e.g. `torch.nn.MSELoss` or
+        `torch.nn.CrossEntropyLoss`, on the device and with the dtype of the model.
     factor : float
         conversion factor between torch losses and base likelihoods
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
+
+    Notes
+    -----
+    Backends that compute the curvature from their own loss honour the options of a
+    built-in likelihood only where their library implements them, see `_honours`.
+    Otherwise, a GGN or EF backend falls back to the torch.func code of
+    `GGNInterface` or `EFInterface` for `diag` and `full`, which supports any
+    likelihood. Other structures raise a `ValueError`.
     """
+
+    _honoured: ClassVar[dict[str, frozenset[str]]] = {}
+    """Options of the built-in likelihoods that the library of the backend
+    implements, per curvature method. Missing methods honour none."""
 
     def __init__(
         self,
@@ -53,24 +113,14 @@ class CurvatureInterface:
         dict_key_x: str = "input_ids",
         dict_key_y: str = "labels",
     ):
-        assert likelihood in [Likelihood.REGRESSION, Likelihood.CLASSIFICATION]
-        self.likelihood: Likelihood | str = likelihood
+        # The model comes first, since the likelihood setter casts the loss to it
         self.model: nn.Module = model
+        self.likelihood = likelihood
+
         self.last_layer: bool = last_layer
         self.subnetwork_indices: torch.LongTensor | None = subnetwork_indices
         self.dict_key_x = dict_key_x
         self.dict_key_y = dict_key_y
-
-        if likelihood == "regression":
-            self.lossfunc: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = (
-                MSELoss(reduction="sum")
-            )
-            self.factor: float = 0.5
-        else:
-            self.lossfunc: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = (
-                CrossEntropyLoss(reduction="sum")
-            )
-            self.factor: float = 1.0
 
         self.params: list[nn.Parameter] = [
             p for p in self._model.parameters() if p.requires_grad
@@ -83,43 +133,210 @@ class CurvatureInterface:
         }
 
     @property
+    def likelihood(self) -> Likelihood:
+        """The likelihood object."""
+        return self._likelihood
+
+    @likelihood.setter
+    def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
+        """Set the likelihood from an object, a `Likelihood` member, a name, or a
+        torch criterion, see `get_likelihood`. It also rebuilds `lossfunc` with the
+        device and dtype of the model's first parameter, so that the class weights of
+        a criterion match the model, and sets `factor`.
+
+        Raises
+        ------
+        ValueError
+            if the likelihood fits its curvature with another likelihood, e.g.
+            reward modeling.
+        """
+        likelihood = get_likelihood(likelihood)
+
+        if likelihood.fit_likelihood is not likelihood:
+            raise ValueError(
+                f"Curvature backends fit the curvature of a single likelihood, but "
+                f"{likelihood!r} fits it with {likelihood.fit_likelihood!r}. Pass "
+                f"`fit_likelihood` instead."
+            )
+
+        lossfunc = likelihood.loss_fn()
+        param = next(self.model.parameters(), None)
+
+        if isinstance(lossfunc, nn.Module) and param is not None:
+            lossfunc = lossfunc.to(device=param.device, dtype=param.dtype)
+
+        self._likelihood = likelihood
+        self.lossfunc: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = lossfunc
+        self.factor: float = likelihood.loss_factor
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore a pickled backend.
+
+        Pickles made before likelihood objects existed store the likelihood as a
+        string under `likelihood`. It is turned into a likelihood object here.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            the pickled `__dict__`.
+        """
+        state = dict(state)
+
+        if "likelihood" in state:
+            state["_likelihood"] = get_likelihood(state.pop("likelihood"))
+
+        self.__dict__.pop("likelihood", None)
+        self.__dict__.update(state)
+
+    @property
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
 
-    def _check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
-        """For classification, check that the targets `y` match the logits `f`
-        `(batch, ..., classes)`: class indices `(batch, ...)` or class probabilities
-        with the same shape as `f`.
+    def _honoured_options(self, method: str) -> frozenset[str]:
+        """Options of the built-in likelihoods that this backend honours natively.
 
-        Flattening the batch dims would silently misalign targets of the wrong shape
-        with the same number of elements, e.g. `(B, L, M)` instead of `(B, M, L)`.
+        Parameters
+        ----------
+        method : str
+            curvature method, e.g. `"diag"`, `"kron"`, or `"full"`.
+
+        Returns
+        -------
+        options : frozenset[str]
+            names of the honoured options, as in `Likelihood.hyperparameters`.
         """
-        if self.likelihood != Likelihood.CLASSIFICATION:
+        return self._honoured.get(method, frozenset())
+
+    def _honours(self, method: str, y: torch.Tensor | None = None) -> bool:
+        """Whether the library of this backend computes the curvature of `method`
+        for the likelihood exactly.
+
+        That is the case if the likelihood is exactly a `GaussianLikelihood` or a
+        `CategoricalLikelihood`, whose losses the libraries know, and the library
+        implements all of its non-default options. A subclass might override any
+        member, e.g. `output_hessian`, which the library cannot see.
+
+        With the targets `y`, the option `ignore_index` also counts as set if `y`
+        holds ignored positions, even with the default `-100`. Libraries that don't
+        honour it would count those positions, e.g. padding.
+
+        Parameters
+        ----------
+        method : str
+            curvature method, e.g. `"diag"`, `"kron"`, or `"full"`.
+        y : torch.Tensor, optional
+            targets of the batch.
+
+        Returns
+        -------
+        honours : bool
+        """
+        if type(self.likelihood) not in _BUILTIN_TYPES:
+            return False
+
+        options = set(self.likelihood.hyperparameters())
+
+        if y is not None and _ignored_positions(self.likelihood, y) > 0:
+            options.add("ignore_index")
+
+        return options <= self._honoured_options(method)
+
+    def _warn_kron_ignored(self, y: torch.Tensor) -> None:
+        """Warn that KFAC counts the positions that the likelihood ignores in `y`.
+
+        The Kronecker factors keep their behaviour from before ignored positions were
+        dropped from the number of observations: they sum over all positions, and
+        `KronLaplace` normalizes them by that count.
+
+        Parameters
+        ----------
+        y : torch.Tensor
+            targets of the batch.
+        """
+        if _ignored_positions(self.likelihood, y) == 0:
             return
 
-        if y.shape != f.shape[:-1] and y.shape != f.shape:
-            raise ValueError(
-                f"The targets have shape {tuple(y.shape)}, which matches neither the "
-                f"class indices {tuple(f.shape[:-1])} nor the class probabilities "
-                f"{tuple(f.shape)} expected from the logits."
-            )
+        warnings.warn(
+            f"{type(self).__name__}.kron can't drop the ignored positions, e.g. "
+            f"padding, from the input factors of KFAC, so they count like the "
+            f"others. Use the `diag` or `full` structure to mask them exactly.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    def _unsupported_error(
+        self,
+        method: str,
+        honoured: frozenset[str] | None = None,
+        stochastic: bool = False,
+    ) -> ValueError:
+        """Error for a curvature method that cannot handle the likelihood.
+
+        Parameters
+        ----------
+        method : str
+            curvature method, e.g. `"kron"`.
+        honoured : frozenset[str], optional
+            options that the method honours, `_honoured_options(method)` by
+            default.
+        stochastic : bool, default=False
+            whether the method computes a Monte Carlo Fisher.
+
+        Returns
+        -------
+        error : ValueError
+        """
+        likelihood = self.likelihood
+
+        if type(likelihood) in _BUILTIN_TYPES:
+            if honoured is None:
+                honoured = self._honoured_options(method)
+
+            options = sorted(set(likelihood.hyperparameters()) - honoured)
+            noun = "options" if len(options) > 1 else "option"
+            what = f"the {noun} {', '.join(options)} of {likelihood!r}"
+        else:
+            what = f"the custom likelihood {likelihood!r}"
+
+        where = f"{type(self).__name__}.{method}"
+
+        if stochastic:
+            where += " with stochastic=True"
+
+        return ValueError(
+            f"{where} does not support {what}. Use a deterministic GGN or EF "
+            f"backend with the `diag` or `full` structure, which support any "
+            f"likelihood."
+        )
+
+    def _check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
+        """Check that the targets `y` match the outputs `f` with the likelihood.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            outputs `(batch, ..., outputs)`
+        y : torch.Tensor
+            targets
+        """
+        self.likelihood.check_targets(f, y)
 
     def _loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        """Compute `self.lossfunc(f, y)`, where every leading dim of `f` but the last
-        is a batch dim.
+        """Compute the summed loss of `f` w.r.t. `y`, where every leading dim of `f`
+        but the last is a batch dim.
 
-        `CrossEntropyLoss` expects the class axis at dim 1, while Laplace puts it last,
-        e.g. logits `(B, L, C)` with targets `(B, L)`. So, for classification, flatten
-        the batch dims, which makes every token an observation.
+        Parameters
+        ----------
+        f : torch.Tensor
+            outputs `(batch, ..., outputs)`
+        y : torch.Tensor
+            targets
+
+        Returns
+        -------
+        loss : torch.Tensor
         """
-        self._check_targets(f, y)
-
-        if self.likelihood == Likelihood.CLASSIFICATION and f.ndim > 2:
-            # Class probabilities keep their class axis
-            y = y.reshape(-1, f.shape[-1]) if y.ndim == f.ndim else y.reshape(-1)
-            f = f.reshape(-1, f.shape[-1])
-
-        return self.lossfunc(f, y)
+        return self.likelihood.loss(f, y)
 
     def jacobians(
         self,
@@ -273,7 +490,7 @@ class CurvatureInterface:
         Returns
         -------
         Gs : torch.Tensor
-            gradients `(batch * tokens, parameters)`, where `tokens` is the number
+            gradients `(batch * positions, parameters)`, where `positions` is the number
             of leading output dims per datum (1 if there are none)
         loss : torch.Tensor
         """
@@ -296,24 +513,24 @@ class CurvatureInterface:
             return tree_map(lambda v: v.unsqueeze(0) if torch.is_tensor(v) else v, x)
 
         def loss_single(params_dict, buffers_dict, x, y):
-            """Compute the loss of each token of a single sample."""
+            """Compute the loss of each position of a single sample."""
             x, y = unsqueeze(x), y.unsqueeze(0)  # vmap removes the batch dimension
             output = torch.func.functional_call(
                 self.model, (params_dict, buffers_dict), x
             )
             self._check_targets(output, y)
 
-            # Every leading dim of the output is a "token" with its own loss
+            # Every leading dim of the output is a "position" with its own loss
             n_lead = output.ndim - 1
             output = output.flatten(end_dim=n_lead - 1)
             y = y.reshape(output.shape[0], *y.shape[n_lead:])
 
-            def loss_token(output_t, y_t):
+            def loss_position(output_t, y_t):
                 return torch.func.functional_call(
                     self.lossfunc, {}, (output_t.unsqueeze(0), y_t.unsqueeze(0))
                 )
 
-            losses = torch.func.vmap(loss_token)(output, y)
+            losses = torch.func.vmap(loss_position)(output, y)
             return losses, losses.sum()
 
         jac_fn = torch.func.jacrev(loss_single, argnums=0, has_aux=True)
@@ -334,7 +551,7 @@ class CurvatureInterface:
                 + "Consider using a GGN backend, e.g. `CurvlinopsGGN`, instead."
             ) from e
 
-        # (batch * tokens, parameters)
+        # (batch * positions, parameters)
         Gs = torch.cat([bg.flatten(start_dim=2) for bg in batch_grad.values()], dim=2)
         Gs = Gs.flatten(end_dim=1)
 
@@ -436,7 +653,8 @@ class GGNInterface(CurvatureInterface):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'}
+    likelihood : {'classification', 'regression'} or Likelihood
+        a name or a likelihood object.
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
@@ -474,22 +692,57 @@ class GGNInterface(CurvatureInterface):
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
 
-    def _get_mc_functional_fisher(self, f: torch.Tensor) -> torch.Tensor:
+    def _check_mc_fisher(self, method: str) -> None:
+        """Make sure the Monte Carlo Fisher supports the likelihood.
+
+        It draws targets from the likelihood and uses `output_gradient` at them. So
+        it cannot see the observed targets, which class weights and ignored positions
+        refer to. `output_gradient` would also smooth the sampled targets, which
+        changes the expected outer product. Custom likelihoods are fine, since the
+        sampled gradients estimate their Fisher. Positions with the default ignore
+        index, e.g. padding, are masked with the observed targets.
+
+
+        Parameters
+        ----------
+        method : str
+            curvature method, `"diag"` or `"full"`.
+
+        Raises
+        ------
+        ValueError
+            if the likelihood is a built-in one with non-default options.
+        """
+        if (
+            type(self.likelihood) in _BUILTIN_TYPES
+            and self.likelihood.hyperparameters()
+        ):
+            raise self._unsupported_error(method, frozenset(), stochastic=True)
+
+    def _get_mc_functional_fisher(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Approximate the Fisher's middle matrix (expected outer product of the functional gradient)
         using MC integral with `self.num_samples` many samples.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            model outputs `(batch, ..., outputs)`
+        y : torch.Tensor, optional
+            observed targets. The positions that a categorical likelihood ignores in
+            them, e.g. padding, get a zero Fisher.
+
+        Returns
+        -------
+        F : torch.Tensor
+            `(batch, ..., outputs, outputs)`
         """
         F = 0
 
         for _ in range(self.num_samples):
-            if self.likelihood == "regression":
-                # N(y | f, 1)
-                y_sample = f + torch.randn(f.shape, device=f.device, dtype=f.dtype)
-                grad_sample = f - y_sample  # functional MSE grad
-            else:  # classification with softmax
-                y_sample = torch.distributions.Multinomial(logits=f).sample()
-                # First functional derivative of the loglik is p - y
-                p = torch.softmax(f, dim=-1)
-                grad_sample = p - y_sample
+            y_sample = self.likelihood.sample(f)
+            grad_sample = self.likelihood.output_gradient(f, y_sample)
 
             F += (
                 1
@@ -497,16 +750,34 @@ class GGNInterface(CurvatureInterface):
                 * torch.einsum("...c,...k->...ck", grad_sample, grad_sample)
             )
 
+        if y is not None and _ignored_positions(self.likelihood, y) > 0:
+            mask = (y != self.likelihood.ignore_index).reshape(f.shape[:-1])
+            F = mask[..., None, None] * F
+
         return F
 
-    def _get_functional_hessian(self, f: torch.Tensor) -> torch.Tensor | None:
-        if self.likelihood == "regression":
+    def _get_functional_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor | None:
+        """Hessian of the negative log likelihood w.r.t. the outputs `f`.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            model outputs `(batch, ..., outputs)`
+        y : torch.Tensor, optional
+            targets, passed on to the likelihood's `output_hessian`.
+
+        Returns
+        -------
+        H : torch.Tensor or None
+            `(batch, ..., outputs, outputs)`, or `None` for a Gaussian likelihood,
+            whose output Hessian is the identity and is skipped in the GGN.
+        """
+        if self.likelihood.is_gaussian:
             return None
-        else:
-            # second derivative of log lik is diag(p) - pp^T
-            ps = torch.softmax(f, dim=-1)
-            G = torch.diag_embed(ps) - torch.einsum("...k,...c->...kc", ps, ps)
-            return G
+
+        return self.likelihood.output_hessian(f, y)
 
     def full(
         self,
@@ -531,11 +802,14 @@ class GGNInterface(CurvatureInterface):
         H : torch.Tensor
             GGN `(parameters, parameters)`
         """
+        if self.stochastic:
+            self._check_mc_fisher("full")
+
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
         H_lik = (
-            self._get_mc_functional_fisher(f)
+            self._get_mc_functional_fisher(f, y)
             if self.stochastic
-            else self._get_functional_hessian(f)
+            else self._get_functional_hessian(f, y)
         )
 
         if H_lik is not None:
@@ -552,17 +826,21 @@ class GGNInterface(CurvatureInterface):
         y: torch.Tensor,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.stochastic:
+            self._check_mc_fisher("diag")
+
         Js, f = self.last_layer_jacobians(x) if self.last_layer else self.jacobians(x)
         loss = self.factor * self._loss(f, y)
 
         H_lik = (
-            self._get_mc_functional_fisher(f)
+            self._get_mc_functional_fisher(f, y)
             if self.stochastic
-            else self._get_functional_hessian(f)
+            else self._get_functional_hessian(f, y)
         )
 
         if H_lik is not None:
             H = torch.einsum("...cp,...ck,...kp->p", Js, H_lik, Js)
+
         else:  # The case of exact GGN for regression
             H = torch.einsum("...cp,...cp->p", Js, Js)
 
@@ -577,7 +855,8 @@ class EFInterface(CurvatureInterface):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
         torch model (neural network)
-    likelihood : {'classification', 'regression'}
+    likelihood : {'classification', 'regression'} or Likelihood
+        a name or a likelihood object.
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None

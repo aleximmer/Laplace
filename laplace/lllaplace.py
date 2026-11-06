@@ -58,7 +58,8 @@ class LLLaplace(ParametricLaplace):
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
     likelihood : Likelihood or {'classification', 'regression'}
-        determines the log likelihood Hessian approximation
+        determines the log likelihood Hessian approximation. A likelihood
+        object is accepted as well as a name.
     sigma_noise : torch.Tensor or float, default=1
         observation noise for the regression setting; must be 1 for classification
     prior_precision : torch.Tensor or float, default=1
@@ -100,7 +101,7 @@ class LLLaplace(ParametricLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -312,10 +313,7 @@ class LLLaplace(ParametricLaplace):
     ) -> torch.Tensor:
         fs = self._nn_functional_samples(X, n_samples, generator, **model_kwargs)
 
-        if self.likelihood == Likelihood.CLASSIFICATION:
-            fs = torch.softmax(fs, dim=-1)
-
-        return fs
+        return self.likelihood.predictive_likelihood.inverse_link(fs)
 
     def _nn_predictive_classification(
         self,
@@ -431,7 +429,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,
         prior_mean: float | torch.Tensor = 0.0,
@@ -554,7 +552,7 @@ class FunctionalLLLaplace(FunctionalLaplace):
     def __init__(
         self,
         model: nn.Module,
-        likelihood: Likelihood | str,
+        likelihood: Likelihood | str | nn.Module,
         n_subset: int,
         sigma_noise: float | torch.Tensor = 1.0,
         prior_precision: float | torch.Tensor = 1.0,

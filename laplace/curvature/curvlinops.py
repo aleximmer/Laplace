@@ -15,6 +15,7 @@ from curvlinops import (
 from torch import nn
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.curvature import _ALL_OPTIONS, _TARGET_FREE_OPTIONS
 from laplace.utils import Kron, Likelihood
 
 _FullLinearOperator: TypeAlias = (
@@ -43,6 +44,10 @@ class _ClassDimFirst(nn.Module):
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
+    # The dense operators differentiate `lossfunc` at the observed targets. KFAC
+    # counts ignored positions in its input factors and has no class weights.
+    _honoured = {"full": _ALL_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
+
     def __init__(
         self,
         model: nn.Module,
@@ -59,7 +64,7 @@ class CurvlinopsInterface(CurvatureInterface):
     @property
     def _linop_model(self) -> nn.Module:
         """The model that is passed to the Curvlinops linear operators."""
-        if self.likelihood == Likelihood.CLASSIFICATION:
+        if self.likelihood.name == Likelihood.CLASSIFICATION.name:
             return _ClassDimFirst(self.model)
 
         return self.model
@@ -111,6 +116,11 @@ class CurvlinopsInterface(CurvatureInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
+        if not self._honours("kron"):
+            raise self._unsupported_error("kron")
+
+        self._warn_kron_ignored(y)
+
         if isinstance(x, (dict, MutableMapping)):
             kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
@@ -135,9 +145,9 @@ class CurvlinopsInterface(CurvatureInterface):
         linop.compute_kronecker_factors()
 
         kron = self._get_kron_factors(linop, model)
-        # Curvlinops averages the input factors over the tokens of the batch, e.g.
-        # `B * L` for outputs `(B, L, K)`. Undo it, so that they sum over the tokens
-        # like with ASDL. `KronLaplace.fit` normalizes by the number of tokens.
+        # Curvlinops averages the input factors over the positions of the batch, e.g.
+        # `B * L` for outputs `(B, L, K)`. Undo it, so that they sum over the positions
+        # like with ASDL. `KronLaplace.fit` normalizes by the number of positions.
         kron = self._rescale_kron_factors(kron, f.shape[:-1].numel(), N)
         kron *= self.factor
 
@@ -154,6 +164,13 @@ class CurvlinopsInterface(CurvatureInterface):
             return super().full(x, y, **kwargs)
 
         curvlinops_kwargs = {k: v for k, v in kwargs.items() if k != "N"}
+
+        # Fallback to torch.func for options or likelihoods Curvlinops can't handle
+        if not self._honours("full", y):
+            if isinstance(self, (GGNInterface, EFInterface)):
+                return super().full(x, y, **curvlinops_kwargs)
+
+            raise self._unsupported_error("full")
         if isinstance(x, (dict, MutableMapping)):
             curvlinops_kwargs["batch_size_fn"] = lambda x: x[self.dict_key_x].shape[0]
 
@@ -195,6 +212,15 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
         self.stochastic = stochastic
+
+    def _honoured_options(self, method: str) -> frozenset[str]:
+        if not self.stochastic:
+            return super()._honoured_options(method)
+
+        # The MC Fisher of the dense operator samples gradients that ignore the
+        # loss. MC KFAC differentiates `lossfunc` at sampled labels, so even label
+        # smoothing changes it.
+        return _TARGET_FREE_OPTIONS if method == "full" else frozenset()
 
     @property
     def _kron_fisher_type(self) -> FisherType:

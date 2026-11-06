@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from typing import TYPE_CHECKING
 
 import torch
 from torch import nn
-from torch.nn import CrossEntropyLoss, MSELoss
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader
 
 import laplace
-from laplace.utils.enums import Likelihood
 from laplace.utils.feature_extractor import FeatureExtractor
 from laplace.utils.swag import fit_diagonal_swag_var
+
+if TYPE_CHECKING:
+    from laplace.likelihoods import Likelihood
 
 __all__ = [
     "SubnetMask",
@@ -258,8 +260,8 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
     model : torch.nn.Module
     n_params_subnet : int
         number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
-    likelihood : str
-        'classification' or 'regression'
+    likelihood : Likelihood or str
+        a likelihood object, or 'classification' or 'regression'
     swag_n_snapshots : int
         number of model snapshots to collect for SWAG
     swag_snapshot_freq : int
@@ -272,17 +274,25 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         self,
         model: nn.Module,
         n_params_subnet: int,
-        likelihood: Likelihood | str = Likelihood.CLASSIFICATION,
+        likelihood: Likelihood | str = "classification",
         swag_n_snapshots: int = 40,
         swag_snapshot_freq: int = 1,
         swag_lr: float = 0.01,
     ):
-        if likelihood not in [Likelihood.CLASSIFICATION, Likelihood.REGRESSION]:
+        # Imported here since laplace.likelihoods imports laplace.utils.
+        from laplace.likelihoods import Likelihood, get_likelihood
+
+        try:
+            lik = get_likelihood(likelihood)
+        except ValueError:
+            lik = None
+
+        if lik is None or lik.name == Likelihood.REWARD_MODELING.name:
             raise ValueError("Only available for classification and regression!")
 
         super().__init__(model, n_params_subnet)
 
-        self.likelihood: Likelihood | str = likelihood
+        self.likelihood: Likelihood = lik
         self.swag_n_snapshots: int = swag_n_snapshots
         self.swag_snapshot_freq: int = swag_snapshot_freq
         self.swag_lr: float = swag_lr
@@ -291,10 +301,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         if train_loader is None:
             raise ValueError("Need to pass train loader for subnet selection.")
 
-        if self.likelihood == Likelihood.CLASSIFICATION:
-            criterion = CrossEntropyLoss(reduction="mean")
-        else:
-            criterion = MSELoss(reduction="mean")
+        criterion = self.likelihood.loss_fn("mean")
 
         param_variances = fit_diagonal_swag_var(
             self.model,
