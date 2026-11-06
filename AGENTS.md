@@ -50,6 +50,9 @@ uv run mkdocs build --strict     # docs, as checked in CI
 - If `--extra dev` fails to resolve locally (`tensordict` wheel), use
   `uv run --with pytest --with scipy --with pytest-mock pytest ...`.
 - Tests marked `cuda` (e.g. `tests/test_*_cuda.py`) need an NVIDIA GPU; skip with `-m "not cuda"`.
+- Tests that use the old asdfghjkl backend carry the `asdfghjkl` marker. It is added automatically
+  for `LowRankLaplace` and `Asdfghjkl*` test parameters; add it by hand if a test builds them in its
+  body. CI's old-asdfghjkl job runs only `-m asdfghjkl`, so an unmarked test never runs there.
 
 ## Conventions
 

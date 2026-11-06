@@ -11,8 +11,12 @@ import textwrap
 from importlib.util import find_spec
 
 import pytest
+import torch
 
+from laplace import FullLaplace, KronLaplace, LowRankLaplace
 from laplace.curvature import CurvlinopsGGN
+from laplace.curvature.asdfghjkl import AsdfghjklGGN, AsdfghjklHessian
+from tests.conftest import _uses_old_asdfghjkl
 from tests.utils import AsdlEF, BackPackGGN
 
 
@@ -140,3 +144,20 @@ def test_dir_hides_missing_backends():
 
     assert res.returncode == 0, res.stderr
     assert res.stdout.strip().splitlines()[-1] == "[]"
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [
+        (LowRankLaplace, True),
+        (AsdfghjklGGN, True),
+        ((KronLaplace, "classification"), False),
+        ((LowRankLaplace, "regression"), True),
+        ([FullLaplace, AsdfghjklHessian], True),
+        (CurvlinopsGGN, False),
+        ("lowrank", False),
+        (torch.zeros(2), False),
+    ],
+)
+def test_uses_old_asdfghjkl(value, expected):
+    assert _uses_old_asdfghjkl(value) is expected
