@@ -282,3 +282,5 @@ print(f"[LoRA-LLM] The predictive tensor is of shape: {lora_la(X_test).shape}.")
 # - `CurvlinopsEF` for `hessian_structure = {"kron"}`
 # - `AsdlGGN` for `hessian_structure = {"kron", "diag"}`
 # - `AsdlEF` for `hessian_structure = {"kron", "diag"}`
+#
+# The ASDL backends need the asdl extra: `pip install "laplace-torch[asdl]"`.

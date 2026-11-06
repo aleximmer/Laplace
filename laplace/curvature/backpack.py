@@ -1,20 +1,31 @@
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+from importlib.util import find_spec
 from typing import Any
 
 import torch
-from backpack import backpack, extend, memory_cleanup
-from backpack.context import CTX
-from backpack.extensions import (
-    KFAC,
-    KFLR,
-    BatchGrad,
-    DiagGGNExact,
-    DiagGGNMC,
-    SumGradSquared,
-)
 from torch import nn
+
+try:
+    from backpack import backpack, extend, memory_cleanup
+    from backpack.context import CTX
+    from backpack.extensions import (
+        KFAC,
+        KFLR,
+        BatchGrad,
+        DiagGGNExact,
+        DiagGGNMC,
+        SumGradSquared,
+    )
+except ModuleNotFoundError as err:
+    if find_spec("backpack") is not None:
+        raise
+
+    raise ImportError(
+        "The BackPACK backends need the backpack package. Install it with: "
+        'pip install "laplace-torch[backpack]"'
+    ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.utils import Kron, Likelihood

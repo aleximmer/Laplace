@@ -2,9 +2,9 @@ import pytest
 import torch
 from torch import nn
 
-from laplace.curvature import AsdlInterface, BackPackInterface, CurvatureInterface
+from laplace.curvature import CurvatureInterface
 from laplace.utils import FeatureExtractor
-from tests.utils import jacobians_naive
+from tests.utils import AsdlInterface, BackPackInterface, jacobians_naive
 
 
 @pytest.fixture

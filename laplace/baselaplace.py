@@ -19,9 +19,8 @@ from torch.linalg import LinAlgError
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.utils.data import DataLoader
 
+from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
-from laplace.curvature.asdl import AsdlGGN, AsdlInterface
-from laplace.curvature.backpack import BackPackGGN, BackPackInterface
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.utils import SoDSampler
@@ -163,8 +162,9 @@ class BaseLaplace:
         if backend is None:
             backend = CurvlinopsGGN
         else:
-            if self.is_subset_params and issubclass(
-                backend, (BackPackInterface, AsdfghjklInterface)
+            if self.is_subset_params and (
+                issubclass(backend, AsdfghjklInterface)
+                or _is_optional_backend(backend, "BackPackInterface")
             ):
                 raise ValueError(
                     "If some grad are switched off, the BackPACK and Asdfghjkl backends"
@@ -2614,12 +2614,12 @@ class BaseFunctionalLaplace(BaseLaplace):
     @property
     def _uses_backpack_backend(self) -> bool:
         """Whether the curvature backend extends modules using BackPACK."""
-        return issubclass(self._backend_cls, BackPackInterface)
+        return _is_optional_backend(self._backend_cls, "BackPackInterface")
 
     @property
     def _uses_asdl_backend(self) -> bool:
         """Whether the curvature backend computes Jacobians using ASDL."""
-        return issubclass(self._backend_cls, AsdlInterface)
+        return _is_optional_backend(self._backend_cls, "AsdlInterface")
 
     def _glm_predictive_distribution(
         self, x: torch.Tensor | MutableMapping, joint: bool = False
@@ -3078,12 +3078,17 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         enable_backprop: bool = False,
         dict_key_x="input_ids",
         dict_key_y="labels",
-        backend: type[CurvatureInterface] | None = BackPackGGN,
+        backend: type[CurvatureInterface] | None = None,
         backend_kwargs: dict[str, Any] | None = None,
         independent_outputs: bool = False,
         seed: int = 0,
     ):
-        assert backend in [BackPackGGN, AsdlGGN, CurvlinopsGGN]
+        assert (
+            backend is None
+            or issubclass(backend, CurvlinopsGGN)
+            or _is_optional_backend(backend, "BackPackGGN")
+            or _is_optional_backend(backend, "AsdlGGN")
+        )
         self._check_prior_precision(prior_precision)
         super().__init__(
             model,
@@ -3115,7 +3120,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.L = None
 
         # Posterior mean (used in regression marginal likelihood)
-        self.mean = parameters_to_vector(self.model.parameters()).detach()
+        self.mean = parameters_to_vector(self.params).detach()
 
         self._fitted = False
         self._recompute_Sigma = True
@@ -3264,11 +3269,33 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             )
         self._recompute_Sigma = False
 
+    def _batch_inputs(
+        self, data: tuple[torch.Tensor, ...] | MutableMapping
+    ) -> torch.Tensor | MutableMapping:
+        """Get the model inputs from a training batch.
+
+        Parameters
+        ----------
+        data : tuple or MutableMapping
+            A batch from the training loader, either `(X, y)` or a mapping.
+
+        Returns
+        -------
+        torch.Tensor or MutableMapping
+            `X` on the model's device, or the whole mapping, which the model
+            reads its inputs from.
+        """
+        if isinstance(data, MutableMapping):
+            return data
+
+        return data[0].to(self._device)
+
     def _get_SoD_data_loader(self, train_loader: DataLoader) -> DataLoader:
         """Subset-of-Datapoints data loader"""
         return DataLoader(
             dataset=train_loader.dataset,
             batch_size=train_loader.batch_size,
+            collate_fn=train_loader.collate_fn,
             sampler=SoDSampler(
                 N=len(train_loader.dataset), M=self.n_subset, seed=self.seed
             ),
@@ -3294,12 +3321,12 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         data = next(iter(train_loader))
         with torch.no_grad():
             if isinstance(data, MutableMapping):  # To support Huggingface dataset
-                if "backpack" in self._backend_cls.__name__.lower():
+                if self._uses_backpack_backend:
                     raise ValueError(
                         "Currently BackPACK backend is not supported "
                         + "for custom models with non-tensor inputs "
-                        + "(https://github.com/pytorch/functorch/issues/159). Consider "
-                        + "using AsdlGGN backend instead."
+                        + "(https://github.com/pytorch/functorch/issues/159). Use "
+                        + "CurvlinopsGGN, the default backend, instead."
                     )
 
                 out = self.model(data)
@@ -3381,9 +3408,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             mu.append(
                 self._mean_scatter_term_batch(Js_batch, f_batch, y)
             )  # needed for marginal likelihood
-            for j, (X2, _) in enumerate(train_loader):
+            for j, data2 in enumerate(train_loader):
                 if j >= i:
-                    X2 = X2.to(self._device)
+                    X2 = self._batch_inputs(data2)
                     K_batch = self._kernel_batch(Js_batch, X2)
                     self._store_K_batch(K_batch, i, j)
 
@@ -3449,12 +3476,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         # Compute K_{*M}
         K_M_star = []
-        for X_batch, _ in self.train_loader:
+        for data in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
-                Js_star, X_batch.to(self._device)
+                Js_star, self._batch_inputs(data)
             )
             K_M_star.append(K_M_star_batch)
-            del X_batch
 
         # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star)
@@ -3488,12 +3514,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         # Compute K_{*M}
         K_M_star = []
-        for X_batch, _ in self.train_loader:
+        for data in self.train_loader:
             K_M_star_batch = self.gp_kernel_prior_variance * self._kernel_batch_star(
-                Js_star, X_batch.to(self._device)
+                Js_star, self._batch_inputs(data)
             )
             K_M_star.append(K_M_star_batch)
-            del X_batch
 
         # Build_K_star_M computes K_{*M} (K_{MM}+ L_{MM}^{-1})^{-1} K_{M*}
         f_var = K_star - self._build_K_star_M(K_M_star, joint=True)

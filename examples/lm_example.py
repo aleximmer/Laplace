@@ -18,6 +18,8 @@
 # > in the likelihood. The ASDL backends (`AsdlEF`, `AsdlGGN`) rely on this layout. For other
 # > layouts, e.g., outputs pooled over tokens `(B, K)` or sequence-first layers `(L, B, D)`,
 # > use the Curvlinops backends (`CurvlinopsEF`, `CurvlinopsGGN`) instead.
+#
+# The ASDL backends need the asdl extra: `pip install "laplace-torch[asdl]"`.
 
 # %%
 # `tensordict` is only needed for this toy dataset: `pip install tensordict`

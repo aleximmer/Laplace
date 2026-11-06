@@ -13,7 +13,8 @@ from torch.utils.data import (
 )
 
 from laplace import Laplace
-from laplace.curvature import AsdlGGN, BackPackGGN, CurvlinopsGGN
+from laplace.curvature import CurvlinopsGGN
+from tests.utils import AsdlGGN, BackPackGGN, requires_backpack
 
 torch.set_num_threads(1)
 
@@ -843,6 +844,7 @@ def test_functional_methods_reject_invalid_val_steps(data, val_steps):
         estimator.fit(loader, iterations=1, val_steps=val_steps)
 
 
+@requires_backpack
 def test_functional_methods_reject_frozen_parameters_with_backpack_subclass():
 
     class AlternateGGN(BackPackGGN):

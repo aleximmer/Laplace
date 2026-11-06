@@ -7,7 +7,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import Laplace
-from laplace.curvature import AsdlGGN, BackPackGGN, CurvlinopsGGN
+from laplace.curvature import CurvlinopsGGN
+from tests.utils import AsdlGGN, BackPackGGN
 
 pytestmark = [
     pytest.mark.cuda,

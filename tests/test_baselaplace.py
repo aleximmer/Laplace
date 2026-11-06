@@ -29,11 +29,18 @@ from laplace import (
     LowRankLaplace,
 )
 from laplace.baselaplace import BaseLaplace
-from laplace.curvature import AsdlEF, AsdlGGN, BackPackGGN
-from laplace.curvature.backpack import BackPackEF
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.utils import KronDecomposed
-from tests.utils import ListDataset, dict_data_collator, jacobians_naive
+from tests.utils import (
+    AsdlEF,
+    AsdlGGN,
+    BackPackEF,
+    BackPackGGN,
+    ListDataset,
+    dict_data_collator,
+    jacobians_naive,
+    requires_asdl,
+)
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
@@ -1552,6 +1559,7 @@ def test_multidim_functional_laplace_raises(likelihood):
         lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
 
 
+@requires_asdl
 def test_asdl_sum_rows_per_observation():
     A = torch.arange(12.0).reshape(6, 2)
     assert torch.equal(AsdlGGN._sum_rows_per_observation(A, 6), A)

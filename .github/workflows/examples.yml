@@ -33,7 +33,7 @@ jobs:
       - name: Install the project and the example dependencies
         run: |
           uv venv
-          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev -r examples/requirements.txt
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra asdl -r examples/requirements.txt
       - name: Run examples
         run: .venv/bin/python -m pytest examples/test_examples.py -m "not slow" -v
 
@@ -58,6 +58,6 @@ jobs:
       - name: Install the project and the example dependencies
         run: |
           uv venv
-          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev -r examples/requirements.txt
+          uv pip install --torch-backend cpu -e . -r pyproject.toml --extra dev --extra asdl -r examples/requirements.txt
       - name: Run slow examples
         run: .venv/bin/python -m pytest examples/test_examples.py -m slow -v

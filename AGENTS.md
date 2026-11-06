@@ -9,7 +9,7 @@ Python >= 3.11. Full docs: `docs/` (served via mkdocs), dev guide: `docs/devs_gu
 Always use `uv run` or `uv venv`, don't use global Python.
 
 ```bash
-uv sync --all-extras          # or: pip install -e ".[dev]"
+uv sync --all-extras          # or: pip install -e ".[dev,all]"
 uv run python examples/regression_example.py
 ```
 
@@ -18,13 +18,14 @@ For a CPU-only install (as in CI):
 
 ```bash
 uv venv
-uv pip install --torch-backend cpu -e ".[dev]"
+uv pip install --torch-backend cpu -e ".[dev,all]"
 uv run --no-sync pytest ...      # or: export UV_NO_SYNC=1
 ```
 
 `uv.lock` pins the CUDA build, so in this setup never run `uv sync`, and pass `--no-sync`
 to every `uv run`. Otherwise uv reinstalls the CUDA packages.
 
+ASDL and BackPACK backends are extras (`asdl`, `backpack`, `all`); Curvlinops is the default.
 Optional `asdfghjkl` backend: `pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl`.
 
 ## Layout

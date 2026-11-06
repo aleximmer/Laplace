@@ -37,7 +37,19 @@ To install laplace with `pip`, run the following:
 pip install laplace-torch
 ```
 
-Additionally, if you want to use the `asdfghjkl` backend, please install it via:
+The default backend, Curvlinops, is always installed. The ASDL and BackPACK
+backends are optional extras:
+
+```bash
+pip install "laplace-torch[asdl]"      # AsdlGGN, AsdlEF, AsdlHessian
+pip install "laplace-torch[backpack]"  # BackPackGGN, BackPackEF
+pip install "laplace-torch[all]"       # both
+```
+
+Extras can be combined, e.g. `pip install "laplace-torch[asdl,backpack]"`.
+Curvlinops currently depends on BackPACK, so a plain install still pulls it in.
+
+The old `asdfghjkl` backend, which `LowRankLaplace` needs, is not on PyPI. Install it via:
 
 ```bash
 pip install git+https://git@github.com/wiseodd/asdl@asdfghjkl
@@ -207,7 +219,7 @@ lora_la = Laplace(
     likelihood="classification",
     subset_of_weights="all",
     hessian_structure="diag",
-    backend=AsdlGGN,
+    backend=AsdlGGN,  # needs laplace-torch[asdl]
 )
 
 test_data = next(iter(dataloader))
@@ -347,7 +359,8 @@ torch.load(..., map_location="cpu")
 - **Small, simple MLP, or last-layer Laplace:** Any backend should work well.
   `CurvlinopsGGN` or `CurvlinopsEF` is recommended if
   `hessian_factorization = 'kron'`, but it's inefficient for other factorizations.
-- **LLMs with PEFT (e.g. LoRA):** `AsdlGGN` and `AsdlEF` are recommended.
+- **LLMs with PEFT (e.g. LoRA):** `AsdlGGN` and `AsdlEF` are recommended. They need
+  `pip install "laplace-torch[asdl]"`.
 - **Continuous Bayesian optimization:** `CurvlinopsGGN/EF` and `BackpackGGN/EF` are
   recommended since they are the only ones supporting backprop over Jacobians.
 

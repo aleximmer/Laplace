@@ -21,8 +21,6 @@ classifiers = [
 license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
-  "asdfghjkl == 0.1a5",
-  "backpack-for-pytorch",
   "curvlinops-for-pytorch == 3.0.1",
   "numpy",
   "scipy >= 1.12",
@@ -50,6 +48,9 @@ source-include = ["tests", "examples"]
 default-groups = ["docs"]
 
 [project.optional-dependencies]
+asdl = ["asdfghjkl == 0.1a5"]
+backpack = ["backpack-for-pytorch"]
+all = ["laplace-torch[asdl,backpack]"]
 dev = [
   "coveralls",
   "pytest",
