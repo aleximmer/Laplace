@@ -362,6 +362,34 @@ def test_laplace_fit_dict_loader_soft_labels(Backend):
 
 
 @pytest.mark.parametrize("structure", ["full", "diag"])
+@pytest.mark.parametrize("soft", [False, True])
+def test_last_layer_ef_matches_hand_computation(structure, soft):
+    # The empirical Fisher of the torch.func code must not vanish for a last layer
+    X, q = soft_data((8,))
+    model = mlp()
+    y = q if soft else q.argmax(dim=-1)
+
+    la = Laplace(
+        model,
+        "classification",
+        subset_of_weights="last_layer",
+        hessian_structure=structure,
+        backend=CurvlinopsEF,
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    # The weight of the last layer comes before its bias
+    features = model[:2](X).detach()
+    target = q if soft else F.one_hot(y, K).double()
+    g = model[2](features).softmax(dim=-1).detach() - target
+    G = torch.cat([torch.einsum("bk,bd->bkd", g, features).flatten(1), g], dim=1)
+    H = G.T @ G
+
+    assert H.abs().max() > 0
+    assert torch.allclose(la.H, H if structure == "full" else H.diagonal())
+
+
+@pytest.mark.parametrize("structure", ["full", "diag"])
 @pytest.mark.parametrize("subset", ["last_layer", "subnetwork"])
 def test_lllaplace_and_subnet_soft_targets(subset, structure):
     torch.manual_seed(3)

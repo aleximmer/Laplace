@@ -643,6 +643,12 @@ class CurvatureInterface:
             of leading output dims per datum (1 if there are none)
         loss : torch.Tensor
         """
+        # `params_dict` holds the parameters of `_model`, so with a last layer the
+        # gradients are those of the last layer at the features
+        if self.last_layer:
+            with torch.no_grad():
+                _, x = self.model.forward_with_features(x)
+
         if isinstance(x, MutableMapping):
             # vmap only maps over tensors in plain containers, e.g. not `UserDict`.
             # The model then gets plain dicts, also for nested mappings; non-tensor
@@ -665,7 +671,7 @@ class CurvatureInterface:
             """Compute the loss of each position of a single sample."""
             x, y = unsqueeze(x), y.unsqueeze(0)  # vmap removes the batch dimension
             output = torch.func.functional_call(
-                self.model, (params_dict, buffers_dict), x
+                self._model, (params_dict, buffers_dict), x
             )
             self._check_targets(output, y)
 
