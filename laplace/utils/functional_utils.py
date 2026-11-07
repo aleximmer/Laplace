@@ -283,10 +283,13 @@ def regression_targets(targets: torch.Tensor, outputs: torch.Tensor) -> torch.Te
 def classification_targets(targets: torch.Tensor) -> torch.Tensor:
     """Convert class targets to a flat integer index tensor.
 
+    ELLA and VaLLA use this, and they only take hard labels. Floating-point targets
+    ``[B, C]`` are class probabilities, which an index can't represent, so they raise.
+
     Parameters
     ----------
     targets : torch.Tensor
-        Flat indices ``[B]``, column indices ``[B, 1]``, or one-hot targets
+        Flat indices ``[B]``, column indices ``[B, 1]``, or integer one-hot targets
         ``[B, C]``.
 
     Returns
@@ -297,8 +300,16 @@ def classification_targets(targets: torch.Tensor) -> torch.Tensor:
     Raises
     ------
     ValueError
-        If the input cannot be interpreted as one class per row.
+        If the input cannot be interpreted as one class per row, e.g. if it holds
+        class probabilities.
     """
+    if targets.ndim == 2 and targets.shape[1] > 1 and targets.is_floating_point():
+        raise ValueError(
+            "ELLA and VaLLA do not support class probabilities as targets yet, but "
+            f"the targets are floats of shape {tuple(targets.shape)}. Pass class "
+            "indices, or use a parametric Laplace or `FunctionalLaplace`."
+        )
+
     if targets.ndim == 2:
         targets = targets[:, 0] if targets.shape[1] == 1 else targets.argmax(-1)
     if targets.ndim != 1:

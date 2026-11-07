@@ -87,6 +87,69 @@ def test_running_nll_metric_noncontiguous(
     torch.testing.assert_close(metric.compute(), expected)
 
 
+@pytest.mark.parametrize("shape", [(8,), (8, 5)])
+def test_nll_metric_probability_targets(shape):
+    # Probability targets are the cross-entropy, averaged over positions
+    p = torch.softmax(torch.randn(*shape, 3), dim=-1)
+    q = torch.softmax(torch.randn(*shape, 3), dim=-1)
+
+    metric = RunningNLLMetric()
+    metric.update(p, q)
+
+    expected = -(q * p.log()).sum() / math.prod(shape)
+    torch.testing.assert_close(metric.compute(), expected)
+
+
+def test_nll_metric_probability_targets_accumulate_over_batches():
+    p = torch.softmax(torch.randn(10, 4, 3), dim=-1)
+    q = torch.softmax(torch.randn(10, 4, 3), dim=-1)
+
+    metric = RunningNLLMetric()
+
+    # Uneven batches: the average is over positions, not over batches
+    for batch in (slice(0, 3), slice(3, 4), slice(4, 10)):
+        metric.update(p[batch], q[batch])
+
+    torch.testing.assert_close(metric.compute(), -(q * p.log()).sum() / 40)
+
+
+def test_nll_metric_one_hot_equals_index():
+    p = torch.softmax(torch.randn(6, 5, 3), dim=-1)
+    y = torch.randint(3, (6, 5))
+
+    by_index, by_one_hot = RunningNLLMetric(), RunningNLLMetric()
+    by_index.update(p, y)
+    by_one_hot.update(p, F.one_hot(y, 3).to(p.dtype))
+
+    torch.testing.assert_close(by_one_hot.compute(), by_index.compute())
+
+
+def test_nll_metric_probability_targets_ignore_no_index():
+    # As in torch, every position of probability targets counts, whatever the
+    # `ignore_index` is
+    p = torch.softmax(torch.randn(4, 3), dim=-1)
+    q = torch.softmax(torch.randn(4, 3), dim=-1)
+
+    metric = RunningNLLMetric(ignore_index=0)
+    metric.update(p, q)
+
+    torch.testing.assert_close(metric.compute(), -(q * p.log()).sum() / 4)
+
+
+def test_nll_metric_zero_probability_is_finite():
+    # A class with probability 0 in both the prediction and the target adds nothing,
+    # while 0 * log(0) would give NaN
+    p = torch.tensor([[0.0, 0.25, 0.75], [0.5, 0.0, 0.5]])
+    q = torch.tensor([[0.0, 0.5, 0.5], [1.0, 0.0, 0.0]])
+
+    metric = RunningNLLMetric()
+    metric.update(p, q)
+
+    expected = -(0.5 * math.log(0.25) + 0.5 * math.log(0.75) + math.log(0.5)) / 2
+    assert torch.isfinite(metric.compute())
+    assert math.isclose(metric.compute().item(), expected, rel_tol=1e-6)
+
+
 @pytest.mark.parametrize("shape", [(6, 4), (3, 5, 4), (2, 3, 3, 4)])
 @pytest.mark.parametrize("soft", [False, True])
 def test_bernoulli_nll_is_summed_over_outputs_and_averaged_over_positions(shape, soft):
@@ -152,3 +215,24 @@ def test_bernoulli_nll_rejects_mismatched_shapes():
     # Class indices, as the softmax metric takes them
     with pytest.raises(ValueError, match="target size"):
         metric.update(torch.rand(4, 3), torch.randint(3, (4,)))
+
+
+def test_nll_metric_column_indices_are_not_probabilities():
+    probs = torch.softmax(torch.randn(8, 3), dim=-1)
+    y = torch.randint(3, (8,))
+
+    index = RunningNLLMetric()
+    index.update(probs, y)
+
+    column = RunningNLLMetric()
+    column.update(probs, y[:, None])
+
+    assert torch.allclose(column.compute(), index.compute())
+
+
+def test_nll_metric_rejects_integer_one_hot():
+    probs = torch.softmax(torch.randn(8, 3), dim=-1)
+    y = torch.nn.functional.one_hot(torch.randint(3, (8,)), 3)
+
+    with pytest.raises(ValueError):
+        RunningNLLMetric().update(probs, y)

@@ -283,7 +283,11 @@ def marglik_training(
                 hits = (f.detach() > 0) == (y >= 0.5)
                 epoch_perf += hits.float().mean().item() * len(y)
             else:
-                epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
+                # Class probabilities have the shape of the logits
+                labels = y.argmax(dim=-1) if y.ndim == f.ndim else y
+                epoch_perf += torch.sum(
+                    torch.argmax(f.detach(), dim=-1) == labels
+                ).item()
 
             if scheduler is not None:
                 scheduler.step()

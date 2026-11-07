@@ -18,6 +18,7 @@ from tests.utils import (
     AsdlHessian,
     BackPackGGN,
     DoubledCategorical,
+    _kron_closed_form,
     bce_data,
     bce_model,
     bce_options,
@@ -468,17 +469,6 @@ def test_bernoulli_full_matches_autograd_hessian(Backend, batch_shape, opts):
     _, H = Backend(model, BernoulliLikelihood(**opts)).full(X, y)
 
     assert torch.allclose(H, loss_hessian(model, bce, X, y), atol=1e-5, rtol=1e-5)
-
-
-def _kron_closed_form(
-    X: torch.Tensor, B: torch.Tensor, N: int
-) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
-    """Factors that KFAC gives for a single linear layer with bias: the output
-    factor `B` summed over positions and the input factor summed over positions
-    and divided by `N` for the weight, and `B` for the bias."""
-    X = X.reshape(-1, X.shape[-1])
-
-    return [B, X.T @ X / N], [B]
 
 
 @pytest.mark.parametrize("soft", [False, True])

@@ -220,6 +220,17 @@ def loss_hessian(
     return torch.func.hessian(loss)(theta)
 
 
+def _kron_closed_form(
+    X: torch.Tensor, B: torch.Tensor, N: int
+) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
+    """Factors that KFAC gives for a single linear layer with bias: the output
+    factor `B` summed over positions and the input factor summed over positions
+    and divided by `N` for the weight, and `B` for the bias."""
+    X = X.reshape(-1, X.shape[-1])
+
+    return [B, X.T @ X / N], [B]
+
+
 def grad(model):
     return torch.cat([p.grad.data.flatten() for p in model.parameters()]).detach()
 

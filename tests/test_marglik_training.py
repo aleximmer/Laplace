@@ -1,5 +1,6 @@
 import inspect
 import math
+from copy import deepcopy
 
 import pytest
 import torch
@@ -231,3 +232,44 @@ def test_marglik_training_sums_bernoulli_loss(model):
     loss = _first_epoch_loss(model, loader, weighted)
 
     assert math.isclose(loss, expected, rel_tol=1e-5)
+
+
+def _soft_loader(one_hot: bool, n_classes: int = 2) -> DataLoader:
+    torch.manual_seed(0)
+    X = torch.randn(32, 3)
+    y = torch.randint(0, n_classes, (32,))
+
+    if one_hot:
+        y = torch.nn.functional.one_hot(y, n_classes).float()
+
+    return DataLoader(TensorDataset(X, y), batch_size=8)
+
+
+@pytest.mark.parametrize("hessian_structure", ["diag", "full", "kron"])
+def test_marglik_training_soft_targets(model, hessian_structure, caplog):
+    # Float one-hot targets `(B, K)` are class indices written differently, so
+    # training, the marginal likelihood, and the logged accuracy are the same. The
+    # accuracy compares the logits' argmax with the argmax of the targets.
+    runs = {}
+
+    for one_hot in [False, True]:
+        torch.manual_seed(1)
+        caplog.clear()
+
+        with caplog.at_level("INFO"):
+            _, _, margliks, losses = marglik_training(
+                deepcopy(model),
+                _soft_loader(one_hot),
+                likelihood="classification",
+                hessian_structure=hessian_structure,
+                n_epochs=2,
+            )
+
+        perfs = [m for m in caplog.messages if "Perf=" in m]
+        assert len(perfs) == 2
+        runs[one_hot] = (margliks, losses, [m.split("Perf=")[1] for m in perfs])
+
+    assert all(math.isfinite(m) for m in runs[True][0])
+    assert runs[True][2] == runs[False][2]
+    assert torch.allclose(torch.tensor(runs[True][0]), torch.tensor(runs[False][0]))
+    assert torch.allclose(torch.tensor(runs[True][1]), torch.tensor(runs[False][1]))

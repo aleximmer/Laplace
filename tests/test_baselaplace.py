@@ -1535,13 +1535,120 @@ def test_multidim_classification_misaligned_targets_raise(laplace, backend):
         lap.fit(DataLoader(TensorDataset(X, y), batch_size=2))
 
 
-def test_multidim_classification_probability_targets_raise():
+@pytest.mark.parametrize("y_shape", [(8, 3, 4), (8, 3, 5, 1)])
+def test_multidim_classification_wrong_probability_shape_raises(y_shape):
+    # Float targets with as many dims as the logits must end in the class dim
     X = torch.randn(8, 3, 4)
-    y = nn.functional.one_hot(torch.randint(5, (8, 3)), 5).float()
     lap = DiagLaplace(nn.Linear(4, 5), "classification", backend=CurvlinopsGGN)
 
-    with pytest.raises(ValueError, match="class indices"):
+    with pytest.raises(ValueError, match="targets"):
+        lap.fit(DataLoader(TensorDataset(X, torch.rand(*y_shape)), batch_size=4))
+
+
+def _soft_targets(*shape: int) -> torch.Tensor:
+    """Class probabilities of shape `(*shape, K)`, e.g. from annotators who disagree."""
+    return torch.softmax(torch.randn(*shape), dim=-1)
+
+
+@pytest.mark.parametrize("structure", ["full", "kron", "diag"])
+@pytest.mark.parametrize("backend", [CurvlinopsGGN, CurvlinopsEF])
+def test_fit_sequence_probability_targets(structure, backend):
+    # Sequence targets `(B, L, K)`: every position is an observation, the loss is the
+    # summed cross-entropy of the probabilities, and the class dim is not a position
+    B, L, D, K = 6, 4, 5, 3
+    X, y = torch.randn(B, L, D), _soft_targets(B, L, K)
+    model = nn.Linear(D, K)
+
+    la = Laplace(
+        model,
+        "classification",
+        subset_of_weights="all",
+        hessian_structure=structure,
+        backend=backend,
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=3))
+
+    with torch.no_grad():
+        expected = nn.functional.cross_entropy(
+            model(X).reshape(-1, K), y.reshape(-1, K), reduction="sum"
+        )
+
+    assert la.n_obs == B * L
+    assert torch.allclose(la.loss, expected)
+
+    if backend is CurvlinopsEF:
+        return
+
+    # The GGN does not depend on the targets
+    la_hard = Laplace(
+        deepcopy(model),
+        "classification",
+        subset_of_weights="all",
+        hessian_structure=structure,
+        backend=backend,
+    )
+    la_hard.fit(DataLoader(TensorDataset(X, y.argmax(-1)), batch_size=3))
+
+    assert torch.allclose(_dense(la.H), _dense(la_hard.H))
+
+
+def test_fit_sequence_lengths_vary_between_batches_with_probability_targets():
+    D, K = 4, 3
+    batches = [
+        (torch.randn(2, 5, D), _soft_targets(2, 5, K)),
+        (torch.randn(2, 7, D), _soft_targets(2, 7, K)),
+    ]
+    X = torch.cat([x.reshape(-1, D) for x, _ in batches])
+    y = torch.cat([y.reshape(-1, K) for _, y in batches])
+    model = nn.Linear(D, K)
+
+    la = KronLaplace(model, "classification", backend=CurvlinopsGGN)
+    la.fit(DataLoader(batches, batch_size=None))
+
+    la_flat = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_flat.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
+
+    assert la.n_obs == 2 * 5 + 2 * 7
+    assert la.n_obs == la_flat.n_obs
+    assert torch.allclose(la.loss, la_flat.loss)
+    assert torch.allclose(_dense(la.H), _dense(la_flat.H))
+
+
+@pytest.mark.parametrize("shape", [(), (3,)])
+def test_fit_rejects_integer_one_hot(shape):
+    D, K = 4, 3
+    X = torch.randn(8, *shape, D)
+    y = nn.functional.one_hot(torch.randint(K, (8, *shape)), K)
+    lap = DiagLaplace(nn.Linear(D, K), "classification", backend=CurvlinopsGGN)
+
+    with pytest.raises(ValueError, match=r"\.float\(\)"):
         lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
+def test_gridsearch_soft_validation_targets(laplace):
+    D, K = 4, 3
+    X, y = torch.randn(40, D), torch.randint(K, (40,))
+    X_val, y_val = torch.randn(30, D), torch.randint(K, (30,))
+    y_val_one_hot = nn.functional.one_hot(y_val, K).to(X.dtype)
+
+    la = laplace(nn.Linear(D, K), "classification", backend=CurvlinopsGGN)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=20))
+
+    def tune(targets: torch.Tensor) -> torch.Tensor:
+        la.optimize_prior_precision(
+            method="gridsearch",
+            val_loader=DataLoader(TensorDataset(X_val, targets), batch_size=10),
+            grid_size=15,
+        )
+        return la.prior_precision.clone()
+
+    # One-hot probabilities are the same validation set as the indices
+    assert torch.allclose(tune(y_val_one_hot), tune(y_val))
+
+    prior_precision = tune(_soft_targets(30, K))
+    assert torch.isfinite(prior_precision).all()
+    assert (prior_precision > 0).all()
 
 
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])

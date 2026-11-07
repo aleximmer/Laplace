@@ -25,7 +25,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
-from laplace.curvature.curvature import _observed_mask
+from laplace.curvature.curvature import _is_probability_target, _observed_mask
 from laplace.likelihoods import get_likelihood
 from laplace.utils import Kron, _is_batchnorm
 from laplace.utils.enums import Likelihood
@@ -41,6 +41,18 @@ class AsdfghjklInterface(CurvatureInterface):
     _honoured: ClassVar[dict[str, frozenset[str]]] = {
         "kron": frozenset({"ignore_index"})
     }
+
+    def _honours(self, method: str, y: torch.Tensor | None = None) -> bool:
+        # asdfghjkl is unchecked for class probabilities, so `diag` takes the
+        # torch.func code for them. `kron` and `full` handle them in their methods.
+        if (
+            method == "diag"
+            and y is not None
+            and _is_probability_target(self.likelihood, y)
+        ):
+            return False
+
+        return super()._honours(method, y)
 
     def jacobians(
         self,
@@ -98,6 +110,11 @@ class AsdfghjklInterface(CurvatureInterface):
         Gs : torch.Tensor
             gradients `(batch, parameters)`
         """
+        # Per-position gradients by torch.func, since asdfghjkl is unchecked for class
+        # probabilities
+        if _is_probability_target(self.likelihood, y):
+            return CurvatureInterface.gradients(self, x, y)
+
         f = batch_gradient(self.model, self.lossfunc, x, y).detach()
         Gs = _get_batch_grad(self._model)
         if self.subnetwork_indices is not None:
@@ -177,6 +194,15 @@ class AsdfghjklInterface(CurvatureInterface):
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
 
+        soft = _is_probability_target(self.likelihood, y)
+
+        if soft and isinstance(self, EFInterface):
+            raise ValueError(
+                "The asdfghjkl backend does not support class probabilities as "
+                "targets for the empirical Fisher with the `kron` structure. Use "
+                "CurvlinopsEF or AsdlEF instead."
+            )
+
         mask = _observed_mask(self.likelihood, y)
 
         if mask is not None and mask.ndim > 1:
@@ -196,8 +222,12 @@ class AsdfghjklInterface(CurvatureInterface):
         if mask is not None:
             x, y = x[mask], y[mask]
 
+        # The GGN and the MC Fisher don't depend on the targets, and the loss above
+        # has already used the class probabilities
+        targets = y.argmax(dim=-1) if soft else y
+
         curv = fisher_for_cross_entropy(
-            self._model, self._ggn_type, SHAPE_KRON, inputs=x, targets=y
+            self._model, self._ggn_type, SHAPE_KRON, inputs=x, targets=targets
         )
         M = len(y)
         kron = self._get_kron_factors(curv, M)
@@ -237,6 +267,13 @@ class AsdfghjklHessian(AsdfghjklInterface):
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if not self._honours("full"):
             raise self._unsupported_error("full")
+
+        if _is_probability_target(self.likelihood, y):
+            raise ValueError(
+                "The asdfghjkl backend does not support class probabilities as "
+                "targets for the Hessian. Use CurvlinopsHessian or AsdlHessian "
+                "instead."
+            )
 
         hessian_for_loss(self.model, self.lossfunc, SHAPE_FULL, x, y)
         H = self._model.hessian.data

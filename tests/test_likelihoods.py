@@ -111,6 +111,23 @@ def test_check_targets_errors():
     )
 
 
+@pytest.mark.parametrize("shape", [(4,), (4, 2)])
+def test_integer_one_hot_targets_raise(shape):
+    # As in `nn.CrossEntropyLoss`, class probabilities must be floats. Integer
+    # targets with the shape of the logits would be read as class indices otherwise.
+    f = torch.randn(*shape, 3)
+    y = nn.functional.one_hot(torch.randint(3, shape), 3)
+    lik = CategoricalLikelihood()
+
+    with pytest.raises(ValueError, match=r"\.float\(\)"):
+        lik.check_targets(f, y)
+
+    with pytest.raises(ValueError, match=r"\.float\(\)"):
+        lik.loss(f, y)
+
+    lik.check_targets(f, y.float())
+
+
 def test_n_observations():
     assert (
         GaussianLikelihood().n_observations(torch.randn(2, 3, 4), torch.randn(2, 3, 4))

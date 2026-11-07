@@ -1440,31 +1440,43 @@ class ParametricLaplace(BaseLaplace):
     @staticmethod
     def _check_classification_targets(out: torch.Tensor, y: torch.Tensor) -> None:
         """Check that the targets match the logits `out` `(batch, ..., classes)`:
-        either class indices `(batch, ...)` or, for logits `(batch, classes)`, class
-        probabilities with the same shape as the logits.
+        either class indices `(batch, ...)` or floating-point class probabilities
+        `(batch, ..., classes)`.
 
-        Only the number of dims is checked, since `out` is computed on a single
-        datum and the sequence length can vary between batches. The backends check
-        the exact shapes against the logits of each batch.
+        Only the number of dims and the class dim are checked, since `out` is
+        computed on a single datum and the sequence length can vary between batches.
+        The backends check the exact shapes against the logits of each batch.
+
+        Parameters
+        ----------
+        out : torch.Tensor
+            logits of a single datum, `(1, ..., classes)`.
+        y : torch.Tensor
+            targets of a batch.
+
+        Raises
+        ------
+        ValueError
+            if the targets are neither class indices nor class probabilities, or if
+            they have the shape of class probabilities but an integer dtype.
         """
-        if out.ndim > 2:
-            if y.ndim != out.ndim - 1:
-                raise ValueError(
-                    f"The model's logits have shape (batch, ..., classes) with "
-                    f"{out.ndim} dims, so the targets must be class indices with "
-                    f"{out.ndim - 1} dims, but they have {y.ndim} dims. Class "
-                    "probabilities as targets are only supported for logits "
-                    "(batch, classes)."
-                )
-            return
-
         is_index = y.ndim == out.ndim - 1
         is_prob = y.ndim == out.ndim and y.shape[-1] == out.shape[-1]
+
         if not (is_index or is_prob):
             raise ValueError(
-                f"The model's logits have shape (batch, classes), but the targets "
-                f"have {y.ndim} dims. The targets must be class indices (batch,) or "
-                "class probabilities (batch, classes)."
+                f"The model's logits have {out.ndim} dims (batch, ..., classes), but "
+                f"the targets have {y.ndim} dims. The targets must be class indices "
+                f"with {out.ndim - 1} dims, or class probabilities with {out.ndim} "
+                f"dims and {out.shape[-1]} classes in the last one."
+            )
+
+        if is_prob and not y.is_floating_point():
+            raise ValueError(
+                f"The targets have the shape of class probabilities, but their dtype "
+                f"is {y.dtype}. Call `.float()` on one-hot targets, or pass class "
+                f"indices without the class dim, i.e. with {out.ndim - 1} "
+                f"{'dim' if out.ndim == 2 else 'dims'}."
             )
 
     @property
@@ -4300,6 +4312,9 @@ class ELLA(BaseFunctionalLaplace):
     curvature. A numerically rank-deficient subset cannot supply the requested
     number of features.
 
+    For classification, the targets must be hard labels. Class probabilities, which
+    are floats of shape ``[B, C]``, raise a ``ValueError``.
+
     Parameters
     ----------
     model : torch.nn.Module
@@ -5274,6 +5289,9 @@ class VaLLA(BaseFunctionalLaplace):
 
     The network weights remain fixed while ``fit`` optimizes the variational
     factor, inducing locations, prior precision, and regression noise.
+
+    For classification, the targets must be hard labels. Class probabilities, which
+    are floats of shape ``[B, C]``, raise a ``ValueError``.
 
     Parameters
     ----------

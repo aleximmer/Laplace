@@ -147,6 +147,28 @@ def _observed_input_factors(
             factors[module] = total / max(counts[module], 1)
 
 
+def _is_probability_target(likelihood: Likelihood, y: torch.Tensor) -> bool:
+    """Whether the targets `y` are class probabilities for a categorical likelihood.
+
+    Class probabilities are floats with the shape of the logits `(B, ..., K)`, while
+    class indices are integers `(B, ...)`. This is how `nn.CrossEntropyLoss` tells
+    them apart, and the likelihood rejects integer targets with the shape of the
+    logits.
+
+    Parameters
+    ----------
+    likelihood : Likelihood
+    y : torch.Tensor
+        targets of a batch.
+
+    Returns
+    -------
+    is_probability : bool
+        `False` for other likelihoods and for class indices.
+    """
+    return isinstance(likelihood, CategoricalLikelihood) and y.is_floating_point()
+
+
 def _ignored_positions(likelihood: Likelihood, y: torch.Tensor) -> int:
     """Number of positions that a categorical likelihood ignores in the targets `y`.
 
@@ -168,7 +190,9 @@ def _ignored_positions(likelihood: Likelihood, y: torch.Tensor) -> int:
     n_ignored : int
         zero for other likelihoods and for probability targets.
     """
-    if not isinstance(likelihood, CategoricalLikelihood) or y.is_floating_point():
+    if not isinstance(likelihood, CategoricalLikelihood) or _is_probability_target(
+        likelihood, y
+    ):
         return 0
 
     return int((y == likelihood.ignore_index).sum())
@@ -619,6 +643,17 @@ class CurvatureInterface:
             of leading output dims per datum (1 if there are none)
         loss : torch.Tensor
         """
+        # `params_dict` holds the parameters of `_model`, so with a last layer the
+        # gradients are those of the last layer at the features. Its buffers are its
+        # own, since `buffers_dict` is named after the full model.
+        buffers_dict = self.buffers_dict
+
+        if self.last_layer:
+            buffers_dict = dict(self._model.named_buffers())
+
+            with torch.no_grad():
+                _, x = self.model.forward_with_features(x)
+
         if isinstance(x, MutableMapping):
             # vmap only maps over tensors in plain containers, e.g. not `UserDict`.
             # The model then gets plain dicts, also for nested mappings; non-tensor
@@ -641,7 +676,7 @@ class CurvatureInterface:
             """Compute the loss of each position of a single sample."""
             x, y = unsqueeze(x), y.unsqueeze(0)  # vmap removes the batch dimension
             output = torch.func.functional_call(
-                self.model, (params_dict, buffers_dict), x
+                self._model, (params_dict, buffers_dict), x
             )
             self._check_targets(output, y)
 
@@ -662,9 +697,7 @@ class CurvatureInterface:
         batch_jac_fn = torch.func.vmap(jac_fn, in_dims=(None, None, in_dims_x, 0))
 
         try:
-            batch_grad, batch_loss = batch_jac_fn(
-                self.params_dict, self.buffers_dict, x, y
-            )
+            batch_grad, batch_loss = batch_jac_fn(self.params_dict, buffers_dict, x, y)
         except RuntimeError as e:
             if "data-dependent control flow" not in str(e):
                 raise

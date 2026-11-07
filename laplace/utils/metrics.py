@@ -4,13 +4,18 @@ from torchmetrics import Metric
 
 
 class RunningNLLMetric(Metric):
-    """
-    NLL metrics that
+    """Negative log-likelihood of categorical predictions, averaged over positions.
+
+    The targets are class indices, or class probabilities as in
+    `nn.CrossEntropyLoss`, e.g. one-hot or soft labels. A position is an entry of the
+    leading dims, so the metric is the average over examples for probabilities
+    `(batch, classes)`, and over examples and tokens for `(batch, length, classes)`.
 
     Parameters
     ----------
     ignore_index: int, default = -100
-        which class label to ignore when computing the NLL loss
+        which class label to ignore when computing the NLL loss. It only applies to
+        class indices, since every position of class probabilities counts.
     """
 
     def __init__(self, ignore_index: int = -100) -> None:
@@ -29,8 +34,16 @@ class RunningNLLMetric(Metric):
             probability tensor of shape (..., n_classes)
 
         targets: torch.Tensor
-            integer tensor of shape (...)
+            integer tensor of class indices of shape (...), or floating-point tensor
+            of class probabilities of shape (..., n_classes)
         """
+        if targets.is_floating_point() and targets.shape == probs.shape:
+            # Class probabilities. A class that has probability 0 in the targets adds
+            # nothing, even where the prediction is 0 too.
+            self.nll_sum += -torch.special.xlogy(targets, probs).sum()
+            self.n_valid_labels += probs.shape[:-1].numel()
+            return
+
         probs = probs.reshape(-1, probs.shape[-1])
         targets = targets.reshape(-1)
 
