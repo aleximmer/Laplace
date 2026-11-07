@@ -859,9 +859,9 @@ class BradleyTerryLikelihood(Likelihood):
     the softmax of the two rewards. The curvature is therefore fitted with a
     `CategoricalLikelihood` over the compared items, so the loss, the target check,
     the output Hessian, the inverse link, samples, and the output gradient are all
-    categorical. Unlike for classification, every entry of the targets is an
-    observation. The predictive is a `GaussianLikelihood` over the reward
-    \\(r(x)\\).
+    categorical, and so is the count of observations: one per probability target or
+    per index target that isn't ignored. The predictive is a `GaussianLikelihood`
+    over the reward \\(r(x)\\).
     """
 
     name: ClassVar[str] = "reward_modeling"
