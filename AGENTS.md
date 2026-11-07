@@ -47,6 +47,8 @@ uv run mkdocs build --strict     # docs, as checked in CI
 ```
 
 - Full suite takes ~5 min; prefer targeted tests (`-k`, single files) for the touched area.
+- To time-limit a run, use `timeout 60 uv run ...` with the default signal. `timeout -s KILL` kills only `uv`, and
+  the Python child keeps running.
 - If `--extra dev` fails to resolve locally (`tensordict` wheel), use
   `uv run --with pytest --with scipy --with pytest-mock pytest ...`.
 - Tests marked `cuda` (e.g. `tests/test_*_cuda.py`) need an NVIDIA GPU; skip with `-m "not cuda"`.
