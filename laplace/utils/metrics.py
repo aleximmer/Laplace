@@ -41,3 +41,37 @@ class RunningNLLMetric(Metric):
 
     def compute(self) -> torch.Tensor:
         return self.nll_sum / self.n_valid_labels
+
+
+class RunningBernoulliNLLMetric(Metric):
+    """Negative log-likelihood of Bernoulli predictions, averaged over positions.
+
+    The NLL of a position is the sum over its outputs, e.g. over the labels of a
+    multi-label example or the channels of a pixel. A position is an entry of the
+    leading dims of the targets, so the metric is the average over examples for
+    targets `(batch, outputs)`, and over examples and pixels for `(batch, H, W,
+    outputs)`. Soft targets in \\([0, 1]\\) are fine.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_state("nll_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("n_positions", default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+    def update(self, probs: torch.Tensor, targets: torch.Tensor) -> None:
+        """
+        Parameters
+        ----------
+        probs: torch.Tensor
+            probabilities of the outputs, shape (..., n_outputs)
+
+        targets: torch.Tensor
+            floating-point tensor in [0, 1] with the shape of `probs`
+        """
+        self.nll_sum += F.binary_cross_entropy(
+            probs, targets.to(probs.dtype), reduction="sum"
+        )
+        self.n_positions += probs.shape[:-1].numel()
+
+    def compute(self) -> torch.Tensor:
+        return self.nll_sum / self.n_positions

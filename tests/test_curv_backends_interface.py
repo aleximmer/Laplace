@@ -16,7 +16,9 @@ from laplace.curvature import (
     EFInterface,
     GGNInterface,
 )
+from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
@@ -28,6 +30,7 @@ from tests.utils import (
     BackPackEF,
     BackPackGGN,
     ScaledGaussian,
+    loss_hessian,
     requires_backpack,
 )
 
@@ -725,28 +728,6 @@ def _make_backend(backend_cls, model, likelihood, stochastic):
     return backend_cls(model, likelihood)
 
 
-def _hessian_reference(
-    model: nn.Module,
-    likelihood: CategoricalLikelihood,
-    X: torch.Tensor,
-    y: torch.Tensor,
-) -> torch.Tensor:
-    """Hessian of the summed loss w.r.t. the flattened parameters, via torch.func."""
-    params = {k: v.detach() for k, v in model.named_parameters()}
-    theta = torch.cat([v.flatten() for v in params.values()])
-
-    def loss(theta: torch.Tensor) -> torch.Tensor:
-        split, offset = {}, 0
-
-        for k, v in params.items():
-            split[k] = theta[offset : offset + v.numel()].reshape(v.shape)
-            offset += v.numel()
-
-        return likelihood.loss(torch.func.functional_call(model, split, (X,)), y)
-
-    return torch.func.hessian(loss)(theta)
-
-
 @pytest.mark.parametrize("opts", _CURVATURE_OPTIONS)
 @pytest.mark.parametrize(
     "backend_cls,kind,method,stochastic,claimed",
@@ -795,7 +776,7 @@ def test_categorical_options_curvature(
         if kron:
             H_ref = H_ref.diag()
     elif kind == "hessian":
-        H_ref = _hessian_reference(reference_model, likelihood, X, y)
+        H_ref = loss_hessian(reference_model, likelihood.loss, X, y)
     else:
         reference_cls = GGNInterface if kind == "ggn" else EFInterface
         reference = reference_cls(reference_model, likelihood)
@@ -958,3 +939,77 @@ def test_honours_counts_padding_as_ignore_index(model, class_Xy):
     # Probability targets have no ignored positions
     q = torch.nn.functional.one_hot(y.clamp(min=0), 2).float()
     assert backend._honours("full", q)
+
+
+def test_bernoulli_is_known_to_curvlinops_only(model):
+    # Curvlinops has the loss of `nn.BCEWithLogitsLoss`, while BackPACK and ASDL
+    # don't, so they must not treat it like a Gaussian or categorical likelihood
+    assert CurvlinopsGGN(model, "bernoulli")._honours("full")
+    assert CurvlinopsEF(model, "bernoulli")._honours("full")
+    assert CurvlinopsHessian(model, "bernoulli")._honours("full")
+    assert CurvlinopsGGN(model, "bernoulli")._honours("kron")
+
+    for backend in (
+        AsdlGGN(model, "bernoulli"),
+        AsdlEF(model, "bernoulli"),
+        AsdlHessian(model, "bernoulli"),
+        GGNInterface(model, "bernoulli"),
+    ):
+        assert not any(
+            backend._honours(method) for method in ("diag", "full", "kron")
+        ), type(backend).__name__
+
+    # The torch.func backends still compute it
+    X, y = torch.randn(4, 3), torch.rand(4, 2)
+
+    assert torch.isfinite(GGNInterface(model, "bernoulli").full(X, y)[1]).all()
+    assert torch.isfinite(EFInterface(model, "bernoulli").diag(X, y)[1]).all()
+
+
+def test_bernoulli_error_names_the_likelihood(model):
+    X, y = torch.randn(4, 3), torch.rand(4, 2)
+
+    with pytest.raises(ValueError, match=r"does not support the likelihood Bernoulli"):
+        AsdlHessian(model, "bernoulli").full(X, y)
+
+    # Options of a library likelihood are named instead
+    weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
+
+    with pytest.raises(ValueError, match="the option weight of Categorical"):
+        CurvlinopsGGN(model, weighted).kron(X, torch.tensor([0, 1, 0, 1]), 4)
+
+
+def test_bernoulli_stochastic_fisher_raises_for_options(model):
+    X, y = torch.randn(4, 3), torch.rand(4, 2)
+    weighted = BernoulliLikelihood(pos_weight=torch.tensor([2.0, 3.0]))
+
+    # The sampled labels are not the observed ones that the options refer to
+    for method in ("diag", "full"):
+        with pytest.raises(ValueError, match="stochastic=True"):
+            getattr(GGNInterface(model, weighted, stochastic=True), method)(X, y)
+
+    # Without options, soft targets are fine, since the samples ignore them
+    for method in ("diag", "full"):
+        _, H = getattr(GGNInterface(model, "bernoulli", stochastic=True), method)(X, y)
+        assert torch.isfinite(H).all()
+
+
+@pytest.mark.asdfghjkl
+def test_bernoulli_is_rejected_by_asdfghjkl(model):
+    X, y = torch.randn(4, 3), torch.rand(4, 2)
+
+    for backend_cls in (AsdfghjklGGN, AsdfghjklEF):
+        with pytest.raises(ValueError, match="only supports classification"):
+            backend_cls(model, "bernoulli")
+
+    # The Hessian-based backend of `LowRankLaplace` must not take the categorical
+    # path either
+    backend = AsdfghjklHessian(model, "bernoulli")
+
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        backend.full(X, y)
+
+    loader = torch.utils.data.DataLoader(torch.utils.data.TensorDataset(X, y), 2)
+
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        backend.eig_lowrank(loader)

@@ -5,13 +5,19 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
+from laplace.curvature import EFInterface, GGNInterface
 from tests.utils import (
+    BCE_BATCH_SHAPES,
     AsdlEF,
     AsdlGGN,
     AsdlHessian,
     BackPackEF,
     BackPackGGN,
     DoubledCategorical,
+    bce_data,
+    bce_model,
+    bce_options,
+    check_bernoulli_falls_back_to_torch_func,
     requires_asdl,
 )
 
@@ -492,3 +498,56 @@ def test_custom_likelihood_rejected_by_kron_and_hessian(class_Xy, model, Backend
     else:
         with pytest.raises(ValueError, match="diag"):
             backend.kron(X, y, N=len(X))
+
+
+# Bernoulli likelihood. ASDL has no sigmoid loss type, so the GGN and EF backends fall
+# back to the torch.func code for `diag` and `full`, and `kron` raises.
+_BCE = bce_options()
+
+
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
+@pytest.mark.parametrize("soft", [False, True])
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
+@pytest.mark.parametrize(
+    "Backend,Reference,structure",
+    [
+        (AsdlGGN, GGNInterface, "diag"),
+        (AsdlGGN, GGNInterface, "full"),
+        (AsdlEF, EFInterface, "diag"),
+        (AsdlEF, EFInterface, "full"),
+    ],
+)
+def test_bernoulli_falls_back_to_torch_func(
+    Backend, Reference, structure, batch_shape, soft, opts
+):
+    check_bernoulli_falls_back_to_torch_func(
+        Backend, Reference, structure, batch_shape, soft, opts
+    )
+
+
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("stochastic", [False, True])
+def test_bernoulli_kron_raises_in_asdl(Backend, stochastic):
+    X, y = bce_data((8,), soft=False)
+    kwargs = {"stochastic": True} if stochastic and Backend is AsdlGGN else {}
+    backend = Backend(bce_model(), "bernoulli", **kwargs)
+
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        backend.kron(X, y, len(X))
+
+
+def test_bernoulli_hessian_raises_in_asdl():
+    X, y = bce_data((8,), soft=False)
+
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        AsdlHessian(bce_model(), "bernoulli").full(X, y)
+
+
+def test_bernoulli_asdl_gradients_count_one_observation_per_row():
+    # The targets `(B, K)` have `K` entries per datum, but a datum is one observation
+    X, y = bce_data((8,), soft=True)
+    backend = AsdlEF(bce_model(), "bernoulli")
+
+    Gs, _ = backend.gradients(X, y)
+
+    assert Gs.shape[0] == len(X)

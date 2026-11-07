@@ -23,6 +23,7 @@ from laplace.curvature.curvature import (
     _observed_input_factors,
     _observed_mask,
 )
+from laplace.likelihoods import BernoulliLikelihood
 from laplace.utils import Kron, Likelihood
 
 _FullLinearOperator: TypeAlias = (
@@ -86,8 +87,16 @@ class _KeepObserved(nn.Module):
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
+    # Curvlinops knows the loss of a Bernoulli likelihood, `nn.BCEWithLogitsLoss`
+    _library_types = (*CurvatureInterface._library_types, BernoulliLikelihood)
+
     # The dense operators differentiate `lossfunc` at the observed targets. KFAC drops
     # the ignored positions from both Kronecker factors and has no class weights.
+    # Curvlinops' KFAC also ignores the `weight` and `pos_weight` of
+    # `nn.BCEWithLogitsLoss` without a warning, except for the empirical Fisher, see
+    # `CurvlinopsEF`. So `weight` and `pos_weight` are absent from `_KRON_OPTIONS`,
+    # which makes the other `kron` raise for them until Curvlinops handles them:
+    # https://github.com/f-dangel/curvlinops/issues/311
     _honoured = {"full": _ALL_OPTIONS, "kron": _KRON_OPTIONS}
 
     def __init__(
@@ -176,6 +185,21 @@ class CurvlinopsInterface(CurvatureInterface):
                 raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
+    def _fisher_targets(self, y: torch.Tensor, method: str) -> torch.Tensor:
+        """Round Bernoulli soft labels to 0 or 1 for a target-free Fisher, which
+        Curvlinops would reject otherwise. The loss uses the real targets.
+        """
+        target_free = (
+            self._kron_fisher_type != FisherType.EMPIRICAL
+            if method == "kron"
+            else self._linop_context is FisherMCLinearOperator
+        )
+
+        if target_free and isinstance(self.likelihood, BernoulliLikelihood):
+            return (y >= 0.5).to(y.dtype)
+
+        return y
+
     def kron(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -197,7 +221,7 @@ class CurvlinopsInterface(CurvatureInterface):
 
         if mask is None:
             model = self._linop_model
-            data = [(x, y)]
+            data = [(x, self._fisher_targets(y, "kron"))]
             kron_kwargs = {}
             M = f.shape[:-1].numel()
 
@@ -286,7 +310,7 @@ class CurvlinopsInterface(CurvatureInterface):
             self._linop_model,
             self.lossfunc,
             self.params,
-            [(x, y)],
+            [(x, self._fisher_targets(y, "full"))],
             check_deterministic=False,
             **curvlinops_kwargs,
         )
@@ -340,6 +364,15 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
 
 class CurvlinopsEF(CurvlinopsInterface, EFInterface):
     """Implementation of `EFInterface` using Curvlinops."""
+
+    def _honoured_options(self, method: str) -> frozenset[str]:
+        # Curvlinops' empirical Fisher differentiates `lossfunc` at the observed
+        # targets, so KFAC honours the `weight` and `pos_weight` of a Bernoulli
+        # likelihood, unlike the GGN and MC Fishers, see `CurvlinopsInterface`.
+        if method == "kron" and isinstance(self.likelihood, BernoulliLikelihood):
+            return super()._honoured_options(method) | {"weight", "pos_weight"}
+
+        return super()._honoured_options(method)
 
     @property
     def _kron_fisher_type(self) -> FisherType:

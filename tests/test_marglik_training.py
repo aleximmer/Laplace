@@ -6,8 +6,13 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import marglik_training
-from laplace.curvature import CurvlinopsGGN
-from laplace.likelihoods import CategoricalLikelihood, GaussianLikelihood
+from laplace.curvature import CurvlinopsEF, CurvlinopsGGN
+from laplace.likelihoods import (
+    BernoulliLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
+from tests.utils import toy_multilabel_dataset
 
 
 @pytest.fixture
@@ -138,5 +143,91 @@ def test_marglik_training_unweighted_categorical_loss_is_the_mean(model):
         expected = torch.nn.functional.cross_entropy(model(X), y).item()
 
     loss = _first_epoch_loss(model, loader, CategoricalLikelihood())
+
+    assert math.isclose(loss, expected, rel_tol=1e-5)
+
+
+def _multilabel_loader(dtype: torch.dtype | None = None) -> DataLoader:
+    return toy_multilabel_dataset(n_train=32, batch_size=8, out_dim=2, dtype=dtype)[2]
+
+
+def _check_bernoulli_marglik_training(model, likelihood, hessian_structure):
+    la, model, margliks, losses = marglik_training(
+        model,
+        _multilabel_loader(),
+        likelihood=likelihood,
+        hessian_structure=hessian_structure,
+        n_epochs=2,
+    )
+
+    assert la.likelihood == "bernoulli"
+    assert len(margliks) > 0
+    assert all(math.isfinite(m) for m in margliks)
+    assert all(math.isfinite(loss) for loss in losses)
+
+    # No observation noise to tune, and the predictive is a sigmoid
+    assert la.sigma_noise == 1
+    probs = la(torch.randn(4, 3))
+    assert ((probs > 0) & (probs < 1)).all()
+
+
+@pytest.mark.parametrize("hessian_structure", ["diag", "full", "kron"])
+def test_marglik_training_bernoulli(model, hessian_structure):
+    _check_bernoulli_marglik_training(model, "bernoulli", hessian_structure)
+
+
+def test_marglik_training_bernoulli_from_criterion(model):
+    _check_bernoulli_marglik_training(model, torch.nn.BCEWithLogitsLoss(), "kron")
+
+
+@pytest.mark.parametrize("hessian_structure", ["diag", "full"])
+def test_marglik_training_casts_bernoulli_options(model, hessian_structure):
+    # Float32 options for a float64 model, in the data loss and in the Laplace fit
+    options = dict(weight=torch.tensor([1.0, 2.0]), pos_weight=torch.tensor([3.0, 0.5]))
+
+    la, _, margliks, losses = marglik_training(
+        model.double(),
+        _multilabel_loader(torch.float64),
+        likelihood=BernoulliLikelihood(**options),
+        hessian_structure=hessian_structure,
+        n_epochs=2,
+        n_epochs_burnin=1,
+    )
+
+    assert la.H.dtype == torch.float64
+    assert len(margliks) > 0
+    assert all(math.isfinite(m) for m in margliks)
+    assert all(math.isfinite(loss) for loss in losses)
+
+
+def test_marglik_training_bernoulli_options_with_kron_raise(model):
+    weighted = BernoulliLikelihood(pos_weight=torch.tensor([3.0, 0.5]))
+
+    with pytest.raises(ValueError, match="does not support the option"):
+        marglik_training(model, _multilabel_loader(), likelihood=weighted, n_epochs=1)
+
+    # The empirical Fisher honours them
+    la, _, margliks, _ = marglik_training(
+        model,
+        _multilabel_loader(),
+        likelihood=weighted,
+        backend=CurvlinopsEF,
+        n_epochs=1,
+    )
+
+    assert all(math.isfinite(m) for m in margliks)
+
+
+def test_marglik_training_sums_bernoulli_loss(model):
+    loader = _multilabel_loader()
+    X, y = loader.dataset.tensors
+    weighted = BernoulliLikelihood(pos_weight=torch.tensor([3.0, 0.5]))
+
+    with torch.no_grad():
+        expected = torch.nn.BCEWithLogitsLoss(
+            pos_weight=weighted.pos_weight, reduction="sum"
+        )(model(X), y).item() / len(X)
+
+    loss = _first_epoch_loss(model, loader, weighted)
 
     assert math.isclose(loss, expected, rel_tol=1e-5)

@@ -50,9 +50,10 @@ class SubnetLaplace(ParametricLaplace):
     Parameters
     ----------
     model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
-    likelihood : Likelihood or {'classification', 'regression'}
-        determines the log likelihood Hessian approximation. A likelihood
-        object is accepted as well as a name.
+    likelihood : Likelihood or str or torch.nn.Module
+        determines the log likelihood Hessian approximation. A likelihood object, its
+        name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood].
     subnetwork_indices : torch.LongTensor
         indices of the vectorized model parameters
         (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)

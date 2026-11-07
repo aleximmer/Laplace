@@ -27,11 +27,12 @@ def Laplace(
     ----------
     model : torch.nn.Module
         Pretrained network around which to approximate the posterior.
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'} or torch.nn.Module
-        Likelihood used for fitting, either a likelihood object such as
-        `CategoricalLikelihood()`, its name, or a torch criterion: `nn.MSELoss` or
-        `nn.CrossEntropyLoss`, whose options carry over. Reward modeling requires
-        an estimator that supports pairwise preferences, such as ELLA or VaLLA.
+    likelihood : Likelihood or str or torch.nn.Module
+        Likelihood used for fitting: a likelihood object, its name, or a torch
+        criterion whose options carry over, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Reward
+        modeling requires an estimator that supports pairwise preferences, such as
+        ELLA or VaLLA.
     subset_of_weights : SubsetOfWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER
         subset of weights to consider for inference
     hessian_structure : HessianStructure or str in {'diag', 'kron', 'full', 'lowrank', 'gp'}, default=HessianStructure.KRON

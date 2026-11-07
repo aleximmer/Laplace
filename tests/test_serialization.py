@@ -26,12 +26,14 @@ from laplace import (
     LowRankLaplace,
     SubnetLaplace,
 )
+from laplace.curvature import CurvlinopsEF
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from tests.utils import ScaledGaussian
+from tests.utils import ScaledGaussian, toy_multilabel_dataset
 
 # These tests load only checkpoints written by the same test process.
 # Explicit pickle loading preserves their intent on PyTorch 2.6 and newer.
@@ -487,3 +489,87 @@ def test_checkpoint_copies_tensor_hyperparameters(laplace, model, class_loader):
     # Later changes to the weight don't reach the checkpoint
     weight.mul_(3.0)
     assert torch.equal(stored, torch.tensor([1.0, 2.0]))
+
+
+@pytest.fixture
+def multilabel_loader():
+    return toy_multilabel_dataset(n_train=10, batch_size=3, out_dim=2, soft=True)[2]
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, FullLLLaplace])
+@pytest.mark.parametrize(
+    "options",
+    [
+        {},
+        {"pos_weight": torch.tensor([3.0, 0.5])},
+        {"weight": torch.tensor([1.0, 2.0]), "pos_weight": torch.tensor([3.0, 0.5])},
+    ],
+)
+def test_bernoulli_checkpoint_roundtrip(laplace, options, model, multilabel_loader):
+    lik = BernoulliLikelihood(**options)
+    la = laplace(model, lik)
+    la.fit(multilabel_loader)
+    state_dict = la.state_dict()
+
+    assert state_dict["likelihood"] == "bernoulli"
+    assert set(state_dict["likelihood_hyperparameters"]) == set(options)
+
+    for name, value in options.items():
+        stored = state_dict["likelihood_hyperparameters"][name]
+
+        assert torch.equal(stored, value)
+        assert stored is not value
+
+    torch.save(state_dict, "state_dict.bin")
+    loaded = torch.load("state_dict.bin", weights_only=False)
+
+    la2 = laplace(model, BernoulliLikelihood(**options))
+    la2.load_state_dict(loaded)
+
+    X, _ = next(iter(multilabel_loader))
+    assert torch.allclose(la(X), la2(X))
+    assert torch.allclose(la.log_marginal_likelihood(), la2.log_marginal_likelihood())
+
+    # A criterion with the same options is the same likelihood
+    la3 = laplace(model, nn.BCEWithLogitsLoss(**options))
+    la3.load_state_dict(loaded)
+
+
+def test_bernoulli_checkpoint_rejects_other_options(model, multilabel_loader):
+    pos_weight = torch.tensor([3.0, 0.5])
+    la = DiagLaplace(model, BernoulliLikelihood(pos_weight=pos_weight))
+    la.fit(multilabel_loader)
+    state_dict = la.state_dict()
+
+    for other in (
+        BernoulliLikelihood(),
+        BernoulliLikelihood(pos_weight=2 * pos_weight),
+        BernoulliLikelihood(weight=pos_weight),
+        BernoulliLikelihood(weight=pos_weight, pos_weight=pos_weight),
+        CategoricalLikelihood(),
+    ):
+        with pytest.raises(ValueError, match="Different likelihoods"):
+            DiagLaplace(model, other).load_state_dict(state_dict)
+
+    # And the other way around
+    default = DiagLaplace(model, "bernoulli")
+    default.fit(multilabel_loader)
+
+    with pytest.raises(ValueError, match="Different likelihoods"):
+        DiagLaplace(model, BernoulliLikelihood(pos_weight=pos_weight)).load_state_dict(
+            default.state_dict()
+        )
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_deepcopy_and_pickle_bernoulli(laplace, model, multilabel_loader):
+    lik = BernoulliLikelihood(weight=torch.tensor([1.0, 2.0]))
+    kwargs = {"backend": CurvlinopsEF} if laplace is KronLaplace else {}
+    la = laplace(model, lik, **kwargs)
+    la.fit(multilabel_loader)
+    X = next(iter(multilabel_loader))[0]
+
+    for la2 in [deepcopy(la), pickle.loads(pickle.dumps(la))]:
+        assert la2.likelihood == lik
+        assert la2.likelihood is not la.likelihood
+        assert torch.allclose(la(X), la2(X))

@@ -41,3 +41,4 @@
             - "ModuleNameSubnetMask"
             - "LastLayerSubnetMask"
             - "RunningNLLMetric"
+            - "RunningBernoulliNLLMetric"

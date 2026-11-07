@@ -11,7 +11,11 @@ from torch.utils.data import DataLoader, TensorDataset
 from torchvision.models import wide_resnet50_2
 
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
-from laplace.likelihoods import CategoricalLikelihood, GaussianLikelihood
+from laplace.likelihoods import (
+    BernoulliLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+)
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
 from laplace.utils import FeatureExtractor
 from laplace.utils.feature_extractor import FeatureReduction
@@ -28,6 +32,7 @@ from tests.utils import (
     ScaledModel,
     dict_data_collator,
     jacobians_naive,
+    toy_multilabel_dataset,
 )
 
 pytestmark = pytest.mark.default_dtype(torch.float64)
@@ -977,3 +982,59 @@ def test_nn_predictive_for_custom_link_lllaplace(laplace):
     assert pred.shape == (8, 1)
     torch.testing.assert_close(pred, fs.exp().mean(0))
     assert not torch.allclose(pred, torch.ones_like(pred))
+
+
+@pytest.mark.parametrize("laplace", flavors)
+@pytest.mark.parametrize(
+    "options", [{}, {"pos_weight": torch.tensor([2.0, 1.0, 3.0, 1.0])}]
+)
+def test_bernoulli_lllaplace(laplace, options):
+    torch.manual_seed(5)
+    model = nn.Sequential(nn.Linear(3, 6), nn.Tanh(), nn.Linear(6, 4))
+    X, y, loader, _ = toy_multilabel_dataset()
+    lik = BernoulliLikelihood(**options)
+
+    # The GGN's KFAC can't see the options, the empirical Fisher can
+    backend = CurvlinopsEF if options and laplace is KronLLLaplace else CurvlinopsGGN
+    la = laplace(model, lik, backend=backend, prior_precision=2.0)
+
+    if options and laplace is KronLLLaplace:
+        with pytest.raises(ValueError, match="does not support the option"):
+            laplace(model, lik).fit(loader)
+
+    la.fit(loader)
+
+    assert la.n_obs == len(X)
+    assert la.n_outputs == 4
+
+    with torch.no_grad():
+        nll = nn.BCEWithLogitsLoss(**options, reduction="sum").double()(model(X), y)
+
+    torch.testing.assert_close(la.log_likelihood, -nll)
+
+    f_mu, f_var = la._glm_predictive_distribution(X)
+    kappa = 1 / torch.sqrt(1 + np.pi / 8 * f_var.diagonal(dim1=-2, dim2=-1))
+    probit = la(X)
+
+    assert probit.shape == (len(X), 4)
+    torch.testing.assert_close(probit, torch.sigmoid(kappa * f_mu))
+
+    mc = la(
+        X, link_approx="mc", n_samples=5000, generator=torch.Generator().manual_seed(0)
+    )
+    torch.testing.assert_close(mc, probit, atol=3e-2, rtol=0.0)
+
+    nn_pred = la(
+        X,
+        pred_type="nn",
+        link_approx="mc",
+        n_samples=20,
+        generator=torch.Generator().manual_seed(1),
+    )
+    fs = la._nn_functional_samples(X, 20, torch.Generator().manual_seed(1))
+
+    torch.testing.assert_close(nn_pred, torch.sigmoid(fs).mean(0))
+    assert torch.isfinite(la.log_marginal_likelihood())
+
+    with pytest.raises(ValueError, match="softmax link only"):
+        la(X, link_approx="bridge")

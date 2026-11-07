@@ -14,6 +14,7 @@ from laplace.baselaplace import (
 )
 from laplace.laplace import Laplace
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
@@ -64,6 +65,7 @@ __all__ = [
     "Likelihood",
     "GaussianLikelihood",
     "CategoricalLikelihood",
+    "BernoulliLikelihood",
     "BradleyTerryLikelihood",
     "get_likelihood",
     # Enums

@@ -53,7 +53,7 @@ from laplace.utils.functional_utils import (
     training_indices,
 )
 from laplace.utils.matrix import Kron, KronDecomposed
-from laplace.utils.metrics import RunningNLLMetric
+from laplace.utils.metrics import RunningBernoulliNLLMetric, RunningNLLMetric
 from laplace.utils.utils import (
     fix_prior_prec_structure,
     invsqrt_precision,
@@ -74,8 +74,18 @@ __all__ = [
     "LowRankLaplace",
 ]
 
-# Names of the built-in likelihoods, which the library has code paths for
+# Names of the built-in likelihoods, which the library has code paths for. Not all
+# methods support all of them, see `_FUNCTIONAL_NAMES`.
 _BUILTIN_NAMES = frozenset(likelihood.name for likelihood in Likelihood)
+
+# Names that the function-space methods support, which have no Bernoulli code paths
+_FUNCTIONAL_NAMES = frozenset(
+    (
+        Likelihood.REGRESSION.name,
+        Likelihood.CLASSIFICATION.name,
+        Likelihood.REWARD_MODELING.name,
+    )
+)
 
 # Names whose GLM predictive uses the categorical link approximations
 _CATEGORICAL_NAMES = frozenset(
@@ -133,12 +143,12 @@ class BaseLaplace:
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'} or nn.Module
-        determines the log likelihood Hessian approximation. Strings, `Likelihood`
-        members, and the torch criteria `nn.MSELoss` and `nn.CrossEntropyLoss`
-        become the matching likelihood object, which is stored in
-        `self.likelihood`. A `nn.CrossEntropyLoss` keeps its `weight`,
-        `ignore_index`, and `label_smoothing`.
+    likelihood : Likelihood or str or torch.nn.Module
+        determines the log likelihood Hessian approximation. A likelihood object, its
+        name, or a torch criterion, which becomes the matching likelihood object with
+        the same options, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. It is stored in
+        `self.likelihood`.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -400,7 +410,10 @@ class BaseLaplace:
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
+            For `pred_type='nn'`, only 'mc' is possible. The Bernoulli likelihood
+            takes 'probit', which applies the sigmoid to the logits scaled by their
+            marginal variances, or 'mc', and raises for the bridge, which is for the
+            softmax link only.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -600,8 +613,9 @@ class BaseLaplace:
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
             reward modeling, with the `ignore_index` of a `CategoricalLikelihood`,
-            and running `MeanSquaredError()` for regression. Other
-            likelihoods have no default, so `loss` is required for them.
+            `RunningBernoulliNLLMetric()` for the Bernoulli likelihood, and running
+            `MeanSquaredError()` for regression. Other likelihoods have no default,
+            so `loss` is required for them.
         log_prior_prec_min : float, default=-4
             exponent of the lower bound of the gridsearch interval.
         log_prior_prec_max : float, default=4
@@ -698,6 +712,8 @@ class BaseLaplace:
             if loss is None and likelihood.name == Likelihood.REGRESSION.name:
                 loss = torchmetrics.MeanSquaredError(num_outputs=self.n_outputs)
                 loss = loss.to(self._device)
+            elif loss is None and likelihood.name == Likelihood.BERNOULLI.name:
+                loss = RunningBernoulliNLLMetric().to(self._device)
             elif loss is None:
                 ignore_index = (
                     likelihood.ignore_index
@@ -834,7 +850,7 @@ class BaseLaplace:
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only 'mc' is possible. Likelihoods other than
-            classification and reward modeling always use Monte Carlo.
+            classification, reward modeling and Bernoulli always use Monte Carlo.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -903,6 +919,21 @@ class BaseLaplace:
             if diagonal_output and not joint:
                 f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
             return f_mu, f_var
+
+        if likelihood.name == Likelihood.BERNOULLI.name:
+            # Every output has its own sigmoid, so the probit approximation needs only
+            # the marginal variances. MC falls through to the generic path below.
+            if link_approx == LinkApprox.PROBIT:
+                kappa = 1 / torch.sqrt(
+                    1.0 + np.pi / 8 * torch.diagonal(f_var, dim1=-2, dim2=-1)
+                )
+                return likelihood.inverse_link(kappa * f_mu)
+
+            if link_approx != LinkApprox.MC:
+                raise ValueError(
+                    "The Laplace bridge is for the softmax link only. Use 'probit' or "
+                    "'mc' with the Bernoulli likelihood."
+                )
 
         if likelihood.name not in _CATEGORICAL_NAMES:
             # No closed form to approximate, so integrate the inverse link by MC
@@ -2746,8 +2777,9 @@ class BaseFunctionalLaplace(BaseLaplace):
 
     @likelihood.setter
     def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
-        """Set the likelihood, as in `BaseLaplace`, but only one with a built-in
-        name.
+        """Set the likelihood, as in `BaseLaplace`, but only one with the name of
+        a regression, classification, or reward-modeling likelihood. The Bernoulli
+        likelihood is not supported.
 
         The function-space methods pick their formulas, e.g. for the marginal
         likelihood and the predictive, by the likelihood's name. A subclass of a
@@ -2758,16 +2790,14 @@ class BaseFunctionalLaplace(BaseLaplace):
         Raises
         ------
         ValueError
-            if the name is not `"regression"`, `"classification"`, or
-            `"reward_modeling"`, or if the likelihood has options that the method
-            doesn't support.
+            if the method doesn't support the likelihood or its options.
         """
         likelihood = get_likelihood(likelihood)
 
-        if likelihood.name not in _BUILTIN_NAMES:
+        if likelihood.name not in _FUNCTIONAL_NAMES:
             raise ValueError(
                 "FunctionalLaplace, ELLA, and VaLLA support only the likelihoods "
-                f"named {sorted(_BUILTIN_NAMES)}, not {likelihood.name!r}. Use a "
+                f"named {sorted(_FUNCTIONAL_NAMES)}, not {likelihood.name!r}. Use a "
                 "parametric Laplace with the `diag` or `full` structure instead."
             )
 
@@ -3234,9 +3264,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-        determines the log likelihood Hessian approximation. A likelihood
-        object is accepted as well as a name.
+    likelihood : Likelihood or str or torch.nn.Module
+        determines the log likelihood Hessian approximation. A likelihood object, its
+        name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        `ValueError` for the likelihoods that this method doesn't support.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -4272,9 +4304,10 @@ class ELLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : Likelihood or str
-        A likelihood object, or ``"classification"``, ``"regression"``, or
-        ``"reward_modeling"``.
+    likelihood : Likelihood or str or torch.nn.Module
+        A likelihood object, its name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        `ValueError` for the likelihoods that this method doesn't support.
     subsample_size : int
         Number of training inputs used to construct the Nyström basis.
     n_eigenvalues : int
@@ -5246,9 +5279,10 @@ class VaLLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : Likelihood or str
-        A likelihood object, or ``"classification"``, ``"regression"``, or
-        ``"reward_modeling"``.
+    likelihood : Likelihood or str or torch.nn.Module
+        A likelihood object, its name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        `ValueError` for the likelihoods that this method doesn't support.
     inducing_locations : torch.Tensor, MutableMapping, or str
         Initial inputs, or ``"random"`` or ``"kmeans"`` to select them from
         the training loader. Floating-point tensor locations are optimized;

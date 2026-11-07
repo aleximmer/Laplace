@@ -17,7 +17,7 @@ from torch import nn
 
 from laplace.utils.utils import _float_dtype, _zero_like, hyperparameters_equal
 
-_BUILTIN_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING")
+_BUILTIN_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING", "BERNOULLI")
 
 
 class _LikelihoodMeta(ABCMeta):
@@ -130,8 +130,9 @@ class Likelihood(metaclass=_LikelihoodMeta):
     The `kron` structure and the Hessian backends raise a `ValueError` for it. The
     GLM predictive of a likelihood that is neither Gaussian nor categorical is the
     Monte Carlo average of `inverse_link` over the GLM predictive of the outputs.
-    FunctionalLaplace, ELLA, and VaLLA only accept the built-in names, but a
-    subclass that keeps one of them may override members such as `output_hessian`.
+    FunctionalLaplace, ELLA, and VaLLA only accept the names of the regression,
+    classification, and reward-modeling likelihoods, but a subclass that keeps one of
+    them may override members such as `output_hessian`.
     """
 
     name: ClassVar[str]
@@ -145,6 +146,9 @@ class Likelihood(metaclass=_LikelihoodMeta):
 
     REWARD_MODELING: ClassVar[BradleyTerryLikelihood]
     """The built-in `BradleyTerryLikelihood`."""
+
+    BERNOULLI: ClassVar[BernoulliLikelihood]
+    """The built-in `BernoulliLikelihood`."""
 
     fisher_samples: ClassVar[int] = 100
     """Number of samples for the Monte Carlo Fisher in the default `output_hessian`.
@@ -846,6 +850,176 @@ class CategoricalLikelihood(Likelihood):
         return g
 
 
+class BernoulliLikelihood(Likelihood):
+    """Bernoulli likelihood with a sigmoid link, e.g. for binary or multi-label
+    classification and per-pixel masks.
+
+    With logits \\(f \\in \\mathbb{R}^K\\) and probabilities \\(p = \\sigma(f)\\), every
+    output is an independent binary target \\(y_k \\in \\{0, 1\\}\\) with
+    \\(p(y_k \\mid f_k) = p_k^{y_k} (1 - p_k)^{1 - y_k}\\). The loss is the binary
+    cross-entropy of `nn.BCEWithLogitsLoss`, which is already the negative log
+    likelihood. So the loss factor is \\(1\\) and the normalizer is zero.
+
+    The targets are floats with the shape of the logits, `(batch, ..., outputs)`.
+    As in torch, they may be soft labels in \\([0, 1]\\). The outputs are on the last
+    dim, so an observation is one row of outputs. For logits `(B, L, K)`, there are
+    \\(B L\\) observations.
+
+    The options `weight` and `pos_weight` are those of `nn.BCEWithLogitsLoss`, with
+    the same defaults and meaning, except that they are scalars or 1-D with one
+    entry per output. With \\(w\\) the weight, \\(p_w\\) the positive weight, both
+    \\(1\\) by default, and \\(a = p_w\\, y + 1 - y\\), the loss of an output is
+
+    $$
+        \\ell(f, y) = -w \\left(p_w\\, y \\log p + (1 - y) \\log (1 - p)\\right).
+    $$
+
+    Its gradient is
+
+    $$
+        \\nabla_f \\ell = w \\left(a\\, p - p_w\\, y\\right),
+    $$
+
+    which is \\(p - y\\) with the default options, and the output Hessian is the
+    diagonal matrix
+
+    $$
+        \\nabla^2_f \\ell = \\operatorname{diag}\\left(w\\, a\\, p (1 - p)\\right).
+    $$
+
+    Without targets, `output_hessian` returns \\(\\operatorname{diag}(p (1 - p))\\)
+    without \\(w\\) and \\(a\\). The options are cast to the dtype and device of the
+    logits wherever they are used. They make this a generalized likelihood, so
+    `log_marginal_likelihood` is no longer a true model evidence.
+
+    `distribution`, the inverse link (the sigmoid), and `sample` (draws
+    \\(y \\sim \\operatorname{Bernoulli}(p)\\)) ignore the options, since they describe
+    the model's predictive, which the options leave unchanged. The `log_prob` of the
+    distribution rejects soft labels, so the loss and the output gradient don't use
+    it.
+
+    Parameters
+    ----------
+    weight : torch.Tensor, optional
+        rescaling weight of the loss, a scalar or of shape `(outputs,)`, as in
+        `nn.BCEWithLogitsLoss`. A weight per example can't follow a shuffled data
+        loader, so it is rejected.
+    pos_weight : torch.Tensor, optional
+        weight of the positive targets, a scalar or of shape `(outputs,)`, as in
+        `nn.BCEWithLogitsLoss`.
+
+    Raises
+    ------
+    ValueError
+        if `weight` or `pos_weight` has more than one dim.
+    """
+
+    name: ClassVar[str] = "bernoulli"
+
+    # Class-level defaults keep subclasses working that override `__init__` without
+    # calling `super().__init__()`
+    weight: torch.Tensor | None = None
+    """Rescaling weight `()` or `(outputs,)`, or `None` for equal weights."""
+
+    pos_weight: torch.Tensor | None = None
+    """Weight of the positive targets `()` or `(outputs,)`, or `None` for one."""
+
+    def __init__(
+        self,
+        weight: torch.Tensor | None = None,
+        pos_weight: torch.Tensor | None = None,
+    ) -> None:
+        for option, value in (("weight", weight), ("pos_weight", pos_weight)):
+            if value is not None and value.ndim > 1:
+                raise ValueError(
+                    f"The option {option} must be a scalar or 1-D with one entry per "
+                    f"output, but it has shape {tuple(value.shape)}."
+                )
+
+        self.weight = weight
+        self.pos_weight = pos_weight
+
+    def hyperparameters(self) -> dict[str, Any]:
+        hyperparameters: dict[str, Any] = {}
+
+        if self.weight is not None:
+            hyperparameters["weight"] = self.weight
+
+        if self.pos_weight is not None:
+            hyperparameters["pos_weight"] = self.pos_weight
+
+        return hyperparameters
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        return torch.distributions.Bernoulli(logits=f)
+
+    def loss_fn(self, reduction: str = "sum") -> nn.Module:
+        return nn.BCEWithLogitsLoss(
+            weight=self.weight, pos_weight=self.pos_weight, reduction=reduction
+        )
+
+    def _options_like(
+        self, f: torch.Tensor
+    ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
+        """The weight \\(w\\) and the positive weight \\(p_w\\) with the dtype and
+        device of the logits `f`, or the float \\(1\\) for an option that is unset.
+        """
+        w, pw = self.weight, self.pos_weight
+
+        return (
+            1.0 if w is None else w.to(dtype=f.dtype, device=f.device),
+            1.0 if pw is None else pw.to(dtype=f.dtype, device=f.device),
+        )
+
+    def check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
+        # Like torch, which doesn't broadcast the targets to the logits and rejects
+        # integer targets
+        if y.shape != f.shape:
+            raise ValueError(
+                f"{type(self).__name__} expects targets of shape {tuple(f.shape)} "
+                f"like the outputs, but the targets have shape {tuple(y.shape)}."
+            )
+
+        if not y.is_floating_point():
+            raise ValueError(
+                f"{type(self).__name__} expects floating-point targets in [0, 1], "
+                f"but they have dtype {y.dtype}."
+            )
+
+    def loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        self.check_targets(f, y)
+
+        return self.loss_fn().to(f)(f, y.to(f.dtype))
+
+    def output_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        h = torch.sigmoid(f) * torch.sigmoid(-f)
+
+        if y is not None:
+            self.check_targets(f, y)
+            y = y.to(f.dtype)
+            w, pw = self._options_like(f)
+            h = w * (pw * y + 1 - y) * h
+
+        return torch.diag_embed(h)
+
+    def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
+        return torch.sigmoid(f)
+
+    def sample(
+        self, f: torch.Tensor, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
+        return torch.bernoulli(self.inverse_link(f), generator=generator)
+
+    def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        self.check_targets(f, y)
+        y = y.to(f.dtype)
+        w, pw = self._options_like(f)
+
+        return w * ((pw * y + 1 - y) * self.inverse_link(f) - pw * y)
+
+
 class BradleyTerryLikelihood(Likelihood):
     """Bradley-Terry likelihood for reward modeling.
 
@@ -971,11 +1145,12 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     ----------
     likelihood : Likelihood or str or nn.Module
         an instance, which is returned as is, one of `'regression'`,
-        `'classification'`, and `'reward_modeling'`, or a torch criterion.
-        `nn.MSELoss` becomes a `GaussianLikelihood` and `nn.CrossEntropyLoss` a
-        `CategoricalLikelihood` with the criterion's `weight`, `ignore_index`, and
-        `label_smoothing`. The criterion's `reduction` is ignored, since Laplace
-        always sums the loss.
+        `'classification'`, `'reward_modeling'`, and `'bernoulli'`, or a torch
+        criterion. `nn.MSELoss` becomes a `GaussianLikelihood`, `nn.CrossEntropyLoss`
+        a `CategoricalLikelihood` with the criterion's `weight`, `ignore_index`, and
+        `label_smoothing`, and `nn.BCEWithLogitsLoss` a `BernoulliLikelihood` with
+        its `weight` and `pos_weight`. The criterion's `reduction` is ignored, since
+        Laplace always sums the loss.
 
     Returns
     -------
@@ -985,13 +1160,20 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     ------
     ValueError
         if `likelihood` is neither a likelihood instance, a known name, nor one of
-        the two criteria above. Subclasses of the criteria are not accepted.
+        the three criteria above. Subclasses of the criteria are not accepted. Also
+        if the `weight` or `pos_weight` of a `nn.BCEWithLogitsLoss` has more than one
+        dim.
     """
     if isinstance(likelihood, Likelihood):
         return likelihood
 
     if isinstance(likelihood, str):
-        for cls in (GaussianLikelihood, CategoricalLikelihood, BradleyTerryLikelihood):
+        for cls in (
+            GaussianLikelihood,
+            CategoricalLikelihood,
+            BradleyTerryLikelihood,
+            BernoulliLikelihood,
+        ):
             if cls.name == _name_of(likelihood):
                 return cls()
 
@@ -1005,9 +1187,15 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
             label_smoothing=likelihood.label_smoothing,
         )
 
+    if type(likelihood) is nn.BCEWithLogitsLoss:
+        return BernoulliLikelihood(
+            weight=likelihood.weight, pos_weight=likelihood.pos_weight
+        )
+
     raise ValueError(f"Invalid likelihood type {likelihood}")
 
 
 Likelihood.REGRESSION = GaussianLikelihood()
 Likelihood.CLASSIFICATION = CategoricalLikelihood()
 Likelihood.REWARD_MODELING = BradleyTerryLikelihood()
+Likelihood.BERNOULLI = BernoulliLikelihood()

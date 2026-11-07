@@ -23,7 +23,7 @@ from laplace.utils.functional_utils import (
     training_indices,
 )
 from laplace.utils.matrix import Kron, KronDecomposed
-from laplace.utils.metrics import RunningNLLMetric
+from laplace.utils.metrics import RunningBernoulliNLLMetric, RunningNLLMetric
 from laplace.utils.subnetmask import (
     LargestMagnitudeSubnetMask,
     LargestVarianceDiagLaplaceSubnetMask,
@@ -94,6 +94,7 @@ __all__ = [
     "ModuleNameSubnetMask",
     "LastLayerSubnetMask",
     "RunningNLLMetric",
+    "RunningBernoulliNLLMetric",
     "SubsetOfWeights",
     "FunctionalApproximation",
     "HessianStructure",

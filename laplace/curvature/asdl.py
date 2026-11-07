@@ -155,20 +155,20 @@ class AsdlInterface(CurvatureInterface):
             gradients `(n_observations, parameters)`
         """
 
+        f = None
+
         def closure():
+            nonlocal f
             self.model.zero_grad()
-            loss = self._loss(self.model(x), y)
+            f = self.model(x)
+            loss = self._loss(f, y)
             loss.backward()
             return loss
 
         Gs, loss = self._batch_gradient(closure)
 
-        # The last dim of regression targets is the output dim
-        n_obs = (
-            y.shape[:-1]
-            if self.likelihood.name == Likelihood.REGRESSION.name
-            else y.shape
-        ).numel()
+        # The last dim of the outputs is the output dim
+        n_obs = f.shape[:-1].numel()
         Gs = self._sum_rows_per_observation(Gs, n_obs)
 
         if self.subnetwork_indices is not None:
