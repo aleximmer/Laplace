@@ -109,9 +109,8 @@ pred = la(x, pred_type="glm", link_approx="probit")
 
 ### Likelihoods
 
-The `likelihood` argument takes a name (`"regression"`, `"classification"`, `"reward_modeling"`, or `"bernoulli"`), a likelihood object, or a PyTorch criterion.
+The `likelihood` argument takes a likelihood object, its name, or a PyTorch criterion, see the [likelihoods API](api_reference/likelihoods.md).
 `likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
-`Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, `Likelihood.REWARD_MODELING`, and `Likelihood.BERNOULLI` are the built-in likelihood objects.
 `"bernoulli"` is for binary and multi-label targets: every output is a logit with its own sigmoid, and `nn.BCEWithLogitsLoss` is its loss.
 The targets are floats with the shape of the outputs, and they may be soft labels in $[0, 1]$.
 It takes the parametric structures (`diag`, `kron`, `full`) and the GLM and NN predictives.
@@ -194,7 +193,7 @@ For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\m
 `link_approx` has no effect there.
 In the example above, the result is the expected Poisson rate.
 Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
-FunctionalLaplace, ELLA, and VaLLA only accept likelihoods named `"regression"`, `"classification"`, or `"reward_modeling"`, and raise a `ValueError` for `"bernoulli"`.
+FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods and for `"bernoulli"`.
 FunctionalLaplace also accepts a `CategoricalLikelihood` with options.
 ELLA and VaLLA don't support likelihood options yet and raise a `ValueError` for them.
 

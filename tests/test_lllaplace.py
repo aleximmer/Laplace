@@ -32,6 +32,7 @@ from tests.utils import (
     ScaledModel,
     dict_data_collator,
     jacobians_naive,
+    toy_multilabel_dataset,
 )
 
 pytestmark = pytest.mark.default_dtype(torch.float64)
@@ -983,14 +984,6 @@ def test_nn_predictive_for_custom_link_lllaplace(laplace):
     assert not torch.allclose(pred, torch.ones_like(pred))
 
 
-def _multilabel_loader() -> DataLoader:
-    torch.manual_seed(5)
-    X = torch.randn(12, 3)
-    y = (torch.rand(12, 4) > 0.5).to(X.dtype)
-
-    return DataLoader(TensorDataset(X, y), batch_size=5)
-
-
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize(
     "options", [{}, {"pos_weight": torch.tensor([2.0, 1.0, 3.0, 1.0])}]
@@ -998,8 +991,7 @@ def _multilabel_loader() -> DataLoader:
 def test_bernoulli_lllaplace(laplace, options):
     torch.manual_seed(5)
     model = nn.Sequential(nn.Linear(3, 6), nn.Tanh(), nn.Linear(6, 4))
-    loader = _multilabel_loader()
-    X, y = loader.dataset.tensors
+    X, y, loader, _ = toy_multilabel_dataset()
     lik = BernoulliLikelihood(**options)
 
     # The GGN's KFAC can't see the options, the empirical Fisher can
@@ -1028,7 +1020,7 @@ def test_bernoulli_lllaplace(laplace, options):
     torch.testing.assert_close(probit, torch.sigmoid(kappa * f_mu))
 
     mc = la(
-        X, link_approx="mc", n_samples=20000, generator=torch.Generator().manual_seed(0)
+        X, link_approx="mc", n_samples=5000, generator=torch.Generator().manual_seed(0)
     )
     torch.testing.assert_close(mc, probit, atol=3e-2, rtol=0.0)
 

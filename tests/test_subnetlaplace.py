@@ -38,6 +38,7 @@ from tests.utils import (
     ListDataset,
     dict_data_collator,
     requires_asdl,
+    toy_multilabel_dataset,
 )
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
@@ -1233,9 +1234,7 @@ def test_subnetmask_rejects_reward_modeling():
 def test_bernoulli_subnetlaplace(laplace, options):
     torch.manual_seed(5)
     model = nn.Sequential(nn.Linear(3, 6), nn.Tanh(), nn.Linear(6, 4))
-    X = torch.randn(12, 3)
-    y = torch.rand(12, 4)
-    loader = DataLoader(TensorDataset(X, y), batch_size=5)
+    X, y, loader, _ = toy_multilabel_dataset(soft=True)
     lik = BernoulliLikelihood(**options)
 
     n_params = sum(p.numel() for p in model.parameters())
@@ -1276,9 +1275,7 @@ def test_bernoulli_subnetlaplace(laplace, options):
 def test_swag_subnetmask_with_bernoulli_likelihood():
     torch.manual_seed(5)
     model = nn.Sequential(nn.Linear(3, 6), nn.Tanh(), nn.Linear(6, 4))
-    X = torch.randn(12, 3)
-    y = torch.rand(12, 4)
-    loader = DataLoader(TensorDataset(X, y), batch_size=4)
+    loader = toy_multilabel_dataset(batch_size=4, soft=True)[2]
 
     for lik in ("bernoulli", BernoulliLikelihood(pos_weight=torch.tensor(2.0))):
         mask = LargestVarianceSWAGSubnetMask(

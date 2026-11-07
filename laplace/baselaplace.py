@@ -143,12 +143,12 @@ class BaseLaplace:
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'} or nn.Module
-        determines the log likelihood Hessian approximation. Strings, `Likelihood`
-        members, and the torch criteria `nn.MSELoss` and `nn.CrossEntropyLoss`
-        become the matching likelihood object, which is stored in
-        `self.likelihood`. A `nn.CrossEntropyLoss` keeps its `weight`,
-        `ignore_index`, and `label_smoothing`.
+    likelihood : Likelihood or str or torch.nn.Module
+        determines the log likelihood Hessian approximation. A likelihood object, its
+        name, or a torch criterion, which becomes the matching likelihood object with
+        the same options, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. It is stored in
+        `self.likelihood`.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -411,7 +411,9 @@ class BaseLaplace:
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
             For `pred_type='nn'`, only 'mc' is possible. The Bernoulli likelihood
-            supports 'probit' and 'mc' only, since the bridge is for the softmax.
+            takes 'probit', which applies the sigmoid to the logits scaled by their
+            marginal variances, or 'mc', and raises for the bridge, which is for the
+            softmax link only.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -847,10 +849,8 @@ class BaseLaplace:
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible. The Bernoulli likelihood
-            takes 'probit', which applies the sigmoid to the logits scaled by their
-            marginal variances, or 'mc', and raises for the bridge. Other likelihoods
-            than classification and reward modeling always use Monte Carlo.
+            For `pred_type='nn'`, only 'mc' is possible. Likelihoods other than
+            classification, reward modeling and Bernoulli always use Monte Carlo.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -881,8 +881,6 @@ class BaseLaplace:
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
-            For `likelihood='bernoulli'`, a torch.Tensor is returned with the
-            probability of each output being 1, with the shape of the logits.
             For any other likelihood, a torch.Tensor is returned with the predictive
             mean of the targets, with the shape of the outputs, e.g.
             `(batch, outputs)`.
@@ -923,15 +921,19 @@ class BaseLaplace:
             return f_mu, f_var
 
         if likelihood.name == Likelihood.BERNOULLI.name:
-            return self._glm_bernoulli_link(
-                f_mu,
-                f_var,
-                likelihood,
-                link_approx,
-                n_samples,
-                diagonal_output,
-                generator,
-            )
+            # Every output has its own sigmoid, so the probit approximation needs only
+            # the marginal variances. MC falls through to the generic path below.
+            if link_approx == LinkApprox.PROBIT:
+                kappa = 1 / torch.sqrt(
+                    1.0 + np.pi / 8 * torch.diagonal(f_var, dim1=-2, dim2=-1)
+                )
+                return likelihood.inverse_link(kappa * f_mu)
+
+            if link_approx != LinkApprox.MC:
+                raise ValueError(
+                    "The Laplace bridge is for the softmax link only. Use 'probit' or "
+                    "'mc' with the Bernoulli likelihood."
+                )
 
         if likelihood.name not in _CATEGORICAL_NAMES:
             # No closed form to approximate, so integrate the inverse link by MC
@@ -950,44 +952,6 @@ class BaseLaplace:
             f_mu, f_var, likelihood, link_approx, n_samples, diagonal_output, generator
         )
         return probs.reshape(*batch_shape, probs.shape[-1])
-
-    def _glm_bernoulli_link(
-        self,
-        f_mu: torch.Tensor,
-        f_var: torch.Tensor,
-        likelihood: Likelihood,
-        link_approx: LinkApprox | str,
-        n_samples: int,
-        diagonal_output: bool,
-        generator: torch.Generator | None = None,
-    ) -> torch.Tensor:
-        """Approximate the predictive probabilities of a Bernoulli likelihood from
-        the GLM predictive `f_mu` `(batch, ..., outputs)` and `f_var`
-        `(batch, ..., outputs, outputs)`. Every output has its own sigmoid, so the
-        probit approximation needs only the marginal variances. See
-        `_glm_forward_call` for the other arguments.
-
-        Raises
-        ------
-        ValueError
-            for the Laplace bridge, which is for the softmax link only.
-        """
-        if link_approx == LinkApprox.PROBIT:
-            kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=-2, dim2=-1))
-            return torch.sigmoid(kappa * f_mu)
-
-        if link_approx == LinkApprox.MC:
-            f_samples = self._glm_functional_samples(
-                f_mu, f_var, n_samples, diagonal_output, generator
-            )
-            return likelihood.inverse_link(f_samples).mean(dim=0)
-
-        name = getattr(link_approx, "value", link_approx)
-
-        raise ValueError(
-            f"The link approximation {name!r} is for the softmax link only. Use "
-            "'probit' or 'mc' with the Bernoulli likelihood."
-        )
 
     def _glm_classification_link(
         self,
@@ -2826,9 +2790,7 @@ class BaseFunctionalLaplace(BaseLaplace):
         Raises
         ------
         ValueError
-            if the name is not `"regression"`, `"classification"`, or
-            `"reward_modeling"`, or if the likelihood has options that the method
-            doesn't support.
+            if the method doesn't support the likelihood or its options.
         """
         likelihood = get_likelihood(likelihood)
 
@@ -3302,9 +3264,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     Parameters
     ----------
     model : torch.nn.Module
-    likelihood : Likelihood or str in {'classification', 'regression', 'reward_modeling'}
-        determines the log likelihood Hessian approximation. A likelihood
-        object is accepted as well as a name.
+    likelihood : Likelihood or str or torch.nn.Module
+        determines the log likelihood Hessian approximation. A likelihood object, its
+        name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        `ValueError` for the likelihoods that this method doesn't support.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
         The forward pass during training takes `x.shape == (batch_size, 2, dim)` with
@@ -4340,9 +4304,10 @@ class ELLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : Likelihood or str
-        A likelihood object, or ``"classification"``, ``"regression"``, or
-        ``"reward_modeling"``.
+    likelihood : Likelihood or str or torch.nn.Module
+        A likelihood object, its name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        `ValueError` for the likelihoods that this method doesn't support.
     subsample_size : int
         Number of training inputs used to construct the Nyström basis.
     n_eigenvalues : int
@@ -5314,9 +5279,10 @@ class VaLLA(BaseFunctionalLaplace):
     ----------
     model : torch.nn.Module
         Pretrained network to linearize.
-    likelihood : Likelihood or str
-        A likelihood object, or ``"classification"``, ``"regression"``, or
-        ``"reward_modeling"``.
+    likelihood : Likelihood or str or torch.nn.Module
+        A likelihood object, its name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        `ValueError` for the likelihoods that this method doesn't support.
     inducing_locations : torch.Tensor, MutableMapping, or str
         Initial inputs, or ``"random"`` or ``"kmeans"`` to select them from
         the training loader. Floating-point tensor locations are optimized;

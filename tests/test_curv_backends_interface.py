@@ -30,6 +30,7 @@ from tests.utils import (
     BackPackEF,
     BackPackGGN,
     ScaledGaussian,
+    loss_hessian,
     requires_backpack,
 )
 
@@ -727,28 +728,6 @@ def _make_backend(backend_cls, model, likelihood, stochastic):
     return backend_cls(model, likelihood)
 
 
-def _hessian_reference(
-    model: nn.Module,
-    likelihood: CategoricalLikelihood,
-    X: torch.Tensor,
-    y: torch.Tensor,
-) -> torch.Tensor:
-    """Hessian of the summed loss w.r.t. the flattened parameters, via torch.func."""
-    params = {k: v.detach() for k, v in model.named_parameters()}
-    theta = torch.cat([v.flatten() for v in params.values()])
-
-    def loss(theta: torch.Tensor) -> torch.Tensor:
-        split, offset = {}, 0
-
-        for k, v in params.items():
-            split[k] = theta[offset : offset + v.numel()].reshape(v.shape)
-            offset += v.numel()
-
-        return likelihood.loss(torch.func.functional_call(model, split, (X,)), y)
-
-    return torch.func.hessian(loss)(theta)
-
-
 @pytest.mark.parametrize("opts", _CURVATURE_OPTIONS)
 @pytest.mark.parametrize(
     "backend_cls,kind,method,stochastic,claimed",
@@ -797,7 +776,7 @@ def test_categorical_options_curvature(
         if kron:
             H_ref = H_ref.diag()
     elif kind == "hessian":
-        H_ref = _hessian_reference(reference_model, likelihood, X, y)
+        H_ref = loss_hessian(reference_model, likelihood.loss, X, y)
     else:
         reference_cls = GGNInterface if kind == "ggn" else EFInterface
         reference = reference_cls(reference_model, likelihood)

@@ -5,7 +5,16 @@ from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import EFInterface, GGNInterface
 from laplace.likelihoods import BernoulliLikelihood
-from tests.utils import BackPackEF, BackPackGGN, DoubledCategorical, requires_backpack
+from tests.utils import (
+    BackPackEF,
+    BackPackGGN,
+    DoubledCategorical,
+    bce_data,
+    bce_model,
+    bce_options,
+    check_bernoulli_falls_back_to_torch_func,
+    requires_backpack,
+)
 
 pytestmark = requires_backpack
 
@@ -281,36 +290,12 @@ def test_custom_likelihood_rejected_by_kron(class_Xy, model):
 
 # Bernoulli likelihood. BackPACK has no sigmoid loss with options, so the GGN and EF
 # backends fall back to the torch.func code for `diag` and `full`, and `kron` raises.
-# Float32 options for the float64 model.
-_BCE_OPTIONS = [
-    {},
-    {"weight": torch.tensor([0.5, 2.0, 1.5])},
-    {"pos_weight": torch.tensor([3.0, 0.5, 2.0])},
-    {
-        "weight": torch.tensor([0.5, 2.0, 1.5]),
-        "pos_weight": torch.tensor([3.0, 0.5, 2.0]),
-    },
-]
+_BCE = bce_options()
 
 
-def _bce_model() -> nn.Module:
-    torch.manual_seed(711)
-    model = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 3)).double()
-    setattr(model, "output_size", 3)
-
-    return model
-
-
-def _bce_data(soft: bool) -> tuple[torch.Tensor, torch.Tensor]:
-    torch.manual_seed(711)
-    X = torch.randn(8, 3, dtype=torch.float64)
-    y = torch.rand(8, 3, dtype=torch.float64)
-
-    return X, y if soft else (y > 0.5).to(y.dtype)
-
-
-@pytest.mark.parametrize("opts", _BCE_OPTIONS)
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
 @pytest.mark.parametrize("soft", [False, True])
+@pytest.mark.parametrize("batch_shape", [(8,)])
 @pytest.mark.parametrize(
     "Backend,Reference,structure",
     [
@@ -320,29 +305,18 @@ def _bce_data(soft: bool) -> tuple[torch.Tensor, torch.Tensor]:
         (BackPackEF, EFInterface, "full"),
     ],
 )
-def test_bernoulli_falls_back_to_torch_func(Backend, Reference, structure, soft, opts):
-    X, y = _bce_data(soft)
-    likelihood = BernoulliLikelihood(**opts)
-    backend = Backend(_bce_model(), likelihood)
-
-    # BackPACK doesn't know the Bernoulli likelihood, so it can't compute this
-    assert not backend._honours(structure, y)
-
-    loss, H = getattr(backend, structure)(X, y)
-    loss_ref, H_ref = getattr(Reference(_bce_model(), likelihood), structure)(X, y)
-
-    assert H.dtype == torch.float64
-    assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(H, H_ref)
-
-    bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
-    assert torch.allclose(loss, bce(_bce_model()(X), y))
+def test_bernoulli_falls_back_to_torch_func(
+    Backend, Reference, structure, batch_shape, soft, opts
+):
+    check_bernoulli_falls_back_to_torch_func(
+        Backend, Reference, structure, batch_shape, soft, opts
+    )
 
 
 def test_bernoulli_does_not_extend_the_loss():
     # `extend` would turn the loss into a BackPACK module that only knows the
     # losses of Gaussian and categorical likelihoods
-    backend = BackPackGGN(_bce_model(), "bernoulli")
+    backend = BackPackGGN(bce_model(), "bernoulli")
 
     assert not getattr(backend.lossfunc, "_backpack_extend", False)
 
@@ -350,9 +324,9 @@ def test_bernoulli_does_not_extend_the_loss():
 @pytest.mark.parametrize("Backend", [BackPackGGN, BackPackEF])
 @pytest.mark.parametrize("stochastic", [False, True])
 def test_bernoulli_kron_raises_in_backpack(Backend, stochastic):
-    X, y = _bce_data(soft=False)
+    X, y = bce_data((8,), soft=False)
     kwargs = {"stochastic": True} if stochastic and Backend is BackPackGGN else {}
-    backend = Backend(_bce_model(), "bernoulli", **kwargs)
+    backend = Backend(bce_model(), "bernoulli", **kwargs)
 
     if Backend is BackPackEF:
         with pytest.raises(NotImplementedError):
@@ -363,12 +337,12 @@ def test_bernoulli_kron_raises_in_backpack(Backend, stochastic):
 
 
 def test_bernoulli_stochastic_diag_raises_for_options_in_backpack():
-    X, y = _bce_data(soft=False)
+    X, y = bce_data((8,), soft=False)
     weighted = BernoulliLikelihood(pos_weight=torch.tensor([3.0, 0.5, 2.0]))
 
     with pytest.raises(ValueError, match="stochastic=True"):
-        BackPackGGN(_bce_model(), weighted, stochastic=True).diag(X, y)
+        BackPackGGN(bce_model(), weighted, stochastic=True).diag(X, y)
 
     # Without options, the Monte Carlo Fisher is the generic one
-    _, diag = BackPackGGN(_bce_model(), "bernoulli", stochastic=True).diag(X, y)
+    _, diag = BackPackGGN(bce_model(), "bernoulli", stochastic=True).diag(X, y)
     assert torch.isfinite(diag).all()

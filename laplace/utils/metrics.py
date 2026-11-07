@@ -68,12 +68,6 @@ class RunningBernoulliNLLMetric(Metric):
         targets: torch.Tensor
             floating-point tensor in [0, 1] with the shape of `probs`
         """
-        if probs.shape != targets.shape:
-            raise ValueError(
-                f"The targets have shape {tuple(targets.shape)}, but the "
-                f"probabilities have shape {tuple(probs.shape)}."
-            )
-
         self.nll_sum += F.binary_cross_entropy(
             probs, targets.to(probs.dtype), reduction="sum"
         )

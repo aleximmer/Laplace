@@ -90,7 +90,6 @@ def test_running_nll_metric_noncontiguous(
 @pytest.mark.parametrize("shape", [(6, 4), (3, 5, 4), (2, 3, 3, 4)])
 @pytest.mark.parametrize("soft", [False, True])
 def test_bernoulli_nll_is_summed_over_outputs_and_averaged_over_positions(shape, soft):
-    torch.manual_seed(0)
     probs = torch.rand(*shape)
     targets = torch.rand(*shape)
 
@@ -107,7 +106,6 @@ def test_bernoulli_nll_is_summed_over_outputs_and_averaged_over_positions(shape,
 
 
 def test_bernoulli_nll_accumulates_over_batches():
-    torch.manual_seed(0)
     probs = torch.rand(10, 4)
     targets = (torch.rand(10, 4) > 0.5).float()
 
@@ -128,7 +126,6 @@ def test_bernoulli_nll_accumulates_over_batches():
 
 
 def test_bernoulli_nll_matches_the_loss_of_the_logits():
-    torch.manual_seed(0)
     f = torch.randn(8, 3)
     y = torch.rand(8, 3)
 
@@ -153,5 +150,5 @@ def test_bernoulli_nll_rejects_mismatched_shapes():
     metric = RunningBernoulliNLLMetric()
 
     # Class indices, as the softmax metric takes them
-    with pytest.raises(ValueError, match="targets have shape"):
+    with pytest.raises(ValueError, match="target size"):
         metric.update(torch.rand(4, 3), torch.randint(3, (4,)))

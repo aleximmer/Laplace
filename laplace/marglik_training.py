@@ -93,9 +93,8 @@ def marglik_training(
     train_loader : DataLoader
         pytorch dataloader that implements `len(train_loader.dataset)` to obtain number of data points
     likelihood : Likelihood or str or torch.nn.Module, default=Likelihood.CLASSIFICATION
-        a likelihood object, 'classification', 'regression', or 'bernoulli', or a torch
-        criterion such as `nn.CrossEntropyLoss` or `nn.BCEWithLogitsLoss`, see
-        `get_likelihood`.
+        a likelihood object, its name, or a torch criterion, see
+        [`get_likelihood`][laplace.likelihoods.get_likelihood].
     hessian_structure : {'diag', 'kron', 'full'}, default='kron'
         structure of the Hessian approximation
     backend : Backend, default=CurvlinopsGGN
@@ -282,7 +281,7 @@ def marglik_training(
             elif lik.name == Likelihood.BERNOULLI.name:
                 # Mean accuracy of the outputs of each datum, as the logits' sign
                 hits = (f.detach() > 0) == (y >= 0.5)
-                epoch_perf += hits.reshape(len(y), -1).float().mean(dim=1).sum().item()
+                epoch_perf += hits.float().mean().item() * len(y)
             else:
                 epoch_perf += torch.sum(torch.argmax(f.detach(), dim=-1) == y).item()
 

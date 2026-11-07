@@ -11,7 +11,18 @@ from laplace.curvature import (
     GGNInterface,
 )
 from laplace.likelihoods import BernoulliLikelihood, CategoricalLikelihood
-from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackGGN, DoubledCategorical
+from tests.utils import (
+    BCE_BATCH_SHAPES,
+    AsdlEF,
+    AsdlGGN,
+    AsdlHessian,
+    BackPackGGN,
+    DoubledCategorical,
+    bce_data,
+    bce_model,
+    bce_options,
+    loss_hessian,
+)
 
 
 @pytest.fixture
@@ -388,86 +399,28 @@ def test_custom_likelihood_jacobians_curvlinops(class_Xy, model):
     assert torch.allclose(f, f_doubled)
 
 
-# Bernoulli likelihood. Float32 options for float64 models, so the backends must
-# cast them.
-_BCE_OPTIONS = [
-    {},
-    {"weight": torch.tensor([0.5, 2.0, 1.5])},
-    {"pos_weight": torch.tensor([3.0, 0.5, 2.0])},
-    {
-        "weight": torch.tensor([0.5, 2.0, 1.5]),
-        "pos_weight": torch.tensor([3.0, 0.5, 2.0]),
-    },
-    {"weight": torch.tensor(0.7), "pos_weight": torch.tensor(2.5)},
-]
-
-# Outputs `(B, K)` and `(B, L, K)`, with `K = 3` outputs
-_BCE_BATCH_SHAPES = [(8,), (4, 2)]
+# Bernoulli likelihood
+_BCE = bce_options()
 
 
-def _bce_model(kron: bool = False) -> nn.Module:
-    """Small float64 model with 3 outputs. For Kronecker factors, a single linear
-    layer, which is linear in its parameters."""
-    torch.manual_seed(711)
-
-    if kron:
-        model = nn.Linear(3, 3)
-    else:
-        model = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 3))
-
-    setattr(model, "output_size", 3)
-
-    return model.double()
-
-
-def _bce_data(
-    batch_shape: tuple[int, ...], soft: bool
-) -> tuple[torch.Tensor, torch.Tensor]:
-    """Float64 inputs `(*batch_shape, 3)` and hard or soft targets of 3 outputs."""
-    torch.manual_seed(711)
-    X = torch.randn(*batch_shape, 3, dtype=torch.float64)
-    y = torch.rand(*batch_shape, 3, dtype=torch.float64)
-
-    return X, y if soft else (y > 0.5).to(y.dtype)
-
-
-def _loss_hessian(
-    model: nn.Module, criterion: nn.Module, X: torch.Tensor, y: torch.Tensor
-) -> torch.Tensor:
-    """Hessian of the torch loss w.r.t. the flattened parameters, via torch.func."""
-    params = {k: v.detach() for k, v in model.named_parameters()}
-    theta = torch.cat([v.flatten() for v in params.values()])
-
-    def loss(theta: torch.Tensor) -> torch.Tensor:
-        split, offset = {}, 0
-
-        for k, v in params.items():
-            split[k] = theta[offset : offset + v.numel()].reshape(v.shape)
-            offset += v.numel()
-
-        return criterion(torch.func.functional_call(model, split, (X,)), y)
-
-    return torch.func.hessian(loss)(theta)
-
-
-@pytest.mark.parametrize("opts", _BCE_OPTIONS)
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
 @pytest.mark.parametrize("soft", [False, True])
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 @pytest.mark.parametrize(
     "Backend,Reference", [(CurvlinopsGGN, GGNInterface), (CurvlinopsEF, EFInterface)]
 )
 def test_bernoulli_full_matches_torch_func(Backend, Reference, batch_shape, soft, opts):
-    X, y = _bce_data(batch_shape, soft)
+    X, y = bce_data(batch_shape, soft)
     likelihood = BernoulliLikelihood(**opts)
 
-    backend = Backend(_bce_model(), likelihood)
+    backend = Backend(bce_model(), likelihood)
 
     # Curvlinops computes it, instead of the torch.func fallback that it is
     # compared with
     assert backend._honours("full", y)
 
     loss, H = backend.full(X, y)
-    loss_ref, H_ref = Reference(_bce_model(), likelihood).full(X, y)
+    loss_ref, H_ref = Reference(bce_model(), likelihood).full(X, y)
 
     assert H.dtype == torch.float64
     assert torch.allclose(loss, loss_ref)
@@ -475,16 +428,16 @@ def test_bernoulli_full_matches_torch_func(Backend, Reference, batch_shape, soft
 
     # The loss is the summed BCE
     bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
-    assert torch.allclose(loss, bce(_bce_model()(X), y))
+    assert torch.allclose(loss, bce(bce_model()(X), y))
 
 
-@pytest.mark.parametrize("opts", _BCE_OPTIONS)
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 def test_bernoulli_full_ef_matches_autograd(batch_shape, opts):
     # The empirical Fisher is the sum of the outer products of the per-position
     # gradients of the torch loss
-    X, y = _bce_data(batch_shape, soft=True)
-    model = _bce_model()
+    X, y = bce_data(batch_shape, soft=True)
+    model = bce_model()
     bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
 
     def position_loss(params, x_t, y_t):
@@ -502,19 +455,19 @@ def test_bernoulli_full_ef_matches_autograd(batch_shape, opts):
     assert torch.allclose(H, G.T @ G, atol=1e-5, rtol=1e-5)
 
 
-@pytest.mark.parametrize("opts", _BCE_OPTIONS)
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 @pytest.mark.parametrize("Backend", [CurvlinopsGGN, CurvlinopsHessian])
 def test_bernoulli_full_matches_autograd_hessian(Backend, batch_shape, opts):
     # A single linear layer is linear in its parameters, so the Hessian of the loss
     # is the GGN
-    X, y = _bce_data(batch_shape, soft=True)
-    model = _bce_model(kron=True)
+    X, y = bce_data(batch_shape, soft=True)
+    model = bce_model(kron=True)
     bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
 
     _, H = Backend(model, BernoulliLikelihood(**opts)).full(X, y)
 
-    assert torch.allclose(H, _loss_hessian(model, bce, X, y), atol=1e-5, rtol=1e-5)
+    assert torch.allclose(H, loss_hessian(model, bce, X, y), atol=1e-5, rtol=1e-5)
 
 
 def _kron_closed_form(
@@ -529,10 +482,10 @@ def _kron_closed_form(
 
 
 @pytest.mark.parametrize("soft", [False, True])
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 def test_bernoulli_kron_ggn_matches_closed_form(batch_shape, soft):
-    X, y = _bce_data(batch_shape, soft)
-    model = _bce_model(kron=True)
+    X, y = bce_data(batch_shape, soft)
+    model = bce_model(kron=True)
     N = len(X)
 
     loss, kron = CurvlinopsGGN(model, "bernoulli").kron(X, y, N)
@@ -553,10 +506,10 @@ def test_bernoulli_kron_ggn_matches_closed_form(batch_shape, soft):
     assert torch.allclose(bias[0], exp_b_B)
 
 
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 def test_bernoulli_kron_mc_input_factor_matches_closed_form(batch_shape):
-    X, y = _bce_data(batch_shape, soft=True)
-    model = _bce_model(kron=True)
+    X, y = bce_data(batch_shape, soft=True)
+    model = bce_model(kron=True)
 
     _, kron = CurvlinopsGGN(model, "bernoulli", stochastic=True).kron(X, y, len(X))
 
@@ -565,10 +518,10 @@ def test_bernoulli_kron_mc_input_factor_matches_closed_form(batch_shape):
     assert torch.allclose(kron.kfacs[0][1], exp_w_A)
 
 
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 def test_bernoulli_kron_ggn_matches_the_ggn_blocks_for_a_single_position(batch_shape):
-    X, y = _bce_data((1,) * len(batch_shape), soft=True)
-    model = _bce_model(kron=True)
+    X, y = bce_data((1,) * len(batch_shape), soft=True)
+    model = bce_model(kron=True)
 
     _, kron = CurvlinopsGGN(model, "bernoulli").kron(X, y, 1)
     _, H = CurvlinopsGGN(model, "bernoulli").full(X, y)
@@ -580,13 +533,13 @@ def test_bernoulli_kron_ggn_matches_the_ggn_blocks_for_a_single_position(batch_s
     assert torch.allclose(K[9:, 9:], H[9:, 9:], atol=1e-5, rtol=1e-5)
 
 
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 @pytest.mark.parametrize("stochastic", [False, True])
 def test_bernoulli_kron_ggn_ignores_soft_labels(batch_shape, stochastic):
     # The Fisher of the model does not depend on the targets, and Curvlinops
     # rejects soft ones, so they are rounded for it
-    X, y = _bce_data(batch_shape, soft=True)
-    model = _bce_model(kron=True)
+    X, y = bce_data(batch_shape, soft=True)
+    model = bce_model(kron=True)
 
     torch.manual_seed(0)
     _, kron_soft = CurvlinopsGGN(model, "bernoulli", stochastic=stochastic).kron(
@@ -600,12 +553,12 @@ def test_bernoulli_kron_ggn_ignores_soft_labels(batch_shape, stochastic):
     assert torch.allclose(kron_soft.to_matrix(), kron_hard.to_matrix())
 
 
-@pytest.mark.parametrize("opts", _BCE_OPTIONS[1:])
+@pytest.mark.parametrize("opts", list(_BCE.values())[1:], ids=list(_BCE.keys())[1:])
 @pytest.mark.parametrize("soft", [False, True])
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 def test_bernoulli_kron_ef_matches_hand_computation(batch_shape, soft, opts):
-    X, y = _bce_data(batch_shape, soft)
-    model = _bce_model(kron=True)
+    X, y = bce_data(batch_shape, soft)
+    model = bce_model(kron=True)
     likelihood = BernoulliLikelihood(**opts)
     N = len(X)
 
@@ -635,11 +588,11 @@ def test_bernoulli_kron_ef_matches_hand_computation(batch_shape, soft, opts):
     assert torch.allclose(weight[0], g_lik.T @ g_lik)
 
 
-@pytest.mark.parametrize("opts", _BCE_OPTIONS[1:])
+@pytest.mark.parametrize("opts", list(_BCE.values())[1:], ids=list(_BCE.keys())[1:])
 @pytest.mark.parametrize("stochastic", [False, True])
 def test_bernoulli_kron_options_raise_unless_ef_honours_them(opts, stochastic):
-    X, y = _bce_data((8,), soft=False)
-    model = _bce_model(kron=True)
+    X, y = bce_data((8,), soft=False)
+    model = bce_model(kron=True)
     likelihood = BernoulliLikelihood(**opts)
 
     # KFAC Type-2 and MC KFAC silently ignore `weight` and `pos_weight`, so the GGN
@@ -653,8 +606,8 @@ def test_bernoulli_kron_options_raise_unless_ef_honours_them(opts, stochastic):
 
 
 def test_bernoulli_kron_without_options_runs_everywhere():
-    X, y = _bce_data((8,), soft=False)
-    model = _bce_model(kron=True)
+    X, y = bce_data((8,), soft=False)
+    model = bce_model(kron=True)
 
     for backend in (
         CurvlinopsGGN(model, "bernoulli"),
@@ -673,45 +626,37 @@ def test_ef_kron_exemption_is_bernoulli_only(class_Xy, model):
         CurvlinopsEF(model, weighted).kron(X, y, len(X))
 
 
-@pytest.mark.parametrize("batch_shape", _BCE_BATCH_SHAPES)
+@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
 def test_bernoulli_stochastic_full_takes_soft_labels(batch_shape):
-    X, y_soft = _bce_data(batch_shape, soft=True)
-    _, y_hard = _bce_data(batch_shape, soft=False)
+    X, y_soft = bce_data(batch_shape, soft=True)
+    y_hard = (y_soft >= 0.5).to(y_soft.dtype)
 
-    backend = CurvlinopsGGN(_bce_model(), "bernoulli", stochastic=True)
+    backend = CurvlinopsGGN(bce_model(), "bernoulli", stochastic=True)
+    assert backend._honours("full", y_soft)
 
-    # Curvlinops' dense MC Fisher takes hard labels only, so soft ones are not
-    # honoured and go to the generic Monte Carlo Fisher, which ignores the targets
-    assert backend._honours("full", y_hard)
-    assert not backend._honours("full", y_soft)
-    assert backend._honours("full")
-
-    reference = GGNInterface(_bce_model(), "bernoulli", stochastic=True)
-
+    # Curvlinops' MC Fisher takes hard labels only, but it ignores the targets, so
+    # the soft ones are rounded for it. The loss comes from the real targets.
     torch.manual_seed(0)
     loss, H = backend.full(X, y_soft)
     torch.manual_seed(0)
-    loss_ref, H_ref = reference.full(X, y_soft)
+    loss_hard, H_hard = backend.full(X, y_hard)
 
-    assert torch.allclose(loss, loss_ref)
-    assert torch.allclose(H, H_ref)
+    bce = nn.BCEWithLogitsLoss(reduction="sum").double()
+    assert torch.allclose(loss, bce(bce_model()(X), y_soft))
+    assert not torch.allclose(loss, loss_hard)
+    assert torch.allclose(H, H_hard)
 
-    # With more samples, both approach the exact GGN
-    _, H_exact = CurvlinopsGGN(_bce_model(), "bernoulli").full(X, y_hard)
+    # With more samples, it approaches the exact GGN
+    _, H_exact = CurvlinopsGGN(bce_model(), "bernoulli").full(X, y_hard)
     torch.manual_seed(0)
-    _, H_hard = backend.full(X, y_hard, mc_samples=400)
+    _, H_mc = backend.full(X, y_soft, mc_samples=400)
 
-    backend.num_samples = 400
-    torch.manual_seed(0)
-    _, H_soft = backend.full(X, y_soft)
-
-    for H_mc in (H_hard, H_soft):
-        assert torch.norm(H_mc - H_exact) / torch.norm(H_exact) < 0.2
+    assert torch.norm(H_mc - H_exact) / torch.norm(H_exact) < 0.2
 
 
 def test_bernoulli_stochastic_options_raise():
-    X, y = _bce_data((8,), soft=False)
-    model = _bce_model()
+    X, y = bce_data((8,), soft=False)
+    model = bce_model()
     weighted = BernoulliLikelihood(pos_weight=torch.tensor([3.0, 0.5, 2.0]))
     backend = CurvlinopsGGN(model, weighted, stochastic=True)
 
@@ -724,8 +669,8 @@ def test_bernoulli_stochastic_options_raise():
 
 
 def test_bernoulli_diag_and_jacobians():
-    X, y = _bce_data((8,), soft=True)
-    backend = CurvlinopsGGN(_bce_model(), "bernoulli")
+    X, y = bce_data((8,), soft=True)
+    backend = CurvlinopsGGN(bce_model(), "bernoulli")
 
     Js, f = backend.jacobians(X)
     _, diag = backend.diag(X, y)

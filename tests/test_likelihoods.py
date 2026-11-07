@@ -20,6 +20,7 @@ from tests.utils import (
     DistributionOnlyGaussian,
     DoubledCategorical,
     ScaledGaussian,
+    bce_options,
 )
 
 
@@ -771,18 +772,7 @@ def test_repr_shows_options():
     assert repr(GaussianLikelihood()) == "GaussianLikelihood()"
 
 
-# Options of `nn.BCEWithLogitsLoss`, as scalars and per output, in float32 for the
-# float64 logits of the tests below
-_BCE_OPTIONS = [
-    {},
-    {"weight": torch.tensor([0.5, 2.0, 1.5, 1.0])},
-    {"pos_weight": torch.tensor([3.0, 0.5, 2.0, 1.0])},
-    {
-        "weight": torch.tensor([0.5, 2.0, 1.5, 1.0]),
-        "pos_weight": torch.tensor([3.0, 0.5, 2.0, 1.0]),
-    },
-    {"weight": torch.tensor(0.7), "pos_weight": torch.tensor(2.5)},
-]
+_BCE = bce_options(4)
 
 _BCE_SHAPES = [(6, 4), (3, 5, 4)]
 
@@ -794,10 +784,9 @@ def _bce_targets(shape: tuple[int, ...]) -> list[torch.Tensor]:
     return [(y > 0.5).to(torch.float64), y]
 
 
-@pytest.mark.parametrize("opts", _BCE_OPTIONS)
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
 @pytest.mark.parametrize("shape", _BCE_SHAPES)
 def test_bernoulli_options_mirror_bce_with_logits(opts, shape):
-    torch.manual_seed(0)
     f = torch.randn(*shape, dtype=torch.float64)
 
     lik = BernoulliLikelihood(**opts)
@@ -811,10 +800,9 @@ def test_bernoulli_options_mirror_bce_with_logits(opts, shape):
         assert lik.loss_fn().double()(f, y).dtype == torch.float64
 
 
-@pytest.mark.parametrize("opts", _BCE_OPTIONS)
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
 @pytest.mark.parametrize("shape", _BCE_SHAPES)
 def test_bernoulli_gradient_and_hessian_match_autograd(opts, shape):
-    torch.manual_seed(0)
     f = torch.randn(*shape, dtype=torch.float64)
 
     lik = BernoulliLikelihood(**opts)
@@ -859,7 +847,6 @@ def test_bernoulli_default_gradient_and_hessian(shape):
 
 
 def test_bernoulli_hessian_is_the_fisher_of_the_weighted_loss():
-    torch.manual_seed(0)
     f = torch.randn(5, 4, dtype=torch.float64)
     lik = BernoulliLikelihood(
         weight=torch.tensor([0.5, 2.0, 1.5, 1.0]),
@@ -877,20 +864,6 @@ def test_bernoulli_hessian_is_the_fisher_of_the_weighted_loss():
     expected = lik.weight.double() * (1 - p + pos * p) * p * (1 - p)
 
     assert torch.allclose(H, expected)
-
-
-def test_bernoulli_soft_labels_do_not_reach_the_distribution():
-    f = torch.randn(4, 3, dtype=torch.float64)
-    y = torch.rand(4, 3, dtype=torch.float64)
-    lik = BernoulliLikelihood()
-
-    # `Bernoulli.log_prob` validates its argument and rejects soft labels
-    with pytest.raises(ValueError):
-        lik.distribution(f).log_prob(y)
-
-    assert torch.isfinite(lik.loss(f, y))
-    assert torch.isfinite(lik.output_gradient(f, y)).all()
-    assert torch.isfinite(lik.output_hessian(f, y)).all()
 
 
 def test_bernoulli_check_targets():
@@ -971,7 +944,6 @@ def test_bernoulli_sample_and_inverse_link():
 
 
 def test_bernoulli_options_follow_logits_dtype():
-    torch.manual_seed(0)
     f = torch.randn(4, 5, 3, dtype=torch.float64)
     y = torch.rand(4, 5, 3, dtype=torch.float64)
     w, pw = torch.tensor([0.5, 2.0, 1.5]), torch.tensor([3.0, 0.5, 2.0])

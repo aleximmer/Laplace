@@ -1,5 +1,5 @@
 from collections import UserDict
-from collections.abc import MutableMapping
+from collections.abc import Callable, MutableMapping
 from importlib.util import find_spec
 from typing import Any, List
 
@@ -10,7 +10,12 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 
 import laplace.curvature
 from laplace.curvature import CurvatureInterface
-from laplace.likelihoods import CategoricalLikelihood, GaussianLikelihood, Likelihood
+from laplace.likelihoods import (
+    BernoulliLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+    Likelihood,
+)
 
 
 def toy_regression_dataset_1d(sigma, n_train=150, n_test=500, batch_size=150):
@@ -50,6 +55,31 @@ def toy_classification_dataset(
     return X_train, y_train, train_loader, X_test
 
 
+def toy_multilabel_dataset(
+    n_train=12,
+    n_test=500,
+    batch_size=5,
+    in_dim=3,
+    out_dim=4,
+    positions=(),
+    soft=False,
+    dtype=None,
+):
+    """Inputs `(n, *positions, in_dim)` and multi-label targets `(n, *positions,
+    out_dim)`, hard or soft. The data loader has `positions` as extra batch dims.
+    The dtype defaults to the default dtype."""
+    torch.manual_seed(711)
+    X_train = torch.randn(n_train, *positions, in_dim, dtype=dtype)
+    y_train = torch.rand(n_train, *positions, out_dim, dtype=dtype)
+
+    if not soft:
+        y_train = (y_train > 0.5).to(y_train.dtype)
+
+    train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=batch_size)
+    X_test = torch.randn(n_test, *positions, in_dim, dtype=dtype)
+    return X_train, y_train, train_loader, X_test
+
+
 def toy_model(
     train_loader: DataLoader,
     n_epochs=500,
@@ -83,6 +113,111 @@ def get_psd_matrix(dim):
 
 def get_diag_psd_matrix(dim):
     return torch.randn(dim) ** 2
+
+
+def bce_options(n_outputs: int = 3) -> dict[str, dict[str, torch.Tensor]]:
+    """Options of `nn.BCEWithLogitsLoss` by name: none, `weight`, `pos_weight`, both,
+    and scalars. They are float32, so the tests with float64 models check that the
+    backends cast them. The tensors have one entry per output."""
+    weight = torch.tensor(
+        [0.5, 2.0, 1.5] + [1.0] * (n_outputs - 3), dtype=torch.float32
+    )
+    pos_weight = torch.tensor(
+        [3.0, 0.5, 2.0] + [1.0] * (n_outputs - 3), dtype=torch.float32
+    )
+
+    return {
+        "default": {},
+        "weight": {"weight": weight},
+        "pos_weight": {"pos_weight": pos_weight},
+        "both": {"weight": weight, "pos_weight": pos_weight},
+        "scalars": {
+            "weight": torch.tensor(0.7, dtype=torch.float32),
+            "pos_weight": torch.tensor(2.5, dtype=torch.float32),
+        },
+    }
+
+
+# Batch shapes of the Bernoulli backend tests: outputs `(B, K)` and `(B, L, K)`
+BCE_BATCH_SHAPES = [(8,), (4, 2)]
+
+
+def bce_model(kron: bool = False) -> nn.Module:
+    """Small float64 model with 3 outputs. For Kronecker factors, a single linear
+    layer, which is linear in its parameters."""
+    torch.manual_seed(711)
+
+    if kron:
+        model = nn.Linear(3, 3)
+    else:
+        model = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 3))
+
+    setattr(model, "output_size", 3)
+
+    return model.double()
+
+
+def bce_data(
+    batch_shape: tuple[int, ...], soft: bool
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Float64 inputs `(*batch_shape, 3)` and hard or soft targets of 3 outputs."""
+    X, y, _, _ = toy_multilabel_dataset(
+        n_train=batch_shape[0],
+        n_test=1,
+        in_dim=3,
+        out_dim=3,
+        positions=batch_shape[1:],
+        soft=soft,
+        dtype=torch.float64,
+    )
+
+    return X, y
+
+
+def check_bernoulli_falls_back_to_torch_func(
+    Backend, Reference, structure, batch_shape, soft, opts
+):
+    """A backend whose library has no Bernoulli loss gives the same loss and curvature
+    as the generic `Reference` interface, which is the torch.func code, and the summed
+    BCE as loss."""
+    X, y = bce_data(batch_shape, soft)
+    likelihood = BernoulliLikelihood(**opts)
+    backend = Backend(bce_model(), likelihood)
+
+    assert not backend._honours(structure, y)
+
+    loss, H = getattr(backend, structure)(X, y)
+    loss_ref, H_ref = getattr(Reference(bce_model(), likelihood), structure)(X, y)
+
+    assert H.dtype == torch.float64
+    assert torch.allclose(loss, loss_ref)
+    assert torch.allclose(H, H_ref)
+
+    bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
+    assert torch.allclose(loss, bce(bce_model()(X), y))
+
+
+def loss_hessian(
+    model: nn.Module,
+    loss_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
+    X: torch.Tensor,
+    y: torch.Tensor,
+) -> torch.Tensor:
+    """Hessian of `loss_fn(model(X), y)` w.r.t. the flattened parameters, via
+    torch.func."""
+    params = {k: v.detach() for k, v in model.named_parameters()}
+    theta = torch.cat([v.flatten() for v in params.values()])
+
+    def loss(theta: torch.Tensor) -> torch.Tensor:
+        split, offset = {}, 0
+
+        for k, v in params.items():
+            split[k] = theta[offset : offset + v.numel()].reshape(v.shape)
+            offset += v.numel()
+
+        return loss_fn(torch.func.functional_call(model, split, (X,)), y)
+
+    return torch.func.hessian(loss)(theta)
 
 
 def grad(model):

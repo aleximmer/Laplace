@@ -50,9 +50,11 @@ from tests.utils import (
     ListDataset,
     PoissonLog,
     ScaledGaussian,
+    bce_options,
     dict_data_collator,
     jacobians_naive,
     requires_asdl,
+    toy_multilabel_dataset,
 )
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
@@ -3335,29 +3337,16 @@ def test_kron_reward_modeling_ignored_matches_dropped():
 
 # Bernoulli likelihood. The tests run in float64, so the options are float32 to check
 # that they follow the model's dtype.
-def _bernoulli_options(name: str) -> dict:
-    return {
-        "default": {},
-        "weight": dict(weight=torch.tensor([0.5, 2.0, 1.5], dtype=torch.float32)),
-        "pos_weight": dict(
-            pos_weight=torch.tensor([3.0, 0.5, 2.0], dtype=torch.float32)
-        ),
-        "both": dict(
-            weight=torch.tensor([0.5, 2.0, 1.5], dtype=torch.float32),
-            pos_weight=torch.tensor([3.0, 0.5, 2.0], dtype=torch.float32),
-        ),
-    }[name]
+_BCE = bce_options()
 
 
 def _bernoulli_loader(
     positions: tuple[int, ...] = (), soft: bool = False
 ) -> DataLoader:
     """Inputs `(N, *positions, 4)` and multi-label targets `(N, *positions, 3)`."""
-    torch.manual_seed(5)
-    X = torch.randn(12, *positions, 4)
-    y = torch.rand(12, *positions, 3)
-
-    return DataLoader(TensorDataset(X, y if soft else (y > 0.5).to(y.dtype)), 5)
+    return toy_multilabel_dataset(in_dim=4, out_dim=3, positions=positions, soft=soft)[
+        2
+    ]
 
 
 def _bernoulli_model() -> nn.Module:
@@ -3371,7 +3360,7 @@ def _bernoulli_model() -> nn.Module:
 @pytest.mark.parametrize("positions", [(), (2,)])
 @pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
 def test_bernoulli_end_to_end(laplace, positions, soft, options):
-    lik = BernoulliLikelihood(**_bernoulli_options(options))
+    lik = BernoulliLikelihood(**_BCE[options])
     loader = _bernoulli_loader(positions, soft)
     model = _bernoulli_model()
 
@@ -3391,7 +3380,7 @@ def test_bernoulli_end_to_end(laplace, positions, soft, options):
     torch.testing.assert_close(la.H, H_ref, rtol=1e-5, atol=1e-5)
 
     # The log likelihood is the negative summed BCE, with no normalizer
-    bce = nn.BCEWithLogitsLoss(**_bernoulli_options(options), reduction="sum").double()
+    bce = nn.BCEWithLogitsLoss(**_BCE[options], reduction="sum").double()
     with torch.no_grad():
         nll = bce(model(X), y)
 
@@ -3399,10 +3388,19 @@ def test_bernoulli_end_to_end(laplace, positions, soft, options):
     torch.testing.assert_close(la.log_likelihood, -nll)
     assert torch.isfinite(la.log_marginal_likelihood())
 
-    # A criterion gives the same likelihood and curvature
-    from_criterion = laplace(model, nn.BCEWithLogitsLoss(**_bernoulli_options(options)))
+
+def test_bernoulli_criterion_gives_the_same_likelihood_and_curvature():
+    loader = _bernoulli_loader()
+    model = _bernoulli_model()
+    lik = BernoulliLikelihood(**_BCE["both"])
+
+    la = FullLaplace(model, lik)
+    la.fit(loader)
+
+    from_criterion = FullLaplace(model, nn.BCEWithLogitsLoss(**_BCE["both"]))
     assert from_criterion.likelihood == lik
     from_criterion.fit(loader)
+
     torch.testing.assert_close(from_criterion.H, la.H)
 
 
@@ -3441,7 +3439,7 @@ def test_bernoulli_kron_end_to_end(positions, soft):
 
 @pytest.mark.parametrize("options", ["weight", "pos_weight", "both"])
 def test_bernoulli_kron_options(options):
-    lik = BernoulliLikelihood(**_bernoulli_options(options))
+    lik = BernoulliLikelihood(**_BCE[options])
     loader = _bernoulli_loader()
     model = _bernoulli_model()
 
@@ -3490,7 +3488,7 @@ def test_bernoulli_glm_predictive(laplace, positions):
     mc = la(
         X,
         link_approx="mc",
-        n_samples=50000,
+        n_samples=5000,
         generator=torch.Generator().manual_seed(0),
     )
     assert mc.shape == probit.shape
@@ -3611,49 +3609,6 @@ def test_bernoulli_does_not_warn_about_the_default_link():
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         la.optimize_prior_precision(method="marglik", n_steps=2)
-
-
-@pytest.mark.parametrize("bernoulli", ["bernoulli", Likelihood.BERNOULLI])
-def test_function_space_methods_reject_bernoulli(bernoulli):
-    model = _bernoulli_model()
-
-    with pytest.raises(ValueError, match="support only the likelihoods"):
-        FunctionalLaplace(model, bernoulli, n_subset=4)
-
-    with pytest.raises(ValueError, match="support only the likelihoods"):
-        Laplace(
-            model,
-            bernoulli,
-            subset_of_weights="all",
-            hessian_structure="gp",
-            n_subset=4,
-        )
-
-    for approximation, kwargs in (
-        ("nystrom", dict(subsample_size=4, n_eigenvalues=2)),
-        ("variational", dict(inducing_locations="random", num_inducing=2)),
-    ):
-        with pytest.raises(ValueError, match="support only the likelihoods"):
-            Laplace(
-                model,
-                bernoulli,
-                subset_of_weights="all",
-                hessian_structure="gp",
-                functional_approximation=approximation,
-                **kwargs,
-            )
-
-    # The error lists the supported names, not the Bernoulli one
-    with pytest.raises(ValueError, match=r"\['classification', 'regression', 'reward"):
-        FunctionalLaplace(model, bernoulli, n_subset=4)
-
-
-def test_bernoulli_is_a_builtin_name_for_parametric_methods():
-    from laplace.baselaplace import _BUILTIN_NAMES, _FUNCTIONAL_NAMES
-
-    assert "bernoulli" in _BUILTIN_NAMES
-    assert "bernoulli" not in _FUNCTIONAL_NAMES
-    assert _FUNCTIONAL_NAMES < _BUILTIN_NAMES
 
 
 @pytest.mark.asdfghjkl

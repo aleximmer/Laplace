@@ -954,36 +954,22 @@ class BernoulliLikelihood(Likelihood):
         return torch.distributions.Bernoulli(logits=f)
 
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
-        return self._criterion(reduction, self.weight, self.pos_weight)
-
-    def _criterion(
-        self,
-        reduction: str,
-        weight: torch.Tensor | None,
-        pos_weight: torch.Tensor | None,
-    ) -> nn.BCEWithLogitsLoss:
-        """`nn.BCEWithLogitsLoss` with the given `weight` and `pos_weight`."""
         return nn.BCEWithLogitsLoss(
-            weight=weight, pos_weight=pos_weight, reduction=reduction
+            weight=self.weight, pos_weight=self.pos_weight, reduction=reduction
         )
 
-    def _weight_like(self, f: torch.Tensor) -> torch.Tensor | None:
-        """The weight with the dtype and device of the logits `f`."""
-        if self.weight is None:
-            return None
+    def _options_like(
+        self, f: torch.Tensor
+    ) -> tuple[torch.Tensor | float, torch.Tensor | float]:
+        """The weight \\(w\\) and the positive weight \\(p_w\\) with the dtype and
+        device of the logits `f`, or the float \\(1\\) for an option that is unset.
+        """
+        w, pw = self.weight, self.pos_weight
 
-        return self.weight.to(dtype=f.dtype, device=f.device)
-
-    def _pos_weight_like(self, f: torch.Tensor) -> torch.Tensor | None:
-        """The positive weight with the dtype and device of the logits `f`."""
-        if self.pos_weight is None:
-            return None
-
-        return self.pos_weight.to(dtype=f.dtype, device=f.device)
-
-    @property
-    def loss_factor(self) -> float:
-        return 1.0
+        return (
+            1.0 if w is None else w.to(dtype=f.dtype, device=f.device),
+            1.0 if pw is None else pw.to(dtype=f.dtype, device=f.device),
+        )
 
     def check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
         # Like torch, which doesn't broadcast the targets to the logits and rejects
@@ -1002,45 +988,8 @@ class BernoulliLikelihood(Likelihood):
 
     def loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         self.check_targets(f, y)
-        criterion = self._criterion(
-            "sum", self._weight_like(f), self._pos_weight_like(f)
-        )
 
-        return criterion(f, y.to(f.dtype))
-
-    def _positive_factor(
-        self, f: torch.Tensor, y: torch.Tensor
-    ) -> tuple[torch.Tensor | float, torch.Tensor]:
-        """The factor \\(a = p_w\\, y + 1 - y\\) and the positive part \\(p_w\\, y\\) of
-        the targets `y`, both without the weight \\(w\\).
-
-        Parameters
-        ----------
-        f : torch.Tensor
-            logits `(batch, ..., outputs)`
-        y : torch.Tensor
-            targets with the shape of `f`
-
-        Returns
-        -------
-        a : torch.Tensor or float
-            `(batch, ..., outputs)`, or the float \\(1\\) without `pos_weight`.
-        positive : torch.Tensor
-            `(batch, ..., outputs)`, with the dtype of `f`.
-
-        Raises
-        ------
-        ValueError
-            if the targets do not fit the logits, see `check_targets`.
-        """
-        self.check_targets(f, y)
-        y = y.to(f.dtype)
-        pos_weight = self._pos_weight_like(f)
-
-        if pos_weight is None:
-            return 1.0, y
-
-        return 1 + (pos_weight - 1) * y, pos_weight * y
+        return self.loss_fn().to(f)(f, y.to(f.dtype))
 
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None
@@ -1048,9 +997,10 @@ class BernoulliLikelihood(Likelihood):
         h = torch.sigmoid(f) * torch.sigmoid(-f)
 
         if y is not None:
-            a, _ = self._positive_factor(f, y)
-            weight = self._weight_like(f)
-            h = a * h if weight is None else weight * a * h
+            self.check_targets(f, y)
+            y = y.to(f.dtype)
+            w, pw = self._options_like(f)
+            h = w * (pw * y + 1 - y) * h
 
         return torch.diag_embed(h)
 
@@ -1063,11 +1013,11 @@ class BernoulliLikelihood(Likelihood):
         return torch.bernoulli(self.inverse_link(f), generator=generator)
 
     def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        a, positive = self._positive_factor(f, y)
-        g = a * self.inverse_link(f) - positive
-        weight = self._weight_like(f)
+        self.check_targets(f, y)
+        y = y.to(f.dtype)
+        w, pw = self._options_like(f)
 
-        return g if weight is None else weight * g
+        return w * ((pw * y + 1 - y) * self.inverse_link(f) - pw * y)
 
 
 class BradleyTerryLikelihood(Likelihood):

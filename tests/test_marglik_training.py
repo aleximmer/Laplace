@@ -12,6 +12,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
+from tests.utils import toy_multilabel_dataset
 
 
 @pytest.fixture
@@ -146,19 +147,11 @@ def test_marglik_training_unweighted_categorical_loss_is_the_mean(model):
     assert math.isclose(loss, expected, rel_tol=1e-5)
 
 
-def _multilabel_loader(dtype: torch.dtype = torch.float32) -> DataLoader:
-    torch.manual_seed(5)
-    X = torch.randn(32, 3, dtype=dtype)
-    y = (torch.rand(32, 2, dtype=dtype) > 0.5).to(dtype)
-
-    return DataLoader(TensorDataset(X, y), batch_size=8)
+def _multilabel_loader(dtype: torch.dtype | None = None) -> DataLoader:
+    return toy_multilabel_dataset(n_train=32, batch_size=8, out_dim=2, dtype=dtype)[2]
 
 
-@pytest.mark.parametrize("hessian_structure", ["diag", "full", "kron"])
-@pytest.mark.parametrize(
-    "likelihood", ["bernoulli", BernoulliLikelihood(), torch.nn.BCEWithLogitsLoss()]
-)
-def test_marglik_training_bernoulli(model, likelihood, hessian_structure):
+def _check_bernoulli_marglik_training(model, likelihood, hessian_structure):
     la, model, margliks, losses = marglik_training(
         model,
         _multilabel_loader(),
@@ -176,6 +169,15 @@ def test_marglik_training_bernoulli(model, likelihood, hessian_structure):
     assert la.sigma_noise == 1
     probs = la(torch.randn(4, 3))
     assert ((probs > 0) & (probs < 1)).all()
+
+
+@pytest.mark.parametrize("hessian_structure", ["diag", "full", "kron"])
+def test_marglik_training_bernoulli(model, hessian_structure):
+    _check_bernoulli_marglik_training(model, "bernoulli", hessian_structure)
+
+
+def test_marglik_training_bernoulli_from_criterion(model):
+    _check_bernoulli_marglik_training(model, torch.nn.BCEWithLogitsLoss(), "kron")
 
 
 @pytest.mark.parametrize("hessian_structure", ["diag", "full"])

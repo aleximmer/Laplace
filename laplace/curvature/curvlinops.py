@@ -23,11 +23,7 @@ from laplace.curvature.curvature import (
     _observed_input_factors,
     _observed_mask,
 )
-from laplace.likelihoods import (
-    BernoulliLikelihood,
-    CategoricalLikelihood,
-    GaussianLikelihood,
-)
+from laplace.likelihoods import BernoulliLikelihood
 from laplace.utils import Kron, Likelihood
 
 _FullLinearOperator: TypeAlias = (
@@ -88,16 +84,11 @@ class _KeepObserved(nn.Module):
         return self.model(x)[self.mask]
 
 
-def _is_binary(y: torch.Tensor) -> bool:
-    """Whether all entries of the targets `y` are 0 or 1, i.e. not soft labels."""
-    return bool(((y == 0) | (y == 1)).all())
-
-
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
     # Curvlinops knows the loss of a Bernoulli likelihood, `nn.BCEWithLogitsLoss`
-    _library_types = (GaussianLikelihood, CategoricalLikelihood, BernoulliLikelihood)
+    _library_types = (*CurvatureInterface._library_types, BernoulliLikelihood)
 
     # The dense operators differentiate `lossfunc` at the observed targets. KFAC drops
     # the ignored positions from both Kronecker factors and has no class weights.
@@ -194,29 +185,17 @@ class CurvlinopsInterface(CurvatureInterface):
                 raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
-    def _kron_targets(self, y: torch.Tensor) -> torch.Tensor:
-        """The targets that are passed to KFAC.
-
-        The Type-2 and MC Fishers don't depend on the targets, but Curvlinops rejects
-        the soft labels of a Bernoulli likelihood. So they get the labels rounded to
-        0 or 1, while the loss is computed from the real targets. The empirical
-        Fisher needs the real targets.
-
-        Parameters
-        ----------
-        y : torch.Tensor
-            targets of the batch.
-
-        Returns
-        -------
-        y : torch.Tensor
-            `y`, or its rounded labels for a Bernoulli likelihood and a target-free
-            Fisher.
+    def _fisher_targets(self, y: torch.Tensor, method: str) -> torch.Tensor:
+        """Round Bernoulli soft labels to 0 or 1 for a target-free Fisher, which
+        Curvlinops would reject otherwise. The loss uses the real targets.
         """
-        if (
-            isinstance(self.likelihood, BernoulliLikelihood)
-            and self._kron_fisher_type != FisherType.EMPIRICAL
-        ):
+        target_free = (
+            self._kron_fisher_type != FisherType.EMPIRICAL
+            if method == "kron"
+            else self._linop_context is FisherMCLinearOperator
+        )
+
+        if target_free and isinstance(self.likelihood, BernoulliLikelihood):
             return (y >= 0.5).to(y.dtype)
 
         return y
@@ -242,7 +221,7 @@ class CurvlinopsInterface(CurvatureInterface):
 
         if mask is None:
             model = self._linop_model
-            data = [(x, self._kron_targets(y))]
+            data = [(x, self._fisher_targets(y, "kron"))]
             kron_kwargs = {}
             M = f.shape[:-1].numel()
 
@@ -331,7 +310,7 @@ class CurvlinopsInterface(CurvatureInterface):
             self._linop_model,
             self.lossfunc,
             self.params,
-            [(x, y)],
+            [(x, self._fisher_targets(y, "full"))],
             check_deterministic=False,
             **curvlinops_kwargs,
         )
@@ -361,21 +340,6 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
         self.stochastic = stochastic
-
-    def _honours(self, method: str, y: torch.Tensor | None = None) -> bool:
-        # Curvlinops' dense MC Fisher rejects the soft labels of a Bernoulli
-        # likelihood, even though it ignores the targets. The generic MC Fisher of
-        # `GGNInterface` ignores them as well and takes soft labels.
-        if (
-            self.stochastic
-            and method == "full"
-            and isinstance(self.likelihood, BernoulliLikelihood)
-            and y is not None
-            and not _is_binary(y)
-        ):
-            return False
-
-        return super()._honours(method, y)
 
     def _honoured_options(self, method: str) -> frozenset[str]:
         if not self.stochastic:

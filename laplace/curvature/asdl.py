@@ -67,17 +67,6 @@ class AsdlInterface(CurvatureInterface):
 
     @property
     def loss_type(self) -> str:
-        """ASDL loss type of the likelihood, for those of `_library_types`.
-
-        Raises
-        ------
-        ValueError
-            if ASDL has no loss for the likelihood, e.g. the Bernoulli one. The
-            curvature methods check this with `_honours` before they get here.
-        """
-        if type(self.likelihood) not in self._library_types:
-            raise self._unsupported_error("loss_type")
-
         return (
             LOSS_MSE
             if self.likelihood.name == Likelihood.REGRESSION.name
@@ -166,21 +155,20 @@ class AsdlInterface(CurvatureInterface):
             gradients `(n_observations, parameters)`
         """
 
+        f = None
+
         def closure():
+            nonlocal f
             self.model.zero_grad()
-            loss = self._loss(self.model(x), y)
+            f = self.model(x)
+            loss = self._loss(f, y)
             loss.backward()
             return loss
 
         Gs, loss = self._batch_gradient(closure)
 
-        # The last dim of regression and Bernoulli targets is the output dim
-        n_obs = (
-            y.shape[:-1]
-            if self.likelihood.name
-            in (Likelihood.REGRESSION.name, Likelihood.BERNOULLI.name)
-            else y.shape
-        ).numel()
+        # The last dim of the outputs is the output dim
+        n_obs = f.shape[:-1].numel()
         Gs = self._sum_rows_per_observation(Gs, n_obs)
 
         if self.subnetwork_indices is not None:

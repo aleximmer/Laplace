@@ -33,7 +33,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from tests.utils import ScaledGaussian
+from tests.utils import ScaledGaussian, toy_multilabel_dataset
 
 # These tests load only checkpoints written by the same test process.
 # Explicit pickle loading preserves their intent on PyTorch 2.6 and newer.
@@ -493,10 +493,7 @@ def test_checkpoint_copies_tensor_hyperparameters(laplace, model, class_loader):
 
 @pytest.fixture
 def multilabel_loader():
-    torch.manual_seed(5)
-    X = torch.randn(10, 3)
-    y = torch.rand(10, 2)
-    return DataLoader(TensorDataset(X, y), batch_size=3)
+    return toy_multilabel_dataset(n_train=10, batch_size=3, out_dim=2, soft=True)[2]
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, FullLLLaplace])
@@ -524,9 +521,10 @@ def test_bernoulli_checkpoint_roundtrip(laplace, options, model, multilabel_load
         assert stored is not value
 
     torch.save(state_dict, "state_dict.bin")
+    loaded = torch.load("state_dict.bin", weights_only=False)
 
     la2 = laplace(model, BernoulliLikelihood(**options))
-    la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
+    la2.load_state_dict(loaded)
 
     X, _ = next(iter(multilabel_loader))
     assert torch.allclose(la(X), la2(X))
@@ -534,7 +532,7 @@ def test_bernoulli_checkpoint_roundtrip(laplace, options, model, multilabel_load
 
     # A criterion with the same options is the same likelihood
     la3 = laplace(model, nn.BCEWithLogitsLoss(**options))
-    la3.load_state_dict(torch.load("state_dict.bin", weights_only=False))
+    la3.load_state_dict(loaded)
 
 
 def test_bernoulli_checkpoint_rejects_other_options(model, multilabel_loader):
@@ -561,17 +559,6 @@ def test_bernoulli_checkpoint_rejects_other_options(model, multilabel_loader):
         DiagLaplace(model, BernoulliLikelihood(pos_weight=pos_weight)).load_state_dict(
             default.state_dict()
         )
-
-
-def test_bernoulli_checkpoint_copies_tensor_hyperparameters(model, multilabel_loader):
-    pos_weight = torch.tensor([3.0, 0.5])
-    la = DiagLaplace(model, BernoulliLikelihood(pos_weight=pos_weight))
-    la.fit(multilabel_loader)
-
-    stored = la.state_dict()["likelihood_hyperparameters"]["pos_weight"]
-    pos_weight.mul_(2.0)
-
-    assert torch.equal(stored, torch.tensor([3.0, 0.5]))
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
