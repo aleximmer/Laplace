@@ -1186,3 +1186,15 @@ def test_valla_inducing_selection_needs_enough_observed_rows(strategy):
 
     with pytest.raises(ValueError, match="observed"):
         la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+
+def test_valla_validation_nll_needs_observed_targets():
+    X, y = _ignored_rows()
+
+    la = make_valla(_valla_model(), inducing_locations=X[:3])
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+    ignored = DataLoader(TensorDataset(X, torch.full_like(y, -100)), batch_size=4)
+
+    with pytest.raises(ValueError, match="observed"):
+        la._validation_nll(ignored)

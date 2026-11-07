@@ -4905,6 +4905,11 @@ class ELLA(BaseFunctionalLaplace):
             Scalar NLL averaged over examples, summing over regression output
             coordinates. Regression includes observation noise; classification
             uses the probit approximation.
+
+        Raises
+        ------
+        ValueError
+            If the loader has no observed targets, e.g. if all are ignored.
         """
         total = torch.zeros((), device=self._device, dtype=self._dtype)
         count = 0
@@ -4927,6 +4932,10 @@ class ELLA(BaseFunctionalLaplace):
             else:
                 total += self._classification_validation_nll(x, y)
             count += y.shape[0] - _ignored_positions(self.likelihood.fit_likelihood, y)
+
+        if count == 0:
+            raise ValueError("The validation loader has no observed targets.")
+
         return total / count
 
     def optimize_prior_precision(
@@ -6021,6 +6030,11 @@ class VaLLA(BaseFunctionalLaplace):
             Scalar NLL averaged over examples, summing over regression output
             coordinates. Regression includes observation noise; classification
             uses the probit approximation.
+
+        Raises
+        ------
+        ValueError
+            If the loader has no observed targets, e.g. if all are ignored.
         """
         total = torch.zeros((), device=self._device, dtype=self._dtype)
         count = 0
@@ -6043,6 +6057,10 @@ class VaLLA(BaseFunctionalLaplace):
             else:
                 total += self._classification_validation_nll(x, y)
             count += y.shape[0] - _ignored_positions(self.likelihood.fit_likelihood, y)
+
+        if count == 0:
+            raise ValueError("The validation loader has no observed targets.")
+
         return total / count
 
     @preserve_model_gradients

@@ -1034,3 +1034,18 @@ def test_ella_validation_nll_leaves_out_ignored_rows():
     )
 
     torch.testing.assert_close(padded, dropped)
+
+
+def test_ella_validation_nll_needs_observed_targets():
+    X, y = torch.randn(6, 3), torch.randint(2, (6,))
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    la = make_ella(model, subsample_size=4, n_eigenvalues=2)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
+
+    ignored = DataLoader(TensorDataset(X, torch.full_like(y, -100)), batch_size=2)
+
+    with pytest.raises(ValueError, match="observed"):
+        la._validation_nll(ignored)
