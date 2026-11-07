@@ -887,7 +887,20 @@ class BradleyTerryLikelihood(Likelihood):
         return self._fit.loss(f, y)
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        return int((y != self._fit.ignore_index).sum())
+        """Count the observed pairs, as the categorical likelihood of the fit does.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            rewards of the pairs `(batch, ..., 2)`.
+        y : torch.Tensor
+            class indices `(batch, ...)` or class probabilities `(batch, ..., 2)`.
+
+        Returns
+        -------
+        n_observations : int
+        """
+        return self._fit.n_observations(f, y)
 
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None

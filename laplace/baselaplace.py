@@ -2438,12 +2438,25 @@ class KronLaplace(ParametricLaplace):
             raise ValueError("Prior precision for Kron either scalar or per-layer.")
 
     def state_dict(self) -> dict[str, Any]:
+        """Return the state to save, with the Kronecker factors before decomposing.
+
+        Returns
+        -------
+        state_dict : dict[str, Any]
+        """
         state_dict = super().state_dict()
         assert isinstance(self.H_facs, Kron)
         state_dict["H"] = self.H_facs.kfacs
         return state_dict
 
     def load_state_dict(self, state_dict: dict[str, Any]):
+        """Restore a state from `state_dict` and decompose its Kronecker factors.
+
+        Parameters
+        ----------
+        state_dict : dict[str, Any]
+            state from `KronLaplace.state_dict`.
+        """
         super().load_state_dict(state_dict)
 
         self._init_H()
@@ -5057,7 +5070,9 @@ class ELLA(BaseFunctionalLaplace):
         Raises
         ------
         ValueError
-            If the grid is empty or all candidate scores are nonfinite.
+            If the grid is empty, all candidate scores are nonfinite, or the
+            validation data has no observed targets. The prior and noise stay as
+            they were.
         """
         self._check_fitted()
         initial_prior = self.prior_precision.detach().clone()
@@ -5071,7 +5086,13 @@ class ELLA(BaseFunctionalLaplace):
                 self.prior_precision, self.sigma_noise = candidate
             else:
                 self.prior_precision = candidate
-            score = float(self._validation_nll(val_loader))
+            try:
+                score = float(self._validation_nll(val_loader))
+            except ValueError:
+                self.prior_precision, self.sigma_noise = initial_prior, initial_noise
+                self._refresh_posterior()
+                raise
+
             self.fit_history_["tuning"].append(
                 {
                     "prior_precision": float(self.prior_precision),
