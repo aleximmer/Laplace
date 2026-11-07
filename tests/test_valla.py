@@ -1198,3 +1198,22 @@ def test_valla_validation_nll_needs_observed_targets():
 
     with pytest.raises(ValueError, match="observed"):
         la._validation_nll(ignored)
+
+
+@pytest.mark.parametrize("split", ["train", "val"])
+@pytest.mark.parametrize("soft", [False, True])
+def test_classification_probability_targets_raise(data, split, soft):
+    x, _, model = data
+    flat = torch.tensor([0, 1, 1, 0])
+    probabilities = torch.nn.functional.one_hot(flat, num_classes=2).to(x.dtype)
+    if soft:
+        probabilities = 0.8 * probabilities + 0.1
+
+    hard_loader = DataLoader(TensorDataset(x, flat), batch_size=2)
+    prob_loader = DataLoader(TensorDataset(x, probabilities), batch_size=2)
+    train_loader = prob_loader if split == "train" else hard_loader
+    val_loader = prob_loader if split == "val" else hard_loader
+    estimator = make_valla(deepcopy(model), inducing_locations=x[:2].clone())
+
+    with pytest.raises(ValueError, match="class probabilities"):
+        estimator.fit(train_loader, iterations=1, val_loader=val_loader)

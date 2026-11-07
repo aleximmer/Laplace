@@ -158,7 +158,7 @@ Some caveats:
   `CurvlinopsEF` takes them with `kron`.
 - Function-space methods (`hessian_structure="gp"`) don't support sequence outputs, and `ELLA` and `VaLLA` only accept the default `ignore_index=-100`.
   They leave out ignored rows, while `FunctionalLaplace` raises a `ValueError` if its sampled subset has any.
-- `ELLA` and `VaLLA` reduce class probabilities to hard labels with an `argmax`, so they don't treat soft labels properly yet.
+- `ELLA` and `VaLLA` take hard labels only. Class probabilities raise a `ValueError`.
 - Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
   `log_marginal_likelihood()` is then no longer the model evidence in the strict sense.
 

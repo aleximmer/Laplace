@@ -4312,8 +4312,8 @@ class ELLA(BaseFunctionalLaplace):
     curvature. A numerically rank-deficient subset cannot supply the requested
     number of features.
 
-    For classification, class probabilities as targets are reduced to hard labels
-    with an ``argmax``, so soft labels are not treated properly yet.
+    For classification, the targets must be hard labels. Class probabilities, which
+    are floats of shape ``[B, C]``, raise a ``ValueError``.
 
     Parameters
     ----------
@@ -5290,8 +5290,8 @@ class VaLLA(BaseFunctionalLaplace):
     The network weights remain fixed while ``fit`` optimizes the variational
     factor, inducing locations, prior precision, and regression noise.
 
-    For classification, class probabilities as targets are reduced to hard labels
-    with an ``argmax``, so soft labels are not treated properly yet.
+    For classification, the targets must be hard labels. Class probabilities, which
+    are floats of shape ``[B, C]``, raise a ``ValueError``.
 
     Parameters
     ----------

@@ -1070,3 +1070,21 @@ def test_ella_tuning_restores_prior_if_validation_raises():
 
     torch.testing.assert_close(la.prior_precision, prior)
     torch.testing.assert_close(la._glm_predictive_distribution(X)[1], cov)
+
+
+@pytest.mark.parametrize("split", ["train", "val"])
+@pytest.mark.parametrize("soft", [False, True])
+def test_classification_probability_targets_raise(data, split, soft):
+    x, _, model = data
+    flat = torch.tensor([0, 1, 1, 0])
+    probabilities = torch.nn.functional.one_hot(flat, num_classes=2).to(x.dtype)
+    if soft:
+        probabilities = 0.8 * probabilities + 0.1
+
+    hard_loader = DataLoader(TensorDataset(x, flat), batch_size=2)
+    prob_loader = DataLoader(TensorDataset(x, probabilities), batch_size=2)
+    train_loader = prob_loader if split == "train" else hard_loader
+    val_loader = prob_loader if split == "val" else hard_loader
+
+    with pytest.raises(ValueError, match="class probabilities"):
+        make_ella(deepcopy(model)).fit(train_loader, val_loader=val_loader)
