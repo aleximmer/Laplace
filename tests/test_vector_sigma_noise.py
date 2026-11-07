@@ -416,6 +416,14 @@ def test_noise_of_the_approximation_must_stay_one(model, data):
     assert la.sigma_noise == 1
     la.log_marginal_likelihood(sigma_noise=torch.tensor(1.0))
 
+    # Swapping in a likelihood with a vector checks the scalar noise too
+    scaled = _laplace(model, "regression", "full", sigma_noise=0.5)
+
+    with pytest.raises(ValueError, match="stay 1"):
+        scaled.likelihood = lik
+
+    assert scaled.likelihood.sigma_noise is None
+
     # A vector for an approximation without one is redirected to the likelihood
     plain = _laplace(model, "regression", "full")
 

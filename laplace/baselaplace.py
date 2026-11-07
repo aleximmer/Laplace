@@ -103,6 +103,15 @@ _NOISE_PER_OUTPUT_HINT = (
 )
 
 
+def _check_noise_stays_one(likelihood: Likelihood, sigma_noise: torch.Tensor) -> None:
+    # A noise std per output of the likelihood is already the whole noise
+    if _noise_per_output(likelihood) is not None and sigma_noise != 1:
+        raise ValueError(
+            "The likelihood has a noise std per output, so `sigma_noise` must stay 1, "
+            f"but it is {sigma_noise}."
+        )
+
+
 def _checkpoint_hyperparameters(likelihood: Likelihood) -> dict[str, Any]:
     """The hyperparameters of a likelihood for a checkpoint, with tensors detached
     and copied, so that later changes to the likelihood don't reach the checkpoint.
@@ -297,6 +306,10 @@ class BaseLaplace:
         The cached backend is rebuilt on next use if the fit likelihood changes.
         """
         likelihood = get_likelihood(likelihood)
+
+        # Not yet set while `__init__` assigns the likelihood
+        if hasattr(self, "_sigma_noise"):
+            _check_noise_stays_one(likelihood, self.sigma_noise)
 
         if (
             self._backend is not None
@@ -822,12 +835,7 @@ class BaseLaplace:
                 "Invalid type: sigma noise needs to be torch.Tensor or scalar."
             )
 
-        # The noise per output of the likelihood is already the whole noise
-        if _noise_per_output(self.likelihood) is not None and value != 1:
-            raise ValueError(
-                "The likelihood has a noise std per output, so `sigma_noise` must "
-                f"stay 1, but it is {sigma_noise}."
-            )
+        _check_noise_stays_one(self.likelihood, value)
 
         self._posterior_scale = None
         self._sigma_noise = value
