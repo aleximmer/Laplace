@@ -25,6 +25,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
+from laplace.curvature.curvature import _observed_mask
 from laplace.likelihoods import get_likelihood
 from laplace.utils import Kron, _is_batchnorm
 from laplace.utils.enums import Likelihood
@@ -35,8 +36,11 @@ EPS = 1e-6
 class AsdfghjklInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
 
-    # Unmaintained and unchecked, so it honours no options
-    _honoured: ClassVar[dict[str, frozenset[str]]] = {}
+    # Unmaintained and unchecked, so it honours no options but the ignored positions of
+    # KFAC, which are dropped from the batch since an example has a single position
+    _honoured: ClassVar[dict[str, frozenset[str]]] = {
+        "kron": frozenset({"ignore_index"})
+    }
 
     def jacobians(
         self,
@@ -147,7 +151,7 @@ class AsdfghjklInterface(CurvatureInterface):
             if isinstance(self, (GGNInterface, EFInterface)):
                 return super().diag(x, y, **kwargs)
 
-            raise self._unsupported_error("diag")
+            raise self._unsupported_error("diag", y=y)
 
         with torch.no_grad():
             if self.last_layer:
@@ -173,7 +177,13 @@ class AsdfghjklInterface(CurvatureInterface):
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
 
-        self._warn_kron_ignored(y)
+        mask = _observed_mask(self.likelihood, y)
+
+        if mask is not None and mask.ndim > 1:
+            raise NotImplementedError(
+                "The asdfghjkl backend does not support sequences with ignored "
+                "targets. Use a Curvlinops or ASDL backend instead."
+            )
 
         with torch.no_grad():
             if self.last_layer:
@@ -181,6 +191,11 @@ class AsdfghjklInterface(CurvatureInterface):
             else:
                 f = self.model(x)
             loss = self.lossfunc(f, y)
+
+        # The loss keeps all targets. The Fisher only sees the observed examples.
+        if mask is not None:
+            x, y = x[mask], y[mask]
+
         curv = fisher_for_cross_entropy(
             self._model, self._ggn_type, SHAPE_KRON, inputs=x, targets=y
         )

@@ -859,9 +859,9 @@ class BradleyTerryLikelihood(Likelihood):
     the softmax of the two rewards. The curvature is therefore fitted with a
     `CategoricalLikelihood` over the compared items, so the loss, the target check,
     the output Hessian, the inverse link, samples, and the output gradient are all
-    categorical. Unlike for classification, every entry of the targets is an
-    observation. The predictive is a `GaussianLikelihood` over the reward
-    \\(r(x)\\).
+    categorical, and so is the count of observations: one per probability target or
+    per index target that isn't ignored. The predictive is a `GaussianLikelihood`
+    over the reward \\(r(x)\\).
     """
 
     name: ClassVar[str] = "reward_modeling"
@@ -887,7 +887,20 @@ class BradleyTerryLikelihood(Likelihood):
         return self._fit.loss(f, y)
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        return y.shape.numel()
+        """Count the observed pairs, as the categorical likelihood of the fit does.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            rewards of the pairs `(batch, ..., 2)`.
+        y : torch.Tensor
+            class indices `(batch, ...)` or class probabilities `(batch, ..., 2)`.
+
+        Returns
+        -------
+        n_observations : int
+        """
+        return self._fit.n_observations(f, y)
 
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None

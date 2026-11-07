@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-import warnings
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Callable, ClassVar, MutableMapping
 
 import torch
+from curvlinops.kfac_utils import extract_patches
 from torch import nn
 from torch.utils._pytree import tree_map
 
@@ -23,6 +25,125 @@ _ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
 # Options that leave a target-independent curvature unchanged, e.g. the GGN, since
 # label smoothing does not change the Hessian of the cross-entropy w.r.t. the logits
 _TARGET_FREE_OPTIONS = frozenset({"label_smoothing"})
+
+# Options that KFAC honours: label smoothing as above, and ignored positions, which
+# are dropped from both Kronecker factors, see `_observed_mask`
+_KRON_OPTIONS = _TARGET_FREE_OPTIONS | {"ignore_index"}
+
+
+def _observed_mask(likelihood: Likelihood, y: torch.Tensor) -> torch.Tensor | None:
+    """Mask of the positions of the targets `y` that a categorical likelihood observes.
+
+    Parameters
+    ----------
+    likelihood : Likelihood
+    y : torch.Tensor
+        targets of a batch, e.g. class indices `(B, L)`.
+
+    Returns
+    -------
+    mask : torch.Tensor or None
+        boolean, with the shape of `y`. `None` if nothing is ignored, so that the
+        callers keep the code path for batches without ignored positions.
+    """
+    if _ignored_positions(likelihood, y) == 0:
+        return None
+
+    return y != likelihood.ignore_index
+
+
+@contextmanager
+def _observed_input_factors(
+    model: nn.Module, mask: torch.Tensor, reduce: bool = False
+) -> Iterator[dict[nn.Module, torch.Tensor]]:
+    """Collect the input factors of the `nn.Linear` and `nn.Conv2d` layers of `model`
+    over the observed positions only.
+
+    Forward pre-hooks record the inputs of the layers during the forward passes inside
+    the `with` block. The factor of a layer is the mean
+    \\( \\frac{1}{|S|} \\sum_{i \\in S} x_i x_i^\\top \\) of the outer products of its
+    inputs (or, for a convolution, its patches) over a set \\( S \\) of positions.
+    \\( S \\) is
+
+    - the observed positions, if the layer has as many positions per example as
+      `mask`, e.g. a layer applied to every token of a sequence. The positions are
+      assumed to be in the same order as those of the logits, which can't be checked
+      here;
+    - otherwise all positions of the examples that have at least one observation,
+      e.g. a convolution before pooling, whose positions don't line up with the
+      logits.
+
+    With `reduce`, as in KFAC-reduce, the inputs are first averaged over the positions
+    of \\( S \\) in each example, and the mean runs over the examples.
+
+    The factors are complete once the `with` block exits.
+
+    Parameters
+    ----------
+    model : nn.Module
+        the module whose layers are hooked.
+    mask : torch.Tensor
+        boolean mask of the observed positions `(B, ...)`, from `_observed_mask`.
+    reduce : bool, default=False
+        whether to compute the input factors of KFAC-reduce instead of KFAC-expand.
+
+    Yields
+    ------
+    factors : dict[nn.Module, torch.Tensor]
+        input factor of every layer that ran. A layer without a position in \\( S \\)
+        has a zero factor.
+    """
+    n_examples = mask.shape[0]
+    mask = mask.reshape(n_examples, -1)
+    has_observation = mask.any(dim=1)
+
+    sums: dict[nn.Module, torch.Tensor] = {}
+    counts: dict[nn.Module, int] = {}
+
+    def hook(module: nn.Module, inputs: tuple[torch.Tensor, ...]) -> None:
+        x = inputs[0].detach()
+
+        if isinstance(module, nn.Conv2d):
+            x = extract_patches(
+                x,
+                module.kernel_size,
+                module.stride,
+                module.padding,
+                module.dilation,
+                module.groups,
+            )
+
+        x = x.reshape(n_examples, -1, x.shape[-1])
+
+        if x.shape[1] == mask.shape[1]:
+            keep = mask
+        else:
+            keep = has_observation[:, None].expand(-1, x.shape[1])
+
+        if reduce:
+            totals = (x * keep[..., None]).sum(dim=1)[has_observation]
+            x = totals / keep[has_observation].sum(dim=1, keepdim=True)
+        else:
+            x = x[keep]
+
+        sums[module] = sums.get(module, 0) + x.T @ x
+        counts[module] = counts.get(module, 0) + x.shape[0]
+
+    handles = [
+        m.register_forward_pre_hook(hook)
+        for m in model.modules()
+        if isinstance(m, (nn.Linear, nn.Conv2d))
+    ]
+    factors: dict[nn.Module, torch.Tensor] = {}
+
+    try:
+        yield factors
+    finally:
+        for handle in handles:
+            handle.remove()
+
+        for module, total in sums.items():
+            factors[module] = total / max(counts[module], 1)
 
 
 def _ignored_positions(likelihood: Likelihood, y: torch.Tensor) -> int:
@@ -241,27 +362,12 @@ class CurvatureInterface:
 
         return options <= self._honoured_options(method)
 
-    def _warn_kron_ignored(self, y: torch.Tensor) -> None:
-        """Warn that KFAC counts the positions that the likelihood ignores in `y`.
-
-        The Kronecker factors keep their behaviour from before ignored positions were
-        dropped from the number of observations: they sum over all positions, and
-        `KronLaplace` normalizes them by that count.
-
-        Parameters
-        ----------
-        y : torch.Tensor
-            targets of the batch.
-        """
-        if _ignored_positions(self.likelihood, y) == 0:
-            return
-
-        warnings.warn(
-            f"{type(self).__name__}.kron can't drop the ignored positions, e.g. "
-            f"padding, from the input factors of KFAC, so they count like the "
-            f"others. Use the `diag` or `full` structure to mask them exactly.",
-            UserWarning,
-            stacklevel=3,
+    @property
+    def _has_custom_ignore_index(self) -> bool:
+        """Whether the likelihood ignores another class than the default `-100`."""
+        return (
+            isinstance(self.likelihood, CategoricalLikelihood)
+            and self.likelihood.ignore_index != -100
         )
 
     def _unsupported_error(
@@ -269,6 +375,7 @@ class CurvatureInterface:
         method: str,
         honoured: frozenset[str] | None = None,
         stochastic: bool = False,
+        y: torch.Tensor | None = None,
     ) -> ValueError:
         """Error for a curvature method that cannot handle the likelihood.
 
@@ -281,6 +388,9 @@ class CurvatureInterface:
             default.
         stochastic : bool, default=False
             whether the method computes a Monte Carlo Fisher.
+        y : torch.Tensor, optional
+            targets of the batch. If they hold ignored positions, `ignore_index`
+            counts as an option, as in `_honours`.
 
         Returns
         -------
@@ -292,7 +402,12 @@ class CurvatureInterface:
             if honoured is None:
                 honoured = self._honoured_options(method)
 
-            options = sorted(set(likelihood.hyperparameters()) - honoured)
+            options = set(likelihood.hyperparameters())
+
+            if y is not None and _ignored_positions(likelihood, y) > 0:
+                options.add("ignore_index")
+
+            options = sorted(options - honoured)
             noun = "options" if len(options) > 1 else "option"
             what = f"the {noun} {', '.join(options)} of {likelihood!r}"
         else:

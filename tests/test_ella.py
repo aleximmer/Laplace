@@ -990,3 +990,83 @@ def test_ella_rejects_likelihood_options_on_assignment(data):
 
     # The likelihood stays as it was
     assert estimator.likelihood == CategoricalLikelihood()
+
+
+def test_ella_ignored_rows_gram(data):
+    x, _, model = data
+    y = torch.tensor([0, -100, 1, -100])
+    loader = DataLoader(TensorDataset(x, y), batch_size=2)
+
+    estimator = make_ella(model)
+    estimator.fit(loader)
+
+    # Ignored rows add nothing to the Gram matrix of the features
+    features, output = estimator._features(x)
+    hessian = estimator.likelihood.fit_likelihood.output_hessian(output)
+    observed = y != -100
+    expected = torch.einsum(
+        "bck,bcd,bdl->kl", features[observed], hessian[observed], features[observed]
+    )
+
+    torch.testing.assert_close(estimator.feature_gram, expected)
+
+    # ... and the nonzero Gram matrix of the other rows is not what an ignored row
+    # would have added
+    assert expected.abs().sum() > 0
+    all_rows = torch.einsum("bck,bcd,bdl->kl", features, hessian, features)
+    assert not torch.allclose(estimator.feature_gram, all_rows)
+
+
+def test_ella_validation_nll_leaves_out_ignored_rows():
+    X, y = torch.randn(12, 3), torch.randint(2, (12,))
+    y[::3] = -100
+    observed = y != -100
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    la = make_ella(model, subsample_size=6, n_eigenvalues=3)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    padded = la._validation_nll(DataLoader(TensorDataset(X, y), batch_size=4))
+    dropped = la._validation_nll(
+        DataLoader(TensorDataset(X[observed], y[observed]), batch_size=4)
+    )
+
+    torch.testing.assert_close(padded, dropped)
+
+
+def test_ella_validation_nll_needs_observed_targets():
+    X, y = torch.randn(6, 3), torch.randint(2, (6,))
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    la = make_ella(model, subsample_size=4, n_eigenvalues=2)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
+
+    ignored = DataLoader(TensorDataset(X, torch.full_like(y, -100)), batch_size=2)
+
+    with pytest.raises(ValueError, match="observed"):
+        la._validation_nll(ignored)
+
+
+def test_ella_tuning_restores_prior_if_validation_raises():
+    X, y = torch.randn(6, 3), torch.randint(2, (6,))
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    la = make_ella(model, subsample_size=4, n_eigenvalues=2)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
+
+    prior = la.prior_precision.detach().clone()
+    _, cov = la._glm_predictive_distribution(X)
+
+    ignored = DataLoader(TensorDataset(X, torch.full_like(y, -100)), batch_size=2)
+
+    with pytest.raises(ValueError, match="observed"):
+        la.optimize_hyperparameters(ignored, [5.0])
+
+    torch.testing.assert_close(la.prior_precision, prior)
+    torch.testing.assert_close(la._glm_predictive_distribution(X)[1], cov)

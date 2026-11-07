@@ -31,7 +31,9 @@ from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvature import (
     _ALL_OPTIONS,
     _BUILTIN_TYPES,
+    _KRON_OPTIONS,
     _TARGET_FREE_OPTIONS,
+    _observed_mask,
 )
 from laplace.utils import Kron, Likelihood
 
@@ -255,8 +257,9 @@ class BackPackGGN(BackPackInterface, GGNInterface):
     """Implementation of the `GGNInterface` using Backpack."""
 
     # BackPACK raises for class weights and ignored positions. Its GGN does not
-    # depend on the targets, so it ignores label smoothing correctly.
-    _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
+    # depend on the targets, so it ignores label smoothing correctly. KFAC drops the
+    # ignored positions from the batch, since an example has a single position.
+    _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _KRON_OPTIONS}
 
     def __init__(
         self,
@@ -335,9 +338,29 @@ class BackPackGGN(BackPackInterface, GGNInterface):
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
 
-        self._warn_kron_ignored(y)
-
         context = KFAC if self.stochastic else KFLR
+        lossfunc = self.lossfunc
+        mask = _observed_mask(self.likelihood, y)
+        full_loss = None
+
+        if mask is not None:
+            # The loss counts the ignored positions as zero, so keep it from all
+            # targets. The curvature is computed from the observed examples alone.
+            with torch.no_grad():
+                full_loss = self._loss(self.model(x), y)
+
+            x, y = x[mask], y[mask]
+
+        # BackPACK's loss raises for any `ignore_index` but the default one. A plain
+        # loss does the same once the ignored positions are dropped, and it can't
+        # zero a sampled label that equals `ignore_index`.
+        if mask is not None or self._has_custom_ignore_index:
+            lossfunc = extend(
+                nn.CrossEntropyLoss(
+                    reduction="sum", label_smoothing=self.likelihood.label_smoothing
+                )
+            )
+
         f = self.model(x)
         # Assumes that the last dimension of f is of size outputs.
         f = (
@@ -346,11 +369,14 @@ class BackPackGGN(BackPackInterface, GGNInterface):
             else f.view(-1, f.size(-1))
         )
         y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
-        loss = self.lossfunc(f, y)
+        loss = lossfunc(f, y)
         with backpack(context()):
             loss.backward()
         kron = self._get_kron_factors()
         kron = self._rescale_kron_factors(kron, len(y), N)
+
+        if full_loss is not None:
+            loss = full_loss
 
         return self.factor * loss.detach(), self.factor * kron
 

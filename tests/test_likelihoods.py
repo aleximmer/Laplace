@@ -117,6 +117,11 @@ def test_n_observations():
     assert cat.n_observations(torch.randn(2, 3, 5), torch.randint(5, (2, 3))) == 6
     assert cat.n_observations(torch.randn(2, 5), torch.rand(2, 5)) == 2
 
+    # One observation per pair, with index or probability targets
+    bt = BradleyTerryLikelihood()
+    assert bt.n_observations(torch.randn(3, 2), torch.tensor([0, 1, -100])) == 2
+    assert bt.n_observations(torch.randn(3, 2), torch.rand(3, 2)) == 3
+
 
 def test_output_hessian():
     f = torch.randn(4, 3, dtype=torch.float64)

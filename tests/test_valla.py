@@ -1093,3 +1093,108 @@ def test_valla_rejects_likelihood_options_on_assignment(data):
 
     # The likelihood stays as it was
     assert estimator.likelihood == CategoricalLikelihood()
+
+
+@pytest.mark.parametrize("mc_softmax_samples", [0, 4], ids=["probit", "mc"])
+def test_valla_ignored_rows(data, mc_softmax_samples):
+    x, _, model = data
+    estimator = make_valla(
+        model,
+        inducing_locations=x[:2].clone(),
+        mc_softmax_samples=mc_softmax_samples,
+    )
+    y = torch.tensor([0, 1, 1, 0])
+    estimator.fit(DataLoader(TensorDataset(x, y), batch_size=2), iterations=1)
+
+    def objective(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        # The same Monte Carlo draws for every call
+        estimator.generator = torch.Generator().manual_seed(3)
+        return estimator._objective(x, y)
+
+    y_ignored = torch.tensor([-100, 1, -100, 0])
+    y_complement = torch.tensor([0, -100, 1, -100])
+
+    # Nothing observed: only the KL term remains
+    kl = objective(x, torch.full_like(y, -100))
+    assert torch.isfinite(kl)
+
+    # The ignored rows don't count, and whatever their inputs are
+    obj_ignored = objective(x, y_ignored)
+    obj_complement = objective(x, y_complement)
+    x_other = x.clone()
+    x_other[[0, 2]] = torch.randn(2, 2)
+    torch.testing.assert_close(objective(x_other, y_ignored), obj_ignored)
+
+    # The rows are independent, so the terms of the two halves add up to all rows
+    torch.testing.assert_close(
+        obj_ignored + obj_complement - kl, objective(x, y), rtol=1e-5, atol=1e-6
+    )
+
+    if not mc_softmax_samples:
+        # Dropping the ignored rows rescales the minibatch term, with the number of rows
+        torch.testing.assert_close(
+            (objective(x[[1, 3]], y[[1, 3]]) - kl) * 2, (obj_ignored - kl) * 4
+        )
+
+
+def _ignored_rows(n_data: int = 12) -> tuple[torch.Tensor, torch.Tensor]:
+    """Inputs and class targets where a third of the rows are ignored."""
+    X, y = torch.randn(n_data, 3), torch.randint(2, (n_data,))
+    y[::3] = -100
+
+    return X, y
+
+
+def _valla_model() -> torch.nn.Module:
+    return torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+
+def test_valla_validation_nll_leaves_out_ignored_rows():
+    X, y = _ignored_rows()
+    observed = y != -100
+
+    la = make_valla(_valla_model(), inducing_locations=X[:3])
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+    padded = la._validation_nll(DataLoader(TensorDataset(X, y), batch_size=4))
+    dropped = la._validation_nll(
+        DataLoader(TensorDataset(X[observed], y[observed]), batch_size=4)
+    )
+
+    torch.testing.assert_close(padded, dropped)
+
+
+@pytest.mark.parametrize("strategy", ["random", "kmeans"])
+def test_valla_inducing_selection_skips_ignored_rows(strategy):
+    X, y = _ignored_rows()
+
+    # Random selection first draws as many rows as it needs, some of them ignored
+    la = make_valla(_valla_model(), inducing_locations=strategy, num_inducing=8)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+    assert len(la.inducing_classes) == 8
+    assert torch.all(la.inducing_classes >= 0)
+
+
+@pytest.mark.parametrize("strategy", ["random", "kmeans"])
+def test_valla_inducing_selection_needs_enough_observed_rows(strategy):
+    X, y = _ignored_rows()
+
+    la = make_valla(_valla_model(), inducing_locations=strategy, num_inducing=9)
+
+    with pytest.raises(ValueError, match="observed"):
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+
+def test_valla_validation_nll_needs_observed_targets():
+    X, y = _ignored_rows()
+
+    la = make_valla(_valla_model(), inducing_locations=X[:3])
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+    ignored = DataLoader(TensorDataset(X, torch.full_like(y, -100)), batch_size=4)
+
+    with pytest.raises(ValueError, match="observed"):
+        la._validation_nll(ignored)

@@ -32,6 +32,7 @@ from laplace import (
 )
 from laplace.baselaplace import BaseLaplace
 from laplace.curvature import GGNInterface
+from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import (
     BradleyTerryLikelihood,
@@ -2730,7 +2731,7 @@ def _assert_same_curvature(la: BaseLaplace, ref: BaseLaplace) -> None:
         for laplace in [FullLaplace, DiagLaplace]
         for options in ["weight", "ignore_index", "label_smoothing", "all"]
     ]
-    + [(KronLaplace, "label_smoothing")],
+    + [(KronLaplace, "label_smoothing"), (KronLaplace, "ignore_index")],
 )
 def test_categorical_options_end_to_end(laplace, options):
     lik = CategoricalLikelihood(**_categorical_options(options))
@@ -2738,28 +2739,18 @@ def test_categorical_options_end_to_end(laplace, options):
     model = nn.Linear(4, 3)
 
     la = laplace(model, lik)
-
-    if laplace is KronLaplace:
-        # The default `ignore_index=-100` drops the padded positions, which KFAC can't
-        with pytest.warns(UserWarning, match="ignored positions"):
-            la.fit(loader)
-    else:
-        la.fit(loader)
+    la.fit(loader)
 
     _, y = loader.dataset.tensors
     assert la.n_obs == int((y != lik.ignore_index).sum())
 
     if laplace is KronLaplace:
-        # The type-2 KFAC does not see the targets, so label smoothing leaves it as
-        # it is with the default options. Neither do the padded positions change it: the
-        # factors sum over all positions and are normalized by their number, so they
-        # are the same as for data without padding.
+        # The type-2 KFAC does not see the targets, so label smoothing leaves it as it
+        # is with the default options. Ignored positions contribute nothing, as if
+        # they were dropped from the data.
         X, y = loader.dataset.tensors
-        unpadded = DataLoader(
-            TensorDataset(X, y.clamp(min=0)), batch_size=loader.batch_size
-        )
         ref = KronLaplace(model, "classification")
-        ref.fit(unpadded)
+        ref.fit(_dropped_loader(X, y, lik.ignore_index))
         _assert_same_curvature(la, ref)
     else:
         # The torch.func GGN with the same likelihood, summed over the batches as in
@@ -2813,7 +2804,9 @@ def test_kron_rejects_unhonoured(model, reg_loader, class_loader):
         KronLaplace(model, ScaledGaussian()).fit(reg_loader)
 
     with pytest.raises(ValueError, match="diag"):
-        KronLaplace(model, CategoricalLikelihood(ignore_index=1)).fit(class_loader)
+        KronLaplace(model, CategoricalLikelihood(weight=torch.ones(2))).fit(
+            class_loader
+        )
 
 
 def test_gridsearch_requires_loss_for_custom(model, reg_loader):
@@ -2870,69 +2863,365 @@ def test_nn_predictive_for_custom_link():
     assert not torch.allclose(pred, torch.ones_like(pred))
 
 
-def _padded_loaders() -> tuple[DataLoader, DataLoader]:
-    """Class targets for 12 inputs with a third of them padded with the default
-    `ignore_index=-100`, and the same data with valid classes in place of the
-    padding."""
-    X = torch.randn(12, 3)
-    y = torch.randint(2, (12,))
-    y_pad = y.clone()
-    y_pad[::3] = -100
+def _position_model(in_dim: int = 4, n_classes: int = 3) -> nn.Module:
+    """MLP applied position-wise, so padded data equals the data without padding."""
+    return nn.Sequential(nn.Linear(in_dim, 6), nn.Tanh(), nn.Linear(6, n_classes))
 
-    return (
-        DataLoader(TensorDataset(X, y_pad), batch_size=4),
-        DataLoader(TensorDataset(X, y), batch_size=4),
+
+def _ignored_data(
+    positions: tuple[int, ...],
+    ignore_index: int = -100,
+    n_classes: int = 3,
+    n_data: int = 8,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Inputs `(N, *positions, 4)` and class indices `(N, *positions)` where about a
+    third of the positions are set to `ignore_index`, and some are kept."""
+    X = torch.randn(n_data, *positions, 4)
+    y = torch.randint(n_classes, (n_data, *positions))
+
+    ignored = torch.rand(y.shape) < 0.4
+    ignored.view(-1)[0] = True
+    ignored.view(-1)[-1] = False
+    y[ignored] = ignore_index
+
+    return X, y
+
+
+def _dropped_loader(
+    X: torch.Tensor, y: torch.Tensor, ignore_index: int = -100
+) -> DataLoader:
+    """The oracle of ignored positions: one batch of the observed positions only."""
+    observed = y != ignore_index
+
+    return DataLoader(
+        TensorDataset(X[observed], y[observed]), batch_size=int(observed.sum())
     )
 
 
-@pytest.mark.parametrize(
-    "backend", [CurvlinopsGGN, AsdlGGN, BackPackGGN], ids=lambda b: b.__name__
+requires_old_asdfghjkl = pytest.mark.skipif(
+    find_spec("asdfghjkl") is None, reason="The old asdfghjkl is not installed"
 )
-def test_kron_counts_padded_positions(backend, model):
-    padded, unpadded = _padded_loaders()
 
-    la = KronLaplace(deepcopy(model), "classification", backend=backend)
 
-    with pytest.warns(UserWarning, match="ignored positions"):
-        la.fit(padded)
+def _kron_ignored_cases() -> list:
+    """Backend and position shape pairs for the tests of ignored positions in KFAC.
+    `()` are rows `(B, K)` and `(5,)` sequences `(B, L, K)`. BackPACK and the old
+    asdfghjkl only take rows."""
+    cases = [
+        (CurvlinopsGGN, ()),
+        (CurvlinopsGGN, (5,)),
+        (CurvlinopsEF, ()),
+        (CurvlinopsEF, (5,)),
+        (AsdlGGN, ()),
+        (AsdlGGN, (5,)),
+        (AsdlEF, ()),
+        (AsdlEF, (5,)),
+        (BackPackGGN, ()),
+        (AsdfghjklGGN, ()),
+        (AsdfghjklEF, ()),
+    ]
+
+    return [
+        pytest.param(
+            b,
+            shape,
+            id=f"{b.__name__}-{'seq' if shape else 'rows'}",
+            marks=requires_old_asdfghjkl if "Asdfghjkl" in b.__name__ else (),
+        )
+        for b, shape in cases
+    ]
+
+
+def _assert_same_kron(la: KronLaplace, ref: KronLaplace) -> None:
+    """Compare the Kronecker factors of two fits to numerical precision."""
+    torch.testing.assert_close(
+        la.H_facs.to_matrix(), ref.H_facs.to_matrix(), rtol=1e-10, atol=1e-10
+    )
+
+
+@pytest.mark.parametrize("backend, positions", _kron_ignored_cases())
+@pytest.mark.parametrize("batch_size", [None, 2])
+def test_kron_ignored_matches_dropped(backend, positions, batch_size):
+    X, y = _ignored_data(positions)
+    model = _position_model()
+
+    la = KronLaplace(model, "classification", backend=backend)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*ignored positions")
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=batch_size or len(X)))
 
     ref = KronLaplace(deepcopy(model), "classification", backend=backend)
-    ref.fit(unpadded)
+    ref.fit(_dropped_loader(X, y))
 
-    # The type-2 KFAC sums over the padded positions like over the others, and the
-    # factors are normalized by all of them, as before padding was dropped from
-    # the observations. So the padded and the unpadded fits agree, a ratio of 1.
-    _assert_same_curvature(la, ref)
-
-    # Everywhere else, the padding doesn't count
-    assert la.n_obs == 8
-    assert ref.n_obs == 12
+    assert la.n_obs == ref.n_obs == int((y != -100).sum())
+    torch.testing.assert_close(la.loss, ref.loss)
+    _assert_same_kron(la, ref)
 
 
-def test_kron_online_and_checkpoint_keep_position_count(model):
-    padded, unpadded = _padded_loaders()
+class _ChannelsLast(nn.Module):
+    """Move the channels of `(B, C, H, W)` last, as in the logits `(B, H, W, K)`."""
 
-    la = KronLaplace(model, "classification")
-    ref = KronLaplace(model, "classification")
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.movedim(1, -1)
 
-    with pytest.warns(UserWarning, match="ignored positions"):
-        la.fit(padded)
-        la.fit(padded, override=False)
 
-    ref.fit(unpadded)
-    ref.fit(unpadded, override=False)
+def test_kron_ignored_conv_matches_linear():
+    # A 1x1 convolution is a linear layer on every pixel, with void pixels ignored
+    conv = nn.Sequential(
+        nn.Conv2d(4, 6, 1), nn.Tanh(), nn.Conv2d(6, 3, 1), _ChannelsLast()
+    )
+    linear = _position_model()
 
-    _assert_same_curvature(la, ref)
+    with torch.no_grad():
+        for c, lin in zip([conv[0], conv[2]], [linear[0], linear[2]]):
+            lin.weight.copy_(c.weight[:, :, 0, 0])
+            lin.bias.copy_(c.bias)
 
-    # A checkpoint keeps the number of positions for later online updates
-    restored = KronLaplace(model, "classification")
+    X, y = _ignored_data((3, 3))
+
+    la_conv = KronLaplace(conv, "classification", backend=CurvlinopsGGN)
+    la_conv.fit(
+        DataLoader(TensorDataset(X.movedim(-1, 1), y), batch_size=4),
+    )
+
+    la_linear = KronLaplace(linear, "classification", backend=CurvlinopsGGN)
+    la_linear.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    assert la_conv.n_obs == la_linear.n_obs
+    _assert_same_kron(la_conv, la_linear)
+
+    # ... and the dropped pixels give the same factors
+    ref = KronLaplace(deepcopy(linear), "classification", backend=CurvlinopsGGN)
+    ref.fit(_dropped_loader(X, y))
+    _assert_same_kron(la_conv, ref)
+
+
+def test_kron_ignored_downsampling_conv():
+    # The first convolution has 8x8 positions, but the logits only 4x4
+    model = nn.Sequential(
+        nn.Conv2d(3, 4, 3, padding=1),
+        nn.Tanh(),
+        nn.MaxPool2d(2),
+        nn.Conv2d(4, 3, 1),
+        _ChannelsLast(),
+    )
+    X = torch.randn(6, 3, 8, 8)
+    y = torch.randint(3, (6, 4, 4))
+    y[::2, ::2] = -100
+    y[1, 1:3] = -100
+
+    la = KronLaplace(model, "classification", backend=CurvlinopsGGN)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=3))
+    assert la.n_obs == int((y != -100).sum())
+
+    # An example without observations contributes nothing, not even to the factors of
+    # layers with other positions than the logits
+    y_void = torch.cat([y, torch.full((1, 4, 4), -100)])
+    X_void = torch.cat([X, torch.randn(1, 3, 8, 8)])
+
+    la_void = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_void.fit(DataLoader(TensorDataset(X_void, y_void), batch_size=7))
+
+    assert la_void.n_obs == la.n_obs
+    la_all = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_all.fit(DataLoader(TensorDataset(X, y), batch_size=6))
+    _assert_same_kron(la_void, la_all)
+
+
+@pytest.mark.parametrize("backend, positions", _kron_ignored_cases())
+def test_kron_all_ignored_batch(backend, positions):
+    X, y = _ignored_data(positions)
+    y[:2] = -100
+    model = _position_model()
+
+    la = KronLaplace(model, "classification", backend=backend)
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*ignored positions")
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
+
+    ref = KronLaplace(deepcopy(model), "classification", backend=backend)
+    ref.fit(DataLoader(TensorDataset(X[2:], y[2:]), batch_size=2))
+
+    assert la.n_obs == ref.n_obs
+    torch.testing.assert_close(la.loss, ref.loss)
+    _assert_same_kron(la, ref)
+
+    # Nothing is observed at all: no curvature, and no crash
+    empty = KronLaplace(deepcopy(model), "classification", backend=backend)
+    empty.fit(DataLoader(TensorDataset(X, torch.full_like(y, -100)), batch_size=2))
+
+    assert empty.n_obs == 0
+    assert all((F == 0).all() for facs in empty.H_facs.kfacs for F in facs)
+
+
+class _DictModel(nn.Module):
+    """Takes the inputs from a dict, like Huggingface models."""
+
+    def __init__(self, net: nn.Module) -> None:
+        super().__init__()
+        self.net = net
+
+    def forward(self, data: MutableMapping) -> torch.Tensor:
+        return self.net(data["input_ids"])
+
+
+@pytest.mark.parametrize("backend", [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF])
+def test_kron_ignored_dict_inputs(backend):
+    X, y = _ignored_data((5,))
+    net = _position_model()
+    data = [{"input_ids": X[i], "labels": y[i]} for i in range(len(X))]
+    loader = DataLoader(ListDataset(data), batch_size=4, collate_fn=dict_data_collator)
+
+    la = KronLaplace(_DictModel(net), "classification", backend=backend)
+    la.fit(loader)
+
+    ref = KronLaplace(deepcopy(net), "classification", backend=backend)
+    ref.fit(_dropped_loader(X, y))
+
+    assert la.n_obs == ref.n_obs
+    _assert_same_kron(la, ref)
+
+
+@pytest.mark.parametrize("backend", [CurvlinopsGGN, AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("positions", [(), (5,)])
+def test_kron_ignored_last_layer(backend, positions):
+    X, y = _ignored_data(positions)
+    model = _position_model()
+
+    la = Laplace(
+        model,
+        "classification",
+        subset_of_weights="last_layer",
+        hessian_structure="kron",
+        backend=backend,
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=3))
+
+    ref = Laplace(
+        deepcopy(model),
+        "classification",
+        subset_of_weights="last_layer",
+        hessian_structure="kron",
+        backend=backend,
+    )
+    ref.fit(_dropped_loader(X, y))
+
+    assert la.n_obs == ref.n_obs
+    _assert_same_kron(la, ref)
+
+
+@pytest.mark.parametrize(
+    "backend, stochastic, positions",
+    [
+        pytest.param(CurvlinopsGGN, False, (5,), id="CurvlinopsGGN"),
+        pytest.param(CurvlinopsGGN, True, (5,), id="CurvlinopsGGN-mc"),
+        pytest.param(CurvlinopsEF, False, (5,), id="CurvlinopsEF"),
+        pytest.param(AsdlGGN, False, (5,), id="AsdlGGN"),
+        pytest.param(AsdlGGN, True, (5,), id="AsdlGGN-mc"),
+        pytest.param(AsdlEF, False, (5,), id="AsdlEF"),
+        pytest.param(BackPackGGN, False, (), id="BackPackGGN"),
+        pytest.param(BackPackGGN, True, (), id="BackPackGGN-mc"),
+        pytest.param(
+            AsdfghjklGGN, False, (), id="AsdfghjklGGN", marks=requires_old_asdfghjkl
+        ),
+        pytest.param(
+            AsdfghjklGGN, True, (), id="AsdfghjklGGN-mc", marks=requires_old_asdfghjkl
+        ),
+        pytest.param(
+            AsdfghjklEF, False, (), id="AsdfghjklEF", marks=requires_old_asdfghjkl
+        ),
+    ],
+)
+def test_kron_ignored_in_range_index(backend, stochastic, positions):
+    # An ignored class that is also a valid class of the others' samples
+    X, y = _ignored_data(positions, ignore_index=1)
+    model = _position_model()
+    kwargs = dict(backend=backend)
+
+    if stochastic:
+        kwargs["backend_kwargs"] = dict(stochastic=True)
+
+    la = KronLaplace(model, CategoricalLikelihood(ignore_index=1), **kwargs)
+    torch.manual_seed(1)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
+
+    ref = KronLaplace(deepcopy(model), "classification", **kwargs)
+    torch.manual_seed(1)
+    ref.fit(_dropped_loader(X, y, ignore_index=1))
+
+    assert la.n_obs == ref.n_obs == int((y != 1).sum())
+
+    # The samples of both fits are drawn for the same observed logits in the same
+    # order, so even the Monte Carlo estimates agree
+    _assert_same_kron(la, ref)
+
+
+def test_kron_mc_custom_ignore_index_without_ignored_targets():
+    # A sampled label may equal `ignore_index`, even if no target does
+    X = torch.randn(20, 4)
+    y = torch.randint(2, (20,))
+    model = _position_model()
+    loader = DataLoader(TensorDataset(X, y), batch_size=20)
+
+    kwargs = dict(backend=CurvlinopsGGN, backend_kwargs={"stochastic": True})
+    la = KronLaplace(model, CategoricalLikelihood(ignore_index=2), **kwargs)
+    la.fit(loader)
+
+    ref = KronLaplace(deepcopy(model), "classification", **kwargs)
+    ref.fit(loader)
+
+    _assert_same_kron(la, ref)
+
+
+@pytest.mark.parametrize("kfac_approx", ["expand", "reduce"])
+def test_kron_ignored_matches_truncated(kfac_approx):
+    # Trailing padding of the same length in every example leaves the same sequences
+    X = torch.randn(6, 5, 4)
+    y = torch.randint(3, (6, 5))
+    y_padded = y.clone()
+    y_padded[:, 3:] = -100
+    model = _position_model()
+    kwargs = dict(
+        backend=CurvlinopsGGN, asdl_fisher_kwargs={"kfac_approx": kfac_approx}
+    )
+
+    la = KronLaplace(model, "classification", **kwargs)
+    la.fit(DataLoader(TensorDataset(X, y_padded), batch_size=2))
+
+    ref = KronLaplace(deepcopy(model), "classification", **kwargs)
+    ref.fit(DataLoader(TensorDataset(X[:, :3], y[:, :3]), batch_size=2))
+
+    assert la.n_obs == ref.n_obs
+    _assert_same_kron(la, ref)
+
+
+def test_kron_ignored_online_and_checkpoint():
+    X, y = _ignored_data((5,))
+    model = _position_model()
+    padded = DataLoader(TensorDataset(X, y), batch_size=3)
+    dropped = _dropped_loader(X, y)
+
+    la = KronLaplace(model, "classification", backend=CurvlinopsGGN)
+    ref = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+
+    la.fit(padded)
+    la.fit(padded, override=False)
+    ref.fit(dropped)
+    ref.fit(dropped, override=False)
+
+    assert la.n_obs == ref.n_obs
+    _assert_same_kron(la, ref)
+
+    # A checkpoint keeps what later online updates need
+    restored = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
     restored.load_state_dict(la.state_dict())
+    restored.fit(padded, override=False)
 
-    with pytest.warns(UserWarning, match="ignored positions"):
-        restored.fit(padded, override=False)
-
-    ref.fit(unpadded, override=False)
-    _assert_same_curvature(restored, ref)
+    ref.fit(dropped, override=False)
+    assert restored.n_obs == ref.n_obs
+    _assert_same_kron(restored, ref)
 
 
 def test_custom_likelihood_counts_observations(model):
@@ -2999,3 +3288,45 @@ def test_gridsearch_default_metric_uses_ignore_index(model, class_loader):
         grid_size=3,
     )
     assert torch.isfinite(la.prior_precision).all()
+
+
+@requires_old_asdfghjkl
+@pytest.mark.asdfghjkl
+def test_asdfghjkl_kron_rejects_ignored_sequence_positions():
+    # Dropping a position from the inputs would change what the model sees of the rest
+    X = torch.randn(6, 5, 4)
+    y = torch.randint(3, (6, 5))
+    y[:, 3:] = -100
+
+    la = KronLaplace(_position_model(), "classification", backend=AsdfghjklGGN)
+
+    with pytest.raises(NotImplementedError, match="sequences"):
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
+
+
+class _PairRewards(nn.Module):
+    """Rewards of the two items of each pair: `(B, 2, D)` -> `(B, 2)`."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(4, 6), nn.Tanh(), nn.Linear(6, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).squeeze(-1)
+
+
+def test_kron_reward_modeling_ignored_matches_dropped():
+    X = torch.randn(12, 2, 4)
+    y = torch.randint(2, (12,))
+    y[::3] = -100
+    observed = y != -100
+    model = _PairRewards()
+
+    la = KronLaplace(model, "reward_modeling")
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=12))
+
+    ref = KronLaplace(deepcopy(model), "reward_modeling")
+    ref.fit(DataLoader(TensorDataset(X[observed], y[observed]), batch_size=8))
+
+    assert la.n_obs == ref.n_obs == 8
+    _assert_same_kron(la, ref)

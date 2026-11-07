@@ -134,8 +134,12 @@ Some caveats:
 - Not every curvature backend handles every option.
   With `diag` or `full` and a GGN or EF backend, Laplace falls back to its own, slower torch.func implementation when the library can't.
   `kron`, the Hessian backends, and the Monte Carlo Fisher (`stochastic=True`) raise a `ValueError` for the options they can't handle.
-- Ignored targets, such as padding, don't count as observations.
-  KFAC can't drop them from its Kronecker factors, so `kron` keeps them there and warns.
+- Ignored targets, such as padding, don't count as observations and add nothing to the curvature, as in `nn.CrossEntropyLoss`.
+  `kron` drops them from both Kronecker factors.
+  A layer whose positions don't line up with the logits, such as a convolution before pooling, keeps all positions of an example in its input factor if the example has at least one observed target.
+  A layer counts as lined up if it has as many positions as the logits, in the same order.
+- Function-space methods (`hessian_structure="gp"`) don't support sequence outputs, and `ELLA` and `VaLLA` only accept the default `ignore_index=-100`.
+  They leave out ignored rows, while `FunctionalLaplace` raises a `ValueError` if its sampled subset has any.
 - Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
   `log_marginal_likelihood()` is then no longer the model evidence in the strict sense.
 
