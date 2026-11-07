@@ -20,7 +20,7 @@ from laplace import Laplace
 from laplace.baselaplace import BaseLaplace
 from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.curvature import CurvatureInterface
-from laplace.likelihoods import get_likelihood
+from laplace.likelihoods import _noise_per_output, get_likelihood
 from laplace.utils import (
     HessianStructure,
     Likelihood,
@@ -185,7 +185,7 @@ def marglik_training(
             "Marginal-likelihood training does not support reward modeling."
         )
 
-    if lik.hyperparameters().get("sigma_noise") is not None:
+    if _noise_per_output(lik) is not None:
         raise ValueError(
             "Marginal-likelihood training learns a single noise std, so it does not "
             "support a likelihood with a noise std per output (#349)."

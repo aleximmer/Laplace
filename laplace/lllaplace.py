@@ -62,11 +62,8 @@ class LLLaplace(ParametricLaplace):
         name, or a torch criterion, see
         [`get_likelihood`][laplace.likelihoods.get_likelihood].
     sigma_noise : torch.Tensor or float, default=1
-        observation noise std for the regression setting; must be 1 for classification.
-        This is a scalar. For a known std per output, pass
-        `GaussianLikelihood(sigma_noise=<tensor of shape (outputs,)>)` as the
-        `likelihood`, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
-        The vector is fixed and `sigma_noise` must then stay 1.
+        scalar observation noise std for regression; must be 1 for classification. For a
+        known std per output, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case

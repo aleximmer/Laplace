@@ -7,8 +7,9 @@ from torch.func import functional_call, jacrev, vmap
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import Laplace
-from laplace.curvature import AsdlGGN, BackPackGGN, CurvlinopsEF, CurvlinopsGGN
+from laplace.curvature import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import GaussianLikelihood
+from tests.utils import AsdlGGN, BackPackGGN
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(123)]
 
@@ -51,6 +52,18 @@ def _dense(H) -> torch.Tensor:
     return torch.diag(H) if H.ndim == 1 else H
 
 
+def _likelihood(sigma) -> tuple[GaussianLikelihood | str, dict]:
+    # A vector goes into the likelihood, a scalar into `Laplace(sigma_noise=...)`
+    if torch.is_tensor(sigma):
+        return GaussianLikelihood(sigma_noise=sigma), {}
+
+    return "regression", {"sigma_noise": sigma}
+
+
+def _normalizer(n: int, sigma: torch.Tensor) -> torch.Tensor:
+    return n * torch.log(sigma * (2 * torch.pi) ** 0.5).sum()
+
+
 def _laplace(model, likelihood, structure, backend=CurvlinopsGGN, **kwargs):
     return Laplace(
         model,
@@ -63,13 +76,9 @@ def _laplace(model, likelihood, structure, backend=CurvlinopsGGN, **kwargs):
     )
 
 
-def _fit(model, loader, sigma, structure, backend=CurvlinopsGGN, **kwargs):
-    """Fit with a vector likelihood, or with a scalar std if `sigma` is a float."""
-    if torch.is_tensor(sigma):
-        la = _laplace(model, GaussianLikelihood(sigma_noise=sigma), structure, backend)
-    else:
-        la = _laplace(model, "regression", structure, backend, sigma_noise=sigma)
-
+def _fit(model, loader, sigma, structure, backend=CurvlinopsGGN):
+    likelihood, options = _likelihood(sigma)
+    la = _laplace(model, likelihood, structure, backend, **options)
     la.fit(loader)
 
     return la
@@ -82,10 +91,7 @@ def _gaussian_log_likelihood(model, X, y, sigma):
     return torch.distributions.Normal(f, sigma).log_prob(y).sum()
 
 
-# Equal entries give the scalar noise
-
-
-# Only Curvlinops honours the noise in KFAC
+# Equal entries give the scalar noise. Only Curvlinops honours the noise in KFAC.
 STRUCTURE_BACKENDS = [
     (structure, backend)
     for structure in ("full", "diag")
@@ -138,9 +144,17 @@ def test_equal_vector_matches_scalar(model, data, structure, backend, temperatur
     assert vector.sigma_noise == 1
 
 
-@pytest.mark.parametrize("structure", ["full", "diag"])
-@pytest.mark.parametrize("subset", ["last_layer", "subnetwork"])
-def test_equal_vector_matches_scalar_for_subsets(model, data, structure, subset):
+@pytest.mark.parametrize(
+    "subset,structure",
+    [
+        ("last_layer", "full"),
+        ("last_layer", "diag"),
+        ("last_layer", "kron"),
+        ("subnetwork", "full"),
+        ("subnetwork", "diag"),
+    ],
+)
+def test_equal_vector_matches_scalar_for_subsets(model, data, subset, structure):
     _, _, loader = data
     s = 0.7
     kwargs = {"subset_of_weights": subset, "hessian_structure": structure}
@@ -151,36 +165,6 @@ def test_equal_vector_matches_scalar_for_subsets(model, data, structure, subset)
     scalar = Laplace(model, "regression", sigma_noise=s, **kwargs)
     vector = Laplace(
         model, GaussianLikelihood(sigma_noise=torch.full((2,), s)), **kwargs
-    )
-
-    for la in (scalar, vector):
-        la.fit(loader)
-
-    assert torch.allclose(
-        _dense(scalar.posterior_precision),
-        _dense(vector.posterior_precision),
-        rtol=1e-5,
-        atol=1e-8,
-    )
-    assert torch.allclose(
-        scalar.log_marginal_likelihood(), vector.log_marginal_likelihood()
-    )
-
-
-@pytest.mark.parametrize("subset", ["last_layer", "all"])
-def test_equal_vector_matches_scalar_for_kron(model, data, subset):
-    _, _, loader = data
-    s = 0.7
-
-    scalar = Laplace(
-        model, "regression", subset, "kron", sigma_noise=s, prior_precision=PRIOR_PREC
-    )
-    vector = Laplace(
-        model,
-        GaussianLikelihood(sigma_noise=torch.full((2,), s)),
-        subset,
-        "kron",
-        prior_precision=PRIOR_PREC,
     )
 
     for la in (scalar, vector):
@@ -224,7 +208,7 @@ def test_full_matches_bruteforce(model, data, backend, temperature):
 
     # The loss is the weighted one, and the likelihood the Gaussian one with the stds
     log_lik = _gaussian_log_likelihood(model, X, y, SIGMA)
-    assert torch.allclose(la.loss, -(log_lik + _normalizer(20, SIGMA)))
+    assert torch.allclose(la.loss, -(log_lik + _normalizer(len(X), SIGMA)))
 
     if temperature == 1.0:
         assert torch.allclose(la.log_likelihood, log_lik)
@@ -245,10 +229,6 @@ def test_full_matches_bruteforce(model, data, backend, temperature):
     )
     _, la_var = la(X_test)
     assert torch.allclose(la_var, f_var, rtol=1e-5)
-
-
-def _normalizer(n: int, sigma: torch.Tensor) -> torch.Tensor:
-    return n * torch.log(sigma * (2 * torch.pi) ** 0.5).sum()
 
 
 @pytest.mark.parametrize("backend", [CurvlinopsGGN, BackPackGGN, AsdlGGN])
@@ -367,25 +347,26 @@ def test_ef_matches_bruteforce(model, data, structure):
 
 def test_mc_fisher_approaches_the_ggn(model, data):
     X, y, _ = data
-    sigma = SIGMA
 
-    # The dense operator, and the torch.func path of a subnetwork
-    for kwargs, expected in (
-        ({}, None),
-        ({"subnetwork_indices": torch.arange(0, 24, 2)}, torch.arange(0, 24, 2)),
-    ):
+    # The dense Curvlinops operator, and the torch.func path of a subnetwork
+    for indices in (None, torch.arange(0, 24, 2)):
         backend = CurvlinopsGGN(
-            model, GaussianLikelihood(sigma_noise=sigma), stochastic=True, **kwargs
+            model,
+            GaussianLikelihood(sigma_noise=SIGMA),
+            stochastic=True,
+            subnetwork_indices=indices,
         )
+
+        # Curvlinops takes `mc_samples`, the torch.func path `num_samples`
         backend.num_samples = 3000
         _, H_mc = backend.full(X, y, mc_samples=3000)
 
         Js = _jacobians(model, X)
 
-        if expected is not None:
-            Js = Js[..., expected]
+        if indices is not None:
+            Js = Js[..., indices]
 
-        H = torch.einsum("nkp,k,nkq->pq", Js, 1 / sigma**2, Js)
+        H = torch.einsum("nkp,k,nkq->pq", Js, 1 / SIGMA**2, Js)
 
         assert (H_mc - H).abs().max() < 0.15 * H.abs().max()
 
@@ -470,10 +451,7 @@ def _fs_problem(n=12):
 
 
 def _functional(model, sigma, independent_outputs, **kwargs):
-    if torch.is_tensor(sigma):
-        likelihood, options = GaussianLikelihood(sigma_noise=sigma), {}
-    else:
-        likelihood, options = "regression", {"sigma_noise": sigma}
+    likelihood, options = _likelihood(sigma)
 
     return Laplace(
         model,
@@ -522,17 +500,16 @@ def test_functional_matches_bruteforce(independent_outputs, temperature):
     assert torch.allclose(la.log_det_ratio, log_det)
     assert torch.allclose(la.scatter, scatter)
 
-    # The loss holds the stds, so the log likelihood is the Gaussian one
-    log_lik = _gaussian_log_likelihood(model, X, y, SIGMA)
+    # The loss holds the stds, so at T = 1 the log likelihood is the Gaussian one
+    assert torch.allclose(la.loss, 0.5 * (((f - y) / SIGMA) ** 2).sum())
     assert torch.allclose(
-        la.log_likelihood,
-        log_lik / 1
-        if temperature == 1.0
-        else -la.loss / temperature - _normalizer(N, SIGMA),
+        la.log_likelihood, -la.loss / temperature - _normalizer(N, SIGMA)
     )
 
     if temperature == 1.0:
-        assert torch.allclose(la.log_likelihood, log_lik)
+        assert torch.allclose(
+            la.log_likelihood, _gaussian_log_likelihood(model, X, y, SIGMA)
+        )
 
 
 @pytest.mark.parametrize("temperature", [1.0, 2.0])
@@ -583,10 +560,7 @@ def test_functional_wrong_number_of_outputs_raises():
 
 
 def _ella(model, sigma, **kwargs):
-    if torch.is_tensor(sigma):
-        likelihood, options = GaussianLikelihood(sigma_noise=sigma), {}
-    else:
-        likelihood, options = "regression", {"sigma_noise": sigma}
+    likelihood, options = _likelihood(sigma)
 
     return Laplace(
         model,
@@ -655,10 +629,7 @@ def test_ella_wrong_number_of_outputs_raises():
 
 
 def _valla(model, sigma, X, **kwargs):
-    if torch.is_tensor(sigma):
-        likelihood, options = GaussianLikelihood(sigma_noise=sigma), {}
-    else:
-        likelihood, options = "regression", {"sigma_noise": sigma}
+    likelihood, options = _likelihood(sigma)
 
     return Laplace(
         model,

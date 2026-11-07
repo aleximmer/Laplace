@@ -534,25 +534,20 @@ class GaussianLikelihood(Likelihood):
     output gradient is \\(f - y\\). A float `sigma_noise` gives a normalizer with the
     default dtype.
 
-    To use a known noise std per output, \\(\\sigma \\in \\mathbb{R}^K\\), pass a 1-D
-    tensor as the option `sigma_noise` of the likelihood. The likelihood is then
-    \\(\\mathcal{N}(y \\mid f, \\operatorname{diag}(\\sigma^2))\\), so the loss, the
-    output gradient, the output Hessian \\(\\operatorname{diag}(\\sigma^{-2})\\), the
-    samples, and the normalizer \\(N \\sum_k \\log(\\sigma_k \\sqrt{2\\pi})\\) all use
-    it. The loss becomes
+    For a known noise std per output, \\(\\sigma \\in \\mathbb{R}^K\\), pass a 1-D tensor
+    as `sigma_noise`. The likelihood is then
+    \\(\\mathcal{N}(y \\mid f, \\operatorname{diag}(\\sigma^2))\\) with the loss
 
     $$
         \\frac{1}{2} \\sum_{n=1}^N \\sum_{k=1}^K
-        \\frac{(y_{nk} - f_{nk})^2}{\\sigma_k^2}.
+        \\frac{(y_{nk} - f_{nk})^2}{\\sigma_k^2},
     $$
 
-    The vector is fixed: a Laplace approximation takes it at `fit` and does not learn
-    it, and its own `sigma_noise` must stay \\(1\\). Like the weights of the categorical
-    likelihood, the vector is a hyperparameter of the likelihood, so checkpoints store
-    it, and two likelihoods are equal only if their vectors are. Curvlinops divides the
-    outputs and the targets by \\(\\sigma\\), which gives the exact curvature. The other
-    backends fall back to the torch.func code for `diag` and `full` and raise for
-    `kron`.
+    the output Hessian \\(\\operatorname{diag}(\\sigma^{-2})\\), and the normalizer
+    \\(N \\sum_k \\log(\\sigma_k \\sqrt{2\\pi})\\). The samples and the output gradient
+    use it too. The vector is fixed when a Laplace approximation is fit, and the
+    `sigma_noise` of the Laplace approximation must then stay 1. It is a hyperparameter
+    of the likelihood, so checkpoints store it.
 
     Parameters
     ----------
@@ -683,6 +678,11 @@ class GaussianLikelihood(Likelihood):
     @property
     def is_gaussian(self) -> bool:
         return True
+
+
+def _noise_per_output(likelihood: Likelihood) -> torch.Tensor | None:
+    # The known noise std per output of a Gaussian likelihood, if it has one
+    return likelihood.hyperparameters().get("sigma_noise")
 
 
 class _WhitenedMSELoss(nn.Module):

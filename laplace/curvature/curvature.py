@@ -14,6 +14,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
     Likelihood,
+    _noise_per_output,
     get_likelihood,
 )
 from laplace.utils import Kron
@@ -345,11 +346,6 @@ class CurvatureInterface:
     @property
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
-
-    @property
-    def _noise_per_output(self) -> torch.Tensor | None:
-        # Known noise std per output of a Gaussian likelihood, if it has one
-        return self.likelihood.hyperparameters().get("sigma_noise")
 
     def _honoured_options(self, method: str) -> frozenset[str]:
         """Options of the built-in likelihoods that this backend honours natively.
@@ -877,8 +873,8 @@ class GGNInterface(CurvatureInterface):
         ValueError
             if the likelihood is a built-in one with non-default options.
         """
-        # The noise per output of a Gaussian likelihood scales its samples and
-        # gradients, so the sampled Fisher is exact
+        # The samples and the output gradient of a Gaussian likelihood use its noise
+        # std per output, so the sampled Fisher stays exact
         honoured = frozenset({"sigma_noise"})
 
         if (
@@ -943,7 +939,7 @@ class GGNInterface(CurvatureInterface):
             whose output Hessian is the identity and is skipped in the GGN. With a
             noise std per output, the output Hessian is not the identity.
         """
-        if self.likelihood.is_gaussian and self._noise_per_output is None:
+        if self.likelihood.is_gaussian and _noise_per_output(self.likelihood) is None:
             return None
 
         return self.likelihood.output_hessian(f, y)

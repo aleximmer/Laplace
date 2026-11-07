@@ -73,8 +73,6 @@ likelihood = GaussianLikelihood(sigma_noise=sigma)
 la = Laplace(model, likelihood, subset_of_weights="all", hessian_structure="kron")
 la.fit(train_loader)
 
-print(f"sigma_noise of the LA: {la.sigma_noise}")
-
 # %% [markdown]
 # The prior precision is still a free hyperparameter. For example, we can tune it with
 # the marginal likelihood.
