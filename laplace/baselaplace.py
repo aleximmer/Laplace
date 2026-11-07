@@ -3568,6 +3568,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.train_loader = train_loader
         self._prior_factor_sod = self.n_subset / self.n_data
 
+        # The caches below are reset, so a failed refit leaves no usable posterior
+        self._fitted = False
+
         self._init_K_MM()
         self._init_Sigma_inv()
 
@@ -4923,7 +4926,7 @@ class ELLA(BaseFunctionalLaplace):
                 ).sum()
             else:
                 total += self._classification_validation_nll(x, y)
-            count += y.shape[0]
+            count += y.shape[0] - _ignored_positions(self.likelihood.fit_likelihood, y)
         return total / count
 
     def optimize_prior_precision(
@@ -5557,37 +5560,33 @@ class VaLLA(BaseFunctionalLaplace):
         x, y = split_batch(batch, self.dict_key_y)
         return to_device(x, self._device, self._dtype), y.to(self._device)
 
-    def _gather_inducing(self, loader: DataLoader) -> None:
-        """Choose inducing inputs and output coordinates from training data.
+    def _inducing_candidates(
+        self, source: DataLoader
+    ) -> tuple[torch.Tensor | MutableMapping, torch.Tensor]:
+        """Collect the rows that can become inducing points.
+
+        An inducing point takes its output coordinate from the class of its row, so
+        rows with an ignored target are left out.
 
         Parameters
         ----------
-        loader : DataLoader
-            Training loader used for random or k-means selection.
+        source : DataLoader
+            Loader over the candidate rows.
+
+        Returns
+        -------
+        inputs : torch.Tensor or MutableMapping
+            Candidate inputs.
+        labels : torch.Tensor
+            Output coordinate of each candidate.
 
         Raises
         ------
         ValueError
-            If the loader is empty, too small, or incompatible with k-means.
+            If the loader is empty.
         """
         candidates = []
         classes = []
-        source = loader
-        if self._inducing_strategy == "random":
-            available_indices = training_indices(loader)
-            n_pairs = (self.num_inducing + 1) // 2
-            needed = (
-                n_pairs
-                if self.likelihood.name == Likelihood.REWARD_MODELING.name
-                else self.num_inducing
-            )
-            count = min(len(available_indices), needed)
-            choices = torch.randperm(
-                len(available_indices),
-                generator=torch.Generator().manual_seed(self.seed),
-            )[:count]
-            indices = available_indices[choices]
-            source = subset_loader(loader, indices)
 
         for batch in source:
             x, y = self._batch(batch)
@@ -5612,9 +5611,58 @@ class VaLLA(BaseFunctionalLaplace):
 
         inputs = concatenate_rows(candidates)
         labels = torch.cat(classes)
+
+        mask = _observed_mask(self.likelihood.fit_likelihood, labels)
+
+        if mask is not None:
+            inputs = select_rows(inputs, mask.nonzero().flatten(), labels.shape[0])
+            labels = labels[mask]
+
+        return inputs, labels
+
+    def _gather_inducing(self, loader: DataLoader) -> None:
+        """Choose inducing inputs and output coordinates from training data.
+
+        Parameters
+        ----------
+        loader : DataLoader
+            Training loader used for random or k-means selection.
+
+        Raises
+        ------
+        ValueError
+            If the loader is empty, has too few rows with observed targets, or is
+            incompatible with k-means.
+        """
+        source = loader
+        if self._inducing_strategy == "random":
+            available_indices = training_indices(loader)
+            n_pairs = (self.num_inducing + 1) // 2
+            needed = (
+                n_pairs
+                if self.likelihood.name == Likelihood.REWARD_MODELING.name
+                else self.num_inducing
+            )
+            count = min(len(available_indices), needed)
+            choices = torch.randperm(
+                len(available_indices),
+                generator=torch.Generator().manual_seed(self.seed),
+            )[:count]
+            indices = available_indices[choices]
+            source = subset_loader(loader, indices)
+
+        inputs, labels = self._inducing_candidates(source)
+
+        # The random draw may have hit too many ignored rows, so look at all of them
+        if labels.shape[0] < self.num_inducing and source is not loader:
+            inputs, labels = self._inducing_candidates(loader)
+
         available = labels.shape[0]
         if available < self.num_inducing:
-            raise ValueError("num_inducing exceeds available training inputs.")
+            raise ValueError(
+                "num_inducing exceeds available training inputs, counting only those "
+                "with observed targets."
+            )
         if self._inducing_strategy == "kmeans":
             if isinstance(inputs, MutableMapping) or not inputs.is_floating_point():
                 raise ValueError("kmeans requires floating-point tensor inputs.")
@@ -5994,7 +6042,7 @@ class VaLLA(BaseFunctionalLaplace):
                 ).sum()
             else:
                 total += self._classification_validation_nll(x, y)
-            count += y.shape[0]
+            count += y.shape[0] - _ignored_positions(self.likelihood.fit_likelihood, y)
         return total / count
 
     @preserve_model_gradients

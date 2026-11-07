@@ -1015,3 +1015,22 @@ def test_ella_ignored_rows_gram(data):
     assert expected.abs().sum() > 0
     all_rows = torch.einsum("bck,bcd,bdl->kl", features, hessian, features)
     assert not torch.allclose(estimator.feature_gram, all_rows)
+
+
+def test_ella_validation_nll_leaves_out_ignored_rows():
+    X, y = torch.randn(12, 3), torch.randint(2, (12,))
+    y[::3] = -100
+    observed = y != -100
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    la = make_ella(model, subsample_size=6, n_eigenvalues=3)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    padded = la._validation_nll(DataLoader(TensorDataset(X, y), batch_size=4))
+    dropped = la._validation_nll(
+        DataLoader(TensorDataset(X[observed], y[observed]), batch_size=4)
+    )
+
+    torch.testing.assert_close(padded, dropped)

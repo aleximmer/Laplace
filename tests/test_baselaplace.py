@@ -3288,3 +3288,17 @@ def test_gridsearch_default_metric_uses_ignore_index(model, class_loader):
         grid_size=3,
     )
     assert torch.isfinite(la.prior_precision).all()
+
+
+@requires_old_asdfghjkl
+@pytest.mark.asdfghjkl
+def test_asdfghjkl_kron_rejects_ignored_sequence_positions():
+    # Dropping a position from the inputs would change what the model sees of the rest
+    X = torch.randn(6, 5, 4)
+    y = torch.randint(3, (6, 5))
+    y[:, 3:] = -100
+
+    la = KronLaplace(_position_model(), "classification", backend=AsdfghjklGGN)
+
+    with pytest.raises(NotImplementedError, match="sequences"):
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=2))

@@ -1135,3 +1135,54 @@ def test_valla_ignored_rows(data, mc_softmax_samples):
         torch.testing.assert_close(
             (objective(x[[1, 3]], y[[1, 3]]) - kl) * 2, (obj_ignored - kl) * 4
         )
+
+
+def _ignored_rows(n_data: int = 12) -> tuple[torch.Tensor, torch.Tensor]:
+    """Inputs and class targets where a third of the rows are ignored."""
+    X, y = torch.randn(n_data, 3), torch.randint(2, (n_data,))
+    y[::3] = -100
+
+    return X, y
+
+
+def _valla_model() -> torch.nn.Module:
+    return torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+
+def test_valla_validation_nll_leaves_out_ignored_rows():
+    X, y = _ignored_rows()
+    observed = y != -100
+
+    la = make_valla(_valla_model(), inducing_locations=X[:3])
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+    padded = la._validation_nll(DataLoader(TensorDataset(X, y), batch_size=4))
+    dropped = la._validation_nll(
+        DataLoader(TensorDataset(X[observed], y[observed]), batch_size=4)
+    )
+
+    torch.testing.assert_close(padded, dropped)
+
+
+@pytest.mark.parametrize("strategy", ["random", "kmeans"])
+def test_valla_inducing_selection_skips_ignored_rows(strategy):
+    X, y = _ignored_rows()
+
+    # Random selection first draws as many rows as it needs, some of them ignored
+    la = make_valla(_valla_model(), inducing_locations=strategy, num_inducing=8)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)
+
+    assert len(la.inducing_classes) == 8
+    assert torch.all(la.inducing_classes >= 0)
+
+
+@pytest.mark.parametrize("strategy", ["random", "kmeans"])
+def test_valla_inducing_selection_needs_enough_observed_rows(strategy):
+    X, y = _ignored_rows()
+
+    la = make_valla(_valla_model(), inducing_locations=strategy, num_inducing=9)
+
+    with pytest.raises(ValueError, match="observed"):
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=4), iterations=1)

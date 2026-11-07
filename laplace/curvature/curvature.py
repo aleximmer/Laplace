@@ -66,7 +66,9 @@ def _observed_input_factors(
     \\( S \\) is
 
     - the observed positions, if the layer has as many positions per example as
-      `mask`, e.g. a layer applied to every token of a sequence;
+      `mask`, e.g. a layer applied to every token of a sequence. The positions are
+      assumed to be in the same order as those of the logits, which can't be checked
+      here;
     - otherwise all positions of the examples that have at least one observation,
       e.g. a convolution before pooling, whose positions don't line up with the
       logits.

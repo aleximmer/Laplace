@@ -436,3 +436,18 @@ def test_sod_rejects_ignored_targets(model):
 
     with pytest.raises(ValueError, match="subset"):
         func_la.fit(loader)
+
+
+def test_failed_refit_invalidates_posterior(model):
+    X, y = torch.randn(8, 3), torch.randint(2, (8,))
+    y_ignored = y.clone()
+    y_ignored[0] = -100
+
+    la = FunctionalLaplace(model, "classification", n_subset=8)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    with pytest.raises(ValueError, match="subset"):
+        la.fit(DataLoader(TensorDataset(X, y_ignored), batch_size=4))
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la(X)

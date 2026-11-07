@@ -177,6 +177,14 @@ class AsdfghjklInterface(CurvatureInterface):
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
 
+        mask = _observed_mask(self.likelihood, y)
+
+        if mask is not None and mask.ndim > 1:
+            raise NotImplementedError(
+                "The asdfghjkl backend does not support sequences with ignored "
+                "targets. Use a Curvlinops or ASDL backend instead."
+            )
+
         with torch.no_grad():
             if self.last_layer:
                 f, x = self.model.forward_with_features(x)
@@ -185,7 +193,6 @@ class AsdfghjklInterface(CurvatureInterface):
             loss = self.lossfunc(f, y)
 
         # The loss keeps all targets. The Fisher only sees the observed examples.
-        mask = _observed_mask(self.likelihood, y)
         if mask is not None:
             x, y = x[mask], y[mask]
 
