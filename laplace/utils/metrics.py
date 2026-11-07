@@ -37,7 +37,7 @@ class RunningNLLMetric(Metric):
             integer tensor of class indices of shape (...), or floating-point tensor
             of class probabilities of shape (..., n_classes)
         """
-        if targets.ndim == probs.ndim:
+        if targets.is_floating_point() and targets.shape == probs.shape:
             # Class probabilities. A class that has probability 0 in the targets adds
             # nothing, even where the prediction is 0 too.
             self.nll_sum += -torch.special.xlogy(targets, probs).sum()

@@ -215,3 +215,24 @@ def test_bernoulli_nll_rejects_mismatched_shapes():
     # Class indices, as the softmax metric takes them
     with pytest.raises(ValueError, match="target size"):
         metric.update(torch.rand(4, 3), torch.randint(3, (4,)))
+
+
+def test_nll_metric_column_indices_are_not_probabilities():
+    probs = torch.softmax(torch.randn(8, 3), dim=-1)
+    y = torch.randint(3, (8,))
+
+    index = RunningNLLMetric()
+    index.update(probs, y)
+
+    column = RunningNLLMetric()
+    column.update(probs, y[:, None])
+
+    assert torch.allclose(column.compute(), index.compute())
+
+
+def test_nll_metric_rejects_integer_one_hot():
+    probs = torch.softmax(torch.randn(8, 3), dim=-1)
+    y = torch.nn.functional.one_hot(torch.randint(3, (8,)), 3)
+
+    with pytest.raises(ValueError):
+        RunningNLLMetric().update(probs, y)
