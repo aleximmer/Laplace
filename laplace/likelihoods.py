@@ -887,7 +887,7 @@ class BradleyTerryLikelihood(Likelihood):
         return self._fit.loss(f, y)
 
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        return y.shape.numel()
+        return int((y != self._fit.ignore_index).sum())
 
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None

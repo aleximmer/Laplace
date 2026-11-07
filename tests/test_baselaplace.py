@@ -3302,3 +3302,31 @@ def test_asdfghjkl_kron_rejects_ignored_sequence_positions():
 
     with pytest.raises(NotImplementedError, match="sequences"):
         la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
+
+
+class _PairRewards(nn.Module):
+    """Rewards of the two items of each pair: `(B, 2, D)` -> `(B, 2)`."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.net = nn.Sequential(nn.Linear(4, 6), nn.Tanh(), nn.Linear(6, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).squeeze(-1)
+
+
+def test_kron_reward_modeling_ignored_matches_dropped():
+    X = torch.randn(12, 2, 4)
+    y = torch.randint(2, (12,))
+    y[::3] = -100
+    observed = y != -100
+    model = _PairRewards()
+
+    la = KronLaplace(model, "reward_modeling")
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=12))
+
+    ref = KronLaplace(deepcopy(model), "reward_modeling")
+    ref.fit(DataLoader(TensorDataset(X[observed], y[observed]), batch_size=8))
+
+    assert la.n_obs == ref.n_obs == 8
+    _assert_same_kron(la, ref)

@@ -233,6 +233,20 @@ class AsdlInterface(CurvatureInterface):
         M: int,
         input_factors: dict[nn.Module, torch.Tensor] | None = None,
     ) -> Kron:
+        """Collect the Kronecker factors that ASDL stored on the modules.
+
+        Parameters
+        ----------
+        M : int
+            number of positions in the batch that count as observations.
+        input_factors : dict[nn.Module, torch.Tensor], optional
+            input factors that replace those of ASDL, from
+            `_observed_input_factors`.
+
+        Returns
+        -------
+        kron : Kron
+        """
         kfacs = list()
         for module in self.model.modules():
             if _is_batchnorm(module):

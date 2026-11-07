@@ -68,6 +68,18 @@ class _KeepObserved(nn.Module):
         self.mask = mask
 
     def forward(self, x: Any) -> torch.Tensor:
+        """Compute the logits of the observed positions.
+
+        Parameters
+        ----------
+        x : Any
+            model inputs.
+
+        Returns
+        -------
+        logits : torch.Tensor
+            `(M, K)`, for the `M` observed positions.
+        """
         return self.model(x)[self.mask]
 
 
@@ -122,6 +134,22 @@ class CurvlinopsInterface(CurvatureInterface):
         model: nn.Module,
         input_factors: dict[nn.Module, torch.Tensor] | None = None,
     ) -> Kron:
+        """Collect the Kronecker factors of a computed KFAC operator.
+
+        Parameters
+        ----------
+        linop : KFACLinearOperator
+            operator whose factors are computed.
+        model : nn.Module
+            the model passed to `linop`.
+        input_factors : dict[nn.Module, torch.Tensor], optional
+            input factors that replace those of `linop`, from
+            `_observed_input_factors`.
+
+        Returns
+        -------
+        kron : Kron
+        """
         kfacs = list()
         # `model` must be the one passed to `linop`, so that the module names match
         for name, module in model.named_modules():
