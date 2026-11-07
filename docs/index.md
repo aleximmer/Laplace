@@ -225,6 +225,36 @@ ml = la.log_marginal_likelihood(prior_prec, obs_noise)
 ml.backward()
 ```
 
+### Known noise per output
+
+A regression network with several outputs can have a different noise std \(\sigma_k\)
+for each output. If you know them, set the vector on the likelihood, before `fit`:
+
+```python
+import torch
+from laplace import Laplace
+from laplace.likelihoods import GaussianLikelihood
+
+likelihood = GaussianLikelihood(sigma_noise=torch.tensor([0.05, 0.4]))
+la = Laplace(model, likelihood, hessian_structure="kron")
+la.fit(train_loader)
+```
+
+The vector is fixed at `fit`. It enters the loss, the curvature and the log likelihood,
+so `la.log_marginal_likelihood()` uses it. The `sigma_noise` argument of `Laplace`
+itself stays a scalar: it raises an error if you pass a vector, and it must stay 1 with
+a vector in the likelihood. Learning the vector is not supported yet, and
+`marglik_training` raises an error for it (see
+[#349](https://github.com/aleximmer/Laplace/issues/349)).
+
+The vector works with the `full`, `diag` and `kron` structures for all weights and the
+last layer, with `full` and `diag` for subnetworks, and with `FunctionalLaplace`, `ELLA`
+and `VaLLA`. Curvlinops, the default backend, supports every curvature method. BackPACK
+and ASDL fall back to the generic GGN code for `full` and `diag`, and raise a
+`ValueError` for `kron`. The predictive moments exclude the observation noise, so add
+\(\sigma_k^2\) to the diagonal of the predictive covariance for a new observation. See the
+[known noise per output example](multioutput_noise_example.py).
+
 ### Laplace on LLMs
 
 !!! tip
