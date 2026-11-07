@@ -690,17 +690,15 @@ class _WhitenedMSELoss(nn.Module):
     def __init__(self, sigma_noise: torch.Tensor, reduction: str = "sum") -> None:
         super().__init__()
 
-        # A buffer follows `.to(device, dtype)` of the loss
-        self.register_buffer(
-            "sigma_noise", sigma_noise.detach().clone(), persistent=False
-        )
+        self.sigma_noise = sigma_noise.detach().clone()
         self.reduction = reduction
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # `Likelihood.loss` doesn't move the loss to the outputs, so cast here
+        sigma = self.sigma_noise.to(dtype=input.dtype, device=input.device)
+
         return nn.functional.mse_loss(
-            input / self.sigma_noise,
-            target / self.sigma_noise,
-            reduction=self.reduction,
+            input / sigma, target / sigma, reduction=self.reduction
         )
 
 

@@ -805,6 +805,9 @@ class BaseLaplace:
 
     @property
     def sigma_noise(self) -> torch.Tensor:
+        """Scalar observation noise std \\(\\sigma\\) for regression, 0-dim. It stays 1
+        if the likelihood has a noise std per output, see
+        [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood]."""
         return self._sigma_noise
 
     @sigma_noise.setter
