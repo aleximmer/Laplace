@@ -644,8 +644,13 @@ class CurvatureInterface:
         loss : torch.Tensor
         """
         # `params_dict` holds the parameters of `_model`, so with a last layer the
-        # gradients are those of the last layer at the features
+        # gradients are those of the last layer at the features. Its buffers are its
+        # own, since `buffers_dict` is named after the full model.
+        buffers_dict = self.buffers_dict
+
         if self.last_layer:
+            buffers_dict = dict(self._model.named_buffers())
+
             with torch.no_grad():
                 _, x = self.model.forward_with_features(x)
 
@@ -692,9 +697,7 @@ class CurvatureInterface:
         batch_jac_fn = torch.func.vmap(jac_fn, in_dims=(None, None, in_dims_x, 0))
 
         try:
-            batch_grad, batch_loss = batch_jac_fn(
-                self.params_dict, self.buffers_dict, x, y
-            )
+            batch_grad, batch_loss = batch_jac_fn(self.params_dict, buffers_dict, x, y)
         except RuntimeError as e:
             if "data-dependent control flow" not in str(e):
                 raise

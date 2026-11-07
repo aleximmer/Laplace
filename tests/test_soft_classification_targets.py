@@ -390,6 +390,33 @@ def test_last_layer_ef_matches_hand_computation(structure, soft):
 
 
 @pytest.mark.parametrize("structure", ["full", "diag"])
+def test_last_layer_ef_with_buffers_in_the_features(structure):
+    # The buffers of the feature extractor must not reach the last layer's call
+    X, q = soft_data((8,))
+    torch.manual_seed(711)
+    model = nn.Sequential(
+        nn.Linear(D, 5), nn.BatchNorm1d(5), nn.Tanh(), nn.Linear(5, K)
+    ).double()
+    model.eval()
+
+    la = Laplace(
+        model,
+        "classification",
+        subset_of_weights="last_layer",
+        hessian_structure=structure,
+        backend=CurvlinopsEF,
+    )
+    la.fit(DataLoader(TensorDataset(X, q), batch_size=4))
+
+    features = model[:3](X).detach()
+    g = model[3](features).softmax(dim=-1).detach() - q
+    G = torch.cat([torch.einsum("bk,bd->bkd", g, features).flatten(1), g], dim=1)
+    H = G.T @ G
+
+    assert torch.allclose(la.H, H if structure == "full" else H.diagonal())
+
+
+@pytest.mark.parametrize("structure", ["full", "diag"])
 @pytest.mark.parametrize("subset", ["last_layer", "subnetwork"])
 def test_lllaplace_and_subnet_soft_targets(subset, structure):
     torch.manual_seed(3)
