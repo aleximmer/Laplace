@@ -629,10 +629,12 @@ class CategoricalLikelihood(Likelihood):
     negative log likelihood. So the loss factor is \\(1\\) and the normalizer is zero.
 
     The targets are class indices `(batch, ...)` or class probabilities with the
-    shape of the logits. For logits with extra batch dims, e.g. `(B, L, C)` for
-    sequences, `loss` flattens the batch dims, since `CrossEntropyLoss` expects the
-    class axis at dim 1. Every position is then an observation; the class dim of
-    probability targets does not count.
+    shape of the logits, e.g. one-hot or soft labels. As in `nn.CrossEntropyLoss`,
+    class probabilities must be floating point, and integer targets with the shape of
+    the logits raise a `ValueError`: call `.float()` on one-hot targets. For logits
+    with extra batch dims, e.g. `(B, L, C)` for sequences, `loss` flattens the batch
+    dims, since `CrossEntropyLoss` expects the class axis at dim 1. Every position is
+    then an observation; the class dim of probability targets does not count.
 
     The options `weight`, `ignore_index`, and `label_smoothing` are those of
     `nn.CrossEntropyLoss`, with the same defaults and meaning. Let \\(q\\) be the

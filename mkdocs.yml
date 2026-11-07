@@ -21,6 +21,7 @@ nav:
   - "Example: Semantic Segmentation": segmentation_example.py
   - "Example: Reward Modeling": reward_modeling_example.py
   - "Example: Multi-Label Classification": multilabel_example.py
+  - "Example: Soft Labels": soft_label_example.py
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
       - ELLA: api_reference/ella.md

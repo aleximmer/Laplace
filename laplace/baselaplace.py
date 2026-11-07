@@ -1475,7 +1475,8 @@ class ParametricLaplace(BaseLaplace):
             raise ValueError(
                 f"The targets have the shape of class probabilities, but their dtype "
                 f"is {y.dtype}. Call `.float()` on one-hot targets, or pass class "
-                f"indices with {out.ndim - 1} dims."
+                f"indices without the class dim, i.e. with {out.ndim - 1} "
+                f"{'dim' if out.ndim == 2 else 'dims'}."
             )
 
     @property
@@ -4311,6 +4312,9 @@ class ELLA(BaseFunctionalLaplace):
     curvature. A numerically rank-deficient subset cannot supply the requested
     number of features.
 
+    For classification, class probabilities as targets are reduced to hard labels
+    with an ``argmax``, so soft labels are not treated properly yet.
+
     Parameters
     ----------
     model : torch.nn.Module
@@ -5285,6 +5289,9 @@ class VaLLA(BaseFunctionalLaplace):
 
     The network weights remain fixed while ``fit`` optimizes the variational
     factor, inducing locations, prior precision, and regression noise.
+
+    For classification, class probabilities as targets are reduced to hard labels
+    with an ``argmax``, so soft labels are not treated properly yet.
 
     Parameters
     ----------

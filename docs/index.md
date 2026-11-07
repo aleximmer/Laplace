@@ -119,6 +119,11 @@ The Laplace bridge is for the softmax, so `"bridge"` and `"bridge_norm"` raise a
 Gridsearch uses `RunningBernoulliNLLMetric` by default.
 See the [multi-label example](multilabel_example.py).
 
+For classification, the targets are class indices `(batch, ...)` or class probabilities `(batch, ..., classes)`, as in `nn.CrossEntropyLoss`.
+Class probabilities, such as one-hot or soft labels, must be floats. Integer one-hot targets raise a `ValueError` that asks for `.float()`.
+Every position of a sequence is an observation, while the class dimension of probability targets is not.
+See the [soft label example](soft_label_example.py).
+
 #### Options
 
 The built-in likelihoods take the options of the matching PyTorch criterion, with the same names, defaults, and meaning.
@@ -153,6 +158,7 @@ Some caveats:
   `CurvlinopsEF` takes them with `kron`.
 - Function-space methods (`hessian_structure="gp"`) don't support sequence outputs, and `ELLA` and `VaLLA` only accept the default `ignore_index=-100`.
   They leave out ignored rows, while `FunctionalLaplace` raises a `ValueError` if its sampled subset has any.
+- `ELLA` and `VaLLA` reduce class probabilities to hard labels with an `argmax`, so they don't treat soft labels properly yet.
 - Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
   `log_marginal_likelihood()` is then no longer the model evidence in the strict sense.
 

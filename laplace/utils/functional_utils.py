@@ -283,11 +283,15 @@ def regression_targets(targets: torch.Tensor, outputs: torch.Tensor) -> torch.Te
 def classification_targets(targets: torch.Tensor) -> torch.Tensor:
     """Convert class targets to a flat integer index tensor.
 
+    One-hot or soft targets ``[B, C]`` are reduced to their ``argmax``, so this loses
+    class probabilities. The function-space methods ELLA and VaLLA use it, and they
+    don't treat soft labels properly yet.
+
     Parameters
     ----------
     targets : torch.Tensor
-        Flat indices ``[B]``, column indices ``[B, 1]``, or one-hot targets
-        ``[B, C]``.
+        Flat indices ``[B]``, column indices ``[B, 1]``, or one-hot or probability
+        targets ``[B, C]``.
 
     Returns
     -------
