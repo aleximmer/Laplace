@@ -7,6 +7,7 @@ import torch
 from torch import nn
 
 from laplace import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
@@ -28,9 +29,11 @@ from tests.utils import (
         ("regression", GaussianLikelihood),
         ("classification", CategoricalLikelihood),
         ("reward_modeling", BradleyTerryLikelihood),
+        ("bernoulli", BernoulliLikelihood),
         (Likelihood.REGRESSION, GaussianLikelihood),
         (Likelihood.CLASSIFICATION, CategoricalLikelihood),
         (Likelihood.REWARD_MODELING, BradleyTerryLikelihood),
+        (Likelihood.BERNOULLI, BernoulliLikelihood),
     ],
 )
 def test_get_likelihood_from_str_and_enum(key, cls):
@@ -441,6 +444,7 @@ def test_builtin_members_replace_the_enum():
     assert type(Likelihood.REGRESSION) is GaussianLikelihood
     assert type(Likelihood.CLASSIFICATION) is CategoricalLikelihood
     assert type(Likelihood.REWARD_MODELING) is BradleyTerryLikelihood
+    assert type(Likelihood.BERNOULLI) is BernoulliLikelihood
 
     assert Likelihood.REGRESSION == "regression"
     assert Likelihood.CLASSIFICATION.value == "classification"
@@ -459,8 +463,9 @@ def test_enum_lookup_iteration_and_membership():
         Likelihood.REGRESSION,
         Likelihood.CLASSIFICATION,
         Likelihood.REWARD_MODELING,
+        Likelihood.BERNOULLI,
     ]
-    assert len(Likelihood) == 3
+    assert len(Likelihood) == 4
     assert "classification" in Likelihood
     assert "foo" not in Likelihood
 
@@ -764,3 +769,299 @@ def test_repr_shows_options():
     )
     assert repr(ScaledGaussian(3.0)) == "ScaledGaussian(scale=3.0)"
     assert repr(GaussianLikelihood()) == "GaussianLikelihood()"
+
+
+# Options of `nn.BCEWithLogitsLoss`, as scalars and per output, in float32 for the
+# float64 logits of the tests below
+_BCE_OPTIONS = [
+    {},
+    {"weight": torch.tensor([0.5, 2.0, 1.5, 1.0])},
+    {"pos_weight": torch.tensor([3.0, 0.5, 2.0, 1.0])},
+    {
+        "weight": torch.tensor([0.5, 2.0, 1.5, 1.0]),
+        "pos_weight": torch.tensor([3.0, 0.5, 2.0, 1.0]),
+    },
+    {"weight": torch.tensor(0.7), "pos_weight": torch.tensor(2.5)},
+]
+
+_BCE_SHAPES = [(6, 4), (3, 5, 4)]
+
+
+def _bce_targets(shape: tuple[int, ...]) -> list[torch.Tensor]:
+    """Hard and soft targets of the given shape."""
+    y = torch.rand(*shape, dtype=torch.float64)
+
+    return [(y > 0.5).to(torch.float64), y]
+
+
+@pytest.mark.parametrize("opts", _BCE_OPTIONS)
+@pytest.mark.parametrize("shape", _BCE_SHAPES)
+def test_bernoulli_options_mirror_bce_with_logits(opts, shape):
+    torch.manual_seed(0)
+    f = torch.randn(*shape, dtype=torch.float64)
+
+    lik = BernoulliLikelihood(**opts)
+    bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
+
+    for y in _bce_targets(shape):
+        assert torch.allclose(lik.loss(f, y), bce(f, y))
+        assert torch.allclose(lik.loss_fn()(f, y), bce(f, y))
+
+        # The float32 options of the likelihood stay as given
+        assert lik.loss_fn().double()(f, y).dtype == torch.float64
+
+
+@pytest.mark.parametrize("opts", _BCE_OPTIONS)
+@pytest.mark.parametrize("shape", _BCE_SHAPES)
+def test_bernoulli_gradient_and_hessian_match_autograd(opts, shape):
+    torch.manual_seed(0)
+    f = torch.randn(*shape, dtype=torch.float64)
+
+    lik = BernoulliLikelihood(**opts)
+    bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
+
+    for y in _bce_targets(shape):
+        grad = torch.func.grad(lambda f_: bce(f_, y))(f)
+        assert torch.allclose(lik.output_gradient(f, y), grad)
+
+        # Every output has its own loss term, so the Hessian is diagonal
+        hess = torch.func.hessian(lambda f_: bce(f_, y))(f)
+        H = lik.output_hessian(f, y)
+
+        assert H.shape == (*shape, shape[-1])
+        assert torch.allclose(
+            torch.diagonal(H, dim1=-2, dim2=-1),
+            torch.diagonal(hess.reshape(f.numel(), f.numel())).reshape(shape),
+        )
+        assert torch.allclose(H, torch.diag_embed(torch.diagonal(H, dim1=-2, dim2=-1)))
+
+
+@pytest.mark.parametrize("shape", _BCE_SHAPES)
+def test_bernoulli_default_gradient_and_hessian(shape):
+    f = torch.randn(*shape, dtype=torch.float64)
+    lik = BernoulliLikelihood()
+    p = torch.sigmoid(f)
+
+    for y in _bce_targets(shape):
+        assert torch.allclose(lik.output_gradient(f, y), p - y)
+
+    # Without targets, the Hessian has no weights, and it is the exact Fisher of the
+    # Bernoulli distribution that only defines its `distribution`
+    H = lik.output_hessian(f)
+
+    assert torch.allclose(H, torch.diag_embed(p * (1 - p)))
+    assert torch.allclose(H, DistributionOnlyBernoulli().output_hessian(f))
+    assert torch.allclose(lik.output_hessian(f, _bce_targets(shape)[1]), H)
+
+    # Options scale the Hessian only where it is given the targets
+    weighted = BernoulliLikelihood(weight=torch.tensor(2.0))
+    assert torch.allclose(weighted.output_hessian(f), H)
+
+
+def test_bernoulli_hessian_is_the_fisher_of_the_weighted_loss():
+    torch.manual_seed(0)
+    f = torch.randn(5, 4, dtype=torch.float64)
+    lik = BernoulliLikelihood(
+        weight=torch.tensor([0.5, 2.0, 1.5, 1.0]),
+        pos_weight=torch.tensor([3.0, 0.5, 2.0, 1.0]),
+    )
+    p = torch.sigmoid(f)
+
+    # The expected Hessian over y ~ Bernoulli(p) is E[a] w p (1 - p), with
+    # a = p_w y + 1 - y, and the Hessian does not depend on y otherwise
+    H = sum(
+        w * lik.output_hessian(f, torch.full_like(f, value)).diagonal(dim1=-2, dim2=-1)
+        for w, value in ((1 - p, 0.0), (p, 1.0))
+    )
+    pos = lik.pos_weight.double()
+    expected = lik.weight.double() * (1 - p + pos * p) * p * (1 - p)
+
+    assert torch.allclose(H, expected)
+
+
+def test_bernoulli_soft_labels_do_not_reach_the_distribution():
+    f = torch.randn(4, 3, dtype=torch.float64)
+    y = torch.rand(4, 3, dtype=torch.float64)
+    lik = BernoulliLikelihood()
+
+    # `Bernoulli.log_prob` validates its argument and rejects soft labels
+    with pytest.raises(ValueError):
+        lik.distribution(f).log_prob(y)
+
+    assert torch.isfinite(lik.loss(f, y))
+    assert torch.isfinite(lik.output_gradient(f, y)).all()
+    assert torch.isfinite(lik.output_hessian(f, y)).all()
+
+
+def test_bernoulli_check_targets():
+    lik = BernoulliLikelihood()
+    f = torch.randn(4, 3)
+
+    lik.check_targets(f, torch.rand(4, 3))
+
+    with pytest.raises(ValueError, match="targets of shape"):
+        lik.check_targets(f, torch.rand(4))
+
+    with pytest.raises(ValueError, match="targets of shape"):
+        lik.check_targets(f, torch.rand(4, 1))
+
+    with pytest.raises(ValueError, match="floating-point"):
+        lik.check_targets(f, torch.ones(4, 3, dtype=torch.long))
+
+    # Every entry point checks them, like torch
+    bad = torch.rand(4, 2)
+
+    for call in (
+        lambda: lik.loss(f, bad),
+        lambda: lik.output_gradient(f, bad),
+        lambda: lik.output_hessian(f, bad),
+    ):
+        with pytest.raises(ValueError, match="targets of shape"):
+            call()
+
+
+def test_bernoulli_validates_options():
+    BernoulliLikelihood(weight=torch.ones(3), pos_weight=torch.tensor(2.0))
+
+    # A weight per example can't follow a shuffled data loader
+    with pytest.raises(ValueError, match="weight must be a scalar or 1-D"):
+        BernoulliLikelihood(weight=torch.ones(4, 3))
+
+    with pytest.raises(ValueError, match="pos_weight must be a scalar or 1-D"):
+        BernoulliLikelihood(pos_weight=torch.ones(1, 1, 3))
+
+    with pytest.raises(ValueError, match="pos_weight must be a scalar or 1-D"):
+        get_likelihood(nn.BCEWithLogitsLoss(pos_weight=torch.ones(2, 3)))
+
+
+def test_bernoulli_n_observations_counts_positions():
+    lik = BernoulliLikelihood()
+
+    assert lik.n_observations(torch.randn(1, 4), torch.rand(6, 4)) == 6
+    assert lik.n_observations(torch.randn(1, 5, 4), torch.rand(3, 5, 4)) == 15
+    assert lik.loss_factor == 1.0
+    assert lik.log_normalizer(10, 4, torch.tensor(1.0)) == 0
+    assert lik.is_gaussian is False
+    assert lik.fit_likelihood is lik and lik.predictive_likelihood is lik
+
+
+def test_bernoulli_sample_and_inverse_link():
+    f = torch.randn(2000, 3, dtype=torch.float64)
+    lik = BernoulliLikelihood(pos_weight=torch.tensor(5.0))
+
+    y = lik.sample(f, generator=torch.Generator().manual_seed(0))
+    y2 = lik.sample(f, generator=torch.Generator().manual_seed(0))
+
+    assert y.shape == f.shape and y.dtype == f.dtype
+    assert torch.equal(y, y2)
+    assert set(y.unique().tolist()) <= {0.0, 1.0}
+    assert torch.allclose(lik.inverse_link(f), torch.sigmoid(f))
+
+    # The options leave the predictive unchanged
+    assert y.mean() == pytest.approx(torch.sigmoid(f).mean().item(), abs=0.03)
+    assert isinstance(lik.distribution(f), torch.distributions.Bernoulli)
+    assert torch.equal(lik.distribution(f).probs, torch.sigmoid(f))
+
+    # The global generator is used without one
+    torch.manual_seed(3)
+    y3 = lik.sample(f)
+    torch.manual_seed(3)
+
+    assert torch.equal(y3, lik.sample(f))
+
+
+def test_bernoulli_options_follow_logits_dtype():
+    torch.manual_seed(0)
+    f = torch.randn(4, 5, 3, dtype=torch.float64)
+    y = torch.rand(4, 5, 3, dtype=torch.float64)
+    w, pw = torch.tensor([0.5, 2.0, 1.5]), torch.tensor([3.0, 0.5, 2.0])
+
+    lik = BernoulliLikelihood(weight=w, pos_weight=pw)
+    ref = BernoulliLikelihood(weight=w.double(), pos_weight=pw.double())
+
+    for method in ("loss", "output_gradient", "output_hessian"):
+        out = getattr(lik, method)(f, y)
+
+        assert out.dtype == torch.float64
+        assert torch.equal(out, getattr(ref, method)(f, y))
+
+    # Targets of another float dtype than the logits
+    assert lik.output_gradient(f, y.float()).dtype == torch.float64
+
+    # The stored options stay as given
+    assert lik.weight is w and lik.pos_weight is pw
+
+
+def test_bernoulli_hyperparameters_and_equality():
+    w, pw = torch.tensor([1.0, 2.0]), torch.tensor([3.0, 4.0])
+
+    assert BernoulliLikelihood().hyperparameters() == {}
+    assert BernoulliLikelihood(weight=w).hyperparameters()["weight"] is w
+    assert set(BernoulliLikelihood(weight=w, pos_weight=pw).hyperparameters()) == {
+        "weight",
+        "pos_weight",
+    }
+
+    assert BernoulliLikelihood() == Likelihood.BERNOULLI
+    assert BernoulliLikelihood() == "bernoulli"
+    assert BernoulliLikelihood() != "classification"
+    assert BernoulliLikelihood() != CategoricalLikelihood()
+    assert BernoulliLikelihood(pos_weight=pw) != Likelihood.BERNOULLI
+    assert BernoulliLikelihood(pos_weight=pw) == "bernoulli"
+    assert BernoulliLikelihood(pos_weight=pw) == BernoulliLikelihood(
+        pos_weight=pw.clone()
+    )
+    assert BernoulliLikelihood(pos_weight=pw) != BernoulliLikelihood(weight=pw)
+    assert BernoulliLikelihood(pos_weight=pw) != BernoulliLikelihood(pos_weight=2 * pw)
+    assert hash(Likelihood.BERNOULLI) == hash("bernoulli")
+    assert str(Likelihood.BERNOULLI) == Likelihood.BERNOULLI.value == "bernoulli"
+
+    assert "weight=tensor(shape=(2,))" in repr(BernoulliLikelihood(weight=w))
+    assert repr(BernoulliLikelihood()) == "BernoulliLikelihood()"
+
+
+def test_get_bernoulli_likelihood_from_criterion():
+    w, pw = torch.tensor([1.0, 2.0, 3.0]), torch.tensor([4.0, 5.0, 6.0])
+
+    lik = get_likelihood(
+        nn.BCEWithLogitsLoss(weight=w, pos_weight=pw, reduction="mean")
+    )
+
+    assert type(lik) is BernoulliLikelihood
+    assert lik == BernoulliLikelihood(weight=w, pos_weight=pw)
+    assert get_likelihood(nn.BCEWithLogitsLoss()) == Likelihood.BERNOULLI
+
+    # The enum-style lookup accepts criteria and names too
+    assert Likelihood(nn.BCEWithLogitsLoss()) is Likelihood.BERNOULLI
+    assert Likelihood("bernoulli") is Likelihood.BERNOULLI
+    assert Likelihood["BERNOULLI"] is Likelihood.BERNOULLI
+    assert Likelihood(lik) == lik
+
+    # Not `nn.BCELoss`, which takes probabilities, and not subclasses
+    with pytest.raises(ValueError, match="Invalid likelihood type"):
+        get_likelihood(nn.BCELoss())
+
+    class Subclass(nn.BCEWithLogitsLoss):
+        pass
+
+    with pytest.raises(ValueError, match="Invalid likelihood type"):
+        get_likelihood(Subclass())
+
+
+def test_bernoulli_subclass_without_super_init_has_default_options():
+    class NoInit(BernoulliLikelihood):
+        def __init__(self) -> None:
+            pass
+
+    f, y = torch.randn(4, 3), torch.rand(4, 3)
+    lik = NoInit()
+
+    assert lik.hyperparameters() == {}
+    assert torch.allclose(lik.loss(f, y), BernoulliLikelihood().loss(f, y))
+
+
+def test_bernoulli_is_pickleable():
+    lik = BernoulliLikelihood(pos_weight=torch.tensor([2.0, 3.0]))
+
+    assert pickle.loads(pickle.dumps(lik)) == lik
+    assert pickle.loads(pickle.dumps(Likelihood.BERNOULLI)) == Likelihood.BERNOULLI

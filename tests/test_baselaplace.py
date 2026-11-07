@@ -35,11 +35,12 @@ from laplace.curvature import GGNInterface
 from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from laplace.utils import KronDecomposed
+from laplace.utils import KronDecomposed, RunningBernoulliNLLMetric
 from laplace.utils.enums import Likelihood
 from tests.utils import (
     AsdlEF,
@@ -3330,3 +3331,350 @@ def test_kron_reward_modeling_ignored_matches_dropped():
 
     assert la.n_obs == ref.n_obs == 8
     _assert_same_kron(la, ref)
+
+
+# Bernoulli likelihood. The tests run in float64, so the options are float32 to check
+# that they follow the model's dtype.
+def _bernoulli_options(name: str) -> dict:
+    return {
+        "default": {},
+        "weight": dict(weight=torch.tensor([0.5, 2.0, 1.5], dtype=torch.float32)),
+        "pos_weight": dict(
+            pos_weight=torch.tensor([3.0, 0.5, 2.0], dtype=torch.float32)
+        ),
+        "both": dict(
+            weight=torch.tensor([0.5, 2.0, 1.5], dtype=torch.float32),
+            pos_weight=torch.tensor([3.0, 0.5, 2.0], dtype=torch.float32),
+        ),
+    }[name]
+
+
+def _bernoulli_loader(
+    positions: tuple[int, ...] = (), soft: bool = False
+) -> DataLoader:
+    """Inputs `(N, *positions, 4)` and multi-label targets `(N, *positions, 3)`."""
+    torch.manual_seed(5)
+    X = torch.randn(12, *positions, 4)
+    y = torch.rand(12, *positions, 3)
+
+    return DataLoader(TensorDataset(X, y if soft else (y > 0.5).to(y.dtype)), 5)
+
+
+def _bernoulli_model() -> nn.Module:
+    torch.manual_seed(5)
+
+    return nn.Sequential(nn.Linear(4, 6), nn.Tanh(), nn.Linear(6, 3))
+
+
+@pytest.mark.parametrize("options", ["default", "weight", "pos_weight", "both"])
+@pytest.mark.parametrize("soft", [False, True])
+@pytest.mark.parametrize("positions", [(), (2,)])
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
+def test_bernoulli_end_to_end(laplace, positions, soft, options):
+    lik = BernoulliLikelihood(**_bernoulli_options(options))
+    loader = _bernoulli_loader(positions, soft)
+    model = _bernoulli_model()
+
+    la = laplace(model, lik)
+    la.fit(loader)
+
+    X, y = loader.dataset.tensors
+
+    # Every position is an observation, whatever the number of outputs
+    assert la.n_obs == X.shape[:-1].numel()
+    assert la.n_outputs == 3
+
+    # The GGN of the torch.func backend, summed over the batches as in `fit`
+    backend = GGNInterface(model, lik)
+    method = "full" if laplace is FullLaplace else "diag"
+    H_ref = sum(getattr(backend, method)(Xb, yb)[1] for Xb, yb in loader)
+    torch.testing.assert_close(la.H, H_ref, rtol=1e-5, atol=1e-5)
+
+    # The log likelihood is the negative summed BCE, with no normalizer
+    bce = nn.BCEWithLogitsLoss(**_bernoulli_options(options), reduction="sum").double()
+    with torch.no_grad():
+        nll = bce(model(X), y)
+
+    torch.testing.assert_close(la.loss, nll)
+    torch.testing.assert_close(la.log_likelihood, -nll)
+    assert torch.isfinite(la.log_marginal_likelihood())
+
+    # A criterion gives the same likelihood and curvature
+    from_criterion = laplace(model, nn.BCEWithLogitsLoss(**_bernoulli_options(options)))
+    assert from_criterion.likelihood == lik
+    from_criterion.fit(loader)
+    torch.testing.assert_close(from_criterion.H, la.H)
+
+
+@pytest.mark.parametrize("positions", [(), (2,)])
+@pytest.mark.parametrize("soft", [False, True])
+def test_bernoulli_kron_end_to_end(positions, soft):
+    loader = _bernoulli_loader(positions, soft)
+    model = nn.Linear(4, 3)
+
+    la = KronLaplace(model, "bernoulli")
+    la.fit(loader)
+
+    X, y = loader.dataset.tensors
+    assert la.n_obs == X.shape[:-1].numel()
+
+    # A single linear layer: the output factor is the sum of the output Hessians over
+    # positions, and the input factor is the mean of x x^T over them
+    with torch.no_grad():
+        p = torch.sigmoid(model(X)).reshape(-1, 3)
+
+    X_flat = X.reshape(-1, 4)
+    B = torch.diag_embed(p * (1 - p)).sum(0)
+    A = X_flat.T @ X_flat / la.n_obs
+
+    (weight_B, weight_A), (bias_B,) = la.H_facs.kfacs
+    torch.testing.assert_close(weight_B, B)
+    torch.testing.assert_close(weight_A, A)
+    torch.testing.assert_close(bias_B, B)
+
+    with torch.no_grad():
+        nll = nn.BCEWithLogitsLoss(reduction="sum")(model(X), y)
+
+    torch.testing.assert_close(la.log_likelihood, -nll)
+    assert torch.isfinite(la.log_marginal_likelihood())
+
+
+@pytest.mark.parametrize("options", ["weight", "pos_weight", "both"])
+def test_bernoulli_kron_options(options):
+    lik = BernoulliLikelihood(**_bernoulli_options(options))
+    loader = _bernoulli_loader()
+    model = _bernoulli_model()
+
+    # The GGN's KFAC can't see the options, so it raises instead of dropping them
+    with pytest.raises(ValueError, match="does not support the option"):
+        KronLaplace(model, lik).fit(loader)
+
+    with pytest.raises(ValueError, match="does not support the option"):
+        KronLaplace(
+            model, lik, backend=CurvlinopsGGN, backend_kwargs=dict(stochastic=True)
+        ).fit(loader)
+
+    # The empirical Fisher takes them: the output factor uses the weighted gradients
+    la = KronLaplace(model, lik, backend=CurvlinopsEF)
+    la.fit(loader)
+
+    assert la.H_facs.kfacs[-1][0].dtype == torch.float64
+    assert torch.isfinite(la.log_marginal_likelihood())
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, KronLaplace])
+@pytest.mark.parametrize("positions", [(), (2,)])
+def test_bernoulli_glm_predictive(laplace, positions):
+    loader = _bernoulli_loader(positions)
+    X = loader.dataset.tensors[0]
+
+    la = laplace(_bernoulli_model(), "bernoulli", prior_precision=2.0)
+    la.fit(loader)
+
+    f_mu, f_var = la._glm_predictive_distribution(X)
+    assert f_mu.shape == (*X.shape[:-1], 3)
+    assert f_var.shape == (*X.shape[:-1], 3, 3)
+
+    # The default is the closed-form probit approximation, applied per output
+    probit = la(X)
+    kappa = 1 / torch.sqrt(1 + math.pi / 8 * f_var.diagonal(dim1=-2, dim2=-1))
+
+    assert probit.shape == f_mu.shape
+    torch.testing.assert_close(probit, torch.sigmoid(kappa * f_mu))
+    torch.testing.assert_close(la(X, link_approx="probit"), probit)
+
+    # Not a softmax: the outputs do not sum to one
+    assert not torch.allclose(probit.sum(-1), torch.ones(probit.shape[:-1]))
+
+    # It agrees with the Monte Carlo average of the sigmoid
+    mc = la(
+        X,
+        link_approx="mc",
+        n_samples=50000,
+        generator=torch.Generator().manual_seed(0),
+    )
+    assert mc.shape == probit.shape
+    torch.testing.assert_close(mc, probit, atol=3e-2, rtol=0.0)
+
+    # The same samples, mapped through the sigmoid
+    fs = la._glm_functional_samples(
+        f_mu, f_var, 20, False, torch.Generator().manual_seed(1)
+    )
+    mc_small = la(
+        X, link_approx="mc", n_samples=20, generator=torch.Generator().manual_seed(1)
+    )
+    torch.testing.assert_close(mc_small, torch.sigmoid(fs).mean(0))
+
+
+@pytest.mark.parametrize("link_approx", ["bridge", "bridge_norm"])
+@pytest.mark.parametrize("fitting", [False, True])
+def test_bernoulli_rejects_the_laplace_bridge(link_approx, fitting):
+    loader = _bernoulli_loader()
+    X = loader.dataset.tensors[0]
+
+    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la.fit(loader)
+
+    with pytest.raises(ValueError, match="softmax link only"):
+        la(X, link_approx=link_approx, fitting=fitting)
+
+
+@pytest.mark.parametrize("positions", [(), (2,)])
+def test_bernoulli_nn_predictive_and_samples(positions):
+    loader = _bernoulli_loader(positions)
+    X = loader.dataset.tensors[0]
+
+    la = DiagLaplace(_bernoulli_model(), "bernoulli", prior_precision=2.0)
+    la.fit(loader)
+
+    pred = la(
+        X,
+        pred_type="nn",
+        link_approx="mc",
+        n_samples=30,
+        generator=torch.Generator().manual_seed(1),
+    )
+    fs = la._nn_functional_samples(X, 30, torch.Generator().manual_seed(1))
+
+    assert pred.shape == (*X.shape[:-1], 3)
+    torch.testing.assert_close(pred, torch.sigmoid(fs).mean(0))
+
+    with pytest.raises(ValueError, match="Only mc"):
+        la(X, pred_type="nn", link_approx="probit")
+
+    for pred_type in ("glm", "nn"):
+        samples = la.predictive_samples(X, pred_type=pred_type, n_samples=7)
+
+        assert samples.shape == (7, *X.shape[:-1], 3)
+        assert ((samples > 0) & (samples < 1)).all()
+
+    assert la.functional_samples(X, n_samples=7).shape == (7, *X.shape[:-1], 3)
+
+
+def test_bernoulli_gridsearch_uses_the_bernoulli_nll(mocker):
+    loader = _bernoulli_loader(soft=True)
+    X, y = loader.dataset.tensors
+
+    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la.fit(loader)
+
+    # The NLL per datum, summed over its outputs, for each value of the grid
+    grid = torch.logspace(-1, 4, 4)
+    nlls = []
+
+    for prior_precision in grid:
+        la.prior_precision = prior_precision
+        p = la(X)
+        nlls.append(nn.functional.binary_cross_entropy(p, y, reduction="sum") / len(X))
+
+    spy = mocker.spy(la, "_gridsearch")
+    la.optimize_prior_precision(
+        method="gridsearch", val_loader=loader, grid_size=4, log_prior_prec_min=-1
+    )
+
+    # Not the softmax NLL, which indexes a class with each target
+    assert isinstance(spy.call_args.args[0], RunningBernoulliNLLMetric)
+    assert la.prior_precision.item() == pytest.approx(grid[np.argmin(nlls)].item())
+
+
+def test_bernoulli_gridsearch_with_sequences():
+    loader = _bernoulli_loader((2,))
+
+    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la.fit(loader)
+    la.optimize_prior_precision(method="gridsearch", val_loader=loader, grid_size=3)
+
+    assert torch.isfinite(la.prior_precision).all()
+
+
+def test_bernoulli_marglik_tuning():
+    loader = _bernoulli_loader()
+
+    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la.fit(loader)
+    before = la.prior_precision.clone()
+
+    la.optimize_prior_precision(method="marglik", n_steps=5)
+
+    assert torch.isfinite(la.prior_precision).all()
+    assert not torch.equal(la.prior_precision, before)
+
+    with pytest.raises(ValueError, match="sigma_noise"):
+        la.log_marginal_likelihood(sigma_noise=torch.tensor(2.0))
+
+
+def test_bernoulli_does_not_warn_about_the_default_link():
+    loader = _bernoulli_loader()
+    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la.fit(loader)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        la.optimize_prior_precision(method="marglik", n_steps=2)
+
+
+@pytest.mark.parametrize("bernoulli", ["bernoulli", Likelihood.BERNOULLI])
+def test_function_space_methods_reject_bernoulli(bernoulli):
+    model = _bernoulli_model()
+
+    with pytest.raises(ValueError, match="support only the likelihoods"):
+        FunctionalLaplace(model, bernoulli, n_subset=4)
+
+    with pytest.raises(ValueError, match="support only the likelihoods"):
+        Laplace(
+            model,
+            bernoulli,
+            subset_of_weights="all",
+            hessian_structure="gp",
+            n_subset=4,
+        )
+
+    for approximation, kwargs in (
+        ("nystrom", dict(subsample_size=4, n_eigenvalues=2)),
+        ("variational", dict(inducing_locations="random", num_inducing=2)),
+    ):
+        with pytest.raises(ValueError, match="support only the likelihoods"):
+            Laplace(
+                model,
+                bernoulli,
+                subset_of_weights="all",
+                hessian_structure="gp",
+                functional_approximation=approximation,
+                **kwargs,
+            )
+
+    # The error lists the supported names, not the Bernoulli one
+    with pytest.raises(ValueError, match=r"\['classification', 'regression', 'reward"):
+        FunctionalLaplace(model, bernoulli, n_subset=4)
+
+
+def test_bernoulli_is_a_builtin_name_for_parametric_methods():
+    from laplace.baselaplace import _BUILTIN_NAMES, _FUNCTIONAL_NAMES
+
+    assert "bernoulli" in _BUILTIN_NAMES
+    assert "bernoulli" not in _FUNCTIONAL_NAMES
+    assert _FUNCTIONAL_NAMES < _BUILTIN_NAMES
+
+
+@pytest.mark.asdfghjkl
+def test_bernoulli_lowrank_raises():
+    # `LowRankLaplace` needs the old asdfghjkl, whose Hessian backend only knows the
+    # categorical and Gaussian likelihoods
+    if find_spec("asdfghjkl") is None:
+        pytest.skip("The old asdfghjkl is not installed")
+
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        LowRankLaplace(_bernoulli_model(), "bernoulli").fit(_bernoulli_loader())
+
+
+@pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, KronLaplace])
+def test_bernoulli_fit_rejects_bad_targets(laplace):
+    loader = _bernoulli_loader()
+    X, y = loader.dataset.tensors
+
+    # Class indices, as for the cross-entropy, and a single label per datum
+    for bad in (y.long(), y[:, 0], y[:, :2]):
+        la = laplace(_bernoulli_model(), "bernoulli")
+
+        with pytest.raises(ValueError, match="expects"):
+            la.fit(DataLoader(TensorDataset(X, bad), batch_size=5))

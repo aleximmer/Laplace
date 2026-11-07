@@ -53,7 +53,7 @@ from laplace.utils.functional_utils import (
     training_indices,
 )
 from laplace.utils.matrix import Kron, KronDecomposed
-from laplace.utils.metrics import RunningNLLMetric
+from laplace.utils.metrics import RunningBernoulliNLLMetric, RunningNLLMetric
 from laplace.utils.utils import (
     fix_prior_prec_structure,
     invsqrt_precision,
@@ -74,8 +74,18 @@ __all__ = [
     "LowRankLaplace",
 ]
 
-# Names of the built-in likelihoods, which the library has code paths for
+# Names of the built-in likelihoods, which the library has code paths for. Not all
+# methods support all of them, see `_FUNCTIONAL_NAMES`.
 _BUILTIN_NAMES = frozenset(likelihood.name for likelihood in Likelihood)
+
+# Names that the function-space methods support, which have no Bernoulli code paths
+_FUNCTIONAL_NAMES = frozenset(
+    (
+        Likelihood.REGRESSION.name,
+        Likelihood.CLASSIFICATION.name,
+        Likelihood.REWARD_MODELING.name,
+    )
+)
 
 # Names whose GLM predictive uses the categorical link approximations
 _CATEGORICAL_NAMES = frozenset(
@@ -400,7 +410,8 @@ class BaseLaplace:
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible.
+            For `pred_type='nn'`, only 'mc' is possible. The Bernoulli likelihood
+            supports 'probit' and 'mc' only, since the bridge is for the softmax.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -600,8 +611,9 @@ class BaseLaplace:
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
             reward modeling, with the `ignore_index` of a `CategoricalLikelihood`,
-            and running `MeanSquaredError()` for regression. Other
-            likelihoods have no default, so `loss` is required for them.
+            `RunningBernoulliNLLMetric()` for the Bernoulli likelihood, and running
+            `MeanSquaredError()` for regression. Other likelihoods have no default,
+            so `loss` is required for them.
         log_prior_prec_min : float, default=-4
             exponent of the lower bound of the gridsearch interval.
         log_prior_prec_max : float, default=4
@@ -698,6 +710,8 @@ class BaseLaplace:
             if loss is None and likelihood.name == Likelihood.REGRESSION.name:
                 loss = torchmetrics.MeanSquaredError(num_outputs=self.n_outputs)
                 loss = loss.to(self._device)
+            elif loss is None and likelihood.name == Likelihood.BERNOULLI.name:
+                loss = RunningBernoulliNLLMetric().to(self._device)
             elif loss is None:
                 ignore_index = (
                     likelihood.ignore_index
@@ -833,8 +847,10 @@ class BaseLaplace:
 
         link_approx : {'mc', 'probit', 'bridge', 'bridge_norm'}
             how to approximate the classification link function for the `'glm'`.
-            For `pred_type='nn'`, only 'mc' is possible. Likelihoods other than
-            classification and reward modeling always use Monte Carlo.
+            For `pred_type='nn'`, only 'mc' is possible. The Bernoulli likelihood
+            takes 'probit', which applies the sigmoid to the logits scaled by their
+            marginal variances, or 'mc', and raises for the bridge. Other likelihoods
+            than classification and reward modeling always use Monte Carlo.
 
         joint : bool
             Whether to output a joint predictive distribution in regression with
@@ -865,6 +881,8 @@ class BaseLaplace:
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+            For `likelihood='bernoulli'`, a torch.Tensor is returned with the
+            probability of each output being 1, with the shape of the logits.
             For any other likelihood, a torch.Tensor is returned with the predictive
             mean of the targets, with the shape of the outputs, e.g.
             `(batch, outputs)`.
@@ -904,6 +922,17 @@ class BaseLaplace:
                 f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
             return f_mu, f_var
 
+        if likelihood.name == Likelihood.BERNOULLI.name:
+            return self._glm_bernoulli_link(
+                f_mu,
+                f_var,
+                likelihood,
+                link_approx,
+                n_samples,
+                diagonal_output,
+                generator,
+            )
+
         if likelihood.name not in _CATEGORICAL_NAMES:
             # No closed form to approximate, so integrate the inverse link by MC
             f_samples = self._glm_functional_samples(
@@ -921,6 +950,44 @@ class BaseLaplace:
             f_mu, f_var, likelihood, link_approx, n_samples, diagonal_output, generator
         )
         return probs.reshape(*batch_shape, probs.shape[-1])
+
+    def _glm_bernoulli_link(
+        self,
+        f_mu: torch.Tensor,
+        f_var: torch.Tensor,
+        likelihood: Likelihood,
+        link_approx: LinkApprox | str,
+        n_samples: int,
+        diagonal_output: bool,
+        generator: torch.Generator | None = None,
+    ) -> torch.Tensor:
+        """Approximate the predictive probabilities of a Bernoulli likelihood from
+        the GLM predictive `f_mu` `(batch, ..., outputs)` and `f_var`
+        `(batch, ..., outputs, outputs)`. Every output has its own sigmoid, so the
+        probit approximation needs only the marginal variances. See
+        `_glm_forward_call` for the other arguments.
+
+        Raises
+        ------
+        ValueError
+            for the Laplace bridge, which is for the softmax link only.
+        """
+        if link_approx == LinkApprox.PROBIT:
+            kappa = 1 / torch.sqrt(1.0 + np.pi / 8 * f_var.diagonal(dim1=-2, dim2=-1))
+            return torch.sigmoid(kappa * f_mu)
+
+        if link_approx == LinkApprox.MC:
+            f_samples = self._glm_functional_samples(
+                f_mu, f_var, n_samples, diagonal_output, generator
+            )
+            return likelihood.inverse_link(f_samples).mean(dim=0)
+
+        name = getattr(link_approx, "value", link_approx)
+
+        raise ValueError(
+            f"The link approximation {name!r} is for the softmax link only. Use "
+            "'probit' or 'mc' with the Bernoulli likelihood."
+        )
 
     def _glm_classification_link(
         self,
@@ -2746,8 +2813,9 @@ class BaseFunctionalLaplace(BaseLaplace):
 
     @likelihood.setter
     def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
-        """Set the likelihood, as in `BaseLaplace`, but only one with a built-in
-        name.
+        """Set the likelihood, as in `BaseLaplace`, but only one with the name of
+        a regression, classification, or reward-modeling likelihood. The Bernoulli
+        likelihood is not supported.
 
         The function-space methods pick their formulas, e.g. for the marginal
         likelihood and the predictive, by the likelihood's name. A subclass of a
@@ -2764,10 +2832,10 @@ class BaseFunctionalLaplace(BaseLaplace):
         """
         likelihood = get_likelihood(likelihood)
 
-        if likelihood.name not in _BUILTIN_NAMES:
+        if likelihood.name not in _FUNCTIONAL_NAMES:
             raise ValueError(
                 "FunctionalLaplace, ELLA, and VaLLA support only the likelihoods "
-                f"named {sorted(_BUILTIN_NAMES)}, not {likelihood.name!r}. Use a "
+                f"named {sorted(_FUNCTIONAL_NAMES)}, not {likelihood.name!r}. Use a "
                 "parametric Laplace with the `diag` or `full` structure instead."
             )
 

@@ -11,6 +11,7 @@ from torch.utils.data import (
 
 from laplace import ELLA, FunctionalLaplace, Laplace, VaLLA
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
     Likelihood,
@@ -122,3 +123,33 @@ def test_functional_factory_likelihood_object_equivalence(data, likelihood):
     by_object.fit(loader)
 
     torch.testing.assert_close(by_name(x), by_object(x))
+
+
+@pytest.mark.parametrize(
+    "likelihood",
+    [
+        "bernoulli",
+        Likelihood.BERNOULLI,
+        BernoulliLikelihood(pos_weight=torch.tensor([2.0, 1.0])),
+        torch.nn.BCEWithLogitsLoss(),
+    ],
+    ids=["name", "member", "options", "criterion"],
+)
+@pytest.mark.parametrize("subset_of_weights", ["all", "last_layer"])
+def test_function_space_methods_reject_bernoulli(data, likelihood, subset_of_weights):
+    x, loader, model = data
+    match = "support only the likelihoods"
+
+    # The error lists the likelihoods that they do support
+    with pytest.raises(ValueError, match=r"\['classification', 'regression'"):
+        Laplace(model, likelihood, subset_of_weights, "gp", n_subset=2)
+
+    if subset_of_weights == "all":
+        with pytest.raises(ValueError, match=match):
+            make_ella(model, likelihood)
+
+        with pytest.raises(ValueError, match=match):
+            make_valla(model, likelihood, inducing_locations=x[:2])
+
+    with pytest.raises(ValueError, match=match):
+        FunctionalLaplace(model, likelihood, n_subset=2)

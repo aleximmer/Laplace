@@ -30,7 +30,6 @@ except ModuleNotFoundError as err:
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvature import (
     _ALL_OPTIONS,
-    _BUILTIN_TYPES,
     _KRON_OPTIONS,
     _TARGET_FREE_OPTIONS,
     _observed_mask,
@@ -59,13 +58,14 @@ class BackPackInterface(CurvatureInterface):
     @CurvatureInterface.likelihood.setter
     def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
         """Set the likelihood as in `CurvatureInterface`, and extend the loss of a
-        built-in likelihood with BackPACK. BackPACK checks the options of the loss
-        only when it computes the curvature, after the fallback decision. Other
-        likelihoods always fall back, so their losses aren't extended.
+        Gaussian or categorical likelihood with BackPACK. BackPACK checks the options
+        of the loss only when it computes the curvature, after the fallback decision.
+        Other likelihoods, e.g. the Bernoulli one, always fall back, so their losses
+        aren't extended.
         """
         CurvatureInterface.likelihood.fset(self, likelihood)
 
-        if type(self.likelihood) in _BUILTIN_TYPES:
+        if type(self.likelihood) in self._library_types:
             extend(self.lossfunc)
 
     def jacobians(

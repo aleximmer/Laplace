@@ -10,6 +10,7 @@ from torch import nn
 from torch.utils._pytree import tree_map
 
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
     Likelihood,
@@ -17,10 +18,10 @@ from laplace.likelihoods import (
 )
 from laplace.utils import Kron
 
-_BUILTIN_TYPES = (GaussianLikelihood, CategoricalLikelihood)
+_BUILTIN_TYPES = (GaussianLikelihood, CategoricalLikelihood, BernoulliLikelihood)
 
 # Options of the built-in likelihoods, see `CurvatureInterface._honours`
-_ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
+_ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing", "pos_weight"})
 
 # Options that leave a target-independent curvature unchanged, e.g. the GGN, since
 # label smoothing does not change the Hessian of the cross-entropy w.r.t. the logits
@@ -225,6 +226,13 @@ class CurvatureInterface:
     """Options of the built-in likelihoods that the library of the backend
     implements, per curvature method. Missing methods honour none."""
 
+    _library_types: ClassVar[tuple[type[Likelihood], ...]] = (
+        GaussianLikelihood,
+        CategoricalLikelihood,
+    )
+    """Built-in likelihoods whose losses the library of the backend knows. Any other
+    likelihood, built-in or not, is outside the library, see `_honours`."""
+
     def __init__(
         self,
         model: nn.Module,
@@ -332,10 +340,11 @@ class CurvatureInterface:
         """Whether the library of this backend computes the curvature of `method`
         for the likelihood exactly.
 
-        That is the case if the likelihood is exactly a `GaussianLikelihood` or a
-        `CategoricalLikelihood`, whose losses the libraries know, and the library
-        implements all of its non-default options. A subclass might override any
-        member, e.g. `output_hessian`, which the library cannot see.
+        That is the case if the likelihood is exactly one of the `_library_types`,
+        e.g. a `GaussianLikelihood` or a `CategoricalLikelihood`, whose losses the
+        libraries know, and the library implements all of its non-default options. A
+        subclass might override any member, e.g. `output_hessian`, which the library
+        cannot see.
 
         With the targets `y`, the option `ignore_index` also counts as set if `y`
         holds ignored positions, even with the default `-100`. Libraries that don't
@@ -352,7 +361,7 @@ class CurvatureInterface:
         -------
         honours : bool
         """
-        if type(self.likelihood) not in _BUILTIN_TYPES:
+        if type(self.likelihood) not in self._library_types:
             return False
 
         options = set(self.likelihood.hyperparameters())
@@ -398,7 +407,7 @@ class CurvatureInterface:
         """
         likelihood = self.likelihood
 
-        if type(likelihood) in _BUILTIN_TYPES:
+        if type(likelihood) in self._library_types:
             if honoured is None:
                 honoured = self._honoured_options(method)
 
@@ -411,7 +420,7 @@ class CurvatureInterface:
             noun = "options" if len(options) > 1 else "option"
             what = f"the {noun} {', '.join(options)} of {likelihood!r}"
         else:
-            what = f"the custom likelihood {likelihood!r}"
+            what = f"the likelihood {likelihood!r}"
 
         where = f"{type(self).__name__}.{method}"
 

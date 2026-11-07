@@ -61,14 +61,17 @@ class PredType(str, Enum):
 
 class LinkApprox(str, Enum):
     """Valid options for `link_approx`.
-    Only works with `likelihood = Likelihood.CLASSIFICATION`.
+    Works with `likelihood = Likelihood.CLASSIFICATION`. With
+    `Likelihood.BERNOULLI`, only `MC` and `PROBIT` work, since the Laplace bridge is
+    for the softmax.
     """
 
     MC = "mc"
     """Monte-Carlo approximation in the function space on top of the GLM predictive."""
 
     PROBIT = "probit"
-    """Closed-form multiclass probit approximation."""
+    """Closed-form probit approximation, multiclass for the softmax and per output for
+    the sigmoid."""
 
     BRIDGE = "bridge"
     """Closed-form Laplace Bridge approximation."""

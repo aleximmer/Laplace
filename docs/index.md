@@ -109,14 +109,22 @@ pred = la(x, pred_type="glm", link_approx="probit")
 
 ### Likelihoods
 
-The `likelihood` argument takes a name (`"regression"`, `"classification"`, or `"reward_modeling"`), a likelihood object, or a PyTorch criterion.
+The `likelihood` argument takes a name (`"regression"`, `"classification"`, `"reward_modeling"`, or `"bernoulli"`), a likelihood object, or a PyTorch criterion.
 `likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
-`Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, and `Likelihood.REWARD_MODELING` are the built-in likelihood objects.
+`Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`, `Likelihood.REWARD_MODELING`, and `Likelihood.BERNOULLI` are the built-in likelihood objects.
+`"bernoulli"` is for binary and multi-label targets: every output is a logit with its own sigmoid, and `nn.BCEWithLogitsLoss` is its loss.
+The targets are floats with the shape of the outputs, and they may be soft labels in $[0, 1]$.
+It takes the parametric structures (`diag`, `kron`, `full`) and the GLM and NN predictives.
+The default `link_approx="probit"` is a closed form that applies the sigmoid to each logit scaled by its variance, and `"mc"` samples.
+The Laplace bridge is for the softmax, so `"bridge"` and `"bridge_norm"` raise a `ValueError`.
+Gridsearch uses `RunningBernoulliNLLMetric` by default.
+See the [multi-label example](multilabel_example.py).
 
 #### Options
 
 The built-in likelihoods take the options of the matching PyTorch criterion, with the same names, defaults, and meaning.
-For example, `CategoricalLikelihood(weight, ignore_index, label_smoothing)` mirrors `nn.CrossEntropyLoss`.
+For example, `CategoricalLikelihood(weight, ignore_index, label_smoothing)` mirrors `nn.CrossEntropyLoss`, and `BernoulliLikelihood(weight, pos_weight)` mirrors `nn.BCEWithLogitsLoss`.
+The options of the Bernoulli likelihood are scalars or have one entry per output.
 You can also pass the criterion you trained with.
 Its `reduction` is ignored, since Laplace always sums the loss.
 
@@ -138,6 +146,12 @@ Some caveats:
   `kron` drops them from both Kronecker factors.
   A layer whose positions don't line up with the logits, such as a convolution before pooling, keeps all positions of an example in its input factor if the example has at least one observed target.
   A layer counts as lined up if it has as many positions as the logits, in the same order.
+- The Bernoulli likelihood is known to Curvlinops only.
+  BackPACK and ASDL fall back to the torch.func implementation for `diag` and `full`, and `kron` raises a `ValueError`.
+  `LowRankLaplace` raises a `ValueError` as well.
+- `kron` with a GGN or Monte Carlo Fisher backend raises a `ValueError` for the Bernoulli options `weight` and `pos_weight`, since Curvlinops' KFAC ignores them without a warning.
+  This is tracked at [f-dangel/curvlinops#311](https://github.com/f-dangel/curvlinops/issues/311).
+  `CurvlinopsEF` takes them with `kron`.
 - Function-space methods (`hessian_structure="gp"`) don't support sequence outputs, and `ELLA` and `VaLLA` only accept the default `ignore_index=-100`.
   They leave out ignored rows, while `FunctionalLaplace` raises a `ValueError` if its sampled subset has any.
 - Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
@@ -180,7 +194,7 @@ For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\m
 `link_approx` has no effect there.
 In the example above, the result is the expected Poisson rate.
 Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
-FunctionalLaplace, ELLA, and VaLLA only accept likelihoods named `"regression"`, `"classification"`, or `"reward_modeling"`.
+FunctionalLaplace, ELLA, and VaLLA only accept likelihoods named `"regression"`, `"classification"`, or `"reward_modeling"`, and raise a `ValueError` for `"bernoulli"`.
 FunctionalLaplace also accepts a `CategoricalLikelihood` with options.
 ELLA and VaLLA don't support likelihood options yet and raise a `ValueError` for them.
 

@@ -13,7 +13,11 @@ from laplace import DiagSubnetLaplace, FullSubnetLaplace, Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
 from laplace.curvature.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
-from laplace.likelihoods import BradleyTerryLikelihood, CategoricalLikelihood
+from laplace.likelihoods import (
+    BernoulliLikelihood,
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+)
 from laplace.utils import (
     LargestMagnitudeSubnetMask,
     LargestVarianceDiagLaplaceSubnetMask,
@@ -1220,3 +1224,65 @@ def test_subnetmask_rejects_reward_modeling():
             ValueError, match="Only available for classification and regression!"
         ):
             LargestVarianceSWAGSubnetMask(model, 2, likelihood=lik)
+
+
+@pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
+@pytest.mark.parametrize(
+    "options", [{}, {"pos_weight": torch.tensor([2.0, 1.0, 3.0, 1.0])}]
+)
+def test_bernoulli_subnetlaplace(laplace, options):
+    torch.manual_seed(5)
+    model = nn.Sequential(nn.Linear(3, 6), nn.Tanh(), nn.Linear(6, 4))
+    X = torch.randn(12, 3)
+    y = torch.rand(12, 4)
+    loader = DataLoader(TensorDataset(X, y), batch_size=5)
+    lik = BernoulliLikelihood(**options)
+
+    n_params = sum(p.numel() for p in model.parameters())
+    indices = torch.arange(0, n_params, 3)
+
+    la = laplace(model, lik, subnetwork_indices=indices, prior_precision=2.0)
+    la.fit(loader)
+
+    # The Hessian of the subnetwork is that of the full network, restricted
+    full = FullSubnetLaplace(
+        model, lik, subnetwork_indices=torch.arange(n_params), prior_precision=2.0
+    )
+    full.fit(loader)
+    H = (
+        full.H[indices][:, indices]
+        if laplace is FullSubnetLaplace
+        else full.H.diag()[indices]
+    )
+
+    assert la.H.shape == H.shape
+    torch.testing.assert_close(la.H, H)
+
+    with torch.no_grad():
+        nll = nn.BCEWithLogitsLoss(**options, reduction="sum").double()(model(X), y)
+
+    torch.testing.assert_close(la.log_likelihood, -nll)
+
+    f_mu, f_var = la._glm_predictive_distribution(X)
+    kappa = 1 / torch.sqrt(1 + torch.pi / 8 * f_var.diagonal(dim1=-2, dim2=-1))
+    probit = la(X)
+
+    assert probit.shape == (len(X), 4)
+    torch.testing.assert_close(probit, torch.sigmoid(kappa * f_mu))
+    assert torch.isfinite(la.log_marginal_likelihood())
+    assert la(X, pred_type="nn", link_approx="mc", n_samples=5).shape == (len(X), 4)
+
+
+def test_swag_subnetmask_with_bernoulli_likelihood():
+    torch.manual_seed(5)
+    model = nn.Sequential(nn.Linear(3, 6), nn.Tanh(), nn.Linear(6, 4))
+    X = torch.randn(12, 3)
+    y = torch.rand(12, 4)
+    loader = DataLoader(TensorDataset(X, y), batch_size=4)
+
+    for lik in ("bernoulli", BernoulliLikelihood(pos_weight=torch.tensor(2.0))):
+        mask = LargestVarianceSWAGSubnetMask(
+            model, n_params_subnet=7, likelihood=lik, swag_n_snapshots=3
+        )
+
+        assert mask.select(loader).shape == (7,)

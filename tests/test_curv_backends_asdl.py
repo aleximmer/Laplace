@@ -5,6 +5,8 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
+from laplace.curvature import EFInterface, GGNInterface
+from laplace.likelihoods import BernoulliLikelihood
 from tests.utils import (
     AsdlEF,
     AsdlGGN,
@@ -492,3 +494,105 @@ def test_custom_likelihood_rejected_by_kron_and_hessian(class_Xy, model, Backend
     else:
         with pytest.raises(ValueError, match="diag"):
             backend.kron(X, y, N=len(X))
+
+
+# Bernoulli likelihood. ASDL has no sigmoid loss type, so the GGN and EF backends fall
+# back to the torch.func code for `diag` and `full`, and `kron` raises. Float32
+# options for the float64 model.
+_BCE_OPTIONS = [
+    {},
+    {"weight": torch.tensor([0.5, 2.0, 1.5])},
+    {"pos_weight": torch.tensor([3.0, 0.5, 2.0])},
+    {
+        "weight": torch.tensor([0.5, 2.0, 1.5]),
+        "pos_weight": torch.tensor([3.0, 0.5, 2.0]),
+    },
+]
+
+
+def _bce_model() -> nn.Module:
+    torch.manual_seed(711)
+    model = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 3)).double()
+    setattr(model, "output_size", 3)
+
+    return model
+
+
+def _bce_data(
+    batch_shape: tuple[int, ...], soft: bool
+) -> tuple[torch.Tensor, torch.Tensor]:
+    torch.manual_seed(711)
+    X = torch.randn(*batch_shape, 3, dtype=torch.float64)
+    y = torch.rand(*batch_shape, 3, dtype=torch.float64)
+
+    return X, y if soft else (y > 0.5).to(y.dtype)
+
+
+@pytest.mark.parametrize("opts", _BCE_OPTIONS)
+@pytest.mark.parametrize("soft", [False, True])
+@pytest.mark.parametrize("batch_shape", [(8,), (4, 2)])
+@pytest.mark.parametrize(
+    "Backend,Reference,structure",
+    [
+        (AsdlGGN, GGNInterface, "diag"),
+        (AsdlGGN, GGNInterface, "full"),
+        (AsdlEF, EFInterface, "diag"),
+        (AsdlEF, EFInterface, "full"),
+    ],
+)
+def test_bernoulli_falls_back_to_torch_func(
+    Backend, Reference, structure, batch_shape, soft, opts
+):
+    X, y = _bce_data(batch_shape, soft)
+    likelihood = BernoulliLikelihood(**opts)
+    backend = Backend(_bce_model(), likelihood)
+
+    # ASDL doesn't know the Bernoulli likelihood, so it can't compute this
+    assert not backend._honours(structure, y)
+
+    loss, H = getattr(backend, structure)(X, y)
+    loss_ref, H_ref = getattr(Reference(_bce_model(), likelihood), structure)(X, y)
+
+    assert H.dtype == torch.float64
+    assert torch.allclose(loss, loss_ref)
+    assert torch.allclose(H, H_ref)
+
+    bce = nn.BCEWithLogitsLoss(**opts, reduction="sum").double()
+    assert torch.allclose(loss, bce(_bce_model()(X), y))
+
+
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("stochastic", [False, True])
+def test_bernoulli_kron_raises_in_asdl(Backend, stochastic):
+    X, y = _bce_data((8,), soft=False)
+    kwargs = {"stochastic": True} if stochastic and Backend is AsdlGGN else {}
+    backend = Backend(_bce_model(), "bernoulli", **kwargs)
+
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        backend.kron(X, y, len(X))
+
+
+def test_bernoulli_hessian_raises_in_asdl():
+    X, y = _bce_data((8,), soft=False)
+
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        AsdlHessian(_bce_model(), "bernoulli").full(X, y)
+
+
+def test_bernoulli_has_no_asdl_loss_type():
+    # It must not silently take the cross-entropy path
+    with pytest.raises(ValueError, match="does not support the likelihood"):
+        AsdlGGN(_bce_model(), "bernoulli").loss_type
+
+    assert AsdlGGN(_bce_model(), "classification").loss_type
+    assert AsdlGGN(_bce_model(), "regression").loss_type
+
+
+def test_bernoulli_asdl_gradients_count_one_observation_per_row():
+    # The targets `(B, K)` have `K` entries per datum, but a datum is one observation
+    X, y = _bce_data((8,), soft=True)
+    backend = AsdlEF(_bce_model(), "bernoulli")
+
+    Gs, _ = backend.gradients(X, y)
+
+    assert Gs.shape[0] == len(X)
