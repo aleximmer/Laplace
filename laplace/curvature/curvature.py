@@ -147,6 +147,28 @@ def _observed_input_factors(
             factors[module] = total / max(counts[module], 1)
 
 
+def _is_probability_target(likelihood: Likelihood, y: torch.Tensor) -> bool:
+    """Whether the targets `y` are class probabilities for a categorical likelihood.
+
+    Class probabilities are floats with the shape of the logits `(B, ..., K)`, while
+    class indices are integers `(B, ...)`. This is how `nn.CrossEntropyLoss` tells
+    them apart, and the likelihood rejects integer targets with the shape of the
+    logits.
+
+    Parameters
+    ----------
+    likelihood : Likelihood
+    y : torch.Tensor
+        targets of a batch.
+
+    Returns
+    -------
+    is_probability : bool
+        `False` for other likelihoods and for class indices.
+    """
+    return isinstance(likelihood, CategoricalLikelihood) and y.is_floating_point()
+
+
 def _ignored_positions(likelihood: Likelihood, y: torch.Tensor) -> int:
     """Number of positions that a categorical likelihood ignores in the targets `y`.
 
@@ -168,7 +190,9 @@ def _ignored_positions(likelihood: Likelihood, y: torch.Tensor) -> int:
     n_ignored : int
         zero for other likelihoods and for probability targets.
     """
-    if not isinstance(likelihood, CategoricalLikelihood) or y.is_floating_point():
+    if not isinstance(likelihood, CategoricalLikelihood) or _is_probability_target(
+        likelihood, y
+    ):
         return 0
 
     return int((y == likelihood.ignore_index).sum())

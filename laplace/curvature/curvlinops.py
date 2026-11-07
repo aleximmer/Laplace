@@ -20,6 +20,7 @@ from laplace.curvature.curvature import (
     _ALL_OPTIONS,
     _KRON_OPTIONS,
     _TARGET_FREE_OPTIONS,
+    _is_probability_target,
     _observed_input_factors,
     _observed_mask,
 )
@@ -47,6 +48,33 @@ class _ClassDimFirst(nn.Module):
     def forward(self, x: Any) -> torch.Tensor:
         out = self.model(x)
         return out.movedim(-1, 1) if out.ndim > 2 else out
+
+
+class _ProbabilityCrossEntropy(nn.CrossEntropyLoss):
+    """`nn.CrossEntropyLoss` for class probabilities, for the empirical Fisher of
+    Curvlinops' KFAC.
+
+    KFAC flattens the targets of a batch before it calls the loss: class indices
+    `(B, ...)` become `(B * ...,)`, and class probabilities `(B, ..., K)` become
+    `(B * ... * K,)`. This loss restores the class dim from the shape of the logits,
+    which KFAC has flattened to `(B * ..., K)`.
+    """
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """Compute the cross-entropy of flattened class probabilities.
+
+        Parameters
+        ----------
+        input : torch.Tensor
+            logits `(M, K)`
+        target : torch.Tensor
+            class probabilities with `M * K` entries, in the order of the logits.
+
+        Returns
+        -------
+        loss : torch.Tensor
+        """
+        return super().forward(input, target.reshape(input.shape))
 
 
 class _KeepObserved(nn.Module):
@@ -185,15 +213,44 @@ class CurvlinopsInterface(CurvatureInterface):
                 raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
-    def _fisher_targets(self, y: torch.Tensor, method: str) -> torch.Tensor:
-        """Round Bernoulli soft labels to 0 or 1 for a target-free Fisher, which
-        Curvlinops would reject otherwise. The loss uses the real targets.
+    def _linop_targets(self, y: torch.Tensor, method: str) -> torch.Tensor:
+        """Targets in the form that the Curvlinops operator of `method` takes.
+
+        - A target-free Fisher, i.e. the GGN and the MC Fisher, doesn't depend on the
+          targets, but Curvlinops needs valid ones. Class probabilities become their
+          class indices, which `CrossEntropyLoss` accepts for any layout, and
+          Bernoulli soft labels are rounded to 0 or 1. The loss uses the real targets.
+        - The dense GGN and Hessian differentiate the loss at the class probabilities.
+          Their model puts the class dim first, see `_ClassDimFirst`, so the targets
+          do too.
+        - The KFAC of the empirical Fisher takes class probabilities as they are, see
+          `_ProbabilityCrossEntropy`.
+
+        Parameters
+        ----------
+        y : torch.Tensor
+            targets of a batch.
+        method : str
+            curvature method, `"kron"` or `"full"`.
+
+        Returns
+        -------
+        y : torch.Tensor
         """
         target_free = (
             self._kron_fisher_type != FisherType.EMPIRICAL
             if method == "kron"
             else self._linop_context is FisherMCLinearOperator
         )
+
+        if _is_probability_target(self.likelihood, y):
+            if target_free:
+                return y.argmax(dim=-1)
+
+            if method == "full" and y.ndim > 2:
+                return y.movedim(-1, 1)
+
+            return y
 
         if target_free and isinstance(self.likelihood, BernoulliLikelihood):
             return (y >= 0.5).to(y.dtype)
@@ -221,12 +278,22 @@ class CurvlinopsInterface(CurvatureInterface):
 
         if mask is None:
             model = self._linop_model
-            data = [(x, self._fisher_targets(y, "kron"))]
+            data = [(x, self._linop_targets(y, "kron"))]
             kron_kwargs = {}
             M = f.shape[:-1].numel()
 
-            # A label sampled for the MC Fisher may equal a custom `ignore_index`
-            if self._has_custom_ignore_index:
+            soft = _is_probability_target(self.likelihood, y)
+
+            if soft:
+                # Curvlinops would count the class dim of the targets as loss terms
+                kron_kwargs["num_per_example_loss_terms"] = M // f.shape[0]
+
+            if soft and self._kron_fisher_type == FisherType.EMPIRICAL:
+                lossfunc = _ProbabilityCrossEntropy(
+                    reduction="sum", label_smoothing=self.likelihood.label_smoothing
+                )
+            elif self._has_custom_ignore_index:
+                # A label sampled for the MC Fisher may equal a custom `ignore_index`
                 lossfunc = nn.CrossEntropyLoss(
                     reduction="sum", label_smoothing=self.likelihood.label_smoothing
                 )
@@ -310,7 +377,7 @@ class CurvlinopsInterface(CurvatureInterface):
             self._linop_model,
             self.lossfunc,
             self.params,
-            [(x, self._fisher_targets(y, "full"))],
+            [(x, self._linop_targets(y, "full"))],
             check_deterministic=False,
             **curvlinops_kwargs,
         )
@@ -373,6 +440,18 @@ class CurvlinopsEF(CurvlinopsInterface, EFInterface):
             return super()._honoured_options(method) | {"weight", "pos_weight"}
 
         return super()._honoured_options(method)
+
+    def _honours(self, method: str, y: torch.Tensor | None = None) -> bool:
+        # `EFLinearOperator` can't differentiate the loss at class probabilities, so
+        # the dense empirical Fisher falls back to the per-position gradients
+        if (
+            method == "full"
+            and y is not None
+            and _is_probability_target(self.likelihood, y)
+        ):
+            return False
+
+        return super()._honours(method, y)
 
     @property
     def _kron_fisher_type(self) -> FisherType:

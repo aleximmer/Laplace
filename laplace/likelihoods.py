@@ -591,6 +591,34 @@ class GaussianLikelihood(Likelihood):
         return True
 
 
+def _flatten_categorical_targets(f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    """Flatten categorical targets to what `nn.CrossEntropyLoss` takes for the logits
+    `f` of shape `(M, K)`, where `M` is the number of positions in `f`.
+
+    The kind of the targets follows from their number of dims. Class probabilities
+    have as many dims as `f` and keep their class dim, while class indices have one
+    dim less. So `f` must still have its batch dims, or a class dim could be taken
+    for a position.
+
+    Parameters
+    ----------
+    f : torch.Tensor
+        logits `(batch, ..., K)`, not flattened.
+    y : torch.Tensor
+        class indices `(batch, ...)` or class probabilities `(batch, ..., K)`.
+
+    Returns
+    -------
+    y : torch.Tensor
+        `(M, K)` for class probabilities, and `(M,)` for class indices, with `M` the
+        product of the leading dims of `f`.
+    """
+    if y.ndim == f.ndim:
+        return y.reshape(-1, f.shape[-1])
+
+    return y.reshape(-1)
+
+
 class CategoricalLikelihood(Likelihood):
     """Categorical likelihood with a softmax link, i.e. classification.
 
@@ -745,13 +773,21 @@ class CategoricalLikelihood(Likelihood):
                 f"{tuple(f.shape)} expected from the logits."
             )
 
+        # As in `nn.CrossEntropyLoss`, class probabilities are floats. Integer targets
+        # with the shape of the logits are most likely a one-hot encoding that was not
+        # converted, which torch rejects too.
+        if y.ndim == f.ndim and not y.is_floating_point():
+            raise ValueError(
+                f"The targets have the shape {tuple(y.shape)} of the logits, so they "
+                f"are read as class probabilities, which must be floating point, but "
+                f"their dtype is {y.dtype}. Call `.float()` on one-hot targets, or "
+                f"pass class indices of shape {tuple(f.shape[:-1])}."
+            )
+
     def loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         self.check_targets(f, y)
-
-        if f.ndim > 2:
-            # Class probabilities keep their class axis
-            y = y.reshape(-1, f.shape[-1]) if y.ndim == f.ndim else y.reshape(-1)
-            f = f.reshape(-1, f.shape[-1])
+        y = _flatten_categorical_targets(f, y)
+        f = f.reshape(-1, f.shape[-1])
 
         return self._criterion("sum", self._weight_like(f))(f, y)
 
