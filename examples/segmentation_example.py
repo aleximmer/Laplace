@@ -180,9 +180,8 @@ print(f"[NN] Probabilities: {tuple(probs.shape)}")
 #   [diffusion example](../diffusion_example/#bayesdiff-diagonal-last-layer-laplace).
 # - The targets must be class indices. Class probabilities as targets are not supported
 #   for image outputs.
-# - Pixels labeled with `-100` (PyTorch's default `ignore_index`), e.g., void pixels, are
-#   skipped by the loss, but still count toward the number of observations. With
-#   `CurvlinopsGGN`, they also still count toward the K-FAC Hessian used on this page and
-#   toward the diagonal Hessian. The full Hessian and the `CurvlinopsEF` backend leave
-#   them out. Masking them everywhere is tracked in
-#   [#313](https://github.com/aleximmer/Laplace/issues/313).
+# - Pixels labeled with `-100` (PyTorch's default `ignore_index`), e.g., void pixels, add
+#   nothing to the loss, the number of observations, or any Hessian approximation,
+#   including the K-FAC Hessian used on this page. A layer with a different number of
+#   positions than the logits, e.g., a convolution before pooling, keeps all pixels of an
+#   image in its input factor if the image has at least one labeled pixel.

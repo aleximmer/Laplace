@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import MutableMapping
+from contextlib import nullcontext
 from importlib.util import find_spec
 from typing import Any, Callable
 
@@ -31,7 +32,13 @@ except ModuleNotFoundError as err:
     ) from err
 
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
-from laplace.curvature.curvature import _ALL_OPTIONS, _TARGET_FREE_OPTIONS
+from laplace.curvature.curvature import (
+    _ALL_OPTIONS,
+    _KRON_OPTIONS,
+    _TARGET_FREE_OPTIONS,
+    _observed_input_factors,
+    _observed_mask,
+)
 from laplace.utils import Kron, Likelihood, _is_batchnorm
 
 EPS = 1e-6
@@ -41,9 +48,9 @@ class AsdlInterface(CurvatureInterface):
     """Interface for asdfghjkl backend."""
 
     # The exact and MC Fishers build their own loss from enumerated or sampled
-    # classes, so they can't see class weights or ignored targets. KFAC counts
-    # ignored positions in its input factors.
-    _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
+    # classes, so they can't see class weights or ignored targets in `diag`. KFAC
+    # drops the ignored positions from the logits and the input factors.
+    _honoured = {"diag": _TARGET_FREE_OPTIONS, "kron": _KRON_OPTIONS}
 
     def __init__(
         self,
@@ -221,7 +228,11 @@ class AsdlInterface(CurvatureInterface):
     def _ggn_type(self) -> str:
         raise NotImplementedError
 
-    def _get_kron_factors(self, M: int) -> Kron:
+    def _get_kron_factors(
+        self,
+        M: int,
+        input_factors: dict[nn.Module, torch.Tensor] | None = None,
+    ) -> Kron:
         kfacs = list()
         for module in self.model.modules():
             if _is_batchnorm(module):
@@ -232,16 +243,26 @@ class AsdlInterface(CurvatureInterface):
             if stats is None:
                 continue
 
+            B = stats.kron.B
+
+            if input_factors is None:
+                A = stats.kron.A
+            else:
+                # ASDL's factors are sums over the positions, and
+                # `_rescale_kron_factors` divides them by the number of data. So scale
+                # the mean by the number `M` of observed positions.
+                A = input_factors[module] * M
+
             if hasattr(module, "bias") and module.bias is not None:
                 # split up bias and weights
-                kfacs.append([stats.kron.B, stats.kron.A])
-                kfacs.append([stats.kron.B])
+                kfacs.append([B, A])
+                kfacs.append([B])
             elif hasattr(module, "weight"):
-                p, q = stats.kron.B.numel(), stats.kron.A.numel()
+                p, q = B.numel(), A.numel()
                 if p == q == 1:
-                    kfacs.append([stats.kron.B * stats.kron.A])
+                    kfacs.append([B * A])
                 else:
-                    kfacs.append([stats.kron.B, stats.kron.A])
+                    kfacs.append([B, A])
             else:
                 raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
@@ -267,7 +288,7 @@ class AsdlInterface(CurvatureInterface):
             if isinstance(self, (GGNInterface, EFInterface)):
                 return super().diag(x, y, **kwargs)
 
-            raise self._unsupported_error("diag")
+            raise self._unsupported_error("diag", y=y)
 
         if self.loss_type == LOSS_MSE and self._ggn_type == FISHER_EXACT and y.ndim > 2:
             # ASDL's exact MSE Fisher loops over `logits[:, i]`, which assumes 2D
@@ -442,8 +463,6 @@ class AsdlInterface(CurvatureInterface):
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
 
-        self._warn_kron_ignored(y)
-
         if self.likelihood.name == Likelihood.REGRESSION.name and y.ndim > 2:
             raise NotImplementedError(
                 "Kronecker-factored curvature with ASDL does not support regression "
@@ -463,26 +482,54 @@ class AsdlInterface(CurvatureInterface):
         fisher_maker = get_fisher_maker(self.model, cfg)
         y_orig = y
         y = y if self.loss_type == LOSS_MSE else y.view(-1)
-        if "emp" in self._ggn_type:
-            dummy = fisher_maker.setup_model_call(self._model, x)
-            dummy = (
-                dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
-            )
-            fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
-        else:
-            dummy = fisher_maker.setup_model_call(self._model, x)
-            if self.loss_type != LOSS_MSE:
-                # ASDL's exact and MC cross-entropy Fishers assume 2D logits
-                fisher_maker.setup_logits_repr(dummy.view(-1, dummy.size(-1)))
-        f, _ = fisher_maker.forward_and_backward()
+
+        mask = _observed_mask(self.likelihood, y_orig)
+        observed = (
+            nullcontext()
+            if mask is None
+            else _observed_input_factors(self._model, mask)
+        )
+
+        # The forward pass of `setup_model_call` fills the input factors of the mask
+        with observed as input_factors:
+            if "emp" in self._ggn_type:
+                dummy = fisher_maker.setup_model_call(self._model, x)
+                dummy = (
+                    dummy
+                    if self.loss_type == LOSS_MSE
+                    else dummy.view(-1, dummy.size(-1))
+                )
+
+                if mask is None:
+                    fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
+                else:
+                    # The ignored positions are gone, so no class is ignored anymore
+                    m = mask.reshape(-1)
+                    plain = nn.CrossEntropyLoss(
+                        reduction="sum", label_smoothing=self.likelihood.label_smoothing
+                    )
+                    fisher_maker.setup_loss_call(plain, dummy[m], y[m])
+            else:
+                dummy = fisher_maker.setup_model_call(self._model, x)
+                if self.loss_type != LOSS_MSE:
+                    # ASDL's exact and MC cross-entropy Fishers assume 2D logits
+                    logits = dummy.view(-1, dummy.size(-1))
+
+                    if mask is not None:
+                        # Only the observed positions are enumerated or sampled,
+                        # whatever their classes are
+                        logits = logits[mask.reshape(-1)]
+
+                    fisher_maker.setup_logits_repr(logits)
+            f, _ = fisher_maker.forward_and_backward()
         self._check_targets(f, y_orig)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
-        M = len(y)
-        kron = self._get_kron_factors(M)
-        # ASDL sums the input factors over all positions, e.g. `B * L` rows for logits
-        # `(B, L, C)`. `KronLaplace.fit` normalizes by the number of positions.
+        M = len(y) if mask is None else int(mask.sum())
+        kron = self._get_kron_factors(M, None if mask is None else input_factors)
+        # ASDL sums the input factors over the observed positions, e.g. `B * L` rows for
+        # logits `(B, L, C)`. `KronLaplace.fit` normalizes by the number of observations.
         kron = self._rescale_kron_factors(kron, N)
         if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
             curv_factor = 0.5  # correct scaling for diag ef
@@ -574,8 +621,8 @@ class AsdlEF(AsdlInterface, EFInterface):
     """Implementation of the `EFInterface` using asdfghjkl."""
 
     # The empirical Fisher differentiates `lossfunc` at the observed targets. KFAC
-    # counts ignored positions in its input factors.
-    _honoured = {"diag": _ALL_OPTIONS, "kron": _TARGET_FREE_OPTIONS}
+    # drops the ignored positions from the logits and the input factors.
+    _honoured = {"diag": _ALL_OPTIONS, "kron": _KRON_OPTIONS}
 
     def __init__(
         self,

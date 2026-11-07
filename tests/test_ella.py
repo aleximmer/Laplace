@@ -990,3 +990,28 @@ def test_ella_rejects_likelihood_options_on_assignment(data):
 
     # The likelihood stays as it was
     assert estimator.likelihood == CategoricalLikelihood()
+
+
+def test_ella_ignored_rows_gram(data):
+    x, _, model = data
+    y = torch.tensor([0, -100, 1, -100])
+    loader = DataLoader(TensorDataset(x, y), batch_size=2)
+
+    estimator = make_ella(model)
+    estimator.fit(loader)
+
+    # Ignored rows add nothing to the Gram matrix of the features
+    features, output = estimator._features(x)
+    hessian = estimator.likelihood.fit_likelihood.output_hessian(output)
+    observed = y != -100
+    expected = torch.einsum(
+        "bck,bcd,bdl->kl", features[observed], hessian[observed], features[observed]
+    )
+
+    torch.testing.assert_close(estimator.feature_gram, expected)
+
+    # ... and the nonzero Gram matrix of the other rows is not what an ignored row
+    # would have added
+    assert expected.abs().sum() > 0
+    all_rows = torch.einsum("bck,bcd,bdl->kl", features, hessian, features)
+    assert not torch.allclose(estimator.feature_gram, all_rows)

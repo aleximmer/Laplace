@@ -21,7 +21,11 @@ from torch.utils.data import DataLoader
 
 from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
-from laplace.curvature.curvature import CurvatureInterface, _ignored_positions
+from laplace.curvature.curvature import (
+    CurvatureInterface,
+    _ignored_positions,
+    _observed_mask,
+)
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.likelihoods import CategoricalLikelihood, get_likelihood
 from laplace.utils import SoDSampler, hyperparameters_equal
@@ -2251,9 +2255,12 @@ class KronLaplace(ParametricLaplace):
 
     For outputs `(B, ..., K)`, a position is an entry of the dims between the batch
     dim `B` and the output dim `K`, e.g. one of the `L` positions of a sequence
-    `(B, L, K)` or a pixel of an image `(B, H, W, K)`. KFAC sums its input factors
-    over all positions, so the factors are normalized by the number of positions,
-    including those a categorical likelihood ignores.
+    `(B, L, K)` or a pixel of an image `(B, H, W, K)`. KFAC sums over the positions,
+    so the factors are normalized by the number of observations `n_obs`. Positions
+    that a categorical likelihood ignores, e.g. padding, are dropped from both
+    Kronecker factors, as in `nn.CrossEntropyLoss`. A layer whose positions don't
+    line up with the logits, e.g. a convolution before pooling, keeps all positions
+    of an example that has at least one observation in its input factor.
     """
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
@@ -2277,10 +2284,6 @@ class KronLaplace(ParametricLaplace):
     ):
         self.damping: bool = damping
         self.H_facs: Kron | None = None
-
-        # Positions that the Kronecker factors sum over, see `fit`
-        self._n_kron_positions: int = 0
-        self._n_ignored_batch_positions: int = 0
 
         super().__init__(
             model,
@@ -2312,10 +2315,16 @@ class KronLaplace(ParametricLaplace):
         y: torch.Tensor,
         N: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        # KFAC sums over the ignored positions too, so `fit` counts them, see there
-        self._n_ignored_batch_positions += _ignored_positions(
-            self.backend.likelihood, y
-        )
+        mask = _observed_mask(self.backend.likelihood, y)
+
+        # Nothing is observed, so there is no curvature, and no loss
+        if mask is not None and not mask.any():
+            return (
+                torch.zeros((), device=self._device, dtype=self._dtype),
+                Kron(
+                    [[torch.zeros_like(F) for F in facs] for facs in self.H.kfacs],
+                ),
+            )
 
         return self.backend.kron(X, y, N=N, **self._asdl_fisher_kwargs)
 
@@ -2334,50 +2343,36 @@ class KronLaplace(ParametricLaplace):
     ) -> None:
         """Fit the Kronecker factors, see `ParametricLaplace.fit`.
 
-        The backends sum the input factors over all positions and divide them by the
-        number of data. KFAC can't drop the positions that a categorical likelihood
-        ignores, e.g. padding, from its input factors. So the factors are
-        normalized by the number of positions they sum over, ignored ones included.
-        `n_obs` leaves those out and stays as it is for everything else. The
-        backends warn if there are ignored positions.
+        The backends sum the input factors over the positions of a batch and divide
+        them by the number of data. They are normalized by the number of
+        observations `n_obs` instead, which leaves out the positions that a
+        categorical likelihood ignores, e.g. padding. The backends drop those from
+        the factors, so they are the same as for data without them.
         """
         if override:
             self.H_facs = None
 
         n_obs_old: int = 0 if self.H_facs is None else self.n_obs
-        # Pickles from older versions have no position count
-        n_positions_old: int = (
-            0 if self.H_facs is None else getattr(self, "_n_kron_positions", self.n_obs)
-        )
-
         n_data_new: int = len(train_loader.dataset)
+
         if self.H_facs is not None:
             self._init_H()  # re-init H non-decomposed
 
-        self._n_ignored_batch_positions = 0
         super().fit(train_loader, override=override, progress_bar=progress_bar)
 
-        # The backends sum the input factors over all positions, e.g. `B * L` for
-        # outputs `(B, L, K)`, and divide by `n_data_new`. Every position is an
-        # observation, so divide by the number of positions instead. This also holds
-        # when the sequence length varies between batches.
-        n_positions_new: int = self.n_obs - n_obs_old + self._n_ignored_batch_positions
-        if n_positions_new > 0:
-            self.H = self._rescale_factors(self.H, n_data_new / n_positions_new)
-
-        n_positions_total = n_positions_old + n_positions_new
-        self._n_kron_positions = n_positions_total
+        # The backends sum the input factors over the observations of a batch and
+        # divide by `n_data_new`. Divide by the number of observations instead, which
+        # also holds when the sequence length varies between batches.
+        n_obs_new: int = self.n_obs - n_obs_old
+        if n_obs_new > 0:
+            self.H = self._rescale_factors(self.H, n_data_new / n_obs_new)
 
         if self.H_facs is None:
             self.H_facs = self.H
-        else:
-            # Weight previous and new Kronecker factors by their number of positions
-            self.H_facs = self._rescale_factors(
-                self.H_facs, n_positions_old / n_positions_total
-            )
-            self.H_facs += self._rescale_factors(
-                self.H, n_positions_new / n_positions_total
-            )
+        elif self.n_obs > 0:
+            # Weight previous and new Kronecker factors by their number of observations
+            self.H_facs = self._rescale_factors(self.H_facs, n_obs_old / self.n_obs)
+            self.H_facs += self._rescale_factors(self.H, n_obs_new / self.n_obs)
 
         # Decompose to self.H for all required quantities but keep H_facs for further inference
         self.H = self.H_facs.decompose(damping=self.damping)
@@ -2446,14 +2441,10 @@ class KronLaplace(ParametricLaplace):
         state_dict = super().state_dict()
         assert isinstance(self.H_facs, Kron)
         state_dict["H"] = self.H_facs.kfacs
-        state_dict["n_kron_positions"] = self._n_kron_positions
         return state_dict
 
     def load_state_dict(self, state_dict: dict[str, Any]):
         super().load_state_dict(state_dict)
-
-        # Older checkpoints have no ignored positions in the count
-        self._n_kron_positions = state_dict.get("n_kron_positions", self.n_obs)
 
         self._init_H()
 
@@ -3593,6 +3584,14 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             else:
                 X, y = data
                 X, y = X.to(self._device), y.to(self._device)
+
+            if _ignored_positions(self.likelihood.fit_likelihood, y) > 0:
+                raise ValueError(
+                    "FunctionalLaplace fits a GP to the subset of data, whose kernel "
+                    "and noise terms can't leave out single targets, but the subset "
+                    "has ignored targets, e.g. padding. Drop them from the data, or "
+                    "use a parametric Laplace, e.g. `DiagLaplace` or `KronLaplace`."
+                )
 
             Js_batch, f_batch = self._jacobians(X, enable_backprop=False)
 
@@ -4758,7 +4757,10 @@ class ELLA(BaseFunctionalLaplace):
                     "bck,bcl->kl", features, features
                 ).detach()
             else:
-                hessian = self.likelihood.fit_likelihood.output_hessian(output)
+                # With the targets, ignored rows have no Hessian
+                hessian = self.likelihood.fit_likelihood.output_hessian(
+                    output, classification_targets(y)
+                )
                 self.feature_gram += torch.einsum(
                     "bck,bcd,bdl->kl", features, hessian, features
                 ).detach()
@@ -5916,15 +5918,22 @@ class VaLLA(BaseFunctionalLaplace):
             log_term = -0.5 * (energy + torch.log(2 * torch.pi * noise_variance)).sum()
         else:
             y = classification_targets(y)
+            ignore_index = self.likelihood.fit_likelihood.ignore_index
+            observed = y != ignore_index
             if self.mc_softmax_samples:
                 draws = draw_gaussian(
                     mean, covariance, self.mc_softmax_samples, self.generator
                 )
                 log_probabilities = draws.log_softmax(dim=-1)
+
+                # An ignored target may not be a class, so look up class 0 instead and
+                # zero the terms of the ignored rows
+                safe = torch.where(observed, y, torch.zeros_like(y))
                 selected = log_probabilities.gather(
                     -1,
-                    y.long().view(1, -1, 1).expand(self.mc_softmax_samples, -1, 1),
+                    safe.long().view(1, -1, 1).expand(self.mc_softmax_samples, -1, 1),
                 ).squeeze(-1)
+                selected = selected * observed
                 if self.alpha == 0:
                     log_term = selected.mean(dim=0).sum()
                 else:
@@ -5943,7 +5952,7 @@ class VaLLA(BaseFunctionalLaplace):
                     1 + torch.pi / 8 * covariance.diagonal(dim1=-2, dim2=-1)
                 )
                 log_term = -torch.nn.functional.cross_entropy(
-                    scaled, y.long(), reduction="sum"
+                    scaled, y.long(), ignore_index=ignore_index, reduction="sum"
                 )
 
         solved = torch.linalg.solve_triangular(triangular.T, features, upper=False)

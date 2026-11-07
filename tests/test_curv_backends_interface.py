@@ -632,6 +632,7 @@ def test_custom_ggn_matches_closed_form(backend_cls, structure, model, reg_Xy):
 
 _ALL_OPTIONS = frozenset({"weight", "ignore_index", "label_smoothing"})
 _TARGET_FREE = frozenset({"label_smoothing"})
+_KRON = _TARGET_FREE | {"ignore_index"}
 
 # Float32 weights for a float64 model: the backends must cast them
 _OPTIONS_WEIGHT = torch.tensor([0.5, 2.0, 1.5])
@@ -652,27 +653,27 @@ _CURVATURE_CELLS = [
     (CurvlinopsGGN, "ggn", "full", False, _ALL_OPTIONS),
     (CurvlinopsGGN, "ggn", "full", True, _TARGET_FREE),
     (CurvlinopsGGN, "ggn", "diag", False, _ALL_OPTIONS),
-    (CurvlinopsGGN, "ggn", "kron", False, _TARGET_FREE),
+    (CurvlinopsGGN, "ggn", "kron", False, _KRON),
     # MC KFAC differentiates the loss at sampled labels, so label smoothing
-    # changes it (downgraded)
-    (CurvlinopsGGN, "ggn", "kron", True, frozenset()),
+    # changes it (downgraded). Ignored positions are dropped before sampling.
+    (CurvlinopsGGN, "ggn", "kron", True, frozenset({"ignore_index"})),
     (CurvlinopsEF, "ef", "full", False, _ALL_OPTIONS),
     (CurvlinopsEF, "ef", "diag", False, _ALL_OPTIONS),
-    (CurvlinopsEF, "ef", "kron", False, _TARGET_FREE),
+    (CurvlinopsEF, "ef", "kron", False, _KRON),
     (CurvlinopsHessian, "hessian", "full", False, _ALL_OPTIONS),
     (AsdlGGN, "ggn", "diag", False, _TARGET_FREE),
     (AsdlGGN, "ggn", "diag", True, _TARGET_FREE),
-    (AsdlGGN, "ggn", "kron", False, _TARGET_FREE),
-    (AsdlGGN, "ggn", "kron", True, _TARGET_FREE),
+    (AsdlGGN, "ggn", "kron", False, _KRON),
+    (AsdlGGN, "ggn", "kron", True, _KRON),
     (AsdlGGN, "ggn", "full", False, _ALL_OPTIONS),
     (AsdlEF, "ef", "diag", False, _ALL_OPTIONS),
-    (AsdlEF, "ef", "kron", False, _TARGET_FREE),
+    (AsdlEF, "ef", "kron", False, _KRON),
     (AsdlEF, "ef", "full", False, _ALL_OPTIONS),
     (AsdlHessian, "hessian", "full", False, _ALL_OPTIONS),
     (BackPackGGN, "ggn", "diag", False, _TARGET_FREE),
     (BackPackGGN, "ggn", "diag", True, _TARGET_FREE),
-    (BackPackGGN, "ggn", "kron", False, _TARGET_FREE),
-    (BackPackGGN, "ggn", "kron", True, _TARGET_FREE),
+    (BackPackGGN, "ggn", "kron", False, _KRON),
+    (BackPackGGN, "ggn", "kron", True, _KRON),
     (BackPackGGN, "ggn", "full", False, _ALL_OPTIONS),
     (BackPackEF, "ef", "diag", False, _ALL_OPTIONS),
     (BackPackEF, "ef", "full", False, _ALL_OPTIONS),
@@ -807,10 +808,10 @@ def test_categorical_options_curvature(
 def test_unhonoured_options_raise(model, class_Xy):
     X, y = class_Xy
 
-    with pytest.raises(ValueError, match="diag"):
-        CurvlinopsGGN(model, CategoricalLikelihood(ignore_index=1)).kron(X, y, len(X))
-
     weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
+
+    with pytest.raises(ValueError, match="diag"):
+        CurvlinopsGGN(model, weighted).kron(X, y, len(X))
 
     with pytest.raises(ValueError, match="diag"):
         CurvlinopsGGN(model, weighted, stochastic=True).full(X, y)
@@ -822,6 +823,17 @@ def test_unhonoured_options_raise(model, class_Xy):
     ).kron(X, y, len(X))
 
     assert torch.allclose(kron.to_matrix(), kron_smooth.to_matrix())
+
+
+def test_unsupported_error_names_ignore_index(model, class_Xy):
+    X, y = class_Xy
+    y = y.clone()
+    y[0] = -100
+
+    # The default `ignore_index` is not an option of the likelihood, but padding
+    # makes it one
+    with pytest.raises(ValueError, match="ignore_index"):
+        AsdlHessian(model, "classification").diag(X, y)
 
 
 def test_custom_kron_raises(model, reg_Xy):
@@ -918,19 +930,17 @@ def test_mc_fisher_masks_padded_positions():
     [CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF, BackPackGGN],
     ids=lambda v: v.__name__,
 )
-def test_kron_warns_for_padded_positions(backend_cls):
+def test_kron_drops_padded_positions(backend_cls):
     X, y, keep = _padded_data()
     backend = backend_cls(_options_model(False), "classification")
 
-    with pytest.warns(UserWarning, match="ignored positions"):
-        backend.kron(X, y, len(X))
+    with warnings.catch_warnings():
+        warnings.filterwarnings("error", message=".*ignored positions")
+        _, kron = backend.kron(X, y, len(X))
 
-    # No padding, no warning
-    with warnings.catch_warnings(record=True) as caught:
-        warnings.simplefilter("always")
-        backend.kron(X[keep], y[keep], int(keep.sum()))
-
-    assert not any("ignored positions" in str(w.message) for w in caught)
+    # Padding counts for nothing, as if those data weren't there
+    _, kron_kept = backend.kron(X[keep], y[keep], len(X))
+    assert torch.allclose(kron.to_matrix(), kron_kept.to_matrix())
 
 
 def test_honours_counts_padding_as_ignore_index(model, class_Xy):

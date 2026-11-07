@@ -424,3 +424,15 @@ def test_dtype(laplace, backend, dtype, independent_outputs, likelihood):
             assert False  # Fail the test
         else:
             pass  # Ignore
+
+
+def test_sod_rejects_ignored_targets(model):
+    X = torch.randn(10, 3)
+    y = torch.randint(2, (10,))
+    y[3] = -100
+    loader = DataLoader(TensorDataset(X, y), batch_size=5)
+
+    func_la = FunctionalLaplace(model, "classification", 10)
+
+    with pytest.raises(ValueError, match="subset"):
+        func_la.fit(loader)
