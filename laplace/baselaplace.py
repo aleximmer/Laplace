@@ -93,6 +93,12 @@ _CATEGORICAL_NAMES = frozenset(
 )
 
 
+_NOISE_PER_OUTPUT_HINT = (
+    "`sigma_noise` is a scalar. To use a known noise std per output, pass "
+    "`GaussianLikelihood(sigma_noise=<tensor of shape (outputs,)>)` as the likelihood."
+)
+
+
 def _checkpoint_hyperparameters(likelihood: Likelihood) -> dict[str, Any]:
     """The hyperparameters of a likelihood for a checkpoint, with tensors detached
     and copied, so that later changes to the likelihood don't reach the checkpoint.
@@ -156,7 +162,11 @@ class BaseLaplace:
         Reward modeling is supported by `KronLaplace`, `DiagLaplace`, `ELLA`,
         and `VaLLA`.
     sigma_noise : torch.Tensor or float, default=1
-        observation noise for the regression setting; must be 1 for classification
+        observation noise std for the regression setting; must be 1 for classification.
+        This is a scalar. For a known std per output, pass
+        `GaussianLikelihood(sigma_noise=<tensor of shape (outputs,)>)` as the
+        `likelihood`, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
+        The vector is fixed and `sigma_noise` must then stay 1.
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case
@@ -217,6 +227,13 @@ class BaseLaplace:
         self.n_layers: int = len(self.params)
         self.prior_precision: float | torch.Tensor = prior_precision
         self.prior_mean: float | torch.Tensor = prior_mean
+        if (
+            torch.is_tensor(sigma_noise)
+            and sigma_noise.ndim == 1
+            and len(sigma_noise) > 1
+        ):
+            raise ValueError(_NOISE_PER_OUTPUT_HINT)
+
         if sigma_noise != 1 and not self.likelihood.is_gaussian:
             raise ValueError("Sigma noise != 1 only available for regression.")
 
@@ -792,6 +809,17 @@ class BaseLaplace:
 
     @sigma_noise.setter
     def sigma_noise(self, sigma_noise: float | torch.Tensor) -> None:
+        # A std per output of the likelihood already holds the whole noise
+        if (
+            self._noise_per_output is not None
+            and isinstance(sigma_noise, (int, float, torch.Tensor))
+            and bool((torch.as_tensor(sigma_noise) != 1).any())
+        ):
+            raise ValueError(
+                "The likelihood has a noise std per output, so `sigma_noise` must "
+                f"stay 1, but it is {sigma_noise}."
+            )
+
         self._posterior_scale = None
 
         if np.isscalar(sigma_noise) and np.isreal(sigma_noise):
@@ -805,7 +833,7 @@ class BaseLaplace:
                 )
             elif sigma_noise.ndim == 1:
                 if len(sigma_noise) > 1:
-                    raise ValueError("Only homoscedastic output noise supported.")
+                    raise ValueError(_NOISE_PER_OUTPUT_HINT)
                 self._sigma_noise = sigma_noise[0].to(
                     device=self._device, dtype=self._dtype
                 )
@@ -815,6 +843,31 @@ class BaseLaplace:
             raise ValueError(
                 "Invalid type: sigma noise needs to be torch.Tensor or scalar."
             )
+
+    @property
+    def _noise_per_output(self) -> torch.Tensor | None:
+        # Known noise std per output of the Gaussian likelihood, if it has one
+        return self.likelihood.hyperparameters().get("sigma_noise")
+
+    def _check_noise_outputs(self) -> None:
+        # The noise std per output of the likelihood needs one entry per output
+        noise = self._noise_per_output
+
+        if noise is not None and len(noise) != self.n_outputs:
+            raise ValueError(
+                f"The model has {self.n_outputs} outputs, but the noise std per "
+                f"output has {len(noise)} entries."
+            )
+
+    def _noise_variance(self) -> torch.Tensor:
+        # Noise variance of the targets: the std per output of the likelihood squared
+        # `(outputs,)`, else 0-dim. The curvature already holds the former, see `_H_factor`.
+        sigma = self._noise_per_output
+
+        if sigma is None:
+            return self.sigma_noise.square()
+
+        return sigma.to(device=self._device, dtype=self._dtype).square()
 
     @property
     def _H_factor(self) -> torch.Tensor:
@@ -2796,8 +2849,8 @@ class BaseFunctionalLaplace(BaseLaplace):
         The function-space methods pick their formulas, e.g. for the marginal
         likelihood and the predictive, by the likelihood's name. A subclass of a
         built-in likelihood that keeps its name is fine. FunctionalLaplace also
-        takes the options of `CategoricalLikelihood`, while ELLA and VaLLA don't
-        support likelihood options yet.
+        takes the options of `CategoricalLikelihood`, while ELLA and VaLLA only take
+        the `sigma_noise` of `GaussianLikelihood`.
 
         Raises
         ------
@@ -2813,7 +2866,8 @@ class BaseFunctionalLaplace(BaseLaplace):
                 "parametric Laplace with the `diag` or `full` structure instead."
             )
 
-        options = likelihood.hyperparameters()
+        # The noise std per output of the Gaussian likelihood is always supported
+        options = set(likelihood.hyperparameters()) - {"sigma_noise"}
 
         if options and not self._supports_likelihood_options:
             raise ValueError(
@@ -3288,7 +3342,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         Reward modeling is supported by `KronLaplace`, `DiagLaplace`, `ELLA`,
         and `VaLLA`.
     sigma_noise : torch.Tensor or float, default=1
-        observation noise for the regression setting; must be 1 for classification
+        observation noise std for the regression setting; must be 1 for classification.
+        This is a scalar. For a known std per output, pass
+        `GaussianLikelihood(sigma_noise=<tensor of shape (outputs,)>)` as the
+        `likelihood`, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
+        The vector is fixed and `sigma_noise` must then stay 1.
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case
@@ -3852,6 +3910,14 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             else:
                 return torch.einsum("bcm,bcn->bmn", v, v)
 
+    def _noise_diagonal(self, noise: torch.Tensor, size: int) -> torch.Tensor:
+        # Noise variance of every entry of the stacked `(M * C,)` targets, which run
+        # over the outputs fastest. A noise variance per output is tiled over the data.
+        if noise.ndim == 0:
+            return noise.expand(size)
+
+        return noise.tile(size // noise.shape[0])
+
     @property
     def log_det_ratio(self) -> torch.Tensor:
         """Computes log determinant term in GP marginal likelihood
@@ -3867,6 +3933,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         log determinant term := \\( \\log | K + \\sigma_2 I | \\)
         """
         if self.likelihood.name == Likelihood.REGRESSION.name:
+            noise = self._noise_variance()
+
             if self.independent_outputs:
                 log_det = torch.tensor(
                     0.0, requires_grad=True, device=self._device, dtype=self._dtype
@@ -3879,16 +3947,13 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                             device=self._device,
                             dtype=self._dtype,
                         )
-                        * self.sigma_noise.square()
+                        * (noise[c] if noise.ndim else noise)
                     )
                 return log_det
             else:
                 return torch.logdet(
                     self.gp_kernel_prior_variance * self.K_MM
-                    + torch.eye(
-                        n=self.K_MM.shape[0], device=self._device, dtype=self._dtype
-                    )
-                    * self.sigma_noise.square()
+                    + torch.diag(self._noise_diagonal(noise, self.K_MM.shape[0]))
                 )
         else:
             if self.independent_outputs:
@@ -3932,9 +3997,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         """
         if self.likelihood.name == Likelihood.REGRESSION.name:
-            noise = self.sigma_noise.square()
+            noise = self._noise_variance()
         else:
-            noise = eps
+            noise = torch.as_tensor(eps, device=self._device, dtype=self._dtype)
         if self.independent_outputs:
             scatter = torch.tensor(
                 0.0, requires_grad=True, device=self._device, dtype=self._dtype
@@ -3946,7 +4011,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                         self.gp_kernel_prior_variance * self.K_MM[c]
                         + torch.diag(
                             torch.ones(m, device=self._device, dtype=self._dtype)
-                            * noise
+                            * (noise[c] if noise.ndim else noise)
                         )
                     ),
                     self.mu[:, c],
@@ -3957,9 +4022,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             mu_term = torch.linalg.solve(
                 torch.linalg.cholesky(
                     self.gp_kernel_prior_variance * self.K_MM
-                    + torch.diag(
-                        torch.ones(m, device=self._device, dtype=self._dtype) * noise
-                    )
+                    + torch.diag(self._noise_diagonal(noise, m))
                 ),
                 self.mu.reshape(-1),
             )
@@ -4797,6 +4860,7 @@ class ELLA(BaseFunctionalLaplace):
         out = self.model(first_x)
         self._check_output_dims(out)
         self.n_outputs = out.shape[-1]
+        self._check_noise_outputs()
         setattr(self.model, "output_size", self.n_outputs)
         self._build_basis(train_loader, indices)
         self.feature_gram = torch.zeros(
@@ -4817,8 +4881,16 @@ class ELLA(BaseFunctionalLaplace):
             features, output = self._features(x)
             if self.likelihood.name == Likelihood.REGRESSION.name:
                 regression_targets(y, output)
+                noise = self._noise_per_output
+
+                # The noise std per output is in the Gram matrix, unlike the scalar one
+                weights = (
+                    torch.ones(self.n_outputs, device=self._device, dtype=self._dtype)
+                    if noise is None
+                    else 1 / self._noise_variance()
+                )
                 self.feature_gram += torch.einsum(
-                    "bck,bcl->kl", features, features
+                    "bck,c,bcl->kl", features, weights, features
                 ).detach()
             else:
                 # With the targets, ignored rows have no Hessian
@@ -4980,7 +5052,7 @@ class ELLA(BaseFunctionalLaplace):
                 mean, covariance = self.predictive_moments(x)
                 y = regression_targets(y, mean)
                 variance = (
-                    covariance.diagonal(dim1=-2, dim2=-1) + self.sigma_noise.square()
+                    covariance.diagonal(dim1=-2, dim2=-1) + self._noise_variance()
                 )
                 total += (
                     0.5
@@ -5351,7 +5423,8 @@ class VaLLA(BaseFunctionalLaplace):
         Trainable logarithm of scalar parameter-prior precision.
     log_noise_variance : torch.nn.Parameter or None
         Trainable logarithm of observation variance for regression;
-        ``None`` for classification and reward modeling.
+        ``None`` for classification and reward modeling, and for a likelihood with a
+        known noise std per output, which VaLLA does not train.
     generator : torch.Generator
         Random generator for Monte Carlo data terms on the model device.
 
@@ -5422,9 +5495,11 @@ class VaLLA(BaseFunctionalLaplace):
         self.log_prior_precision = torch.nn.Parameter(
             self._prior_precision.detach().log().clone()
         )
+        # A known noise std per output of the likelihood is not trained
         self.log_noise_variance = (
             torch.nn.Parameter(2 * self._sigma_noise.detach().log().clone())
             if self.likelihood.name == Likelihood.REGRESSION.name
+            and self._noise_per_output is None
             else None
         )
         self._inducing_strategy = (
@@ -6034,7 +6109,7 @@ class VaLLA(BaseFunctionalLaplace):
         mean, covariance, features, triangular = self._latent_distribution(x)
         if self.likelihood.name == Likelihood.REGRESSION.name:
             y = regression_targets(y, mean)
-            noise_variance = self.sigma_noise.square()
+            noise_variance = self._noise_variance()
             latent_variance = covariance.diagonal(dim1=-2, dim2=-1)
             squared_error = (y - mean).square()
             if self.alpha == 0:
@@ -6117,7 +6192,7 @@ class VaLLA(BaseFunctionalLaplace):
                 mean, covariance = self.predictive_moments(x)
                 y = regression_targets(y, mean)
                 variance = (
-                    covariance.diagonal(dim1=-2, dim2=-1) + self.sigma_noise.square()
+                    covariance.diagonal(dim1=-2, dim2=-1) + self._noise_variance()
                 )
                 total += (
                     0.5
@@ -6214,6 +6289,7 @@ class VaLLA(BaseFunctionalLaplace):
         out = self.model(x_first)
         self._check_output_dims(out)
         self.n_outputs = out.shape[-1]
+        self._check_noise_outputs()
         setattr(self.model, "output_size", self.n_outputs)
         if override or not self._fitted:
             if self._inducing_strategy is not None:

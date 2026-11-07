@@ -112,6 +112,21 @@ class _KeepObserved(nn.Module):
         return self.model(x)[self.mask]
 
 
+class _Whiten(nn.Module):
+    # Divide the outputs by the noise std per output, so that the plain squared error
+    # of Curvlinops is the weighted one of the likelihood
+
+    def __init__(self, model: nn.Module, sigma_noise: torch.Tensor) -> None:
+        super().__init__()
+        self.model = model
+        self.sigma_noise = sigma_noise
+
+    def forward(self, x: Any) -> torch.Tensor:
+        out = self.model(x)
+
+        return out / self.sigma_noise.to(dtype=out.dtype, device=out.device)
+
+
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
@@ -146,7 +161,24 @@ class CurvlinopsInterface(CurvatureInterface):
         if self.likelihood.name == Likelihood.CLASSIFICATION.name:
             return _ClassDimFirst(self.model)
 
+        # Whitening makes the curvature of the plain squared error exact
+        if self._noise_per_output is not None:
+            return _Whiten(self.model, self._noise_per_output)
+
         return self.model
+
+    @property
+    def _linop_lossfunc(self) -> nn.Module:
+        # The loss passed to the Curvlinops operators. The whitened model needs the
+        # plain squared error.
+        if self._noise_per_output is not None:
+            return nn.MSELoss(reduction="sum")
+
+        return self.lossfunc
+
+    def _honoured_options(self, method: str) -> frozenset[str]:
+        # Curvlinops whitens the outputs and targets by the noise std per output
+        return super()._honoured_options(method) | {"sigma_noise"}
 
     @property
     def _kron_fisher_type(self) -> FisherType:
@@ -255,6 +287,9 @@ class CurvlinopsInterface(CurvatureInterface):
         if target_free and isinstance(self.likelihood, BernoulliLikelihood):
             return (y >= 0.5).to(y.dtype)
 
+        if self._noise_per_output is not None:
+            return y / self._noise_per_output.to(dtype=y.dtype, device=y.device)
+
         return y
 
     def kron(
@@ -298,7 +333,7 @@ class CurvlinopsInterface(CurvatureInterface):
                     reduction="sum", label_smoothing=self.likelihood.label_smoothing
                 )
             else:
-                lossfunc = self.lossfunc
+                lossfunc = self._linop_lossfunc
         else:
             # Every observed position is an example with one loss term. The losses
             # don't ignore any class, since the ignored positions are gone, and a
@@ -375,7 +410,7 @@ class CurvlinopsInterface(CurvatureInterface):
 
         linop = self._linop_context(
             self._linop_model,
-            self.lossfunc,
+            self._linop_lossfunc,
             self.params,
             [(x, self._linop_targets(y, "full"))],
             check_deterministic=False,
@@ -409,16 +444,21 @@ class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):
         self.stochastic = stochastic
 
     def _honoured_options(self, method: str) -> frozenset[str]:
+        options = super()._honoured_options(method)
+
         if not self.stochastic:
-            return super()._honoured_options(method)
+            return options
 
         # The MC Fisher of the dense operator samples gradients that ignore the
         # loss. MC KFAC differentiates `lossfunc` at sampled labels, so label
         # smoothing changes it. Ignored positions are dropped before sampling.
         if method == "full":
-            return _TARGET_FREE_OPTIONS
+            return _TARGET_FREE_OPTIONS | {"sigma_noise"}
 
-        return frozenset({"ignore_index"}) if method == "kron" else frozenset()
+        if method == "kron":
+            return frozenset({"ignore_index", "sigma_noise"})
+
+        return frozenset({"sigma_noise"})
 
     @property
     def _kron_fisher_type(self) -> FisherType:

@@ -59,7 +59,11 @@ class SubnetLaplace(ParametricLaplace):
         (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
         that define the subnetwork to apply the Laplace approximation over
     sigma_noise : torch.Tensor or float, default=1
-        observation noise for the regression setting; must be 1 for classification
+        observation noise std for the regression setting; must be 1 for classification.
+        This is a scalar. For a known std per output, pass
+        `GaussianLikelihood(sigma_noise=<tensor of shape (outputs,)>)` as the
+        `likelihood`, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
+        The vector is fixed and `sigma_noise` must then stay 1.
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case

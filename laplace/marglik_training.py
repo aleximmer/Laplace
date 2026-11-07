@@ -185,6 +185,12 @@ def marglik_training(
             "Marginal-likelihood training does not support reward modeling."
         )
 
+    if lik.hyperparameters().get("sigma_noise") is not None:
+        raise ValueError(
+            "Marginal-likelihood training learns a single noise std, so it does not "
+            "support a likelihood with a noise std per output (#349)."
+        )
+
     # Class weights and ignored targets change the denominator of a "mean" loss, so the
     # non-Gaussian data term is summed and divided by the batch size in the loop below,
     # matching the summed loss that `Laplace.fit` uses

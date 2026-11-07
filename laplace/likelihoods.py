@@ -528,20 +528,93 @@ class GaussianLikelihood(Likelihood):
     \\(N K \\log(\\sigma \\sqrt{2\\pi})\\). The targets have as many dims as the outputs,
     and every entry of the targets but the last dim is an observation.
 
-    The noise enters through `sigma_noise` of the Laplace approximation, so the
-    other quantities assume \\(\\sigma = 1\\): the output Hessian is \\(I\\), the inverse
-    link is the identity, samples are \\(y \\sim \\mathcal{N}(f, I)\\), and the output
-    gradient is \\(f - y\\). A float `sigma_noise` gives a normalizer with the default
-    dtype.
+    By default, the noise enters through `sigma_noise` of the Laplace approximation, so
+    the other quantities assume \\(\\sigma = 1\\): the output Hessian is \\(I\\), the
+    inverse link is the identity, samples are \\(y \\sim \\mathcal{N}(f, I)\\), and the
+    output gradient is \\(f - y\\). A float `sigma_noise` gives a normalizer with the
+    default dtype.
+
+    To use a known noise std per output, \\(\\sigma \\in \\mathbb{R}^K\\), pass a 1-D
+    tensor as the option `sigma_noise` of the likelihood. The likelihood is then
+    \\(\\mathcal{N}(y \\mid f, \\operatorname{diag}(\\sigma^2))\\), so the loss, the
+    output gradient, the output Hessian \\(\\operatorname{diag}(\\sigma^{-2})\\), the
+    samples, and the normalizer \\(N \\sum_k \\log(\\sigma_k \\sqrt{2\\pi})\\) all use
+    it. The loss becomes
+
+    $$
+        \\frac{1}{2} \\sum_{n=1}^N \\sum_{k=1}^K
+        \\frac{(y_{nk} - f_{nk})^2}{\\sigma_k^2}.
+    $$
+
+    The vector is fixed: a Laplace approximation takes it at `fit` and does not learn
+    it, and its own `sigma_noise` must stay \\(1\\). Like the weights of the categorical
+    likelihood, the vector is a hyperparameter of the likelihood, so checkpoints store
+    it, and two likelihoods are equal only if their vectors are. Curvlinops divides the
+    outputs and the targets by \\(\\sigma\\), which gives the exact curvature. The other
+    backends fall back to the torch.func code for `diag` and `full` and raise for
+    `kron`.
+
+    Parameters
+    ----------
+    sigma_noise : torch.Tensor, optional
+        known noise std per output `(outputs,)`. All entries must be positive and
+        finite. `None` leaves the noise to the Laplace approximation.
+
+    Raises
+    ------
+    ValueError
+        if `sigma_noise` is not a floating 1-D tensor with positive, finite entries.
     """
 
     name: ClassVar[str] = "regression"
 
+    # Class-level default keeps subclasses working that override `__init__` without
+    # calling `super().__init__()`
+    sigma_noise: torch.Tensor | None = None
+    """Noise std per output `(outputs,)`, or `None` for the scalar noise of the Laplace
+    approximation."""
+
+    def __init__(self, *, sigma_noise: torch.Tensor | None = None) -> None:
+        if sigma_noise is not None:
+            if (
+                not torch.is_tensor(sigma_noise)
+                or sigma_noise.ndim != 1
+                or not sigma_noise.is_floating_point()
+            ):
+                raise ValueError(
+                    "The noise std per output must be a floating 1-D tensor "
+                    f"`(outputs,)`, but it is {sigma_noise!r}."
+                )
+
+            if not bool((sigma_noise.isfinite() & (sigma_noise > 0)).all()):
+                raise ValueError(
+                    "The noise std per output must be positive and finite, but it is "
+                    f"{sigma_noise}."
+                )
+
+        self.sigma_noise = sigma_noise
+
+    def hyperparameters(self) -> dict[str, Any]:
+        if self.sigma_noise is None:
+            return {}
+
+        return {"sigma_noise": self.sigma_noise}
+
+    def _sigma_like(self, f: torch.Tensor) -> torch.Tensor | float:
+        # The noise std per output with the dtype and device of `f`, or the float 1
+        if self.sigma_noise is None:
+            return 1.0
+
+        return self.sigma_noise.to(dtype=f.dtype, device=f.device)
+
     def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
-        return torch.distributions.Normal(f, 1.0)
+        return torch.distributions.Normal(f, self._sigma_like(f))
 
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
-        return nn.MSELoss(reduction=reduction)
+        if self.sigma_noise is None:
+            return nn.MSELoss(reduction=reduction)
+
+        return _WhitenedMSELoss(self.sigma_noise, reduction)
 
     @property
     def loss_factor(self) -> float:
@@ -553,12 +626,27 @@ class GaussianLikelihood(Likelihood):
                 f"The model's output has {f.ndim} dims but the target has {y.ndim} dims."
             )
 
+        if self.sigma_noise is not None and len(self.sigma_noise) != f.shape[-1]:
+            raise ValueError(
+                f"The model has {f.shape[-1]} outputs, but the noise std per output "
+                f"has {len(self.sigma_noise)} entries."
+            )
+
     def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
         return y.shape[:-1].numel()
 
     def log_normalizer(
         self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
     ) -> torch.Tensor:
+        # The std per output replaces the scalar one, which then stays at 1
+        if self.sigma_noise is not None:
+            sigma = self.sigma_noise.to(
+                dtype=_float_dtype(sigma_noise),
+                device=getattr(sigma_noise, "device", None),
+            )
+
+            return n_obs * torch.log(sigma * sqrt(2 * pi)).sum()
+
         sigma_noise = torch.as_tensor(sigma_noise, dtype=_float_dtype(sigma_noise))
 
         return n_obs * n_outputs * torch.log(sigma_noise * sqrt(2 * pi))
@@ -567,6 +655,12 @@ class GaussianLikelihood(Likelihood):
         self, f: torch.Tensor, y: torch.Tensor | None = None
     ) -> torch.Tensor:
         K = f.shape[-1]
+
+        if self.sigma_noise is not None:
+            precision = self._sigma_like(f).square().reciprocal()
+
+            return torch.diag_embed(precision).expand(*f.shape[:-1], K, K)
+
         eye = torch.eye(K, device=f.device, dtype=f.dtype)
 
         return eye.expand(*f.shape[:-1], K, K)
@@ -581,14 +675,33 @@ class GaussianLikelihood(Likelihood):
             f.shape, device=f.device, dtype=f.dtype, generator=generator
         )
 
-        return f + noise
+        return f + self._sigma_like(f) * noise
 
     def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        return f - y
+        return (f - y) / self._sigma_like(f) ** 2
 
     @property
     def is_gaussian(self) -> bool:
         return True
+
+
+class _WhitenedMSELoss(nn.Module):
+    # `nn.MSELoss` of the outputs and targets divided by the noise std per output
+    def __init__(self, sigma_noise: torch.Tensor, reduction: str = "sum") -> None:
+        super().__init__()
+
+        # A buffer follows `.to(device, dtype)` of the loss
+        self.register_buffer(
+            "sigma_noise", sigma_noise.detach().clone(), persistent=False
+        )
+        self.reduction = reduction
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        return nn.functional.mse_loss(
+            input / self.sigma_noise,
+            target / self.sigma_noise,
+            reduction=self.reduction,
+        )
 
 
 def _flatten_categorical_targets(f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:

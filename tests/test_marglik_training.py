@@ -273,3 +273,15 @@ def test_marglik_training_soft_targets(model, hessian_structure, caplog):
     assert runs[True][2] == runs[False][2]
     assert torch.allclose(torch.tensor(runs[True][0]), torch.tensor(runs[False][0]))
     assert torch.allclose(torch.tensor(runs[True][1]), torch.tensor(runs[False][1]))
+
+
+@pytest.mark.parametrize("hessian_structure", ["full", "kron", "diag"])
+def test_marglik_training_raises_for_noise_per_output(model, hessian_structure):
+    with pytest.raises(ValueError, match="#349"):
+        marglik_training(
+            model,
+            _loader("regression"),
+            likelihood=GaussianLikelihood(sigma_noise=torch.tensor([0.5, 2.0])),
+            hessian_structure=hessian_structure,
+            n_epochs=1,
+        )

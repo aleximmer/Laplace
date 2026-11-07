@@ -346,6 +346,11 @@ class CurvatureInterface:
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
 
+    @property
+    def _noise_per_output(self) -> torch.Tensor | None:
+        # Known noise std per output of a Gaussian likelihood, if it has one
+        return self.likelihood.hyperparameters().get("sigma_noise")
+
     def _honoured_options(self, method: str) -> frozenset[str]:
         """Options of the built-in likelihoods that this backend honours natively.
 
@@ -872,11 +877,15 @@ class GGNInterface(CurvatureInterface):
         ValueError
             if the likelihood is a built-in one with non-default options.
         """
+        # The noise per output of a Gaussian likelihood scales its samples and
+        # gradients, so the sampled Fisher is exact
+        honoured = frozenset({"sigma_noise"})
+
         if (
             type(self.likelihood) in _BUILTIN_TYPES
-            and self.likelihood.hyperparameters()
+            and set(self.likelihood.hyperparameters()) - honoured
         ):
-            raise self._unsupported_error(method, frozenset(), stochastic=True)
+            raise self._unsupported_error(method, honoured, stochastic=True)
 
     def _get_mc_functional_fisher(
         self, f: torch.Tensor, y: torch.Tensor | None = None
@@ -931,9 +940,10 @@ class GGNInterface(CurvatureInterface):
         -------
         H : torch.Tensor or None
             `(batch, ..., outputs, outputs)`, or `None` for a Gaussian likelihood,
-            whose output Hessian is the identity and is skipped in the GGN.
+            whose output Hessian is the identity and is skipped in the GGN. With a
+            noise std per output, the output Hessian is not the identity.
         """
-        if self.likelihood.is_gaussian:
+        if self.likelihood.is_gaussian and self._noise_per_output is None:
             return None
 
         return self.likelihood.output_hessian(f, y)
