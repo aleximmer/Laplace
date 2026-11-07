@@ -1,19 +1,16 @@
 # %% [markdown]
 # # Soft Labels
 #
-# Classification targets are often not a single class. Several annotators can
-# disagree on an image, a teacher model can pass on its probabilities, and label
-# smoothing spreads some mass over the other classes. `nn.CrossEntropyLoss` takes such
-# targets as class probabilities with the shape of the logits, and so does `Laplace`.
+# A classification target doesn't have to be a single class. It can be a probability
+# vector over the classes, or a soft label. `nn.CrossEntropyLoss` takes these targets
+# when they are floats with the shape of the logits, and `Laplace` takes them in the
+# same way. So if your training loop already works with soft labels, the same data
+# loader works for `la.fit`.
 #
-# We train a MAP network on synthetic data where five annotators label each point,
-# so the target of a point is the fraction of votes per class. Then we put a Laplace
-# approximation (LA) on top of it, tune its prior precision, and compare the soft
-# negative log likelihood (NLL) of the MAP and the LA.
+# We go through three scenarios: label noise, knowledge distillation, and sequences
+# with a soft label per position.
 #
-# First, we create the data: points in the plane with 3 classes. The annotators
-# sample a class from the true class probabilities of the point, so they disagree
-# most near the class boundaries.
+# Let's start with the imports and some toy data: points in the plane with 3 classes.
 
 # %%
 import torch
@@ -21,11 +18,10 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import Laplace
-from laplace.utils import RunningNLLMetric
 
 torch.manual_seed(711)
 
-N_CLASSES, N_ANNOTATORS = 3, 5
+N_CLASSES = 3
 
 
 def make_data(n: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -35,157 +31,219 @@ def make_data(n: int) -> tuple[torch.Tensor, torch.Tensor]:
     centers = torch.tensor([0.0, 2.0, -2.0])
     logits = 3 * torch.cos(angle[:, None] - centers)
 
-    # One vote per annotator, then the fraction of votes per class
-    votes = torch.multinomial(logits.softmax(-1), N_ANNOTATORS, replacement=True)
-    y = nn.functional.one_hot(votes, N_CLASSES).float().mean(dim=1)
+    return X, torch.multinomial(logits.softmax(-1), 1).squeeze(-1)
 
-    return X, y
+
+def get_model(width: int = 32) -> nn.Module:
+    return nn.Sequential(nn.Linear(2, width), nn.Tanh(), nn.Linear(width, N_CLASSES))
+
+
+def train(
+    model: nn.Module,
+    loader: DataLoader,
+    n_epochs: int = 100,
+    label_smoothing: float = 0.0,
+) -> nn.Module:
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+
+    for _ in range(n_epochs):
+        for X, y in loader:
+            optimizer.zero_grad()
+            criterion(model(X), y).backward()
+            optimizer.step()
+
+    return model.eval()
 
 
 X_train, y_train = make_data(300)
 X_val, y_val = make_data(200)
-X_test, y_test = make_data(500)
-
-train_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=100)
-val_loader = DataLoader(TensorDataset(X_val, y_val), batch_size=100)
-
-print("targets of the first points:")
-print(y_train[:4])
+X_test, _ = make_data(8)
 
 # %% [markdown]
-# Each row is the fraction of votes per class, so the rows sum to one:
+# ## Label noise
 #
-# ```
-# tensor([[0.4000, 0.6000, 0.0000],
-#         [0.0000, 0.2000, 0.8000],
-#         [1.0000, 0.0000, 0.0000],
-#         [0.0000, 0.4000, 0.6000]])
-# ```
-#
-# ## Training a MAP
-#
-# The targets `y` have shape `(batch, 3)` and a floating-point dtype. That is all
-# `nn.CrossEntropyLoss` needs to read them as class probabilities instead of class
-# indices of shape `(batch,)`. We train the network with plain PyTorch:
+# Suppose an annotator gives the wrong class with probability 0.2, with every wrong
+# class equally likely. An observed label is then not certain. The true class is the
+# observed one with probability 0.8, and each of the others with probability 0.1. We
+# use these probabilities as the targets. They must be floats, as in
+# `nn.CrossEntropyLoss`.
 
 
 # %%
-def get_model() -> nn.Module:
-    torch.manual_seed(711)
-    return nn.Sequential(nn.Linear(2, 32), nn.Tanh(), nn.Linear(32, N_CLASSES))
+def noisy_label_targets(y: torch.Tensor, flip_prob: float) -> torch.Tensor:
+    one_hot = nn.functional.one_hot(y, N_CLASSES).float()
+
+    return (1 - flip_prob) * one_hot + (1 - one_hot) * flip_prob / (N_CLASSES - 1)
 
 
-model = get_model()
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+y_noisy = noisy_label_targets(y_train, flip_prob=0.2)
+noisy_loader = DataLoader(TensorDataset(X_train, y_noisy), batch_size=100)
 
-for epoch in range(300):
-    for X, y in train_loader:
-        optimizer.zero_grad()
-        criterion(model(X), y).backward()
-        optimizer.step()
-
-# %% [markdown]
-# We measure the fit with the NLL of the predicted probabilities under the soft test
-# targets, averaged over the test points. `RunningNLLMetric` accepts both class
-# indices and class probabilities. With soft targets, the NLL cannot go below the
-# entropy of the targets, so even a perfect model has a positive NLL.
-
-
-# %%
-def soft_nll(probs: torch.Tensor, y: torch.Tensor) -> float:
-    metric = RunningNLLMetric()
-    metric.update(probs, y)
-
-    return metric.compute().item()
-
-
-with torch.no_grad():
-    nll_map = soft_nll(model(X_test).softmax(-1), y_test)
-
-entropy = -torch.special.xlogy(y_test, y_test).sum(-1).mean().item()
-
-print(f"MAP test NLL: {nll_map:.3f}")
-print(f"entropy of the test targets: {entropy:.3f}")
+print(y_train[:2])
+print(y_noisy[:2])
 
 # %% [markdown]
 # ```
-# MAP test NLL: 0.397
-# entropy of the test targets: 0.271
+# tensor([0, 2])
+# tensor([[0.8000, 0.1000, 0.1000],
+#         [0.1000, 0.1000, 0.8000]])
 # ```
 #
-# ## Fitting the LA
-#
-# We pass the criterion to `Laplace`, which turns it into a `CategoricalLikelihood`.
-# The loader yields the same soft targets. Every point counts as one observation,
-# and the class dimension of the targets does not. The curvature of the generalized
-# Gauss-Newton (GGN) does not depend on the targets, so only the loss and the
-# marginal likelihood see the soft labels.
-#
-# The marginal likelihood tunes the prior precision without validation data:
+# We train the network as usual and pass the criterion to `Laplace`, which turns it
+# into a `CategoricalLikelihood`. The rest is the same as with class indices. Each row
+# of `y_noisy` counts as one observation, so the class dim of the targets doesn't add
+# any.
 
 # %%
+model = train(get_model(), noisy_loader)
+
 la = Laplace(
     model,
-    nn.CrossEntropyLoss(reduction="sum"),
+    nn.CrossEntropyLoss(),
+    subset_of_weights="last_layer",
+    hessian_structure="full",
+)
+la.fit(noisy_loader)
+la.optimize_prior_precision()
+
+print(f"Observations: {la.n_obs}")
+print(f"Predictive: {la(X_test).shape}")
+
+# %% [markdown]
+# ```
+# Observations: 300
+# Predictive: torch.Size([8, 3])
+# ```
+#
+# If you'd rather spread the noise evenly over all classes, keep the class indices and
+# use `label_smoothing`. Train with it, and pass the same criterion to `Laplace`, which
+# takes the option from there.
+
+# %%
+index_loader = DataLoader(TensorDataset(X_train, y_train), batch_size=100)
+smoothed_model = train(get_model(), index_loader, label_smoothing=0.1)
+
+la = Laplace(
+    smoothed_model,
+    nn.CrossEntropyLoss(label_smoothing=0.1),
+    subset_of_weights="last_layer",
+    hessian_structure="kron",
+)
+la.fit(index_loader)
+
+print(f"Label smoothing: {la.likelihood.label_smoothing}")
+
+# %% [markdown]
+# ```
+# Label smoothing: 0.1
+# ```
+#
+# ## Knowledge distillation
+#
+# In knowledge distillation, a small student network learns from the predictions of a
+# larger teacher network. Here, the targets are the teacher's probabilities. We train
+# the teacher on the class indices, then compute the student's targets once.
+
+# %%
+teacher = train(get_model(width=128), index_loader)
+
+
+@torch.no_grad()
+def teacher_targets(X: torch.Tensor, temperature: float = 2.0) -> torch.Tensor:
+    return (teacher(X) / temperature).softmax(-1)
+
+
+student_loader = DataLoader(
+    TensorDataset(X_train, teacher_targets(X_train)), batch_size=100
+)
+student = train(get_model(width=16), student_loader)
+
+# %% [markdown]
+# Then we fit `Laplace` on the student with the same loader. This time we tune the
+# prior precision with a grid search on validation data. The validation targets can be
+# soft too, and the default loss of the grid search, `RunningNLLMetric`, takes them.
+
+# %%
+val_loader = DataLoader(TensorDataset(X_val, teacher_targets(X_val)), batch_size=100)
+
+la = Laplace(
+    student,
+    nn.CrossEntropyLoss(),
     subset_of_weights="all",
     hessian_structure="kron",
 )
-la.fit(train_loader)
-la.optimize_prior_precision(method="marglik")
+la.fit(student_loader)
+la.optimize_prior_precision(
+    method="gridsearch",
+    pred_type="glm",
+    link_approx="probit",
+    val_loader=val_loader,
+    progress_bar=False,
+)
 
-print(f"observations: {la.n_obs}")
-print(f"prior precision (marglik): {la.prior_precision.item():.2f}")
-print(f"LA test NLL (marglik): {soft_nll(la(X_test), y_test):.3f}")
-
-# %% [markdown]
-# ```
-# observations: 300
-# prior precision (marglik): 0.57
-# LA test NLL (marglik): 0.517
-# ```
-#
-# The 300 targets of shape `(3,)` are 300 observations. The LA with this prior
-# precision is less confident than the MAP and has a higher test NLL. The MAP is
-# already close to what the votes allow here, so there is little to gain from the
-# posterior.
-#
-# ## Tuning on validation data
-#
-# Grid search takes validation targets of the same kind. Its default loss is
-# `RunningNLLMetric`, which reads soft validation targets as class probabilities. The
-# validation loader above already yields them:
-
-# %%
-la.optimize_prior_precision(method="gridsearch", val_loader=val_loader, grid_size=20)
-
-print(f"prior precision (grid search): {la.prior_precision.item():.2f}")
-print(f"LA test NLL (grid search): {soft_nll(la(X_test), y_test):.3f}")
+print(f"Predictive: {la(X_test).shape}")
 
 # %% [markdown]
 # ```
-# prior precision (grid search): 10000.00
-# LA test NLL (grid search): 0.397
+# Predictive: torch.Size([8, 3])
 # ```
 #
-# The soft validation NLL prefers the largest prior precision of the default grid,
-# which gives back the NLL of the MAP.
+# ## Sequences
 #
-# ## One-hot targets need `.float()`
-#
-# One-hot targets work too, as long as they are floats. Integer targets with the
-# shape of the logits are rejected, as in PyTorch, since they are most likely a
-# one-hot encoding that was not converted:
+# For a model with logits `(batch, length, classes)`, the targets are probabilities of
+# the same shape, so each position has its own soft label. Every position is an
+# observation. Here, we reuse the noisy data above as 60 sequences of length 5. Linear
+# layers act on each position separately, so `model`, which we trained on the single
+# points, works for the sequences.
 
 # %%
-y_one_hot = nn.functional.one_hot(y_train.argmax(-1), N_CLASSES)
+X_seq = X_train.reshape(60, 5, 2)
+y_seq = y_noisy.reshape(60, 5, N_CLASSES)
+seq_loader = DataLoader(TensorDataset(X_seq, y_seq), batch_size=20)
+
+la = Laplace(
+    model,
+    nn.CrossEntropyLoss(),
+    subset_of_weights="all",
+    hessian_structure="kron",
+)
+la.fit(seq_loader)
+la.optimize_prior_precision()
+
+print(f"Targets: {y_seq.shape}")
+print(f"Observations: {la.n_obs}")
+
+# %% [markdown]
+# ```
+# Targets: torch.Size([60, 5, 3])
+# Observations: 300
+# ```
+#
+# Sequences need a backend that supports them, such as the default `CurvlinopsGGN`.
+# BackPACK and last-layer Laplace don't take sequence outputs.
+#
+# ## One-hot targets
+#
+# One-hot targets are just soft labels with all the mass on one class, but they must be
+# floats. `torch.nn.functional.one_hot` returns integers, which `nn.CrossEntropyLoss`
+# rejects, and so does `Laplace`. Call `.float()` on them first.
+
+# %%
+y_one_hot = nn.functional.one_hot(y_train, N_CLASSES)
+one_hot_data = TensorDataset(X_train, y_one_hot)
 
 try:
-    Laplace(model, criterion, subset_of_weights="all").fit(
-        DataLoader(TensorDataset(X_train, y_one_hot), batch_size=100)
+    Laplace(model, nn.CrossEntropyLoss(), hessian_structure="diag").fit(
+        DataLoader(one_hot_data, batch_size=100)
     )
 except ValueError as error:
     print(error)
+
+one_hot_data = TensorDataset(X_train, y_one_hot.float())
+Laplace(model, nn.CrossEntropyLoss(), hessian_structure="diag").fit(
+    DataLoader(one_hot_data, batch_size=100)
+)
 
 # %% [markdown]
 # ```
@@ -194,36 +252,5 @@ except ValueError as error:
 # i.e. with 1 dim.
 # ```
 #
-# With `.float()`, one-hot targets give the same LA as the class indices:
-
-# %%
-y_index = y_train.argmax(-1)
-las = {}
-
-for name, targets in [("index", y_index), ("one-hot", y_one_hot.float())]:
-    la_ = Laplace(model, criterion, subset_of_weights="all", hessian_structure="kron")
-    la_.fit(DataLoader(TensorDataset(X_train, targets), batch_size=100))
-    las[name] = la_
-
-print(f"loss (index): {las['index'].loss.item():.3f}")
-print(f"loss (one-hot): {las['one-hot'].loss.item():.3f}")
-
-# %% [markdown]
-# ```
-# loss (index): 58.502
-# loss (one-hot): 58.502
-# ```
-#
-# ## What is supported
-#
-# Class probabilities work with the parametric structures (`full`, `kron`, `diag`),
-# the last-layer and subnetwork variants, and the Curvlinops, ASDL, and BackPACK
-# backends. For sequence models with logits `(batch, length, classes)`, the targets
-# are probabilities `(batch, length, classes)`, and every position is an
-# observation. BackPACK and the last-layer variant have no sequences. The `weight` and `label_smoothing` options of the criterion apply to
-# soft targets as they do in PyTorch. `ignore_index` does not, since a position of
-# probabilities cannot be ignored.
-#
-# > **Note:** The function-space methods `ELLA` and `VaLLA` reduce class
-# > probabilities to hard labels with an `argmax`, so they don't treat soft labels
-# > properly yet.
+# > **Note:** The function-space methods `ELLA` and `VaLLA` take hard labels only, and
+# > class probabilities raise a `ValueError`.
