@@ -34,6 +34,7 @@ from laplace.curvature.curvature import (
     _TARGET_FREE_OPTIONS,
     _observed_mask,
 )
+from laplace.likelihoods import _flatten_categorical_targets
 from laplace.utils import Kron, Likelihood
 
 
@@ -67,6 +68,35 @@ class BackPackInterface(CurvatureInterface):
 
         if type(self.likelihood) in self._library_types:
             extend(self.lossfunc)
+
+    def _flatten_targets(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        """Flatten the targets to match the logits that are flattened to `(M, K)`.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            outputs of the model for the batch, not flattened.
+        y : torch.Tensor
+            targets of the batch. For classification, class indices or class
+            probabilities.
+
+        Returns
+        -------
+        y : torch.Tensor
+            `y` itself for regression, else `(M,)` class indices or `(M, K)` class
+            probabilities, see `_flatten_categorical_targets`.
+
+        Raises
+        ------
+        ValueError
+            if the targets don't fit the outputs.
+        """
+        if self.likelihood.name == Likelihood.REGRESSION.name:
+            return y
+
+        self._check_targets(f, y)
+
+        return _flatten_categorical_targets(f, y)
 
     def jacobians(
         self,
@@ -312,13 +342,13 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 
         context = DiagGGNMC if self.stochastic else DiagGGNExact
         f = self.model(x)
+        y = self._flatten_targets(f, y)
         # Assumes that the last dimension of f is of size outputs.
         f = (
             f
             if self.likelihood.name == Likelihood.REGRESSION.name
             else f.view(-1, f.size(-1))
         )
-        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -362,13 +392,13 @@ class BackPackGGN(BackPackInterface, GGNInterface):
             )
 
         f = self.model(x)
+        y = self._flatten_targets(f, y)
         # Assumes that the last dimension of f is of size outputs.
         f = (
             f
             if self.likelihood.name == Likelihood.REGRESSION.name
             else f.view(-1, f.size(-1))
         )
-        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = lossfunc(f, y)
         with backpack(context()):
             loss.backward()
@@ -397,13 +427,13 @@ class BackPackEF(BackPackInterface, EFInterface):
             return super().diag(x, y, **kwargs)
 
         f = self.model(x)
+        y = self._flatten_targets(f, y)
         # Assumes that the last dimension of f is of size outputs.
         f = (
             f
             if self.likelihood.name == Likelihood.REGRESSION.name
             else f.view(-1, f.size(-1))
         )
-        y = y if self.likelihood.name == Likelihood.REGRESSION.name else y.view(-1)
         loss = self.lossfunc(f, y)
         with backpack(SumGradSquared()):
             loss.backward()

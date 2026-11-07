@@ -73,6 +73,33 @@ class AsdlInterface(CurvatureInterface):
             else LOSS_CROSS_ENTROPY
         )
 
+    def _flatten_targets(self, y: torch.Tensor) -> torch.Tensor:
+        """Flatten the targets to match the logits that ASDL flattens to `(M, K)`.
+
+        ASDL builds the model output lazily, so its shape is only known after the
+        forward pass. As in `nn.CrossEntropyLoss`, the dtype tells class probabilities
+        from class indices instead. `_check_targets` verifies the shape afterwards.
+
+        Parameters
+        ----------
+        y : torch.Tensor
+            targets of the batch. For classification, class indices
+            `(batch, ...)` or class probabilities `(batch, ..., K)`.
+
+        Returns
+        -------
+        y : torch.Tensor
+            `y` itself for regression, else class probabilities `(M, K)` or class
+            indices `(M,)`, where `M` is the number of positions.
+        """
+        if self.loss_type == LOSS_MSE:
+            return y
+
+        if y.is_floating_point():
+            return y.reshape(-1, y.shape[-1])
+
+        return y.reshape(-1)
+
     def jacobians(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -321,7 +348,7 @@ class AsdlInterface(CurvatureInterface):
         )
         fisher_maker = get_fisher_maker(self.model, cfg)
         y_orig = y
-        y = y if self.loss_type == LOSS_MSE else y.view(-1)
+        y = self._flatten_targets(y)
         if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, x)
             dummy = (
@@ -495,7 +522,7 @@ class AsdlInterface(CurvatureInterface):
         )
         fisher_maker = get_fisher_maker(self.model, cfg)
         y_orig = y
-        y = y if self.loss_type == LOSS_MSE else y.view(-1)
+        y = self._flatten_targets(y)
 
         mask = _observed_mask(self.likelihood, y_orig)
         observed = (
@@ -594,7 +621,7 @@ class AsdlHessian(AsdlInterface):
 
         dummy = hess_maker.setup_model_call(self._model, x)
         dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
-        y = y if self.loss_type == LOSS_MSE else y.view(-1)
+        y = self._flatten_targets(y)
 
         hess_maker.setup_loss_call(self.lossfunc, dummy, y)
         hess_maker.forward_and_backward()
