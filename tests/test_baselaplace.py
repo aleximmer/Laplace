@@ -3924,3 +3924,40 @@ def test_indefinite_posterior_precision_raises():
 
     with pytest.raises(torch.linalg.LinAlgError, match="isn't positive definite"):
         la.sample(1)
+
+
+@pytest.mark.parametrize("subset_of_weights", ["all", "last_layer"])
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_nn_predictive_uses_generator(subset_of_weights, likelihood):
+    torch.manual_seed(0)
+    X = torch.randn(20, 3)
+    y = (
+        torch.randint(2, (20,))
+        if likelihood == "classification"
+        else torch.randn(20, 2)
+    )
+    model = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
+
+    lap = Laplace(
+        model,
+        likelihood,
+        subset_of_weights=subset_of_weights,
+        hessian_structure="diag",
+    )
+    lap.fit(DataLoader(TensorDataset(X, y), batch_size=5))
+
+    def predict(seed):
+        pred = lap(
+            X[:3],
+            pred_type="nn",
+            link_approx="mc",
+            n_samples=5,
+            generator=torch.Generator().manual_seed(seed),
+        )
+        return pred if isinstance(pred, tuple) else (pred,)
+
+    # The same seed gives the same weight samples, a different one doesn't
+    for a, b in zip(predict(1), predict(1)):
+        torch.testing.assert_close(a, b)
+
+    assert not torch.allclose(predict(1)[0], predict(2)[0])
