@@ -3624,6 +3624,11 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         progress_bar : bool
             whether to show a progress bar during the fitting process.
         """
+        # Invalidate the previous fit first, so that a refit that fails at any point,
+        # e.g. while reading the loader, leaves no usable posterior
+        self._fitted = False
+        self.loss = 0.0
+
         # Set model to evaluation mode
         self.model.eval()
 
@@ -3672,10 +3677,6 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         train_loader = list(self._get_SoD_data_loader(train_loader))
         self.train_loader = train_loader
         self._prior_factor_sod = self.n_subset / self.n_data
-
-        # The caches below are reset, so a failed refit leaves no usable posterior
-        self._fitted = False
-        self.loss = 0.0
 
         self._init_K_MM()
         self._init_Sigma_inv()

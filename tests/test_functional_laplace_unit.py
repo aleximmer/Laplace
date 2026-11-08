@@ -503,3 +503,34 @@ def test_stochastic_loader_gives_symmetric_K_MM(model, independent_outputs):
 
     f_var = la.functional_variance(la._jacobians(X_subset[:5])[0])
     assert torch.all(torch.diagonal(f_var, dim1=-2, dim2=-1) >= -1e-8)
+
+
+class _FailingDataset(torch.utils.data.Dataset):
+    """Raises after `n_ok` accesses, like a loader that breaks partway through."""
+
+    def __init__(self, X: torch.Tensor, y: torch.Tensor, n_ok: int):
+        self.X, self.y, self.n_ok, self.n_calls = X, y, n_ok, 0
+
+    def __len__(self) -> int:
+        return len(self.X)
+
+    def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
+        self.n_calls += 1
+        if self.n_calls > self.n_ok:
+            raise OSError("Broken data")
+
+        return self.X[i], self.y[i]
+
+
+def test_refit_with_failing_loader_invalidates_posterior(model):
+    X, y = torch.randn(8, 3), torch.randint(2, (8,))
+
+    la = FunctionalLaplace(model, "classification", n_subset=8)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    # The first batch is read fine, the subset is not
+    with pytest.raises(OSError, match="Broken data"):
+        la.fit(DataLoader(_FailingDataset(X, y, n_ok=4), batch_size=4))
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la(X)
