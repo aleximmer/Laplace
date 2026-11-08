@@ -3744,7 +3744,11 @@ def test_bernoulli_fit_rejects_bad_targets(laplace):
 
 def _reduce_input_factor(X: torch.Tensor, observed: torch.Tensor) -> torch.Tensor:
     """KFAC-reduce input factor of a first layer applied position-wise: the mean over
-    examples of the outer products of their inputs, averaged over observed positions."""
+    the examples with an observation of the outer products of their inputs, averaged
+    over observed positions."""
+    has_observation = observed.any(dim=1)
+    X, observed = X[has_observation], observed[has_observation]
+
     X_mean = (X * observed[..., None]).sum(1) / observed.sum(1, keepdim=True)
     return X_mean.T @ X_mean / len(X)
 
@@ -3753,6 +3757,7 @@ def _reduce_input_factor(X: torch.Tensor, observed: torch.Tensor) -> torch.Tenso
 def test_kron_reduce_ignored_input_factor_is_mean_over_examples(batch_size):
     torch.manual_seed(0)
     X, y = _ignored_data((5,))
+    y[0] = -100  # A fully ignored example doesn't count
     model = _position_model()
 
     la = KronLaplace(
@@ -3763,9 +3768,37 @@ def test_kron_reduce_ignored_input_factor_is_mean_over_examples(batch_size):
     )
     la.fit(DataLoader(TensorDataset(X, y), batch_size=batch_size))
 
+    assert la.n_obs_examples == len(X) - 1
     torch.testing.assert_close(
         la.H_facs.kfacs[0][1], _reduce_input_factor(X, y != -100)
     )
+
+
+def test_kron_old_checkpoint_without_observations_has_no_examples():
+    X, y = _ignored_data((5,))
+    y[:] = -100
+    model = _position_model()
+
+    la = KronLaplace(
+        model,
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    state_dict = la.state_dict()
+    del state_dict["n_obs_examples"]  # As saved before 0.5
+
+    restored = KronLaplace(
+        deepcopy(model),
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    restored.load_state_dict(state_dict)
+
+    assert restored.n_obs == restored.n_obs_examples == 0
 
 
 def test_kron_reduce_varying_length_input_factor_is_mean_over_examples():

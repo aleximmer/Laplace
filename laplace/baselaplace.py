@@ -2569,7 +2569,12 @@ class KronLaplace(ParametricLaplace):
             state from `KronLaplace.state_dict`.
         """
         super().load_state_dict(state_dict)
-        self.n_obs_examples = state_dict.get("n_obs_examples", self.n_data)
+
+        # Checkpoints from before 0.5 don't save `n_obs_examples`. They can't tell
+        # how many examples were fully ignored, so assume none were, unless nothing
+        # was observed at all.
+        n_obs_examples = self.n_data if self.n_obs > 0 else 0
+        self.n_obs_examples = state_dict.get("n_obs_examples", n_obs_examples)
 
         self._init_H()
 
