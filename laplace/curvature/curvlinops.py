@@ -25,7 +25,13 @@ from laplace.curvature.curvature import (
     _observed_input_factors,
     _observed_mask,
 )
-from laplace.likelihoods import BernoulliLikelihood, _noise_per_output
+from laplace.likelihoods import (
+    BernoulliLikelihood,
+    HeteroscedasticGaussianLikelihood,
+    _as_joined_outputs,
+    _is_heteroscedastic,
+    _noise_per_output,
+)
 from laplace.utils import Kron, Likelihood
 
 _FullLinearOperator: TypeAlias = (
@@ -114,8 +120,10 @@ class _KeepObserved(nn.Module):
 
 
 # Curvlinops whitens the outputs and the targets by the noise std per output, see
-# `_Whiten`, which is exact for every curvature
-_WHITENED_OPTIONS = frozenset({"sigma_noise"})
+# `_Whiten`, which is exact for every curvature. A heteroscedastic likelihood is
+# whitened by its predicted noise std, clamped at `eps`, and `full` only adds a
+# constant to the loss, see `_WhitenHeteroscedastic`.
+_WHITENED_OPTIONS = frozenset({"sigma_noise", "eps", "full"})
 
 
 class _Whiten(nn.Module):
@@ -133,11 +141,44 @@ class _Whiten(nn.Module):
         return out / self.sigma_noise.to(out)
 
 
+class _WhitenHeteroscedastic(nn.Module):
+    """Divide the mean of a heteroscedastic network by its predicted noise std.
+
+    The noise std is detached, so the plain squared error of the whitened mean is
+    twice the negative log likelihood of the mean with the variance held fixed, up to
+    a constant. Its GGN, Hessian, and empirical Fisher are then those of the Laplace
+    approximation over the mean, see `HeteroscedasticGaussianLikelihood`.
+
+    Parameters
+    ----------
+    model : nn.Module
+        the model, which returns the pair `(mean, var)` or the joined outputs.
+    eps : float
+        lower bound of the variance.
+    """
+
+    def __init__(self, model: nn.Module, eps: float) -> None:
+        super().__init__()
+        self.model = model
+        self.eps = eps
+
+    def forward(self, x: Any) -> torch.Tensor:
+        """Compute the whitened mean `(batch, ..., K)`."""
+        mean, var = _as_joined_outputs(self.model(x)).chunk(2, dim=-1)
+
+        return mean / var.detach().clamp(min=self.eps).sqrt()
+
+
 class CurvlinopsInterface(CurvatureInterface):
     """Interface for Curvlinops backend. <https://github.com/f-dangel/curvlinops>"""
 
-    # Curvlinops knows the loss of a Bernoulli likelihood, `nn.BCEWithLogitsLoss`
-    _library_types = (*CurvatureInterface._library_types, BernoulliLikelihood)
+    # Curvlinops knows the loss of a Bernoulli likelihood, `nn.BCEWithLogitsLoss`, and
+    # the mean of a heteroscedastic Gaussian is a whitened `nn.MSELoss`
+    _library_types = (
+        *CurvatureInterface._library_types,
+        BernoulliLikelihood,
+        HeteroscedasticGaussianLikelihood,
+    )
 
     # The dense operators differentiate `lossfunc` at the observed targets. KFAC drops
     # the ignored positions from both Kronecker factors and has no class weights.
@@ -172,16 +213,32 @@ class CurvlinopsInterface(CurvatureInterface):
         if sigma is not None:
             return _Whiten(self.model, sigma)
 
+        if _is_heteroscedastic(self.likelihood):
+            return _WhitenHeteroscedastic(self.model, self.likelihood.eps)
+
         return self.model
 
     @property
     def _linop_lossfunc(self) -> nn.Module:
         # The loss passed to the Curvlinops operators. The whitened model needs the
         # plain squared error.
-        if _noise_per_output(self.likelihood) is not None:
+        if _noise_per_output(self.likelihood) is not None or _is_heteroscedastic(
+            self.likelihood
+        ):
             return nn.MSELoss(reduction="sum")
 
         return self.lossfunc
+
+    @property
+    def _linop_curvature_factor(self) -> float:
+        """Factor that turns the curvature of `_linop_lossfunc` into that of the
+        negative log likelihood. The whitened squared error of a heteroscedastic
+        likelihood is twice its NLL, which gives \\(\\tfrac{1}{2}\\), or
+        \\(\\tfrac{1}{4}\\) for the EF, which squares it."""
+        if not _is_heteroscedastic(self.likelihood):
+            return self._curvature_factor
+
+        return 0.25 if isinstance(self, EFInterface) else 0.5
 
     def _honoured_options(self, method: str) -> frozenset[str]:
         return super()._honoured_options(method) | _WHITENED_OPTIONS
@@ -251,7 +308,9 @@ class CurvlinopsInterface(CurvatureInterface):
                 raise ValueError(f"Whats happening with {module}?")
         return Kron(kfacs)
 
-    def _linop_targets(self, y: torch.Tensor, method: str) -> torch.Tensor:
+    def _linop_targets(
+        self, y: torch.Tensor, method: str, f: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """Targets in the form that the Curvlinops operator of `method` takes.
 
         - A target-free Fisher, i.e. the GGN and the MC Fisher, doesn't depend on the
@@ -270,6 +329,9 @@ class CurvlinopsInterface(CurvatureInterface):
             targets of a batch.
         method : str
             curvature method, `"kron"` or `"full"`.
+        f : torch.Tensor, optional
+            joined outputs of a heteroscedastic likelihood, whose predicted noise std
+            whitens the targets, see `_WhitenHeteroscedastic`.
 
         Returns
         -------
@@ -297,6 +359,11 @@ class CurvlinopsInterface(CurvatureInterface):
         if sigma is not None:
             return y / sigma.to(y)
 
+        if _is_heteroscedastic(self.likelihood) and f is not None:
+            var = self.likelihood.split(f.detach())[1]
+
+            return y / var.clamp(min=self.likelihood.eps).sqrt().to(y)
+
         return y
 
     def kron(
@@ -320,7 +387,7 @@ class CurvlinopsInterface(CurvatureInterface):
 
         if mask is None:
             model = self._linop_model
-            data = [(x, self._linop_targets(y, "kron"))]
+            data = [(x, self._linop_targets(y, "kron", f))]
             kron_kwargs = {}
             M = f.shape[:-1].numel()
 
@@ -389,7 +456,7 @@ class CurvlinopsInterface(CurvatureInterface):
             M = _n_observed_examples(y, mask)
 
         kron = self._rescale_kron_factors(kron, M, N)
-        kron *= self._curvature_factor
+        kron *= self._linop_curvature_factor
 
         return self.factor * loss.detach(), kron
 
@@ -422,7 +489,7 @@ class CurvlinopsInterface(CurvatureInterface):
             self._linop_model,
             self._linop_lossfunc,
             self.params,
-            [(x, self._linop_targets(y, "full"))],
+            [(x, self._linop_targets(y, "full", f))],
             check_deterministic=False,
             **curvlinops_kwargs,
         )
@@ -432,7 +499,7 @@ class CurvlinopsInterface(CurvatureInterface):
             linop @ torch.eye(linop.shape[0]), device=p.device, dtype=p.dtype
         )
 
-        return self.factor * loss.detach(), self._curvature_factor * H
+        return self.factor * loss.detach(), self._linop_curvature_factor * H
 
 
 class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):

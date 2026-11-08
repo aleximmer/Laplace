@@ -20,7 +20,12 @@ from laplace import Laplace
 from laplace.baselaplace import BaseLaplace
 from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.curvature import CurvatureInterface
-from laplace.likelihoods import _noise_per_output, get_likelihood
+from laplace.likelihoods import (
+    _as_joined_outputs,
+    _is_heteroscedastic,
+    _noise_per_output,
+    get_likelihood,
+)
 from laplace.utils import (
     HessianStructure,
     Likelihood,
@@ -289,6 +294,10 @@ def marglik_training(
 
             if lik.is_gaussian:
                 epoch_perf += (f.detach() - y).square().sum()
+            elif _is_heteroscedastic(lik):
+                # Squared error of the mean, from the pair `(mean, var)`
+                mean = lik.inverse_link(_as_joined_outputs(f).detach())
+                epoch_perf += (mean - y).square().sum()
             elif lik.name == Likelihood.BERNOULLI.name:
                 # Mean accuracy of the outputs of each datum, as the logits' sign
                 hits = (f.detach() > 0) == (y >= 0.5)

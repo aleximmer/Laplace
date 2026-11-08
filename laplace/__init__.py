@@ -18,8 +18,10 @@ from laplace.likelihoods import (
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
+    HeteroscedasticGaussianLikelihood,
     Likelihood,
     get_likelihood,
+    join_mean_variance,
 )
 from laplace.lllaplace import (
     DiagLLLaplace,
@@ -67,7 +69,9 @@ __all__ = [
     "CategoricalLikelihood",
     "BernoulliLikelihood",
     "BradleyTerryLikelihood",
+    "HeteroscedasticGaussianLikelihood",
     "get_likelihood",
+    "join_mean_variance",
     # Enums
     "SubsetOfWeights",
     "FunctionalApproximation",

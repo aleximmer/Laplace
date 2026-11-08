@@ -88,3 +88,41 @@ class RunningBernoulliNLLMetric(Metric):
 
     def compute(self) -> torch.Tensor:
         return self.nll_sum / self.n_positions
+
+
+class RunningGaussianNLLMetric(Metric):
+    """Negative log-likelihood of Gaussian predictions, averaged over positions.
+
+    It scores a predictive mean and variance per output, e.g. the predictive of a
+    heteroscedastic likelihood, whose variance is the aleatoric plus the epistemic
+    one. The NLL of a position is the sum over its outputs, and a position is an
+    entry of the leading dims of the targets, as in `RunningBernoulliNLLMetric`.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.add_state("nll_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("n_positions", default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+    def update(
+        self, mean: torch.Tensor, var: torch.Tensor, targets: torch.Tensor
+    ) -> None:
+        """
+        Parameters
+        ----------
+        mean: torch.Tensor
+            predictive mean, shape (..., n_outputs)
+
+        var: torch.Tensor
+            predictive variance with the shape of `mean`
+
+        targets: torch.Tensor
+            targets with the shape of `mean`
+        """
+        self.nll_sum += F.gaussian_nll_loss(
+            mean, targets.to(mean.dtype), var, full=True, reduction="sum"
+        )
+        self.n_positions += mean.shape[:-1].numel()
+
+    def compute(self) -> torch.Tensor:
+        return self.nll_sum / self.n_positions
