@@ -9,6 +9,7 @@ Each test runs over all methods on the same small multi-output regression proble
 - `state_dict` round-trips.
 """
 
+from collections.abc import MutableMapping
 from functools import partial
 
 import pytest
@@ -22,7 +23,8 @@ pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(0)]
 
 N_DATA, N_IN, N_OUT = 12, 3, 2
 
-SUBNET_INDICES = torch.LongTensor([0, 4, 9, 17, 21, 25, 30])
+# Below 26, the parameter count of the net with a single output
+SUBNET_INDICES = torch.LongTensor([0, 4, 9, 17, 21, 23, 25])
 
 
 def _make(subset, structure, **kwargs):
@@ -61,27 +63,73 @@ FIT_KWARGS = {"valla": {"iterations": 1}}
 NO_MARGLIK = {"ella", "valla"}
 
 
-def _model() -> nn.Module:
+class DictModel(nn.Module):
+    """Takes the inputs from a mapping, like a Hugging Face model."""
+
+    def __init__(self, net: nn.Module) -> None:
+        super().__init__()
+        self.net = net
+
+    def forward(self, x: MutableMapping) -> torch.Tensor:
+        return self.net(x["input_ids"])
+
+
+def _model(n_out: int = N_OUT, dict_inputs: bool = False) -> nn.Module:
     torch.manual_seed(711)
-    return nn.Sequential(nn.Linear(N_IN, 5), nn.Tanh(), nn.Linear(5, N_OUT))
+    net = nn.Sequential(nn.Linear(N_IN, 5), nn.Tanh(), nn.Linear(5, n_out))
+    return DictModel(net) if dict_inputs else net
 
 
-def _data() -> tuple[torch.Tensor, DataLoader]:
+def _targets(likelihood: str, n_out: int) -> torch.Tensor:
+    if likelihood == "classification":
+        return torch.randint(n_out, (N_DATA,))
+
+    if likelihood == "bernoulli":
+        return (torch.rand(N_DATA, n_out) > 0.5).to(torch.get_default_dtype())
+
+    return torch.randn(N_DATA, n_out)
+
+
+def _data(
+    n_out: int = N_OUT,
+    batch_size: int = 5,
+    dict_inputs: bool = False,
+    likelihood: str = "regression",
+) -> tuple[torch.Tensor | dict, DataLoader]:
+    """Test inputs and a training loader. The default batch size leaves a partial
+    last batch, so per-batch bookkeeping must weight batches right."""
     torch.manual_seed(712)
     X = torch.randn(N_DATA, N_IN)
-    y = torch.randn(N_DATA, N_OUT)
+    y = _targets(likelihood, n_out)
     X_test = torch.randn(4, N_IN)
 
-    # A partial last batch, so per-batch bookkeeping must weight batches right
-    return X_test, DataLoader(TensorDataset(X, y), batch_size=5)
+    if not dict_inputs:
+        return X_test, DataLoader(TensorDataset(X, y), batch_size=batch_size)
+
+    dataset = [{"input_ids": x_i, "labels": y_i} for x_i, y_i in zip(X, y)]
+    return {"input_ids": X_test}, DataLoader(dataset, batch_size=batch_size)
 
 
-def _build(method: str, model: nn.Module, loader: DataLoader, **hyper):
+def _inputs(loader: DataLoader) -> torch.Tensor:
+    dataset = loader.dataset
+    if isinstance(dataset, TensorDataset):
+        return dataset.tensors[0]
+
+    return torch.stack([item["input_ids"] for item in dataset])
+
+
+def _build(
+    method: str,
+    model: nn.Module,
+    loader: DataLoader,
+    likelihood: str = "regression",
+    **hyper,
+):
     if method == "valla":
-        X = loader.dataset.tensors[0]
+        X = _inputs(loader)
         return Laplace(
             model,
-            "regression",
+            likelihood,
             subset_of_weights="all",
             hessian_structure="gp",
             functional_approximation="variational",
@@ -89,17 +137,24 @@ def _build(method: str, model: nn.Module, loader: DataLoader, **hyper):
             **hyper,
         )
 
-    return METHODS[method](model, "regression", **hyper)
+    return METHODS[method](model, likelihood, **hyper)
 
 
 def _fit(la, method: str, loader: DataLoader) -> None:
     la.fit(loader, **FIT_KWARGS.get(method, {}))
 
 
-def _fitted(method: str, **hyper):
-    model = _model()
-    X_test, loader = _data()
-    la = _build(method, model, loader, **hyper)
+def _fitted(
+    method: str,
+    n_out: int = N_OUT,
+    batch_size: int = 5,
+    dict_inputs: bool = False,
+    likelihood: str = "regression",
+    **hyper,
+):
+    model = _model(n_out, dict_inputs)
+    X_test, loader = _data(n_out, batch_size, dict_inputs, likelihood)
+    la = _build(method, model, loader, likelihood, **hyper)
     _fit(la, method, loader)
     return la, model, X_test, loader
 

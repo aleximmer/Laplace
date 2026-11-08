@@ -2740,7 +2740,18 @@ class LowRankLaplace(ParametricLaplace):
         if not self.enable_backprop:
             self.mean = self.mean.detach()
 
-        X, y = next(iter(train_loader))
+        data = next(iter(train_loader))
+
+        # The asdfghjkl eigensolver unpacks every batch as `(X, y)`. It's legacy
+        # code, so it isn't adapted to other batches.
+        if isinstance(data, MutableMapping):
+            raise ValueError(
+                "LowRankLaplace doesn't support dict-like batches, since its "
+                "eigensolver from the asdfghjkl package takes `(X, y)` batches only. "
+                "Use another Hessian structure, e.g. `kron` or `diag`."
+            )
+
+        X, y = data
         with torch.no_grad():
             try:
                 out = self.model(X[:1].to(self._device))
