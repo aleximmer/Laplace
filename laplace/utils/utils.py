@@ -117,15 +117,19 @@ def parameters_per_layer(model: nn.Module) -> list[int]:
 
 
 def invsqrt_precision(M: torch.Tensor) -> torch.Tensor:
-    """Compute ``M^{-0.5}`` as a lower-triangular matrix.
+    """Compute the lower-triangular factor \\(L\\) of the inverse of a precision
+    matrix, \\(L L^\\top = M^{-1}\\). For a non-diagonal \\(M\\), it isn't the
+    symmetric square root \\(M^{-1/2}\\).
 
     Parameters
     ----------
     M : torch.Tensor
+        positive definite precision matrix.
 
     Returns
     -------
     M_invsqrt : torch.Tensor
+        lower-triangular \\(L\\) with \\(L L^\\top = M^{-1}\\).
     """
     return _precision_to_scale_tril(M)
 
