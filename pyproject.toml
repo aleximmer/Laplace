@@ -1,6 +1,6 @@
 [project]
 name = "laplace-torch"
-version = "0.4"
+version = "0.5"
 description = "laplace - Laplace approximations for deep learning"
 readme = "README.md"
 authors = [
