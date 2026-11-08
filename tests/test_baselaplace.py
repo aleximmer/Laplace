@@ -3837,3 +3837,17 @@ def test_kron_reduce_varying_length_input_factor_is_mean_over_examples():
     restored.fit(DataLoader(data[3:], batch_size=1), override=False)
 
     torch.testing.assert_close(restored.H_facs.kfacs[0][1], la.H_facs.kfacs[0][1])
+
+
+@pytest.mark.parametrize("backend", [BackPackGGN, BackPackEF, AsdlGGN, AsdlEF])
+def test_kron_reduce_rejects_backends_without_it(backend):
+    X, y = torch.randn(8, 4), torch.randint(3, (8,))
+    la = KronLaplace(
+        _position_model(),
+        "classification",
+        backend=backend,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+
+    with pytest.raises(ValueError, match="only implemented by the Curvlinops"):
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=4))

@@ -27,7 +27,7 @@ from laplace.curvature.curvature import (
     _n_observed_examples,
     _observed_mask,
 )
-from laplace.curvature.curvlinops import CurvlinopsGGN
+from laplace.curvature.curvlinops import CurvlinopsGGN, CurvlinopsInterface
 from laplace.likelihoods import (
     CategoricalLikelihood,
     _noise_per_output,
@@ -2431,12 +2431,15 @@ class KronLaplace(ParametricLaplace):
         return kron
 
     @property
+    def _kfac_reduce(self) -> bool:
+        """Whether KFAC-reduce is asked for, via `asdl_fisher_kwargs`."""
+        return self._asdl_fisher_kwargs.get("kfac_approx", "expand") == "reduce"
+
+    @property
     def _n_input_rows(self) -> int:
         """Number of rows the input factors average over: the observations `n_obs`
         for KFAC-expand, and the examples `n_obs_examples` for KFAC-reduce."""
-        kfac_approx = self._asdl_fisher_kwargs.get("kfac_approx", "expand")
-
-        return self.n_obs_examples if kfac_approx == "reduce" else self.n_obs
+        return self.n_obs_examples if self._kfac_reduce else self.n_obs
 
     def fit(
         self,
@@ -2454,8 +2457,23 @@ class KronLaplace(ParametricLaplace):
 
         KFAC-reduce (`asdl_fisher_kwargs={"kfac_approx": "reduce"}`) averages the
         input factors over examples instead, so they are normalized by the number
-        of examples with an observation, `n_obs_examples`.
+        of examples with an observation, `n_obs_examples`. Only the Curvlinops
+        backends implement it.
+
+        Raises
+        ------
+        ValueError
+            If KFAC-reduce is asked for with a backend other than Curvlinops.
         """
+        # BackPACK would silently compute KFAC-expand, which the normalization
+        # by examples would then scale wrongly
+        if self._kfac_reduce and not isinstance(self.backend, CurvlinopsInterface):
+            raise ValueError(
+                'KFAC-reduce (`kfac_approx="reduce"`) is only implemented by the '
+                "Curvlinops backends, e.g. `CurvlinopsGGN`, not by "
+                f"`{type(self.backend).__name__}`."
+            )
+
         if override:
             self.H_facs = None
             self.n_obs_examples = 0
