@@ -573,3 +573,146 @@ def test_deepcopy_and_pickle_bernoulli(laplace, model, multilabel_loader):
         assert la2.likelihood == lik
         assert la2.likelihood is not la.likelihood
         assert torch.allclose(la(X), la2(X))
+
+
+# A known noise std per output
+
+VECTOR_NOISE = torch.tensor([0.5, 2.0])
+VECTOR_NOISE_FLAVORS = [
+    ("all", "full"),
+    ("all", "diag"),
+    ("all", "kron"),
+    ("last_layer", "full"),
+    ("last_layer", "diag"),
+    ("last_layer", "kron"),
+    ("subnetwork", "full"),
+    ("subnetwork", "diag"),
+]
+
+
+def _vector_noise_laplace(model, subset, structure, likelihood="regression"):
+    kwargs = {}
+
+    if subset == "subnetwork":
+        kwargs["subnetwork_indices"] = torch.arange(0, 20, 2)
+
+    return Laplace(model, likelihood, subset, structure, **kwargs)
+
+
+def _vector_noise_precision(la):
+    precision = la.posterior_precision
+
+    if hasattr(precision, "to_matrix"):
+        return precision.to_matrix()
+
+    return precision
+
+
+@pytest.mark.parametrize("subset,structure", VECTOR_NOISE_FLAVORS)
+def test_vector_noise_checkpoint_roundtrip(
+    subset, structure, model, reg_loader, tmp_path
+):
+    likelihood = GaussianLikelihood(sigma_noise=VECTOR_NOISE)
+    la = _vector_noise_laplace(model, subset, structure, likelihood)
+    la.fit(reg_loader)
+    la.prior_precision = 3.0
+
+    path = tmp_path / "state_dict.bin"
+    torch.save(la.state_dict(), path)
+
+    la2 = _vector_noise_laplace(model, subset, structure, likelihood)
+    la2.load_state_dict(torch.load(path, weights_only=False))
+
+    assert torch.allclose(_vector_noise_precision(la), _vector_noise_precision(la2))
+    assert torch.allclose(la.log_marginal_likelihood(), la2.log_marginal_likelihood())
+
+    X, _ = next(iter(reg_loader))
+    f_mean, f_var = la(X)
+    f_mean2, f_var2 = la2(X)
+    assert torch.allclose(f_mean, f_mean2)
+    assert torch.allclose(f_var, f_var2)
+
+
+@pytest.mark.parametrize("subset,structure", VECTOR_NOISE_FLAVORS)
+def test_vector_noise_checkpoint_into_other_noise_raises(
+    subset, structure, model, reg_loader
+):
+    la = _vector_noise_laplace(
+        model, subset, structure, GaussianLikelihood(sigma_noise=VECTOR_NOISE)
+    )
+    la.fit(reg_loader)
+    state = la.state_dict()
+
+    # A different vector, no vector, and a vector of another length are all other
+    # likelihoods
+    for other in (
+        GaussianLikelihood(sigma_noise=VECTOR_NOISE * 2),
+        GaussianLikelihood(),
+        GaussianLikelihood(sigma_noise=torch.ones(3)),
+    ):
+        la2 = _vector_noise_laplace(model, subset, structure, other)
+
+        with pytest.raises(ValueError, match="likelihood"):
+            la2.load_state_dict(state)
+
+
+def test_scalar_checkpoint_into_vector_noise_raises(model, reg_loader):
+    la = _vector_noise_laplace(model, "all", "full")
+    la.fit(reg_loader)
+
+    la2 = _vector_noise_laplace(
+        model, "all", "full", GaussianLikelihood(sigma_noise=VECTOR_NOISE)
+    )
+
+    with pytest.raises(ValueError, match="likelihood"):
+        la2.load_state_dict(la.state_dict())
+
+
+@pytest.mark.parametrize("copy", [deepcopy, lambda la: pickle.loads(pickle.dumps(la))])
+def test_vector_noise_copy_and_pickle(copy, model, reg_loader):
+    likelihood = GaussianLikelihood(sigma_noise=VECTOR_NOISE)
+    la = _vector_noise_laplace(model, "all", "full", likelihood)
+    la.fit(reg_loader)
+
+    la2 = copy(la)
+    X, _ = next(iter(reg_loader))
+
+    assert la2.likelihood == likelihood
+    assert torch.allclose(la.log_marginal_likelihood(), la2.log_marginal_likelihood())
+    assert torch.allclose(la(X)[1], la2(X)[1])
+
+
+@pytest.mark.parametrize("functional_approximation", ["sod", "nystrom", "variational"])
+def test_vector_noise_function_space_checkpoint(
+    functional_approximation, model, reg_loader
+):
+    kwargs = {"functional_approximation": functional_approximation}
+
+    if functional_approximation == "sod":
+        kwargs["n_subset"] = 10
+    elif functional_approximation == "nystrom":
+        kwargs.update(subsample_size=4, n_eigenvalues=3)
+    else:
+        kwargs["inducing_locations"] = torch.randn(3, 3)
+
+    def make(likelihood):
+        return Laplace(model, likelihood, "all", "gp", **deepcopy(kwargs))
+
+    likelihood = GaussianLikelihood(sigma_noise=VECTOR_NOISE)
+    la = make(likelihood)
+
+    if functional_approximation == "variational":
+        la.fit(reg_loader, iterations=2)
+    else:
+        la.fit(reg_loader)
+
+    la2 = make(likelihood)
+    la2.load_state_dict(la.state_dict())
+
+    X, _ = next(iter(reg_loader))
+    assert torch.allclose(la(X)[1], la2(X)[1])
+
+    with pytest.raises(ValueError, match="likelihood"):
+        make(GaussianLikelihood(sigma_noise=VECTOR_NOISE * 2)).load_state_dict(
+            la.state_dict()
+        )

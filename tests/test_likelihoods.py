@@ -1054,3 +1054,150 @@ def test_bernoulli_is_pickleable():
 
     assert pickle.loads(pickle.dumps(lik)) == lik
     assert pickle.loads(pickle.dumps(Likelihood.BERNOULLI)) == Likelihood.BERNOULLI
+
+
+SIGMA = torch.tensor([0.5, 2.0, 1.3])
+
+
+def test_gaussian_sigma_noise_validation():
+    assert torch.equal(GaussianLikelihood(sigma_noise=SIGMA).sigma_noise, SIGMA)
+    assert GaussianLikelihood().sigma_noise is None
+
+    for bad in (
+        torch.tensor(1.0),
+        torch.ones(2, 2),
+        [0.5, 2.0],
+        1.0,
+        torch.ones(2).int(),
+    ):
+        with pytest.raises(ValueError, match="1-D tensor"):
+            GaussianLikelihood(sigma_noise=bad)
+
+    for bad in (
+        torch.tensor([0.5, 0.0]),
+        torch.tensor([0.5, -1.0]),
+        torch.tensor([0.5, float("nan")]),
+        torch.tensor([0.5, float("inf")]),
+    ):
+        with pytest.raises(ValueError, match="positive and finite"):
+            GaussianLikelihood(sigma_noise=bad)
+
+
+def test_gaussian_sigma_noise_is_a_hyperparameter():
+    lik = GaussianLikelihood(sigma_noise=SIGMA)
+
+    assert GaussianLikelihood().hyperparameters() == {}
+    assert torch.equal(lik.hyperparameters()["sigma_noise"], SIGMA)
+
+    assert lik == GaussianLikelihood(sigma_noise=SIGMA.clone())
+    assert lik != GaussianLikelihood(sigma_noise=SIGMA * 2)
+    assert lik != GaussianLikelihood()
+    assert lik != GaussianLikelihood(sigma_noise=SIGMA[:2])
+
+    # A string names the type, so only the name counts
+    assert lik == "regression"
+
+    assert "sigma_noise=tensor(shape=(3,))" in repr(lik)
+
+    restored = pickle.loads(pickle.dumps(lik))
+    assert restored == lik
+    assert torch.equal(restored.sigma_noise, SIGMA)
+
+
+def test_gaussian_sigma_noise_without_super_init():
+    class NoInit(GaussianLikelihood):
+        def __init__(self) -> None:
+            pass
+
+    assert NoInit().sigma_noise is None
+    assert NoInit().hyperparameters() == {}
+
+
+@pytest.mark.parametrize("shape", [(6, 3), (4, 5, 3)])
+def test_gaussian_sigma_noise_quantities(shape):
+    f, y = torch.randn(shape), torch.randn(shape)
+    lik = GaussianLikelihood(sigma_noise=SIGMA)
+    plain = GaussianLikelihood()
+
+    # The loss times its factor is the negative log likelihood without the normalizer
+    weighted = (((f - y) / SIGMA) ** 2).sum()
+    assert torch.allclose(lik.loss(f, y), weighted)
+    assert torch.allclose(lik.loss_fn("mean")(f, y), weighted / f.numel())
+    assert lik.loss_factor == plain.loss_factor == 0.5
+
+    # The plain likelihood is untouched
+    assert torch.allclose(plain.loss(f, y), ((f - y) ** 2).sum())
+
+    n_obs = lik.n_observations(f, y)
+    nll = -lik.distribution(f).log_prob(y).sum()
+    normalizer = lik.log_normalizer(n_obs, 3, torch.tensor(1.0))
+
+    assert torch.allclose(lik.loss_factor * lik.loss(f, y) + normalizer, nll)
+    expected = n_obs * sum(log(s * sqrt(2 * pi)) for s in SIGMA.tolist())
+    assert torch.allclose(normalizer, torch.tensor(expected))
+
+    H = lik.output_hessian(f)
+    assert H.shape == (*shape, 3)
+    assert torch.allclose(H, torch.diag(1 / SIGMA**2).expand(*shape[:-1], 3, 3))
+
+    # The gradient and the Hessian are those of the negative log likelihood
+    f_ = f.clone().requires_grad_()
+    (grad,) = torch.autograd.grad(-lik.distribution(f_).log_prob(y).sum(), f_)
+    assert torch.allclose(lik.output_gradient(f, y), grad)
+
+    f0, y0 = f.reshape(-1, 3)[0], y.reshape(-1, 3)[0]
+    hessian = torch.autograd.functional.hessian(
+        lambda v: -lik.distribution(v).log_prob(y0).sum(), f0
+    )
+    assert torch.allclose(H.reshape(-1, 3, 3)[0], hessian)
+
+
+def test_gaussian_sigma_noise_sample_and_dtype():
+    f = torch.zeros(20000, 3, dtype=torch.float64)
+    lik = GaussianLikelihood(sigma_noise=SIGMA)
+
+    y = lik.sample(f, generator=torch.Generator().manual_seed(0))
+
+    assert y.dtype == torch.float64
+    assert torch.allclose(y.std(0), SIGMA.double(), rtol=0.05)
+
+    noise = torch.randn(
+        f.shape, generator=torch.Generator().manual_seed(0), dtype=torch.float64
+    )
+    assert torch.allclose(y, SIGMA.double() * noise)
+
+    # The vector follows the dtype of the outputs
+    assert lik.output_hessian(f).dtype == torch.float64
+    assert lik.loss(f, y).dtype == torch.float64
+
+
+def test_gaussian_sigma_noise_loss_module_follows_the_model():
+    lik = GaussianLikelihood(sigma_noise=SIGMA)
+    loss_fn = lik.loss_fn().to(dtype=torch.float64)
+
+    f, y = torch.randn(5, 3).double(), torch.randn(5, 3).double()
+
+    assert torch.allclose(loss_fn(f, y), lik.loss(f, y))
+    assert not loss_fn.state_dict()
+
+
+def test_gaussian_sigma_noise_wrong_number_of_outputs():
+    lik = GaussianLikelihood(sigma_noise=SIGMA)
+
+    with pytest.raises(ValueError, match="2 outputs"):
+        lik.check_targets(torch.randn(5, 2), torch.randn(5, 2))
+
+    with pytest.raises(ValueError, match="2 outputs"):
+        lik.loss(torch.randn(5, 2), torch.randn(5, 2))
+
+    GaussianLikelihood().check_targets(torch.randn(5, 2), torch.randn(5, 2))
+
+
+def test_gaussian_equal_sigma_noise_matches_the_scalar_normalizer():
+    lik = GaussianLikelihood(sigma_noise=torch.full((3,), 0.7))
+    plain = GaussianLikelihood()
+
+    assert torch.allclose(
+        lik.log_normalizer(7, 3, torch.tensor(1.0)),
+        plain.log_normalizer(7, 3, torch.tensor(0.7)),
+    )

@@ -14,6 +14,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
     Likelihood,
+    _noise_per_output,
     get_likelihood,
 )
 from laplace.utils import Kron
@@ -872,11 +873,15 @@ class GGNInterface(CurvatureInterface):
         ValueError
             if the likelihood is a built-in one with non-default options.
         """
+        # The samples and the output gradient of a Gaussian likelihood use its noise
+        # std per output, so the sampled Fisher stays exact
+        honoured = frozenset({"sigma_noise"})
+
         if (
             type(self.likelihood) in _BUILTIN_TYPES
-            and self.likelihood.hyperparameters()
+            and set(self.likelihood.hyperparameters()) - honoured
         ):
-            raise self._unsupported_error(method, frozenset(), stochastic=True)
+            raise self._unsupported_error(method, honoured, stochastic=True)
 
     def _get_mc_functional_fisher(
         self, f: torch.Tensor, y: torch.Tensor | None = None
@@ -931,9 +936,10 @@ class GGNInterface(CurvatureInterface):
         -------
         H : torch.Tensor or None
             `(batch, ..., outputs, outputs)`, or `None` for a Gaussian likelihood,
-            whose output Hessian is the identity and is skipped in the GGN.
+            whose output Hessian is the identity and is skipped in the GGN. With a
+            noise std per output, the output Hessian is not the identity.
         """
-        if self.likelihood.is_gaussian:
+        if self.likelihood.is_gaussian and _noise_per_output(self.likelihood) is None:
             return None
 
         return self.likelihood.output_hessian(f, y)
