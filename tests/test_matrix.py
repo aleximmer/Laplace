@@ -403,3 +403,31 @@ def test_kron_square_norm_single_parameter():
     delta = value - posterior.mean
     expected = delta @ posterior.posterior_precision.to_matrix() @ delta
     torch.testing.assert_close(posterior.square_norm(value), expected)
+
+
+@pytest.mark.parametrize("decomposed", [False, True])
+def test_scalar_multiplication_keeps_gradient(decomposed):
+    kron = Kron([[get_psd_matrix(3), get_psd_matrix(2)], [get_psd_matrix(4)]])
+    if decomposed:
+        kron = kron.decompose()
+
+    scalar = torch.tensor(2.5, requires_grad=True)
+    logdet = (kron * scalar).logdet()
+    (grad,) = torch.autograd.grad(logdet, scalar)
+
+    # logdet(s * H) = logdet(H) + P log(s), so d/ds = P / s
+    n_params = 3 * 2 + 4
+    assert torch.allclose(grad, torch.tensor(n_params / 2.5))
+
+
+@pytest.mark.parametrize("decomposed", [False, True])
+def test_scalar_multiplication_keeps_dtype(decomposed):
+    kron = Kron([[get_psd_matrix(3).float(), get_psd_matrix(2).float()]])
+    if decomposed:
+        kron = kron.decompose()
+
+    # A 1-element float64 tensor, e.g. a prior precision, must not promote the factors
+    scaled = kron * torch.tensor([2.5], dtype=torch.float64)
+    factors = scaled.kfacs[0] if not decomposed else scaled.eigenvalues[0]
+
+    assert all(F.dtype == torch.float32 for F in factors)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from math import pow
 from typing import Iterable
 
 import numpy as np
@@ -100,7 +99,7 @@ class Kron:
     def __mul__(self, scalar: float | torch.Tensor) -> Kron:
         """Multiply all Kronecker factors by scalar.
         The multiplication is distributed across the number of factors
-        using `pow(scalar, 1 / len(F))`. `len(F)` is either `1` or `2`.
+        using the `len(F)`-th root of `scalar`. `len(F)` is either `1` or `2`.
 
         Parameters
         ----------
@@ -113,8 +112,13 @@ class Kron:
         if not _is_valid_scalar(scalar):
             raise ValueError("Input not valid python or torch scalar.")
 
+        # `**` keeps a tensor in the autograd graph, unlike `math.pow`. A 0-dim
+        # tensor doesn't change the dtype of the factors.
+        if torch.is_tensor(scalar):
+            scalar = scalar.reshape(())
+
         # distribute factors evenly so that each group is multiplied by factor
-        kfacs = [[pow(scalar, 1 / len(F)) * Hi for Hi in F] for F in self.kfacs]
+        kfacs = [[scalar ** (1 / len(F)) * Hi for Hi in F] for F in self.kfacs]
         return Kron(kfacs)
 
     def __len__(self) -> int:
@@ -374,8 +378,12 @@ class KronDecomposed:
         if not _is_valid_scalar(scalar):
             raise ValueError("Invalid argument, can only multiply Kron with scalar.")
 
+        # See `Kron.__mul__`
+        if torch.is_tensor(scalar):
+            scalar = scalar.reshape(())
+
         eigenvalues = [
-            [pow(scalar, 1 / len(ls)) * eigval for eigval in ls]
+            [scalar ** (1 / len(ls)) * eigval for eigval in ls]
             for ls in self.eigenvalues
         ]
         return KronDecomposed(

@@ -3742,6 +3742,42 @@ def test_bernoulli_fit_rejects_bad_targets(laplace):
             la.fit(DataLoader(TensorDataset(X, bad), batch_size=5))
 
 
+@pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
+def test_marglik_hyperparameter_gradients_match_finite_differences(laplace):
+    torch.manual_seed(0)
+    X, y = torch.randn(30, 3), torch.randn(30, 2)
+    model = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
+    la = laplace(model, "regression")
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=10))
+
+    log_prior_prec = torch.tensor(0.3, requires_grad=True)
+    log_sigma_noise = torch.tensor(-0.5, requires_grad=True)
+
+    def marglik(log_prior_prec, log_sigma_noise):
+        return la.log_marginal_likelihood(log_prior_prec.exp(), log_sigma_noise.exp())
+
+    grads = torch.autograd.grad(
+        marglik(log_prior_prec, log_sigma_noise), (log_prior_prec, log_sigma_noise)
+    )
+
+    eps = 1e-5
+    finite_differences = [
+        (
+            marglik(log_prior_prec + eps, log_sigma_noise)
+            - marglik(log_prior_prec - eps, log_sigma_noise)
+        )
+        / (2 * eps),
+        (
+            marglik(log_prior_prec, log_sigma_noise + eps)
+            - marglik(log_prior_prec, log_sigma_noise - eps)
+        )
+        / (2 * eps),
+    ]
+
+    for grad, finite_difference in zip(grads, finite_differences):
+        assert torch.allclose(grad, finite_difference.detach(), rtol=1e-4)
+
+
 def _reduce_input_factor(X: torch.Tensor, observed: torch.Tensor) -> torch.Tensor:
     """KFAC-reduce input factor of a first layer applied position-wise: the mean over
     the examples with an observation of the outer products of their inputs, averaged
