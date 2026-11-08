@@ -7,6 +7,7 @@ predictive. The models have a few dozen parameters, so every matrix is dense.
 
 import copy
 import math
+import warnings
 from collections.abc import Callable
 from importlib.util import find_spec
 
@@ -801,3 +802,23 @@ def test_lowrank_eigenvalues_sum_over_batches(task, n_out):
     top = torch.linalg.eigvalsh(P - torch.eye(len(P)))[-1]
 
     torch.testing.assert_close(eigvals[0][0], top, rtol=1e-1, atol=0)
+
+
+@pytest.mark.asdfghjkl
+@pytest.mark.skipif(
+    find_spec("asdfghjkl") is None, reason="The old asdfghjkl is not installed"
+)
+def test_lowrank_warns_for_eigenvectors_that_are_not_orthonormal():
+    from laplace.curvature.asdfghjkl import _warn_if_not_orthonormal
+
+    Q, _ = torch.linalg.qr(torch.randn(10, 3))
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        _warn_if_not_orthonormal(Q)
+
+    # An unconverged power iteration returns its last iterate unnormalized
+    Q[:, 1] *= 2.0
+
+    with pytest.warns(UserWarning, match="didn't converge"):
+        _warn_if_not_orthonormal(Q)

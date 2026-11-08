@@ -333,6 +333,7 @@ class AsdfghjklHessian(AsdfghjklInterface):
         )
         mask = eigvals > EPS
         eigvecs = eigvecs[:, mask]
+        _warn_if_not_orthonormal(eigvecs)
         device = eigvecs.device
         eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
         loss = sum(
@@ -409,3 +410,28 @@ def _get_batch_grad(model: nn.Module) -> torch.Tensor:
             if len(set(res.keys()) - {"weight", "bias"}) > 0:
                 raise ValueError(f"Invalid parameter keys {res.keys()}")
     return torch.cat(batch_grads, dim=1)
+
+
+def _warn_if_not_orthonormal(eigvecs: torch.Tensor, atol: float = 1e-4) -> None:
+    """Warn if the eigenvectors from asdfghjkl's power iteration aren't orthonormal.
+
+    When the power iteration for an eigenvector stops at its iteration limit,
+    asdfghjkl returns the unnormalized last iterate. The later eigenvectors are
+    then orthogonalized against a wrong direction, and the low-rank Hessian is off.
+
+    Parameters
+    ----------
+    eigvecs : torch.Tensor
+        eigenvectors as columns, `(parameters, rank)`.
+    atol : float, default=1e-4
+        tolerance on the entries of \\(V^\\top V - I\\).
+    """
+    gram = eigvecs.T @ eigvecs
+    identity = torch.eye(len(gram), device=gram.device, dtype=gram.dtype)
+
+    if not torch.allclose(gram, identity, atol=atol):
+        warnings.warn(
+            "asdfghjkl's power iteration didn't converge for all eigenvectors, so "
+            "they aren't orthonormal and the low-rank Hessian is inaccurate. A "
+            "smaller `low_rank` in `backend_kwargs` converges more often."
+        )
