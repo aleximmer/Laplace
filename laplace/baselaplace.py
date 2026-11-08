@@ -4220,7 +4220,14 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         Returns
         -------
         log_marglik : torch.Tensor
+
+        Raises
+        ------
+        RuntimeError
+            If `fit` has not completed, e.g. after a failed refit.
         """
+        self._require_fit("the log marginal likelihood")
+
         # update prior precision (useful when iterating on marglik)
         if prior_precision is not None:
             self.prior_precision = prior_precision
@@ -4232,6 +4239,42 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             self.sigma_noise = sigma_noise
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
+
+    @property
+    def log_likelihood(self) -> torch.Tensor:
+        """Log likelihood on the training data, see `BaseLaplace.log_likelihood`.
+
+        Returns
+        -------
+        log_likelihood : torch.Tensor
+
+        Raises
+        ------
+        RuntimeError
+            If `fit` has not completed, e.g. after a failed refit.
+        """
+        self._require_fit("the log likelihood")
+
+        return super().log_likelihood
+
+    def _require_fit(self, quantity: str) -> None:
+        """Reject computing `quantity` from the fit state before `fit` completes.
+
+        A failed refit leaves the factors of the previous fit in place, so they
+        must not be used.
+
+        Parameters
+        ----------
+        quantity : str
+            What is being computed, for the error message.
+
+        Raises
+        ------
+        RuntimeError
+            If `fit` has not completed.
+        """
+        if not self._fitted:
+            raise RuntimeError(f"Call fit before computing {quantity}.")
 
     @property
     def prior_precision(self):

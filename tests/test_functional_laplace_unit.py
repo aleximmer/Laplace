@@ -452,6 +452,12 @@ def test_failed_refit_invalidates_posterior(model):
     with pytest.raises(RuntimeError, match="fit"):
         la(X)
 
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_likelihood
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_marginal_likelihood()
+
 
 def test_refit_resets_loss(model, reg_loader):
     la = FunctionalLaplace(model, "regression", n_subset=10)
@@ -534,3 +540,9 @@ def test_refit_with_failing_loader_invalidates_posterior(model):
 
     with pytest.raises(RuntimeError, match="fit"):
         la(X)
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_likelihood
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_marginal_likelihood()
