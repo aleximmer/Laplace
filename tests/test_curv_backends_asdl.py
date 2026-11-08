@@ -6,6 +6,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import EFInterface, GGNInterface
+from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from tests.utils import (
     BCE_BATCH_SHAPES,
     AsdlEF,
@@ -551,3 +552,82 @@ def test_bernoulli_asdl_gradients_count_one_observation_per_row():
     Gs, _ = backend.gradients(X, y)
 
     assert Gs.shape[0] == len(X)
+
+
+class _PositionLogits(nn.Module):
+    """Maps `(B, 3)` to logits `(B, L, K)` that aren't contiguous, as `movedim` does."""
+
+    def __init__(self, L: int = 4, K: int = 2):
+        super().__init__()
+        self.L, self.K = L, K
+        self.net = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, K * L))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).reshape(-1, self.K, self.L).movedim(1, -1)
+
+
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
+@pytest.mark.parametrize("structure", ["diag", "kron"])
+def test_non_contiguous_logits(Backend, structure):
+    torch.manual_seed(711)
+    model = _PositionLogits()
+    X, y = torch.randn(6, 3), torch.randint(2, (6, 4))
+    assert not model(X).is_contiguous()
+
+    backend = Backend(model, "classification")
+    kwargs = {"N": len(X)} if structure == "kron" else {}
+    loss, H = getattr(backend, structure)(X, y, **kwargs)
+
+    # Same curvature as for contiguous logits
+    contiguous = nn.Sequential(model, _Contiguous())
+    loss_ref, H_ref = getattr(Backend(contiguous, "classification"), structure)(
+        X, y, **kwargs
+    )
+
+    assert torch.allclose(loss, loss_ref)
+    if structure == "kron":
+        H, H_ref = H.to_matrix(), H_ref.to_matrix()
+    assert torch.allclose(H, H_ref)
+
+
+class _Contiguous(nn.Module):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x.contiguous()
+
+
+class _ImageLogits(nn.Module):
+    """1x1 convolutions with logits `(B, H, W, K)`, one per pixel."""
+
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(nn.Conv2d(2, 4, 1), nn.Tanh(), nn.Conv2d(4, 3, 1))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.net(x).movedim(1, -1)
+
+
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
+def test_kron_raises_for_conv_with_position_outputs(Backend):
+    X, y = torch.randn(5, 2, 3, 3), torch.randint(3, (5, 3, 3))
+
+    with pytest.raises(NotImplementedError, match="Curvlinops"):
+        Backend(_ImageLogits(), "classification").kron(X, y, N=len(X))
+
+
+@pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
+def test_kron_conv_with_pooled_outputs_matches_curvlinops(Backend):
+    torch.manual_seed(711)
+    model = nn.Sequential(
+        nn.Conv2d(2, 4, 3, padding=1),
+        nn.Tanh(),
+        nn.AdaptiveAvgPool2d(1),
+        nn.Flatten(),
+        nn.Linear(4, 3),
+    )
+    X, y = torch.randn(5, 2, 4, 4), torch.randint(3, (5,))
+
+    _, H = Backend(model, "classification").kron(X, y, N=len(X))
+    Reference = CurvlinopsGGN if Backend is AsdlGGN else CurvlinopsEF
+    _, H_ref = Reference(model, "classification").kron(X, y, N=len(X))
+
+    assert torch.allclose(H.to_matrix(), H_ref.to_matrix())

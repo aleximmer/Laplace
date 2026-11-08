@@ -182,17 +182,23 @@ class AsdlInterface(CurvatureInterface):
             gradients `(n_observations, parameters)`
         """
 
+        # With a last layer, `_model` is that layer, so the gradients are its own,
+        # taken at the features
+        if self.last_layer:
+            with torch.no_grad():
+                _, x = self.model.forward_with_features(x)
+
         f = None
 
         def closure():
             nonlocal f
-            self.model.zero_grad()
-            f = self.model(x)
+            self._model.zero_grad()
+            f = self._model(x)
             loss = self._loss(f, y)
             loss.backward()
             return loss
 
-        Gs, loss = self._batch_gradient(closure)
+        Gs, loss = self._batch_gradient(closure, self._model)
 
         # The last dim of the outputs is the output dim
         n_obs = f.shape[:-1].numel()
@@ -202,13 +208,24 @@ class AsdlInterface(CurvatureInterface):
             Gs = Gs[:, self.subnetwork_indices]
         return Gs, loss
 
-    def _batch_gradient(self, closure: Callable[[], Any]) -> tuple[torch.Tensor, Any]:
+    def _batch_gradient(
+        self, closure: Callable[[], Any], model: nn.Module | None = None
+    ) -> tuple[torch.Tensor, Any]:
         """ASDL's `batch_gradient` with a clearer error for models whose layers have
         different numbers of gradient rows, e.g., position-wise layers followed by a
         head applied after pooling over positions.
+
+        Parameters
+        ----------
+        closure : Callable
+            Runs the forward and backward pass of `model`.
+        model : nn.Module, optional
+            The module whose parameters get gradients. Defaults to `self.model`.
         """
+        model = self.model if model is None else model
+
         try:
-            return batch_gradient(self.model, closure, return_outputs=True)
+            return batch_gradient(model, closure, return_outputs=True)
         except RuntimeError as e:
             if "Sizes of tensors must match" not in str(e):
                 raise
@@ -352,18 +369,20 @@ class AsdlInterface(CurvatureInterface):
         if "emp" in self._ggn_type:
             dummy = fisher_maker.setup_model_call(self._model, x)
             dummy = (
-                dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+                dummy
+                if self.loss_type == LOSS_MSE
+                else dummy.reshape(-1, dummy.size(-1))
             )
             fisher_maker.setup_loss_call(self.lossfunc, dummy, y)
         else:
             dummy = fisher_maker.setup_model_call(self._model, x)
             if self.loss_type != LOSS_MSE:
                 # ASDL's exact and MC cross-entropy Fishers assume 2D logits
-                fisher_maker.setup_logits_repr(dummy.view(-1, dummy.size(-1)))
+                fisher_maker.setup_logits_repr(dummy.reshape(-1, dummy.size(-1)))
         f, _ = fisher_maker.forward_and_backward()
         self._check_targets(f, y_orig)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        f = f if self.loss_type == LOSS_MSE else f.reshape(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
 
         # ASDL attaches Fisher statistics to modules, but Laplace indexes a single
@@ -538,7 +557,7 @@ class AsdlInterface(CurvatureInterface):
                 dummy = (
                     dummy
                     if self.loss_type == LOSS_MSE
-                    else dummy.view(-1, dummy.size(-1))
+                    else dummy.reshape(-1, dummy.size(-1))
                 )
 
                 if mask is None:
@@ -554,7 +573,7 @@ class AsdlInterface(CurvatureInterface):
                 dummy = fisher_maker.setup_model_call(self._model, x)
                 if self.loss_type != LOSS_MSE:
                     # ASDL's exact and MC cross-entropy Fishers assume 2D logits
-                    logits = dummy.view(-1, dummy.size(-1))
+                    logits = dummy.reshape(-1, dummy.size(-1))
 
                     if mask is not None:
                         # Only the observed positions are enumerated or sampled,
@@ -564,8 +583,9 @@ class AsdlInterface(CurvatureInterface):
                     fisher_maker.setup_logits_repr(logits)
             f, _ = fisher_maker.forward_and_backward()
         self._check_targets(f, y_orig)
+        self._check_no_conv_with_positions(f)
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        f = f if self.loss_type == LOSS_MSE else f.reshape(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
         M = len(y) if mask is None else int(mask.sum())
         kron = self._get_kron_factors(M, None if mask is None else input_factors)
@@ -577,6 +597,47 @@ class AsdlInterface(CurvatureInterface):
         else:
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
+
+    def _check_no_conv_with_positions(self, f: torch.Tensor) -> None:
+        """Reject KFAC for conv layers when the outputs keep their positions.
+
+        For outputs such as `(B, H, W, K)`, ASDL's input factors of conv layers
+        are \\( 1 / (H W) \\) of the correct ones. Pooled outputs `(B, K)` are
+        fine. ASDL is no longer maintained, so this isn't patched here.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            The model outputs, with the output dim last.
+
+        Raises
+        ------
+        NotImplementedError
+            If `f` has positions and the model has a trainable conv layer.
+        """
+        if f.ndim <= 2:
+            return
+
+        convs = (
+            nn.Conv1d,
+            nn.Conv2d,
+            nn.Conv3d,
+            nn.ConvTranspose1d,
+            nn.ConvTranspose2d,
+            nn.ConvTranspose3d,
+        )
+        has_conv = any(
+            isinstance(module, convs)
+            and any(p.requires_grad for p in module.parameters())
+            for module in self._model.modules()
+        )
+
+        if has_conv:
+            raise NotImplementedError(
+                "ASDL's Kronecker factors of conv layers are wrong when the outputs "
+                f"have positions, here outputs of shape {tuple(f.shape)}. Use a "
+                "Curvlinops backend (`CurvlinopsGGN` or `CurvlinopsEF`) instead."
+            )
 
 
 class AsdlHessian(AsdlInterface):
@@ -620,7 +681,9 @@ class AsdlHessian(AsdlInterface):
         hess_maker = HessianMaker(self.model, cfg)
 
         dummy = hess_maker.setup_model_call(self._model, x)
-        dummy = dummy if self.loss_type == LOSS_MSE else dummy.view(-1, dummy.size(-1))
+        dummy = (
+            dummy if self.loss_type == LOSS_MSE else dummy.reshape(-1, dummy.size(-1))
+        )
         y = self._flatten_targets(y)
 
         hess_maker.setup_loss_call(self.lossfunc, dummy, y)
@@ -629,7 +692,7 @@ class AsdlHessian(AsdlInterface):
         H = self._model.hessian.data
         f = self.model(x).detach()
         # Assumes that the last dimension of f is of size outputs.
-        f = f if self.loss_type == LOSS_MSE else f.view(-1, f.size(-1))
+        f = f if self.loss_type == LOSS_MSE else f.reshape(-1, f.size(-1))
         loss = self.lossfunc(f, y)
 
         return self.factor * loss, self.factor * H
