@@ -451,3 +451,98 @@ def test_failed_refit_invalidates_posterior(model):
 
     with pytest.raises(RuntimeError, match="fit"):
         la(X)
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_likelihood
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_marginal_likelihood()
+
+
+def test_refit_resets_loss(model, reg_loader):
+    la = FunctionalLaplace(model, "regression", n_subset=10)
+
+    la.fit(reg_loader)
+    loss = la.loss.clone()
+    log_marglik = la.log_marginal_likelihood().detach()
+
+    la.fit(reg_loader)
+
+    assert torch.allclose(la.loss, loss)
+    assert torch.allclose(la.log_marginal_likelihood().detach(), log_marglik)
+
+
+class _NoisyDataset(torch.utils.data.Dataset):
+    """Returns a different input on every access, like random data augmentation."""
+
+    def __init__(self, X: torch.Tensor, y: torch.Tensor, noise: float):
+        self.X, self.y, self.noise = X, y, noise
+
+    def __len__(self) -> int:
+        return len(self.X)
+
+    def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.X[i] + self.noise * torch.randn_like(self.X[i]), self.y[i]
+
+
+@pytest.mark.parametrize("independent_outputs", [True, False])
+def test_stochastic_loader_gives_symmetric_K_MM(model, independent_outputs):
+    X, y = torch.randn(40, 3), torch.randint(2, (40,))
+    loader = DataLoader(_NoisyDataset(X, y, noise=0.1), batch_size=6)
+
+    la = FunctionalLaplace(
+        model,
+        "classification",
+        n_subset=20,
+        independent_outputs=independent_outputs,
+    )
+    la.fit(loader)
+
+    K_MMs = la.K_MM if independent_outputs else [la.K_MM]
+    for K_MM in K_MMs:
+        assert torch.allclose(K_MM, K_MM.T)
+
+    # The predictive reuses the subset inputs that built K_MM, not a new draw
+    X_subset = torch.cat([la._batch_inputs(batch) for batch in la.train_loader])
+    X_subset_again = torch.cat([la._batch_inputs(batch) for batch in la.train_loader])
+    assert torch.equal(X_subset, X_subset_again)
+
+    f_var = la.functional_variance(la._jacobians(X_subset[:5])[0])
+    assert torch.all(torch.diagonal(f_var, dim1=-2, dim2=-1) >= -1e-8)
+
+
+class _FailingDataset(torch.utils.data.Dataset):
+    """Raises after `n_ok` accesses, like a loader that breaks partway through."""
+
+    def __init__(self, X: torch.Tensor, y: torch.Tensor, n_ok: int):
+        self.X, self.y, self.n_ok, self.n_calls = X, y, n_ok, 0
+
+    def __len__(self) -> int:
+        return len(self.X)
+
+    def __getitem__(self, i: int) -> tuple[torch.Tensor, torch.Tensor]:
+        self.n_calls += 1
+        if self.n_calls > self.n_ok:
+            raise OSError("Broken data")
+
+        return self.X[i], self.y[i]
+
+
+def test_refit_with_failing_loader_invalidates_posterior(model):
+    X, y = torch.randn(8, 3), torch.randint(2, (8,))
+
+    la = FunctionalLaplace(model, "classification", n_subset=8)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    # The first batch is read fine, the subset is not
+    with pytest.raises(OSError, match="Broken data"):
+        la.fit(DataLoader(_FailingDataset(X, y, n_ok=4), batch_size=4))
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la(X)
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_likelihood
+
+    with pytest.raises(RuntimeError, match="fit"):
+        la.log_marginal_likelihood()
