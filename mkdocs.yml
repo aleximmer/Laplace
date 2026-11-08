@@ -23,6 +23,7 @@ nav:
   - "Example: Multi-Label Classification": multilabel_example.py
   - "Example: Soft Labels": soft_label_example.py
   - "Example: Noise per Output": multioutput_noise_example.py
+  - "Example: Heteroscedastic Regression": heteroscedastic_example.py
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
       - ELLA: api_reference/ella.md

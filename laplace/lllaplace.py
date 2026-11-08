@@ -17,6 +17,7 @@ from laplace.baselaplace import (
     ParametricLaplace,
 )
 from laplace.curvature.curvature import CurvatureInterface
+from laplace.likelihoods import _is_heteroscedastic, get_likelihood
 from laplace.utils import FeatureExtractor, Kron
 from laplace.utils.enums import Likelihood
 from laplace.utils.feature_extractor import FeatureReduction
@@ -120,6 +121,15 @@ class LLLaplace(ParametricLaplace):
     ):
         if asdl_fisher_kwargs is not None:
             raise ValueError("Last-layer Laplace does not support asdl_fisher_kwargs.")
+
+        if _is_heteroscedastic(get_likelihood(likelihood)):
+            # The feature extractor assumes that the last layer returns the output
+            raise ValueError(
+                "Last-layer Laplace does not support the heteroscedastic Gaussian "
+                "likelihood, since its model returns a mean and a variance, not the "
+                "output of one last layer (#254). Use `subset_of_weights='all'` or a "
+                "subnetwork."
+            )
 
         self.H = None
         super().__init__(

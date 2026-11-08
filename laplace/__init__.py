@@ -18,6 +18,7 @@ from laplace.likelihoods import (
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
+    HeteroscedasticGaussianLikelihood,
     Likelihood,
     get_likelihood,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "CategoricalLikelihood",
     "BernoulliLikelihood",
     "BradleyTerryLikelihood",
+    "HeteroscedasticGaussianLikelihood",
     "get_likelihood",
     # Enums
     "SubsetOfWeights",

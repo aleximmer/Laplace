@@ -72,6 +72,14 @@ def validate(
             fitting=True,
         )
 
+        if type(out) is tuple and len(out) == 3:
+            # A heteroscedastic predictive: the variance of the targets is the
+            # aleatoric plus the epistemic one
+            f_mean, f_alea, f_epis = out
+            if f_epis.shape != f_alea.shape:
+                f_epis = torch.diagonal(f_epis, dim1=-2, dim2=-1)
+            out = (f_mean, f_alea + f_epis)
+
         if type(out) is tuple:
             if is_offline:
                 output_means.append(out[0])

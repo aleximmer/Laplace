@@ -9,12 +9,13 @@ import inspect
 import warnings
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterator
-from math import pi, sqrt
+from math import log, pi, sqrt
 from typing import Any, ClassVar
 
 import torch
 from torch import nn
 
+from laplace.utils.heteroscedastic_utils import HeteroscedasticGaussianNLLLoss
 from laplace.utils.utils import _float_dtype, _zero_like, hyperparameters_equal
 
 _BUILTIN_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING", "BERNOULLI")
@@ -702,6 +703,225 @@ class _WhitenedMSELoss(nn.Module):
         )
 
 
+class HeteroscedasticGaussianLikelihood(Likelihood):
+    """Heteroscedastic Gaussian likelihood, i.e. regression where the network also
+    predicts the noise, as trained with `nn.GaussianNLLLoss`.
+
+    The network returns a mean \\(\\mu(x) \\in \\mathbb{R}^K\\) and a variance
+    \\(\\sigma^2(x)\\), as the pair `(mean, var)` that `nn.GaussianNLLLoss` takes. A
+    target then has the likelihood
+
+    $$
+        p(y \\mid x) = \\mathcal{N}\\left(y \\mid \\mu(x),
+        \\operatorname{diag}(\\sigma^2(x))\\right).
+    $$
+
+    The variance has the shape of the mean, or it is shared by the outputs of a
+    datum, see [`join_mean_variance`][laplace.utils.heteroscedastic_utils.join_mean_variance]. The
+    targets have the shape of the mean, and every entry of the targets but the last
+    dim is an observation. The options `eps` and `full` are those of
+    `nn.GaussianNLLLoss`: the variance is clamped at `eps` from below, and `full`
+    adds the constant \\(\\tfrac{1}{2} \\log 2\\pi\\) of each output to the loss.
+    The loss is the summed `nn.GaussianNLLLoss`,
+
+    $$
+        \\frac{1}{2} \\sum_{n=1}^N \\sum_{k=1}^K \\left(\\log \\sigma_{nk}^2
+        + \\frac{(y_{nk} - \\mu_{nk})^2}{\\sigma_{nk}^2}\\right),
+    $$
+
+    which is the negative log likelihood up to the normalizer
+    \\(N K \\log \\sqrt{2\\pi}\\), or zero with `full=True`. So the loss factor is
+    \\(1\\).
+
+    The Laplace approximation is over the mean only, as in Immer et al. (2023): the
+    variance is held at its value under the MAP parameters. The GGN is then
+
+    $$
+        \\sum_{n=1}^N J_\\mu(x_n)^\\top \\operatorname{diag}\\left(\\sigma^{-2}(x_n)
+        \\right) J_\\mu(x_n),
+    $$
+
+    and parameters that only the variance depends on get no curvature from the data,
+    only from the prior. The predictive `la(x)` returns `f_mean, f_alea, f_epis`: the
+    mean, the network's variance, which is the aleatoric uncertainty, and the
+    covariance of the mean under the posterior, which is the epistemic uncertainty.
+    The predictive variance of the targets is `f_alea` plus the diagonal of
+    `f_epis`.
+
+    Inside the library, the outputs are `(batch, ..., 2 * K)`, the mean followed by
+    the variance, and every method of this class takes them in that form.
+    `Laplace` joins the pair of the network while it runs the model. The output
+    Hessian and the output gradient are zero for the variance, and for the mean they
+    are \\(\\operatorname{diag}(\\sigma^{-2})\\) and \\((\\mu - y) / \\sigma^2\\).
+    `inverse_link` returns the mean, and the predictive likelihood is a
+    `GaussianLikelihood` over it. `loss_fn` also takes the pair, so
+    `marglik_training` can train the network with it.
+
+    Weight-space Laplace supports the `diag`, `full`, and `kron` structures with the
+    Curvlinops backends, and `diag` and `full` with any GGN or EF backend. Last-layer
+    Laplace and the function-space methods don't support this likelihood.
+
+    Parameters
+    ----------
+    eps : float, default=1e-6
+        lower bound of the variance, as in `nn.GaussianNLLLoss`.
+    full : bool, default=False
+        whether the loss includes the constant, as in `nn.GaussianNLLLoss`.
+
+    Raises
+    ------
+    ValueError
+        if `eps` is not positive.
+
+    References
+    ----------
+    Immer, A., Palumbo, E., Marx, A., & Vogt, J. E. [Effective Bayesian
+    Heteroscedastic Regression with Deep Neural Networks](
+    https://openreview.net/forum?id=A6EquH0enk). NeurIPS 2023.
+    """
+
+    name: ClassVar[str] = "heteroscedastic_gaussian"
+
+    # Class-level defaults keep subclasses working that override `__init__` without
+    # calling `super().__init__()`
+    eps: float = 1e-6
+    """Lower bound of the variance."""
+
+    full: bool = False
+    """Whether the loss includes the constant."""
+
+    def __init__(self, eps: float = 1e-6, full: bool = False) -> None:
+        if not eps > 0:
+            raise ValueError(
+                f"The variance bound eps must be positive, but it is {eps}."
+            )
+
+        self.eps = eps
+        self.full = full
+
+    def hyperparameters(self) -> dict[str, Any]:
+        hyperparameters: dict[str, Any] = {}
+
+        if self.eps != 1e-6:
+            hyperparameters["eps"] = self.eps
+
+        if self.full:
+            hyperparameters["full"] = self.full
+
+        return hyperparameters
+
+    def split(self, f: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Split the joined outputs into the mean and the variance.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            `(batch, ..., 2 * K)`
+
+        Returns
+        -------
+        mean : torch.Tensor
+            `(batch, ..., K)`
+        var : torch.Tensor
+            `(batch, ..., K)`, as the network returns it, without the clamp at
+            `eps`.
+        """
+        mean, var = f.chunk(2, dim=-1)
+
+        return mean, var
+
+    def _precision(self, f: torch.Tensor) -> torch.Tensor:
+        # \(1 / \sigma^2\) with the variance clamped at `eps`, as in the loss
+        return self.split(f)[1].clamp(min=self.eps).reciprocal()
+
+    def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
+        mean, var = self.split(f)
+
+        return torch.distributions.Normal(mean, var.clamp(min=self.eps).sqrt())
+
+    def loss_fn(self, reduction: str = "sum") -> nn.Module:
+        return HeteroscedasticGaussianNLLLoss(self.eps, self.full, reduction)
+
+    @property
+    def loss_factor(self) -> float:
+        return 1.0
+
+    def check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
+        if f.shape[-1] % 2 != 0:
+            raise ValueError(
+                f"{type(self).__name__} expects the joined mean and variance, with an "
+                f"even number of outputs, but the outputs have shape "
+                f"{tuple(f.shape)}. Return the pair `(mean, var)` from the model."
+            )
+
+        if f.ndim != y.ndim or y.shape[-1] != f.shape[-1] // 2:
+            raise ValueError(
+                f"{type(self).__name__} expects targets with the shape of the mean, "
+                f"{tuple(f.shape[:-1]) + (f.shape[-1] // 2,)}, but the targets have "
+                f"shape {tuple(y.shape)}."
+            )
+
+    def log_normalizer(
+        self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
+    ) -> torch.Tensor:
+        """Constant that turns the negative loss into the log likelihood.
+
+        Parameters
+        ----------
+        n_obs : int
+            number of observations
+        n_outputs : int
+            number of joined outputs \\(2 K\\), the mean and the variance.
+        sigma_noise : torch.Tensor
+            ignored, since the network predicts the noise. It sets the dtype and
+            device of the result.
+
+        Returns
+        -------
+        c : torch.Tensor
+            \\(N K \\log \\sqrt{2\\pi}\\), or zero with `full=True`.
+        """
+        c = 0.0 if self.full else n_obs * (n_outputs // 2) * log(sqrt(2 * pi))
+
+        return _zero_like(sigma_noise) + c
+
+    def output_hessian(
+        self, f: torch.Tensor, y: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        precision = self._precision(f)
+
+        return torch.diag_embed(torch.cat([precision, torch.zeros_like(precision)], -1))
+
+    def inverse_link(self, f: torch.Tensor) -> torch.Tensor:
+        return self.split(f)[0]
+
+    def sample(
+        self, f: torch.Tensor, generator: torch.Generator | None = None
+    ) -> torch.Tensor:
+        mean, var = self.split(f)
+        noise = torch.randn(
+            mean.shape, device=f.device, dtype=f.dtype, generator=generator
+        )
+
+        return mean + var.clamp(min=self.eps).sqrt() * noise
+
+    def output_gradient(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+        mean = self.split(f)[0]
+        g = (mean - y) * self._precision(f)
+
+        return torch.cat([g, torch.zeros_like(g)], dim=-1)
+
+    @property
+    def predictive_likelihood(self) -> Likelihood:
+        # The predictive is a Gaussian over the mean, see `__call__`
+        return GaussianLikelihood()
+
+
+def _is_heteroscedastic(likelihood: Likelihood) -> bool:
+    # The library dispatches on the name, as for the other built-in likelihoods
+    return likelihood.name == HeteroscedasticGaussianLikelihood.name
+
+
 def _flatten_categorical_targets(f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """Flatten categorical targets to what `nn.CrossEntropyLoss` takes for the logits
     `f` of shape `(M, K)`, where `M` is the number of positions in `f`.
@@ -1294,11 +1514,13 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     ----------
     likelihood : Likelihood or str or nn.Module
         an instance, which is returned as is, one of `'regression'`,
-        `'classification'`, `'reward_modeling'`, and `'bernoulli'`, or a torch
-        criterion. `nn.MSELoss` becomes a `GaussianLikelihood`, `nn.CrossEntropyLoss`
-        a `CategoricalLikelihood` with the criterion's `weight`, `ignore_index`, and
-        `label_smoothing`, and `nn.BCEWithLogitsLoss` a `BernoulliLikelihood` with
-        its `weight` and `pos_weight`. The criterion's `reduction` is ignored, since
+        `'classification'`, `'reward_modeling'`, `'bernoulli'`, and
+        `'heteroscedastic_gaussian'`, or a torch criterion. `nn.MSELoss` becomes a
+        `GaussianLikelihood`, `nn.CrossEntropyLoss` a `CategoricalLikelihood` with the
+        criterion's `weight`, `ignore_index`, and `label_smoothing`,
+        `nn.BCEWithLogitsLoss` a `BernoulliLikelihood` with its `weight` and
+        `pos_weight`, and `nn.GaussianNLLLoss` a `HeteroscedasticGaussianLikelihood`
+        with its `eps` and `full`. The criterion's `reduction` is ignored, since
         Laplace always sums the loss.
 
     Returns
@@ -1309,7 +1531,7 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     ------
     ValueError
         if `likelihood` is neither a likelihood instance, a known name, nor one of
-        the three criteria above. Subclasses of the criteria are not accepted. Also
+        the four criteria above. Subclasses of the criteria are not accepted. Also
         if the `weight` or `pos_weight` of a `nn.BCEWithLogitsLoss` has more than one
         dim.
     """
@@ -1322,12 +1544,18 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
             CategoricalLikelihood,
             BradleyTerryLikelihood,
             BernoulliLikelihood,
+            HeteroscedasticGaussianLikelihood,
         ):
             if cls.name == _name_of(likelihood):
                 return cls()
 
     if type(likelihood) is nn.MSELoss:
         return GaussianLikelihood()
+
+    if type(likelihood) is nn.GaussianNLLLoss:
+        return HeteroscedasticGaussianLikelihood(
+            eps=likelihood.eps, full=likelihood.full
+        )
 
     if type(likelihood) is nn.CrossEntropyLoss:
         return CategoricalLikelihood(

@@ -31,6 +31,7 @@ from laplace.curvature.curvature import (
 from laplace.curvature.curvlinops import CurvlinopsGGN, CurvlinopsInterface
 from laplace.likelihoods import (
     CategoricalLikelihood,
+    _is_heteroscedastic,
     _noise_per_output,
     get_likelihood,
 )
@@ -58,8 +59,17 @@ from laplace.utils.functional_utils import (
     to_device,
     training_indices,
 )
+from laplace.utils.heteroscedastic_utils import (
+    as_joined_outputs,
+    joined_outputs,
+    joins_outputs,
+)
 from laplace.utils.matrix import Kron, KronDecomposed
-from laplace.utils.metrics import RunningBernoulliNLLMetric, RunningNLLMetric
+from laplace.utils.metrics import (
+    RunningBernoulliNLLMetric,
+    RunningGaussianNLLMetric,
+    RunningNLLMetric,
+)
 from laplace.utils.utils import (
     fix_prior_prec_structure,
     invsqrt_precision,
@@ -295,6 +305,18 @@ class BaseLaplace:
     @property
     def _dtype(self) -> torch.dtype:
         return next(self.model.parameters()).dtype
+
+    @property
+    def _n_predictive_outputs(self) -> int:
+        """Number of outputs of the predictive: one reward per item for reward
+        modeling, the mean for a heteroscedastic likelihood, else `n_outputs`."""
+        if self.likelihood.name == Likelihood.REWARD_MODELING.name:
+            return 1
+
+        if _is_heteroscedastic(self.likelihood):
+            return self.n_outputs // 2
+
+        return self.n_outputs
 
     @property
     def likelihood(self) -> Likelihood:
@@ -643,9 +665,10 @@ class BaseLaplace:
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
             reward modeling, with the `ignore_index` of a `CategoricalLikelihood`,
-            `RunningBernoulliNLLMetric()` for the Bernoulli likelihood, and running
-            `MeanSquaredError()` for regression. Other likelihoods have no default,
-            so `loss` is required for them.
+            `RunningBernoulliNLLMetric()` for the Bernoulli likelihood,
+            `RunningGaussianNLLMetric()` for the heteroscedastic Gaussian likelihood,
+            and running `MeanSquaredError()` for regression. Other likelihoods have no
+            default, so `loss` is required for them.
         log_prior_prec_min : float, default=-4
             exponent of the lower bound of the gridsearch interval.
         log_prior_prec_max : float, default=4
@@ -732,6 +755,9 @@ class BaseLaplace:
                 grid_size,
                 base=log_prior_prec_base,
             )
+
+            if loss is None and _is_heteroscedastic(likelihood):
+                loss = RunningGaussianNLLMetric().to(self._device)
 
             if loss is None and likelihood.name not in _BUILTIN_NAMES:
                 raise ValueError(
@@ -1428,6 +1454,7 @@ class ParametricLaplace(BaseLaplace):
         if getattr(self, "H", None) is None:
             raise AttributeError("Laplace not fitted. Run fit() first.")
 
+    @joins_outputs
     def fit(
         self,
         train_loader: DataLoader,
@@ -1756,6 +1783,10 @@ class ParametricLaplace(BaseLaplace):
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+            For `likelihood='heteroscedastic_gaussian'`, a tuple
+            `(f_mean, f_alea, f_epis)` is returned: the mean and the variance that
+            the network predicts, and the epistemic covariance of the mean, or its
+            variance with `pred_type='nn'` or `diagonal_output=True`.
             For any other likelihood, a torch.Tensor with the shape of the outputs
             is returned. It averages the likelihood's `inverse_link` over
             `n_samples` draws of the outputs from the GLM predictive or from the
@@ -1805,8 +1836,51 @@ class ParametricLaplace(BaseLaplace):
             ):
                 raise ValueError("Invalid random generator (check type and device).")
 
-        likelihood = self._stage_likelihood(fitting)
+        if _is_heteroscedastic(self.likelihood):
+            # The predictive is a Gaussian over the mean, also while fitting
+            with joined_outputs(self.model):
+                f_mean, f_epis = self._predictive(
+                    x,
+                    self.likelihood.predictive_likelihood,
+                    pred_type,
+                    joint,
+                    link_approx,
+                    n_samples,
+                    diagonal_output,
+                    generator,
+                    **model_kwargs,
+                )
 
+            f_alea = self._aleatoric_variance(x, joint, **model_kwargs)
+
+            return f_mean, f_alea, f_epis
+
+        return self._predictive(
+            x,
+            self._stage_likelihood(fitting),
+            pred_type,
+            joint,
+            link_approx,
+            n_samples,
+            diagonal_output,
+            generator,
+            **model_kwargs,
+        )
+
+    def _predictive(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        likelihood: Likelihood,
+        pred_type: PredType | str,
+        joint: bool,
+        link_approx: LinkApprox | str,
+        n_samples: int,
+        diagonal_output: bool,
+        generator: torch.Generator | None,
+        **model_kwargs: dict[str, Any],
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """The posterior predictive of `__call__` for the staged `likelihood`, after
+        the arguments are checked."""
         if pred_type == PredType.GLM:
             return self._glm_forward_call(
                 x, likelihood, joint, link_approx, n_samples, diagonal_output, generator
@@ -1828,6 +1902,42 @@ class ParametricLaplace(BaseLaplace):
                 )
                 return likelihood.inverse_link(f_samples).mean(dim=0)
 
+    def _aleatoric_variance(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        joint: bool = False,
+        **model_kwargs: dict[str, Any],
+    ) -> torch.Tensor:
+        """Variance that a heteroscedastic network predicts at the MAP.
+
+        The model runs without the hook of `joined_outputs`, so the variance keeps
+        its graph with `enable_backprop=True`, e.g. for gradients w.r.t. the inputs.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            inputs, as in `__call__`.
+        joint : bool, default=False
+            whether to flatten the variance, as the mean of the joint predictive.
+
+        Returns
+        -------
+        f_alea : torch.Tensor
+            `(batch, ..., K)`, or `(batch * ... * K,)` if `joint`.
+        """
+        x = x.to(self._device) if isinstance(x, torch.Tensor) else x
+
+        with torch.set_grad_enabled(self.enable_backprop and torch.is_grad_enabled()):
+            out = as_joined_outputs(self.model(x, **model_kwargs))
+
+        var = self.likelihood.split(out)[1]
+
+        if not self.enable_backprop:
+            var = var.detach()
+
+        return var.flatten() if joint else var
+
+    @joins_outputs
     def functional_samples(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -1883,11 +1993,7 @@ class ParametricLaplace(BaseLaplace):
             f_mu, f_cov = self._glm_predictive_distribution(x, joint=True)
 
             # Reward models are fitted on pairs but predict one reward per item
-            n_outputs = (
-                1
-                if self.likelihood.name == Likelihood.REWARD_MODELING.name
-                else self.n_outputs
-            )
+            n_outputs = self._n_predictive_outputs
 
             if diagonal_output:
                 # Keep the covariance between inputs, drop it between outputs
@@ -1905,6 +2011,7 @@ class ParametricLaplace(BaseLaplace):
         else:  # 'nn'
             return self._nn_functional_samples(x, n_samples, generator)
 
+    @joins_outputs
     def predictive_samples(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -1997,6 +2104,11 @@ class ParametricLaplace(BaseLaplace):
         else:
             Js, f_mu = self.backend.jacobians(X, enable_backprop=self.enable_backprop)
 
+        if _is_heteroscedastic(self.likelihood):
+            # The Laplace approximation is over the mean, the first half of the outputs
+            K = f_mu.shape[-1] // 2
+            f_mu, Js = f_mu[..., :K], Js[..., :K, :]
+
         if joint:
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
@@ -2026,6 +2138,9 @@ class ParametricLaplace(BaseLaplace):
 
         vector_to_parameters(self.mean, self.params)
         fs = torch.stack(fs)
+
+        if _is_heteroscedastic(self.likelihood):
+            fs = self.likelihood.inverse_link(fs)
 
         return fs
 
@@ -2757,6 +2872,13 @@ class LowRankLaplace(ParametricLaplace):
         if not override:
             # LowRankLA cannot be updated since eigenvalue representation not additive
             raise ValueError("LowRank LA does not support updating.")
+
+        # Its eigensolver doesn't know the likelihood, and the model returns a pair
+        if _is_heteroscedastic(self.likelihood):
+            raise ValueError(
+                "LowRankLaplace does not support the heteroscedastic Gaussian "
+                "likelihood. Use the `diag`, `full`, or `kron` structure."
+            )
 
         self.model.eval()
         self.mean = parameters_to_vector(self.model.parameters())
