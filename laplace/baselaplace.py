@@ -2565,6 +2565,33 @@ class KronLaplace(ParametricLaplace):
         if len(self.prior_precision) not in [1, self.n_layers]:
             raise ValueError("Prior precision for Kron either scalar or per-layer.")
 
+    def _legacy_n_obs_examples(self) -> int:
+        """`n_obs_examples` for checkpoints and pickles from before 0.5, which don't
+        save it.
+
+        They can't tell how many examples were fully ignored, so assume none
+        were, unless nothing was observed at all.
+
+        Returns
+        -------
+        n_obs_examples : int
+        """
+        return self.n_data if getattr(self, "n_obs", self.n_data) > 0 else 0
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """Restore a pickled instance, and `n_obs_examples` for pickles from
+        before 0.5, see `BaseLaplace.__setstate__`.
+
+        Parameters
+        ----------
+        state : dict[str, Any]
+            the pickled `__dict__`.
+        """
+        super().__setstate__(state)
+
+        if "n_obs_examples" not in vars(self):
+            self.n_obs_examples = self._legacy_n_obs_examples()
+
     def state_dict(self) -> dict[str, Any]:
         """Return the state to save, with the Kronecker factors before decomposing.
 
@@ -2588,11 +2615,9 @@ class KronLaplace(ParametricLaplace):
         """
         super().load_state_dict(state_dict)
 
-        # Checkpoints from before 0.5 don't save `n_obs_examples`. They can't tell
-        # how many examples were fully ignored, so assume none were, unless nothing
-        # was observed at all.
-        n_obs_examples = self.n_data if self.n_obs > 0 else 0
-        self.n_obs_examples = state_dict.get("n_obs_examples", n_obs_examples)
+        self.n_obs_examples = state_dict.get(
+            "n_obs_examples", self._legacy_n_obs_examples()
+        )
 
         self._init_H()
 

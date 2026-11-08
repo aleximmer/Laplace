@@ -3851,3 +3851,29 @@ def test_kron_reduce_rejects_backends_without_it(backend):
 
     with pytest.raises(ValueError, match="only implemented by the Curvlinops"):
         la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+
+@pytest.mark.parametrize("kfac_approx", ["expand", "reduce"])
+def test_legacy_kron_pickle_resumes_online_fit(kfac_approx):
+    X, y = _ignored_data((5,))
+    y[0] = -100  # A fully ignored example, which old pickles can't know about
+    loader = DataLoader(TensorDataset(X, y), batch_size=4)
+    kwargs = dict(
+        backend=CurvlinopsGGN, asdl_fisher_kwargs={"kfac_approx": kfac_approx}
+    )
+
+    la = KronLaplace(_position_model(), "classification", **kwargs)
+    la.fit(loader)
+
+    # Pickles made before `n_obs_examples` don't have it
+    state = dict(vars(la))
+    del state["n_obs_examples"]
+
+    legacy = KronLaplace.__new__(KronLaplace)
+    legacy.__setstate__(state)
+    restored = pickle.loads(pickle.dumps(legacy))
+
+    assert restored.n_obs_examples == len(X)
+
+    restored.fit(loader, override=False)
+    assert restored.n_obs_examples == 2 * len(X) - 1
