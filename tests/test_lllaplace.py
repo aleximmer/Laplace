@@ -1063,3 +1063,22 @@ def test_asdl_ef_full_matches_curvlinops(likelihood):
     assert torch.allclose(
         torch.as_tensor(la_asdl.loss), torch.as_tensor(la_curvlinops.loss)
     )
+
+
+@pytest.mark.parametrize("laplace", [FullLLLaplace, DiagLLLaplace, KronLLLaplace])
+@pytest.mark.parametrize("bias", [True, False])
+def test_diagonal_output_matches_full_covariance(laplace, bias, mocker):
+    torch.manual_seed(0)
+    model = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 2, bias=bias))
+    X, y = torch.randn(10, 3), torch.randn(10, 2)
+
+    lap = laplace(model, "regression")
+    lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+    spy = mocker.spy(lap, "functional_variance_fast")
+
+    f_mean, f_var = lap(X, diagonal_output=True)
+    assert spy.call_count == 1
+
+    ref_mean, ref_cov = lap(X)
+    torch.testing.assert_close(f_mean, ref_mean)
+    torch.testing.assert_close(f_var, torch.diagonal(ref_cov, dim1=-2, dim2=-1))

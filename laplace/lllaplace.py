@@ -216,19 +216,11 @@ class LLLaplace(ParametricLaplace):
         self,
         X: torch.Tensor | MutableMapping,
         joint: bool = False,
-        diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         if joint:
             Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
             f_mu = f_mu.flatten()  # (batch*out)
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
-        elif diagonal_output:
-            try:
-                f_mu, f_var = self.functional_variance_fast(X)
-            except NotImplementedError:
-                # WARN: Fallback if not implemented
-                Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
-                f_var = self.functional_variance(Js).diagonal(dim1=-2, dim2=-1)
         else:
             Js, f_mu = self.backend.last_layer_jacobians(X, self.enable_backprop)
             f_var = self.functional_variance(Js)
@@ -238,6 +230,23 @@ class LLLaplace(ParametricLaplace):
             if not self.enable_backprop
             else (f_mu, f_var)
         )
+
+    def _glm_predictive_marginals(
+        self, x: torch.Tensor | MutableMapping
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Mean and variance of each output of the GLM predictive, from
+        `functional_variance_fast` when the subclass has a fast formula, see
+        `BaseLaplace._glm_predictive_marginals`.
+        """
+        try:
+            f_mu, f_var = self.functional_variance_fast(x)
+        except NotImplementedError:
+            return super()._glm_predictive_marginals(x)
+
+        if not self.enable_backprop:
+            return f_mu.detach(), f_var.detach()
+
+        return f_mu, f_var
 
     def functional_variance_fast(self, X):
         """

@@ -459,9 +459,8 @@ class BaseLaplace:
         diagonal_output : bool
             whether to use a diagonalized posterior predictive on the outputs.
             Only works for `pred_type='glm'` when `joint=False` in regression.
-            In the case of last-layer Laplace with a diagonal or Kron Hessian,
-            setting this to `True` makes computation much(!) faster for large
-            number of outputs.
+            With last-layer Laplace and a diagonal Hessian, setting it to `True`
+            skips the Jacobians, which is much faster for many outputs.
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used).
@@ -885,6 +884,29 @@ class BaseLaplace:
 
         return self._loss_factor
 
+    def _glm_predictive_marginals(
+        self, x: torch.Tensor | MutableMapping
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Mean and variance of each output of the GLM predictive, without the
+        covariances between outputs. Override it when the variances are cheaper to
+        get than the full output covariance.
+
+        Parameters
+        ----------
+        x : torch.Tensor or MutableMapping
+            inputs, as in `__call__`.
+
+        Returns
+        -------
+        f_mu : torch.Tensor
+            predictive mean `(batch, outputs)`
+        f_var : torch.Tensor
+            predictive variances `(batch, outputs)`
+        """
+        f_mu, f_var = self._glm_predictive_distribution(x)
+
+        return f_mu, torch.diagonal(f_var, dim1=-2, dim2=-1)
+
     def _glm_forward_call(
         self,
         x: torch.Tensor | MutableMapping,
@@ -977,11 +999,13 @@ class BaseLaplace:
         """
         likelihood = get_likelihood(likelihood)
         is_gaussian = likelihood.is_gaussian
+
+        if is_gaussian and diagonal_output and not joint:
+            return self._glm_predictive_marginals(x)
+
         f_mu, f_var = self._glm_predictive_distribution(x, joint=joint and is_gaussian)
 
         if is_gaussian:
-            if diagonal_output and not joint:
-                f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
             return f_mu, f_var
 
         if likelihood.name == Likelihood.BERNOULLI.name:
@@ -1711,9 +1735,8 @@ class ParametricLaplace(BaseLaplace):
         diagonal_output : bool
             whether to use a diagonalized posterior predictive on the outputs.
             Only works for `pred_type='glm'` when `joint=False` in regression.
-            In the case of last-layer Laplace with a diagonal or Kron Hessian,
-            setting this to `True` makes computation much(!) faster for large
-            number of outputs.
+            With last-layer Laplace and a diagonal Hessian, setting it to `True`
+            skips the Jacobians, which is much faster for many outputs.
 
         generator : torch.Generator, optional
             random number generator to control the samples (if sampling used).
@@ -1948,7 +1971,6 @@ class ParametricLaplace(BaseLaplace):
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         joint: bool = False,
-        diagonal_output: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         # In reward modeling, the output size differs between fitting (pairwise) and
         # prediction (single items), which ASDL's Jacobian can't handle
@@ -1976,9 +1998,6 @@ class ParametricLaplace(BaseLaplace):
             f_var = self.functional_covariance(Js)  # (batch*out, batch*out)
         else:
             f_var = self.functional_variance(Js)  # (batch, out, out)
-
-            if diagonal_output:
-                f_var = torch.diagonal(f_var, dim1=-2, dim2=-1)
 
         return (
             (f_mu.detach(), f_var.detach())
