@@ -1790,11 +1790,15 @@ class ParametricLaplace(BaseLaplace):
             )
         else:
             if likelihood.is_gaussian:
-                samples = self._nn_predictive_samples(x, n_samples, **model_kwargs)
+                samples = self._nn_predictive_samples(
+                    x, n_samples, generator, **model_kwargs
+                )
                 return samples.mean(dim=0), samples.var(dim=0)
             elif likelihood.name in _CATEGORICAL_NAMES:
                 # The average is computed online
-                return self._nn_predictive_classification(x, n_samples, **model_kwargs)
+                return self._nn_predictive_classification(
+                    x, n_samples, generator, **model_kwargs
+                )
             else:
                 f_samples = self._nn_functional_samples(
                     x, n_samples, generator, **model_kwargs
@@ -2021,10 +2025,11 @@ class ParametricLaplace(BaseLaplace):
         self,
         X: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
         n_samples: int = 100,
+        generator: torch.Generator | None = None,
         **model_kwargs: dict[str, Any],
     ) -> torch.Tensor:
         py = 0.0
-        for sample in self.sample(n_samples):
+        for sample in self.sample(n_samples, generator):
             vector_to_parameters(sample, self.params)
             logits = self.model(
                 X.to(self._device) if isinstance(X, torch.Tensor) else X, **model_kwargs
