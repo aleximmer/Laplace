@@ -1,4 +1,3 @@
-import os
 import pickle
 from collections import OrderedDict
 from copy import deepcopy
@@ -99,11 +98,10 @@ def reg_loader():
 
 
 @pytest.fixture(autouse=True)
-def cleanup():
-    yield
-    # Run after test
-    if os.path.exists("state_dict.bin"):
-        os.remove("state_dict.bin")
+def in_tmp_path(tmp_path, monkeypatch):
+    # Each test writes `state_dict.bin` to its own directory, so parallel workers
+    # don't overwrite or delete each other's file.
+    monkeypatch.chdir(tmp_path)
 
 
 @pytest.mark.parametrize("laplace", flavors)
