@@ -95,6 +95,7 @@ def _data(
     batch_size: int = 5,
     dict_inputs: bool = False,
     likelihood: str = "regression",
+    shuffle: bool = False,
 ) -> tuple[torch.Tensor | dict, DataLoader]:
     """Test inputs and a training loader. The default batch size leaves a partial
     last batch, so per-batch bookkeeping must weight batches right."""
@@ -104,10 +105,13 @@ def _data(
     X_test = torch.randn(4, N_IN)
 
     if not dict_inputs:
-        return X_test, DataLoader(TensorDataset(X, y), batch_size=batch_size)
+        loader = DataLoader(TensorDataset(X, y), batch_size=batch_size, shuffle=shuffle)
+        return X_test, loader
 
     dataset = [{"input_ids": x_i, "labels": y_i} for x_i, y_i in zip(X, y)]
-    return {"input_ids": X_test}, DataLoader(dataset, batch_size=batch_size)
+    return {"input_ids": X_test}, DataLoader(
+        dataset, batch_size=batch_size, shuffle=shuffle
+    )
 
 
 def _inputs(loader: DataLoader) -> torch.Tensor:
@@ -150,10 +154,11 @@ def _fitted(
     batch_size: int = 5,
     dict_inputs: bool = False,
     likelihood: str = "regression",
+    shuffle: bool = False,
     **hyper,
 ):
     model = _model(n_out, dict_inputs)
-    X_test, loader = _data(n_out, batch_size, dict_inputs, likelihood)
+    X_test, loader = _data(n_out, batch_size, dict_inputs, likelihood, shuffle)
     la = _build(method, model, loader, likelihood, **hyper)
     _fit(la, method, loader)
     return la, model, X_test, loader

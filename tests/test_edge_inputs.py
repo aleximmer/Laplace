@@ -86,6 +86,20 @@ def test_batch_size_does_not_change_posterior(method, likelihood, n_out, batch_s
 
 @deterministic_methods
 @likelihoods
+def test_shuffled_loader_does_not_change_posterior(method, likelihood, n_out):
+    _skip_unsupported(method, likelihood)
+
+    # The curvature sums over the data, and the subsets are drawn by index
+    options = {"n_out": n_out, "likelihood": likelihood}
+    torch.manual_seed(3)
+    la, _, X_test, _ = _fitted(method, shuffle=True, **options)
+    reference, _, _, _ = _fitted(method, **options)
+
+    _assert_same_posterior(la, reference, X_test, X_test, method)
+
+
+@deterministic_methods
+@likelihoods
 def test_dict_batches_match_tensor_batches(method, likelihood, n_out):
     _skip_unsupported(method, likelihood)
 
