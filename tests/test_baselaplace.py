@@ -3740,3 +3740,140 @@ def test_bernoulli_fit_rejects_bad_targets(laplace):
 
         with pytest.raises(ValueError, match="expects"):
             la.fit(DataLoader(TensorDataset(X, bad), batch_size=5))
+
+
+def _reduce_input_factor(X: torch.Tensor, observed: torch.Tensor) -> torch.Tensor:
+    """KFAC-reduce input factor of a first layer applied position-wise: the mean over
+    the examples with an observation of the outer products of their inputs, averaged
+    over observed positions."""
+    has_observation = observed.any(dim=1)
+    X, observed = X[has_observation], observed[has_observation]
+
+    X_mean = (X * observed[..., None]).sum(1) / observed.sum(1, keepdim=True)
+    return X_mean.T @ X_mean / len(X)
+
+
+@pytest.mark.parametrize("batch_size", [1, 3, 8])
+def test_kron_reduce_ignored_input_factor_is_mean_over_examples(batch_size):
+    torch.manual_seed(0)
+    X, y = _ignored_data((5,))
+    y[0] = -100  # A fully ignored example doesn't count
+    model = _position_model()
+
+    la = KronLaplace(
+        model,
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=batch_size))
+
+    assert la.n_obs_examples == len(X) - 1
+    torch.testing.assert_close(
+        la.H_facs.kfacs[0][1], _reduce_input_factor(X, y != -100)
+    )
+
+
+def test_kron_old_checkpoint_without_observations_has_no_examples():
+    X, y = _ignored_data((5,))
+    y[:] = -100
+    model = _position_model()
+
+    la = KronLaplace(
+        model,
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+    state_dict = la.state_dict()
+    del state_dict["n_obs_examples"]  # As saved before 0.5
+
+    restored = KronLaplace(
+        deepcopy(model),
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    restored.load_state_dict(state_dict)
+
+    assert restored.n_obs == restored.n_obs_examples == 0
+
+
+def test_kron_reduce_varying_length_input_factor_is_mean_over_examples():
+    torch.manual_seed(0)
+    lengths = [2, 2, 6, 6, 3, 3]
+    data = [(torch.randn(L, 4), torch.randint(3, (L,))) for L in lengths]
+    model = _position_model()
+
+    la = KronLaplace(
+        model,
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    la.fit(DataLoader(data, batch_size=2))
+
+    X_mean = torch.stack([X.mean(0) for X, _ in data])
+    torch.testing.assert_close(la.H_facs.kfacs[0][1], X_mean.T @ X_mean / len(data))
+
+    # The same with one batch per example, and after a checkpoint and online update
+    per_example = KronLaplace(
+        deepcopy(model),
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    per_example.fit(DataLoader(data[:3], batch_size=1))
+
+    restored = KronLaplace(
+        deepcopy(model),
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    restored.load_state_dict(per_example.state_dict())
+    restored.fit(DataLoader(data[3:], batch_size=1), override=False)
+
+    torch.testing.assert_close(restored.H_facs.kfacs[0][1], la.H_facs.kfacs[0][1])
+
+
+@pytest.mark.parametrize("backend", [BackPackGGN, BackPackEF, AsdlGGN, AsdlEF])
+def test_kron_reduce_rejects_backends_without_it(backend):
+    X, y = torch.randn(8, 4), torch.randint(3, (8,))
+    la = KronLaplace(
+        _position_model(),
+        "classification",
+        backend=backend,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+
+    with pytest.raises(ValueError, match="only implemented by the Curvlinops"):
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+
+
+@pytest.mark.parametrize("kfac_approx", ["expand", "reduce"])
+def test_legacy_kron_pickle_resumes_online_fit(kfac_approx):
+    X, y = _ignored_data((5,))
+    y[0] = -100  # A fully ignored example, which old pickles can't know about
+    loader = DataLoader(TensorDataset(X, y), batch_size=4)
+    kwargs = dict(
+        backend=CurvlinopsGGN, asdl_fisher_kwargs={"kfac_approx": kfac_approx}
+    )
+
+    la = KronLaplace(_position_model(), "classification", **kwargs)
+    la.fit(loader)
+
+    # Pickles made before `n_obs_examples` don't have it
+    state = dict(vars(la))
+    del state["n_obs_examples"]
+
+    legacy = KronLaplace.__new__(KronLaplace)
+    legacy.__setstate__(state)
+    restored = pickle.loads(pickle.dumps(legacy))
+
+    assert restored.n_obs_examples == len(X)
+
+    restored.fit(loader, override=False)
+    assert restored.n_obs_examples == 2 * len(X) - 1

@@ -21,6 +21,7 @@ from laplace.curvature.curvature import (
     _KRON_OPTIONS,
     _TARGET_FREE_OPTIONS,
     _is_probability_target,
+    _n_observed_examples,
     _observed_input_factors,
     _observed_mask,
 )
@@ -367,14 +368,14 @@ class CurvlinopsInterface(CurvatureInterface):
             **kwargs,
         )
 
+        reduce = kwargs.get("kfac_approx", KFACType.EXPAND) == KFACType.REDUCE
+
         if mask is None:
             linop.compute_kronecker_factors()
             kron = self._get_kron_factors(linop, model)
         else:
             # Curvlinops averages the input factors over all positions, so the observed
             # ones are collected separately
-            reduce = kwargs.get("kfac_approx", KFACType.EXPAND) == KFACType.REDUCE
-
             with _observed_input_factors(self._model, mask, reduce) as input_factors:
                 linop.compute_kronecker_factors()
 
@@ -382,8 +383,11 @@ class CurvlinopsInterface(CurvatureInterface):
 
         # Curvlinops averages the input factors over the positions of the batch, e.g.
         # `B * L` for outputs `(B, L, K)`. Undo it, so that they sum over the
-        # positions like with ASDL. `KronLaplace.fit` normalizes by the number of
-        # observations.
+        # positions like with ASDL. KFAC-reduce averages over the examples instead,
+        # so it sums over those. `KronLaplace.fit` normalizes by the matching count.
+        if reduce:
+            M = _n_observed_examples(y, mask)
+
         kron = self._rescale_kron_factors(kron, M, N)
         kron *= self.factor
 
