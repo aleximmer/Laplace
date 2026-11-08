@@ -490,9 +490,13 @@ def test_functional_matches_bruteforce(independent_outputs, temperature):
 
     mu = y - (f + torch.einsum("nkp,p->nk", Js, -mean))
 
+    # The tempered likelihood is a Gaussian with the variances scaled by T. The log
+    # determinant is relative to the noise, as in the weight-space approximations.
+    noise = SIGMA**2 * temperature
+
     if independent_outputs:
         kernels = [
-            s * Js[:, k] @ Js[:, k].T + SIGMA[k] ** 2 * torch.eye(N) for k in range(K)
+            s * Js[:, k] @ Js[:, k].T + noise[k] * torch.eye(N) for k in range(K)
         ]
         log_det = sum(torch.logdet(k) for k in kernels)
         scatter = sum(
@@ -500,17 +504,17 @@ def test_functional_matches_bruteforce(independent_outputs, temperature):
         )
     else:
         Jf = Js.reshape(N * K, -1)
-        kernel = s * Jf @ Jf.T + torch.diag((SIGMA**2).repeat(N))
+        kernel = s * Jf @ Jf.T + torch.diag(noise.repeat(N))
         log_det = torch.logdet(kernel)
         scatter = mu.reshape(-1) @ torch.linalg.solve(kernel, mu.reshape(-1))
 
-    assert torch.allclose(la.log_det_ratio, log_det)
+    assert torch.allclose(la.log_det_ratio, log_det - N * noise.log().sum())
     assert torch.allclose(la.scatter, scatter)
 
     # The loss holds the stds, so at T = 1 the log likelihood is the Gaussian one
     assert torch.allclose(la.loss, 0.5 * (((f - y) / SIGMA) ** 2).sum())
     assert torch.allclose(
-        la.log_likelihood, -la.loss / temperature - _normalizer(N, SIGMA)
+        la.log_likelihood, (-la.loss - _normalizer(N, SIGMA)) / temperature
     )
 
     if temperature == 1.0:

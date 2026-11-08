@@ -129,7 +129,11 @@ def marglik_training(
     sigma_noise_init : float, default=1.0
         initial observation noise (for regression only)
     temperature : float, default=1.0
-        factor for the likelihood for 'overcounting' data. Might be required for data augmentation.
+        temperature \\(T\\) of the likelihood, as in cold posteriors: both the network
+        training and the Laplace approximation use
+        \\(p(\\mathcal{D} \\mid \\theta)^{1/T} p(\\theta)\\). A temperature below 1
+        counts the data more often, e.g. \\(T = 1/K\\) for \\(K\\) augmentations per
+        datum.
     fix_sigma_noise: bool, default=False
         if False, optimize observation noise via marglik otherwise use `sigma_noise_init` throughout.
         Only works for regression.
@@ -174,7 +178,7 @@ def marglik_training(
     # differentiable hyperparameters
     hyperparameters = list()
     # prior precision
-    log_prior_prec_init = np.log(temperature * prior_prec_init)
+    log_prior_prec_init = np.log(prior_prec_init)
     log_prior_prec = fix_prior_prec_structure(
         log_prior_prec_init, prior_structure, H, P, device, dtype
     )
@@ -265,9 +269,9 @@ def marglik_training(
                     if not fix_sigma_noise
                     else sigma_noise_init
                 )
-                crit_factor = temperature / (2 * sigma_noise**2)
+                crit_factor = 1 / (2 * sigma_noise**2 * temperature)
             else:
-                crit_factor = temperature
+                crit_factor = 1 / temperature
 
             prior_prec = torch.exp(log_prior_prec).detach()
             theta = parameters_to_vector(

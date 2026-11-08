@@ -28,6 +28,7 @@ from laplace import (
 )
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 from laplace.likelihoods import BernoulliLikelihood
+from laplace.marglik_training import marglik_training
 from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPackGGN
 
 pytestmark = pytest.mark.default_dtype(torch.float64)
@@ -229,7 +230,7 @@ def test_full_ef_regression(backend, sigma):
 @pytest.mark.parametrize("task,n_out", [("regression", 1), ("classification", 3)])
 def test_temperature_scales_classification_and_curvature(task, n_out):
     # A temperature T divides the curvature by T. For classification it also divides
-    # the whole log likelihood. Regression is in the xfail below.
+    # the whole log likelihood. Regression is checked below.
     T = 0.5
     model = _mlp(n_out)
     X, y = _data(task, n_out)
@@ -248,11 +249,6 @@ def test_temperature_scales_classification_and_curvature(task, n_out):
         _assert_close(la.log_likelihood, -_nll(task, f(theta, X), y, 1.0) / T)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="With a temperature, regression tempers the data fit but not the Gaussian "
-    "normalizer, so the marglik-optimal noise depends on T.",
-)
 def test_temperature_regression_log_likelihood():
     T, sigma = 0.5, 0.7
     model = _mlp(1)
@@ -545,8 +541,14 @@ def test_functional_laplace_predictive_equals_full(n_out, sigma, prior):
 
 
 def _train_to_map(
-    model: nn.Module, X: torch.Tensor, y: torch.Tensor, sigma: float, prior: float
+    model: nn.Module,
+    X: torch.Tensor,
+    y: torch.Tensor,
+    sigma: float,
+    prior: float,
+    T: float = 1.0,
 ) -> None:
+    # The MAP of the tempered posterior p(D | theta)^(1/T) p(theta)
     opt = torch.optim.LBFGS(
         model.parameters(),
         max_iter=5000,
@@ -557,7 +559,7 @@ def _train_to_map(
 
     def closure():
         opt.zero_grad()
-        loss = _nll("regression", model(X), y, sigma)
+        loss = _nll("regression", model(X), y, sigma) / T
         loss = loss + 0.5 * prior * sum((p**2).sum() for p in model.parameters())
         loss.backward()
 
@@ -568,16 +570,21 @@ def _train_to_map(
 
 
 @pytest.mark.parametrize("n_out", [1, 2])
-def test_functional_laplace_marglik_equals_full_at_map(n_out):
+@pytest.mark.parametrize("T", [1.0, 0.5])
+def test_functional_laplace_marglik_equals_full_at_map(n_out, T):
     # At the MAP, the weight-space Laplace evidence of the linearized network is
-    # exact, and so is the GP evidence on all the data
+    # exact, and so is the GP evidence on all the data, also when tempered
     sigma, prior = 0.6, 2.0
     model = _mlp(n_out)
     X, y = _data("regression", n_out)
-    _train_to_map(model, X, y, sigma, prior)
+    _train_to_map(model, X, y, sigma, prior, T)
 
     full = FullLaplace(
-        copy.deepcopy(model), "regression", sigma_noise=sigma, prior_precision=prior
+        copy.deepcopy(model),
+        "regression",
+        sigma_noise=sigma,
+        prior_precision=prior,
+        temperature=T,
     )
     full.fit(_loader(X, y))
 
@@ -587,6 +594,7 @@ def test_functional_laplace_marglik_equals_full_at_map(n_out):
         n_subset=N_DATA,
         sigma_noise=sigma,
         prior_precision=prior,
+        temperature=T,
     )
     gp.fit(_loader(X, y))
 
@@ -595,4 +603,36 @@ def test_functional_laplace_marglik_equals_full_at_map(n_out):
         full.log_marginal_likelihood(),
         rtol=1e-5,
         atol=1e-6,
+    )
+
+
+@pytest.mark.parametrize("T", [1.0, 0.25])
+def test_marglik_training_reaches_the_tempered_map(T):
+    # With the hyperparameters fixed, the training of a linear model ends at the
+    # ridge solution of the tempered posterior p(D | theta)^(1/T) p(theta)
+    sigma, prior = 0.5, 3.0
+    model = nn.Linear(N_IN, 1, bias=False)
+    X, y = _data("regression", 1)
+
+    marglik_training(
+        model,
+        DataLoader(TensorDataset(X, y), batch_size=N_DATA),
+        "regression",
+        hessian_structure="diag",
+        optimizer_cls=torch.optim.SGD,
+        optimizer_kwargs={"lr": 0.1},
+        n_epochs=2000,
+        n_epochs_burnin=2001,
+        prior_structure="scalar",
+        prior_prec_init=prior,
+        sigma_noise_init=sigma,
+        temperature=T,
+        fix_sigma_noise=True,
+    )
+
+    A = X.T @ X / (sigma**2 * T) + prior * torch.eye(N_IN)
+    theta = torch.linalg.solve(A, X.T @ y.squeeze(-1) / (sigma**2 * T))
+
+    torch.testing.assert_close(
+        model.weight.detach().squeeze(0), theta, rtol=1e-5, atol=1e-7
     )

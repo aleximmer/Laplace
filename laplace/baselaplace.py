@@ -185,8 +185,9 @@ class BaseLaplace:
     prior_mean : torch.Tensor or float, default=0
         prior mean of a Gaussian prior, useful for continual learning
     temperature : float, default=1
-        temperature of the likelihood; lower temperature leads to more
-        concentrated posterior and vice versa.
+        temperature \\(T\\) of the likelihood, as in cold posteriors: the posterior is
+        \\(p(\\theta \\mid \\mathcal{D}) \\propto p(\\mathcal{D} \\mid \\theta)^{1/T} p(\\theta)\\).
+        A lower temperature gives a more concentrated posterior and vice versa.
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
@@ -390,6 +391,9 @@ class BaseLaplace:
         the observation noise which makes it differentiable in the latter for
         iterative updates.
 
+        With a temperature \\(T\\), this is the tempered log likelihood
+        \\(\\frac{1}{T} \\log p(\\mathcal{D} \\mid \\theta)\\), normalizer included.
+
         Returns
         -------
         log_likelihood : torch.Tensor
@@ -405,7 +409,8 @@ class BaseLaplace:
             self.n_obs or self.n_data, self.n_outputs, sigma_noise
         )
 
-        return factor * self.loss - c
+        # `factor` already holds the temperature
+        return factor * self.loss - c / self.temperature
 
     def __call__(
         self,
@@ -3428,8 +3433,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     prior_mean : torch.Tensor or float, default=0
         prior mean of a Gaussian prior, useful for continual learning
     temperature : float, default=1
-        temperature of the likelihood; lower temperature leads to more
-        concentrated posterior and vice versa.
+        temperature \\(T\\) of the likelihood, as in cold posteriors: the posterior is
+        \\(p(\\theta \\mid \\mathcal{D}) \\propto p(\\mathcal{D} \\mid \\theta)^{1/T} p(\\theta)\\).
+        A lower temperature gives a more concentrated posterior and vice versa.
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
@@ -4008,7 +4014,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         \\log | K + \\sigma^2 I | - \\log | \\sigma^2 I | \\)
         """
         if self.likelihood.name == Likelihood.REGRESSION.name:
-            noise = self._noise_variance()
+            # Tempering the Gaussian likelihood scales its variance by T
+            noise = self._noise_variance() * self.temperature
 
             if self.independent_outputs:
                 log_det = torch.tensor(
@@ -4081,7 +4088,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         """
         if self.likelihood.name == Likelihood.REGRESSION.name:
-            noise = self._noise_variance()
+            # Tempering the Gaussian likelihood scales its variance by T
+            noise = self._noise_variance() * self.temperature
         else:
             noise = torch.full(
                 (self.n_outputs,), eps, device=self._device, dtype=self._dtype
@@ -4341,11 +4349,13 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             # The GP evidence of the subset is exact for the linearized network. Its
             # scatter term already holds the data fit, so only the Gaussian
             # normalizer of the subset remains, and `log_det_ratio` drops its noise.
+            # With a temperature T, the tempered likelihood is a Gaussian with
+            # variance T sigma^2 up to a constant, which leaves the normalizer / T.
             c = self.likelihood.log_normalizer(
                 self.n_subset, self.n_outputs, self.sigma_noise
             )
 
-            return -c - 0.5 * (self.log_det_ratio + self.scatter)
+            return -c / self.temperature - 0.5 * (self.log_det_ratio + self.scatter)
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
