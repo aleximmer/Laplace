@@ -257,7 +257,38 @@ class AsdfghjklHessian(AsdfghjklInterface):
 
     @property
     def _ggn_type(self) -> str:
-        raise NotImplementedError()
+        raise self._unavailable_error("diag")
+
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """asdfghjkl computes only the full or low-rank Hessian, so this raises.
+
+        Raises
+        ------
+        NotImplementedError
+            always.
+        """
+        raise self._unavailable_error("diag")
+
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
+        """asdfghjkl computes only the full or low-rank Hessian, so this raises.
+
+        Raises
+        ------
+        NotImplementedError
+            always.
+        """
+        raise self._unavailable_error("kron")
 
     def full(
         self,
@@ -294,11 +325,15 @@ class AsdfghjklHessian(AsdfghjklInterface):
             top_n=self.low_rank,
             max_iters=self.low_rank * 10,
         )
-        eigvals = torch.from_numpy(np.array(eigvals))
-        mask = eigvals > EPS
+        # asdfghjkl averages the Hessian-vector products over the batches, but the
+        # Hessian of the loss sums over them
+        eigvals = torch.from_numpy(np.array(eigvals)) * len(data_loader)
         eigvecs = torch.stack(
             [torch.cat([p.flatten() for p in params]) for params in eigvecs], dim=1
-        )[:, mask]
+        )
+        mask = eigvals > EPS
+        eigvecs = eigvecs[:, mask]
+        _warn_if_not_orthonormal(eigvecs)
         device = eigvecs.device
         eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
         loss = sum(
@@ -375,3 +410,28 @@ def _get_batch_grad(model: nn.Module) -> torch.Tensor:
             if len(set(res.keys()) - {"weight", "bias"}) > 0:
                 raise ValueError(f"Invalid parameter keys {res.keys()}")
     return torch.cat(batch_grads, dim=1)
+
+
+def _warn_if_not_orthonormal(eigvecs: torch.Tensor, atol: float = 1e-4) -> None:
+    """Warn if the eigenvectors from asdfghjkl's power iteration aren't orthonormal.
+
+    When the power iteration for an eigenvector stops at its iteration limit,
+    asdfghjkl returns the unnormalized last iterate. The later eigenvectors are
+    then orthogonalized against a wrong direction, and the low-rank Hessian is off.
+
+    Parameters
+    ----------
+    eigvecs : torch.Tensor
+        eigenvectors as columns, `(parameters, rank)`.
+    atol : float, default=1e-4
+        tolerance on the entries of \\(V^\\top V - I\\).
+    """
+    gram = eigvecs.T @ eigvecs
+    identity = torch.eye(len(gram), device=gram.device, dtype=gram.dtype)
+
+    if not torch.allclose(gram, identity, atol=atol):
+        warnings.warn(
+            "asdfghjkl's power iteration didn't converge for all eigenvectors, so "
+            "they aren't orthonormal and the low-rank Hessian is inaccurate. A "
+            "smaller `low_rank` in `backend_kwargs` converges more often."
+        )

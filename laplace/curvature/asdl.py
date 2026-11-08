@@ -223,6 +223,7 @@ class AsdlInterface(CurvatureInterface):
             The module whose parameters get gradients. Defaults to `self.model`.
         """
         model = self.model if model is None else model
+        self._check_backward_hooks(full=False)
 
         try:
             return batch_gradient(model, closure, return_outputs=True)
@@ -363,6 +364,7 @@ class AsdlInterface(CurvatureInterface):
             data_size=1,
             **kwargs,
         )
+        self._check_backward_hooks(full=False)
         fisher_maker = get_fisher_maker(self.model, cfg)
         y_orig = y
         y = self._flatten_targets(y)
@@ -538,6 +540,7 @@ class AsdlInterface(CurvatureInterface):
             data_size=1,
             **kwargs,
         )
+        self._check_backward_hooks(full=False)
         fisher_maker = get_fisher_maker(self.model, cfg)
         y_orig = y
         y = self._flatten_targets(y)
@@ -665,7 +668,38 @@ class AsdlHessian(AsdlInterface):
 
     @property
     def _ggn_type(self) -> str:
-        raise NotImplementedError()
+        raise self._unavailable_error("diag")
+
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """ASDL computes only the full Hessian here, so this raises.
+
+        Raises
+        ------
+        NotImplementedError
+            always.
+        """
+        raise self._unavailable_error("diag")
+
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
+        """ASDL computes only the full Hessian here, so this raises.
+
+        Raises
+        ------
+        NotImplementedError
+            always.
+        """
+        raise self._unavailable_error("kron")
 
     def full(
         self,
@@ -680,7 +714,8 @@ class AsdlHessian(AsdlInterface):
             _, x = self.model.forward_with_features(x)
 
         cfg = HessianConfig(hessian_shapes=[SHAPE_FULL])
-        hess_maker = HessianMaker(self.model, cfg)
+        # With `last_layer`, `x` are the features and `self._model` the last layer
+        hess_maker = HessianMaker(self._model, cfg)
 
         dummy = hess_maker.setup_model_call(self._model, x)
         dummy = (
@@ -692,7 +727,7 @@ class AsdlHessian(AsdlInterface):
         hess_maker.forward_and_backward()
 
         H = self._model.hessian.data
-        f = self.model(x).detach()
+        f = self._model(x).detach()
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.reshape(-1, f.size(-1))
         loss = self.lossfunc(f, y)

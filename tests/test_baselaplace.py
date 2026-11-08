@@ -3913,3 +3913,14 @@ def test_legacy_kron_pickle_resumes_online_fit(kfac_approx):
 
     restored.fit(loader, override=False)
     assert restored.n_obs_examples == 2 * len(X) - 1
+
+
+def test_indefinite_posterior_precision_raises():
+    # One data point and no prior leave the GGN of a linear layer singular
+    model = nn.Linear(3, 2)
+    X, y = torch.randn(1, 3), torch.randn(1, 2)
+    la = FullLaplace(model, "regression", prior_precision=0.0)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=1))
+
+    with pytest.raises(torch.linalg.LinAlgError, match="isn't positive definite"):
+        la.sample(1)
