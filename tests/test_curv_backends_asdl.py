@@ -607,7 +607,7 @@ class _ImageLogits(nn.Module):
 
 
 @pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
-def test_kron_raises_for_conv_with_position_outputs(Backend):
+def test_kron_raises_for_conv_with_multidim_outputs(Backend):
     X, y = torch.randn(5, 2, 3, 3), torch.randint(3, (5, 3, 3))
 
     with pytest.raises(NotImplementedError, match="Curvlinops"):

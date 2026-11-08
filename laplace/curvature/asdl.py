@@ -182,8 +182,8 @@ class AsdlInterface(CurvatureInterface):
             gradients `(n_observations, parameters)`
         """
 
-        # With a last layer, `_model` is that layer, so the gradients are its own,
-        # taken at the features
+        # With `last_layer`, `self._model` is the last layer. Map the inputs to the
+        # features, so that the gradients are those of the last layer's parameters only.
         if self.last_layer:
             with torch.no_grad():
                 _, x = self.model.forward_with_features(x)
@@ -583,7 +583,7 @@ class AsdlInterface(CurvatureInterface):
                     fisher_maker.setup_logits_repr(logits)
             f, _ = fisher_maker.forward_and_backward()
         self._check_targets(f, y_orig)
-        self._check_no_conv_with_positions(f)
+        self._check_conv_with_multidim_outputs(f)
         # Assumes that the last dimension of f is of size outputs.
         f = f if self.loss_type == LOSS_MSE else f.reshape(-1, f.size(-1))
         loss = self.lossfunc(f.detach(), y)
@@ -598,12 +598,15 @@ class AsdlInterface(CurvatureInterface):
             curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
         return self.factor * loss, curv_factor * kron
 
-    def _check_no_conv_with_positions(self, f: torch.Tensor) -> None:
-        """Reject KFAC for conv layers when the outputs keep their positions.
+    def _check_conv_with_multidim_outputs(self, f: torch.Tensor) -> None:
+        """Raise if the model has a conv layer and the outputs have more than one
+        batch dim, e.g. `(B, H, W, K)` with one prediction per pixel.
 
-        For outputs such as `(B, H, W, K)`, ASDL's input factors of conv layers
-        are \\( 1 / (H W) \\) of the correct ones. Pooled outputs `(B, K)` are
-        fine. ASDL is no longer maintained, so this isn't patched here.
+        For such outputs, the KFAC input factor that ASDL computes for a conv layer
+        is \\( H W \\) times smaller than the one from Curvlinops, or from the same
+        net written with `nn.Linear` layers applied to every pixel. Outputs
+        `(B, K)`, e.g. after global pooling, are not affected. ASDL is no longer
+        maintained, so we raise instead of patching it.
 
         Parameters
         ----------
@@ -613,7 +616,7 @@ class AsdlInterface(CurvatureInterface):
         Raises
         ------
         NotImplementedError
-            If `f` has positions and the model has a trainable conv layer.
+            If `f` has more than two dims and the model has a trainable conv layer.
         """
         if f.ndim <= 2:
             return
@@ -634,8 +637,9 @@ class AsdlInterface(CurvatureInterface):
 
         if has_conv:
             raise NotImplementedError(
-                "ASDL's Kronecker factors of conv layers are wrong when the outputs "
-                f"have positions, here outputs of shape {tuple(f.shape)}. Use a "
+                "ASDL computes wrong Kronecker factors for conv layers when the "
+                "outputs have more than one batch dim, here outputs of shape "
+                f"{tuple(f.shape)}. Use a "
                 "Curvlinops backend (`CurvlinopsGGN` or `CurvlinopsEF`) instead."
             )
 
