@@ -4454,6 +4454,15 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self._recompute_Sigma = True
 
     def state_dict(self) -> dict:
+        """Return the fitted subset-of-data GP posterior as a checkpoint.
+
+        Returns
+        -------
+        dict
+            The kernel and noise terms, the cached Cholesky factor and the curvature
+            factor it was built with, the data subset, and the hyperparameters. The
+            model parameters aren't included.
+        """
         state_dict = {
             "mean": self.mean,
             "num_data": self.n_subset,
@@ -4483,6 +4492,29 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
+        """Restore a checkpoint from `state_dict` into this instance.
+
+        Build this instance with the same model and likelihood as the saved one.
+        Checkpoints from before the curvature factor was saved rebuild the cached
+        Cholesky factor on first use.
+
+        Parameters
+        ----------
+        state_dict : dict
+            checkpoint from `state_dict`.
+
+        Raises
+        ------
+        ValueError
+            If the checkpoint is from another Laplace class, has a different
+            number of parameters, or has a different likelihood.
+
+        Warns
+        -----
+        UserWarning
+            If `temperature` or `enable_backprop` differ from the checkpoint, or
+            if this instance has no prior mean but the checkpoint does.
+        """
         # Dealbreaker errors
         if self.__class__.__name__ != state_dict["cls_name"]:
             raise ValueError(
