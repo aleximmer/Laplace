@@ -507,10 +507,9 @@ class AsdlInterface(CurvatureInterface):
             # No Fisher values were gathered, as with an empty subnetwork.
             diag_ggn = f.new_empty(0)
 
-        if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
-            curv_factor = 0.5  # correct scaling for diag ef
-        else:
-            curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
+        # ASDL's GGN uses the proper 1/2 * MSELoss, but its EF squares the gradients
+        # of the MSELoss
+        curv_factor = self._curvature_factor if isinstance(self, AsdlEF) else 1.0
         return self.factor * loss, curv_factor * diag_ggn
 
     def kron(
@@ -592,10 +591,9 @@ class AsdlInterface(CurvatureInterface):
         # ASDL sums the input factors over the observed positions, e.g. `B * L` rows for
         # logits `(B, L, C)`. `KronLaplace.fit` normalizes by the number of observations.
         kron = self._rescale_kron_factors(kron, N)
-        if type(self) is AsdlEF and self.likelihood.name == Likelihood.REGRESSION.name:
-            curv_factor = 0.5  # correct scaling for diag ef
-        else:
-            curv_factor = 1.0  # ASDL uses proper 1/2 * MSELoss
+        # ASDL's GGN uses the proper 1/2 * MSELoss, but its EF squares the gradients
+        # of the MSELoss
+        curv_factor = self._curvature_factor if isinstance(self, AsdlEF) else 1.0
         return self.factor * loss, curv_factor * kron
 
     def _check_conv_with_multidim_outputs(self, f: torch.Tensor) -> None:

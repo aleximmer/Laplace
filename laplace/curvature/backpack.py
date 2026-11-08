@@ -443,7 +443,7 @@ class BackPackEF(BackPackInterface, EFInterface):
         if self.subnetwork_indices is not None:
             diag_EF = diag_EF[self.subnetwork_indices]
 
-        return self.factor * loss.detach(), self.factor * diag_EF
+        return self.factor * loss.detach(), self._curvature_factor * diag_EF
 
     def kron(
         self,

@@ -336,10 +336,9 @@ def test_ef_matches_bruteforce(model, data, structure):
     with torch.no_grad():
         residual = model(X) - y
 
-    # One gradient per datum of the summed squared error, which the EF scales by the
-    # loss factor, like for the scalar noise
-    Gs = 2 * torch.einsum("nkp,nk->np", _jacobians(model, X), residual / SIGMA**2)
-    H = 0.5 * Gs.T @ Gs
+    # One gradient of the negative log likelihood per datum
+    Gs = torch.einsum("nkp,nk->np", _jacobians(model, X), residual / SIGMA**2)
+    H = Gs.T @ Gs
 
     expected = H if structure == "full" else H.diagonal()
     assert torch.allclose(la.H, expected, rtol=1e-5, atol=1e-8)

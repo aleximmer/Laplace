@@ -389,7 +389,7 @@ class CurvlinopsInterface(CurvatureInterface):
             M = _n_observed_examples(y, mask)
 
         kron = self._rescale_kron_factors(kron, M, N)
-        kron *= self.factor
+        kron *= self._curvature_factor
 
         return self.factor * loss.detach(), kron
 
@@ -432,7 +432,7 @@ class CurvlinopsInterface(CurvatureInterface):
             linop @ torch.eye(linop.shape[0]), device=p.device, dtype=p.dtype
         )
 
-        return self.factor * loss.detach(), self.factor * H
+        return self.factor * loss.detach(), self._curvature_factor * H
 
 
 class CurvlinopsGGN(CurvlinopsInterface, GGNInterface):

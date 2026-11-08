@@ -182,7 +182,7 @@ class AsdfghjklInterface(CurvatureInterface):
         diag_ggn = curv.matrices_to_vector(None)
         if self.subnetwork_indices is not None:
             diag_ggn = diag_ggn[self.subnetwork_indices]
-        return self.factor * loss, self.factor * diag_ggn
+        return self.factor * loss, self._curvature_factor * diag_ggn
 
     def kron(
         self,
@@ -232,7 +232,7 @@ class AsdfghjklInterface(CurvatureInterface):
         M = len(y)
         kron = self._get_kron_factors(curv, M)
         kron = self._rescale_kron_factors(kron, N)
-        return self.factor * loss, self.factor * kron
+        return self.factor * loss, self._curvature_factor * kron
 
 
 class AsdfghjklHessian(AsdfghjklInterface):

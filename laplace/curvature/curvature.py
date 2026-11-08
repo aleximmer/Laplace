@@ -370,6 +370,13 @@ class CurvatureInterface:
     def _model(self) -> nn.Module:
         return self.model.last_layer if self.last_layer else self.model
 
+    @property
+    def _curvature_factor(self) -> float:
+        """Factor that turns the curvature of `lossfunc` into the curvature of the
+        negative log likelihood. The GGN and the Hessian are linear in the loss, so
+        it is `factor`. The EF squares it, see `EFInterface`."""
+        return self.factor
+
     def _honoured_options(self, method: str) -> frozenset[str]:
         """Options of the built-in likelihoods that this backend honours natively.
 
@@ -1068,6 +1075,12 @@ class EFInterface(CurvatureInterface):
         For example, \\(\\frac{1}{2}\\) to get to \\(\\mathcal{N}(f, 1)\\) from MSELoss.
     """
 
+    @property
+    def _curvature_factor(self) -> float:
+        # The EF is quadratic in the gradients, so the loss factor enters squared,
+        # e.g. the MSELoss gradient \(2 r J\) becomes the NLL gradient \(r J\)
+        return self.factor**2
+
     def full(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -1094,7 +1107,7 @@ class EFInterface(CurvatureInterface):
         Gs, loss = self.gradients(x, y)
         Gs, loss = Gs.detach(), loss.detach()
         H_ef = torch.einsum("bp,bq->pq", Gs, Gs)
-        return self.factor * loss.detach(), self.factor * H_ef
+        return self.factor * loss.detach(), self._curvature_factor * H_ef
 
     def diag(
         self,
@@ -1106,4 +1119,4 @@ class EFInterface(CurvatureInterface):
         Gs, loss = self.gradients(x, y)
         Gs, loss = Gs.detach(), loss.detach()
         diag_ef = torch.einsum("...p,...p->p", Gs, Gs)
-        return self.factor * loss, self.factor * diag_ef
+        return self.factor * loss, self._curvature_factor * diag_ef

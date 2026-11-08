@@ -23,6 +23,7 @@ from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.curvature import (
     CurvatureInterface,
+    EFInterface,
     _ignored_positions,
     _n_observed_examples,
     _observed_mask,
@@ -393,7 +394,7 @@ class BaseLaplace:
         -------
         log_likelihood : torch.Tensor
         """
-        factor = -self._H_factor
+        factor = -self._loss_factor
         sigma_noise = torch.as_tensor(
             self.sigma_noise, device=self._device, dtype=self._dtype
         )
@@ -862,9 +863,22 @@ class BaseLaplace:
         return sigma.to(device=self._device, dtype=self._dtype).square()
 
     @property
-    def _H_factor(self) -> torch.Tensor:
+    def _loss_factor(self) -> torch.Tensor:
+        # Turns the loss of the backend, at unit noise, into the negative log
+        # likelihood without its normalizer
         sigma2 = self.sigma_noise.square()
         return 1 / sigma2 / self.temperature
+
+    @property
+    def _H_factor(self) -> torch.Tensor:
+        # Turns the curvature of the backend, at unit noise, into the curvature of the
+        # tempered negative log likelihood. The GGN and Hessian scale with the
+        # precision \(1 / \sigma^2\). The EF is built from squared gradients, which
+        # each carry \(1 / \sigma^2\), so it scales with \(1 / \sigma^4\).
+        if issubclass(self._backend_cls, EFInterface):
+            return self._loss_factor / self.sigma_noise.square()
+
+        return self._loss_factor
 
     def _glm_forward_call(
         self,
