@@ -431,3 +431,25 @@ def test_scalar_multiplication_keeps_dtype(decomposed):
     factors = scaled.kfacs[0] if not decomposed else scaled.eigenvalues[0]
 
     assert all(F.dtype == torch.float32 for F in factors)
+
+
+@pytest.mark.parametrize("damping", [False, True])
+@pytest.mark.parametrize("exponent", [1, -1, -0.5])
+def test_decomposed_matches_dense(damping, exponent):
+    # A weight block with two Kronecker factors and a bias block with one
+    torch.manual_seed(0)
+    A, G, b = (torch.randn(n, n, dtype=torch.float64) for n in (3, 2, 2))
+    weight = [A @ A.T, G @ G.T]
+    bias = [b @ b.T]
+
+    curvature = Kron([weight, bias]).decompose(damping=damping)
+    curvature = curvature + torch.tensor(0.3, dtype=torch.float64)
+    dense = curvature.to_matrix(exponent)
+
+    torch.testing.assert_close(curvature.diag(exponent), dense.diagonal())
+
+    W = torch.randn(4, 2, dense.shape[0], dtype=torch.float64)
+    torch.testing.assert_close(curvature.bmm(W, exponent), W @ dense)
+
+    if exponent == 1:
+        torch.testing.assert_close(curvature.logdet(), torch.logdet(dense))
