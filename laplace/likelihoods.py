@@ -15,6 +15,7 @@ from typing import Any, ClassVar
 import torch
 from torch import nn
 
+from laplace.utils.heteroscedastic_utils import HeteroscedasticGaussianNLLLoss
 from laplace.utils.utils import _float_dtype, _zero_like, hyperparameters_equal
 
 _BUILTIN_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING", "BERNOULLI")
@@ -702,52 +703,6 @@ class _WhitenedMSELoss(nn.Module):
         )
 
 
-def join_mean_variance(mean: torch.Tensor, var: torch.Tensor) -> torch.Tensor:
-    """Concatenate the mean and the variance of a heteroscedastic Gaussian into the
-    outputs `(batch, ..., 2 * K)` that `HeteroscedasticGaussianLikelihood` takes.
-
-    As in `nn.GaussianNLLLoss`, the variance has the shape of the mean `(batch, ...,
-    K)`, or it is shared by the `K` outputs of a datum, with the shape `(batch, ...,
-    1)` or `(batch, ...)`. A shared variance is expanded to the shape of the mean.
-
-    Parameters
-    ----------
-    mean : torch.Tensor
-        mean `(batch, ..., K)`
-    var : torch.Tensor
-        variance `(batch, ..., K)`, `(batch, ..., 1)`, or `(batch, ...)`
-
-    Returns
-    -------
-    f : torch.Tensor
-        `(batch, ..., 2 * K)`, the mean followed by the variance.
-
-    Raises
-    ------
-    ValueError
-        if the variance has none of these shapes.
-    """
-    if var.shape != mean.shape:
-        if var.shape == mean.shape[:-1]:
-            var = var.unsqueeze(-1)
-        elif var.shape[:-1] != mean.shape[:-1] or var.shape[-1] != 1:
-            raise ValueError(
-                f"The variance has shape {tuple(var.shape)}, which fits neither the "
-                f"mean {tuple(mean.shape)} nor a variance shared by its outputs, "
-                f"{tuple(mean.shape[:-1]) + (1,)} or {tuple(mean.shape[:-1])}."
-            )
-
-    return torch.cat([mean, var.expand_as(mean)], dim=-1)
-
-
-def _as_joined_outputs(f: torch.Tensor | tuple[torch.Tensor, torch.Tensor]) -> Any:
-    # A `(mean, var)` pair becomes the joined outputs, anything else stays as it is
-    if isinstance(f, (tuple, list)) and len(f) == 2:
-        return join_mean_variance(*f)
-
-    return f
-
-
 class HeteroscedasticGaussianLikelihood(Likelihood):
     """Heteroscedastic Gaussian likelihood, i.e. regression where the network also
     predicts the noise, as trained with `nn.GaussianNLLLoss`.
@@ -762,7 +717,7 @@ class HeteroscedasticGaussianLikelihood(Likelihood):
     $$
 
     The variance has the shape of the mean, or it is shared by the outputs of a
-    datum, see [`join_mean_variance`][laplace.likelihoods.join_mean_variance]. The
+    datum, see [`join_mean_variance`][laplace.utils.heteroscedastic_utils.join_mean_variance]. The
     targets have the shape of the mean, and every entry of the targets but the last
     dim is an observation. The options `eps` and `full` are those of
     `nn.GaussianNLLLoss`: the variance is clamped at `eps` from below, and `full`
@@ -885,7 +840,7 @@ class HeteroscedasticGaussianLikelihood(Likelihood):
         return torch.distributions.Normal(mean, var.clamp(min=self.eps).sqrt())
 
     def loss_fn(self, reduction: str = "sum") -> nn.Module:
-        return _HeteroscedasticGaussianNLLLoss(self.eps, self.full, reduction)
+        return HeteroscedasticGaussianNLLLoss(self.eps, self.full, reduction)
 
     @property
     def loss_factor(self) -> float:
@@ -905,14 +860,6 @@ class HeteroscedasticGaussianLikelihood(Likelihood):
                 f"{tuple(f.shape[:-1]) + (f.shape[-1] // 2,)}, but the targets have "
                 f"shape {tuple(y.shape)}."
             )
-
-    def loss(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
-        self.check_targets(f, y)
-
-        return self.loss_fn()(f, y)
-
-    def n_observations(self, f: torch.Tensor, y: torch.Tensor) -> int:
-        return y.shape[:-1].numel()
 
     def log_normalizer(
         self, n_obs: int, n_outputs: int, sigma_noise: torch.Tensor
@@ -934,12 +881,9 @@ class HeteroscedasticGaussianLikelihood(Likelihood):
         c : torch.Tensor
             \\(N K \\log \\sqrt{2\\pi}\\), or zero with `full=True`.
         """
-        if self.full:
-            return _zero_like(sigma_noise)
+        c = 0.0 if self.full else n_obs * (n_outputs // 2) * log(sqrt(2 * pi))
 
-        sigma_noise = torch.as_tensor(sigma_noise, dtype=_float_dtype(sigma_noise))
-
-        return _zero_like(sigma_noise) + n_obs * (n_outputs // 2) * log(sqrt(2 * pi))
+        return _zero_like(sigma_noise) + c
 
     def output_hessian(
         self, f: torch.Tensor, y: torch.Tensor | None = None
@@ -970,62 +914,7 @@ class HeteroscedasticGaussianLikelihood(Likelihood):
     @property
     def predictive_likelihood(self) -> Likelihood:
         # The predictive is a Gaussian over the mean, see `__call__`
-        return _GAUSSIAN_MEAN
-
-
-class _HeteroscedasticGaussianNLLLoss(nn.Module):
-    """`nn.GaussianNLLLoss` of the pair `(mean, var)` or of the joined outputs.
-
-    The pair is what the network returns, e.g. while `marglik_training` trains it.
-    The joined outputs `(batch, ..., 2 * K)` are what `Laplace` sees. They carry the
-    variance at the MAP, which `Laplace` detaches, so their loss has no gradient
-    w.r.t. the variance.
-
-    Parameters
-    ----------
-    eps : float
-        lower bound of the variance.
-    full : bool
-        whether the loss includes the constant.
-    reduction : str, default='sum'
-        reduction of the loss, as in `nn.GaussianNLLLoss`.
-    """
-
-    def __init__(self, eps: float, full: bool, reduction: str = "sum") -> None:
-        super().__init__()
-
-        self.eps = eps
-        self.full = full
-        self.reduction = reduction
-
-    def forward(
-        self,
-        input: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
-        target: torch.Tensor,
-    ) -> torch.Tensor:
-        """Compute the loss of the outputs `input` w.r.t. the targets `target`.
-
-        This is `nn.functional.gaussian_nll_loss` without its check for negative
-        variances, which is data-dependent control flow that `torch.func.vmap` can't
-        trace, e.g. for the per-sample gradients of the empirical Fisher. Negative
-        variances are clamped at `eps` like small ones.
-        """
-        mean, var = _as_joined_outputs(input).chunk(2, dim=-1)
-
-        # As in torch, the clamp changes the value but passes the gradient through
-        var = var + (var.clamp(min=self.eps) - var).detach()
-        loss = 0.5 * (var.log() + (mean - target).square() / var)
-
-        if self.full:
-            loss = loss + log(sqrt(2 * pi))
-
-        if self.reduction == "sum":
-            return loss.sum()
-
-        if self.reduction == "mean":
-            return loss.mean()
-
-        return loss
+        return GaussianLikelihood()
 
 
 def _is_heteroscedastic(likelihood: Likelihood) -> bool:
@@ -1687,6 +1576,3 @@ Likelihood.REGRESSION = GaussianLikelihood()
 Likelihood.CLASSIFICATION = CategoricalLikelihood()
 Likelihood.REWARD_MODELING = BradleyTerryLikelihood()
 Likelihood.BERNOULLI = BernoulliLikelihood()
-
-# The predictive likelihood of `HeteroscedasticGaussianLikelihood`, over the mean
-_GAUSSIAN_MEAN = GaussianLikelihood()

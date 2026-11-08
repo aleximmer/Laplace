@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-import functools
 import warnings
 from collections import deque
 from collections.abc import MutableMapping
-from contextlib import contextmanager
 from copy import deepcopy
 from importlib.util import find_spec
 from math import frexp, isfinite, log, pi, sqrt
 from numbers import Integral
-from typing import Any, Callable, ClassVar, Iterator
+from typing import Any, Callable, ClassVar
 
 import numpy as np
 import torch
@@ -33,7 +31,6 @@ from laplace.curvature.curvature import (
 from laplace.curvature.curvlinops import CurvlinopsGGN, CurvlinopsInterface
 from laplace.likelihoods import (
     CategoricalLikelihood,
-    _as_joined_outputs,
     _is_heteroscedastic,
     _noise_per_output,
     get_likelihood,
@@ -61,6 +58,11 @@ from laplace.utils.functional_utils import (
     subset_loader,
     to_device,
     training_indices,
+)
+from laplace.utils.heteroscedastic_utils import (
+    as_joined_outputs,
+    joined_outputs,
+    joins_outputs,
 )
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.metrics import (
@@ -120,49 +122,6 @@ def _check_noise_stays_one(likelihood: Likelihood, sigma_noise: torch.Tensor) ->
             "The likelihood has a noise std per output, so `sigma_noise` must stay 1, "
             f"but it is {sigma_noise}."
         )
-
-
-def _join_outputs_hook(module: nn.Module, args: Any, output: Any) -> torch.Tensor | Any:
-    """Forward hook that joins the `(mean, var)` of a heteroscedastic network into
-    one tensor `(batch, ..., 2 * K)`, with the variance detached.
-
-    The library computes Jacobians and curvatures of a single output tensor. The
-    detached variance keeps the Laplace approximation on the mean: the variance has a
-    zero Jacobian, and the loss has no gradient w.r.t. it.
-
-    Parameters
-    ----------
-    module : nn.Module
-        the model.
-    args : Any
-        the inputs of the forward call, unused.
-    output : Any
-        what the model returned, the pair or already joined outputs.
-
-    Returns
-    -------
-    f : torch.Tensor
-        the joined outputs.
-    """
-    f = _as_joined_outputs(output)
-
-    if not torch.is_tensor(f):
-        return output
-
-    mean, var = f.chunk(2, dim=-1)
-
-    return torch.cat([mean, var.detach()], dim=-1)
-
-
-def _joins_outputs(method: Callable[..., Any]) -> Callable[..., Any]:
-    """Run a method of a Laplace approximation inside `_joined_outputs`."""
-
-    @functools.wraps(method)
-    def wrapper(self: BaseLaplace, *args: Any, **kwargs: Any) -> Any:
-        with self._joined_outputs():
-            return method(self, *args, **kwargs)
-
-    return wrapper
 
 
 def _checkpoint_hyperparameters(likelihood: Likelihood) -> dict[str, Any]:
@@ -346,31 +305,6 @@ class BaseLaplace:
     @property
     def _dtype(self) -> torch.dtype:
         return next(self.model.parameters()).dtype
-
-    # Class-level default, so that approximations pickled before it existed load
-    _joining: bool = False
-
-    @contextmanager
-    def _joined_outputs(self) -> Iterator[None]:
-        """Join the `(mean, var)` of the model into one tensor while the context is
-        active, if the likelihood is heteroscedastic, see `_join_outputs_hook`.
-
-        A forward hook does it, so that the model and its parameter names stay as
-        they are. It is removed on exit, so outside the library the model returns
-        its pair again. Nested contexts keep the outer hook.
-        """
-        if self._joining or not _is_heteroscedastic(self.likelihood):
-            yield
-            return
-
-        handle = self.model.register_forward_hook(_join_outputs_hook)
-        self._joining = True
-
-        try:
-            yield
-        finally:
-            handle.remove()
-            self._joining = False
 
     @property
     def _n_predictive_outputs(self) -> int:
@@ -731,9 +665,10 @@ class BaseLaplace:
             If torchmetrics.Metric, running loss is computed (efficient). The default
             depends on the likelihood: `RunningNLLMetric()` for classification and
             reward modeling, with the `ignore_index` of a `CategoricalLikelihood`,
-            `RunningBernoulliNLLMetric()` for the Bernoulli likelihood, and running
-            `MeanSquaredError()` for regression. Other likelihoods have no default,
-            so `loss` is required for them.
+            `RunningBernoulliNLLMetric()` for the Bernoulli likelihood,
+            `RunningGaussianNLLMetric()` for the heteroscedastic Gaussian likelihood,
+            and running `MeanSquaredError()` for regression. Other likelihoods have no
+            default, so `loss` is required for them.
         log_prior_prec_min : float, default=-4
             exponent of the lower bound of the gridsearch interval.
         log_prior_prec_max : float, default=4
@@ -1519,7 +1454,7 @@ class ParametricLaplace(BaseLaplace):
         if getattr(self, "H", None) is None:
             raise AttributeError("Laplace not fitted. Run fit() first.")
 
-    @_joins_outputs
+    @joins_outputs
     def fit(
         self,
         train_loader: DataLoader,
@@ -1848,6 +1783,10 @@ class ParametricLaplace(BaseLaplace):
             with the mean and the predictive variance.
             For `likelihood='regression'` and `joint=True`, a tuple of torch.Tensor
             is returned with the mean and the predictive covariance.
+            For `likelihood='heteroscedastic_gaussian'`, a tuple
+            `(f_mean, f_alea, f_epis)` is returned: the mean and the variance that
+            the network predicts, and the epistemic covariance of the mean, or its
+            variance with `pred_type='nn'` or `diagonal_output=True`.
             For any other likelihood, a torch.Tensor with the shape of the outputs
             is returned. It averages the likelihood's `inverse_link` over
             `n_samples` draws of the outputs from the GLM predictive or from the
@@ -1899,7 +1838,7 @@ class ParametricLaplace(BaseLaplace):
 
         if _is_heteroscedastic(self.likelihood):
             # The predictive is a Gaussian over the mean, also while fitting
-            with self._joined_outputs():
+            with joined_outputs(self.model):
                 f_mean, f_epis = self._predictive(
                     x,
                     self.likelihood.predictive_likelihood,
@@ -1971,7 +1910,7 @@ class ParametricLaplace(BaseLaplace):
     ) -> torch.Tensor:
         """Variance that a heteroscedastic network predicts at the MAP.
 
-        The model runs without the hook of `_joined_outputs`, so the variance keeps
+        The model runs without the hook of `joined_outputs`, so the variance keeps
         its graph with `enable_backprop=True`, e.g. for gradients w.r.t. the inputs.
 
         Parameters
@@ -1989,7 +1928,7 @@ class ParametricLaplace(BaseLaplace):
         x = x.to(self._device) if isinstance(x, torch.Tensor) else x
 
         with torch.set_grad_enabled(self.enable_backprop and torch.is_grad_enabled()):
-            out = _as_joined_outputs(self.model(x, **model_kwargs))
+            out = as_joined_outputs(self.model(x, **model_kwargs))
 
         var = self.likelihood.split(out)[1]
 
@@ -1998,7 +1937,7 @@ class ParametricLaplace(BaseLaplace):
 
         return var.flatten() if joint else var
 
-    @_joins_outputs
+    @joins_outputs
     def functional_samples(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -2072,7 +2011,7 @@ class ParametricLaplace(BaseLaplace):
         else:  # 'nn'
             return self._nn_functional_samples(x, n_samples, generator)
 
-    @_joins_outputs
+    @joins_outputs
     def predictive_samples(
         self,
         x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
@@ -2933,6 +2872,13 @@ class LowRankLaplace(ParametricLaplace):
         if not override:
             # LowRankLA cannot be updated since eigenvalue representation not additive
             raise ValueError("LowRank LA does not support updating.")
+
+        # Its eigensolver doesn't know the likelihood, and the model returns a pair
+        if _is_heteroscedastic(self.likelihood):
+            raise ValueError(
+                "LowRankLaplace does not support the heteroscedastic Gaussian "
+                "likelihood. Use the `diag`, `full`, or `kron` structure."
+            )
 
         self.model.eval()
         self.mean = parameters_to_vector(self.model.parameters())

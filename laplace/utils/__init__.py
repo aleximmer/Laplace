@@ -22,6 +22,15 @@ from laplace.utils.functional_utils import (
     to_device,
     training_indices,
 )
+from laplace.utils.heteroscedastic_utils import (
+    HeteroscedasticGaussianNLLLoss,
+    WhitenHeteroscedastic,
+    as_joined_outputs,
+    join_mean_variance,
+    join_outputs_hook,
+    joined_outputs,
+    joins_outputs,
+)
 from laplace.utils.matrix import Kron, KronDecomposed
 from laplace.utils.metrics import (
     RunningBernoulliNLLMetric,
@@ -100,6 +109,13 @@ __all__ = [
     "RunningNLLMetric",
     "RunningBernoulliNLLMetric",
     "RunningGaussianNLLMetric",
+    "join_mean_variance",
+    "as_joined_outputs",
+    "join_outputs_hook",
+    "joined_outputs",
+    "joins_outputs",
+    "WhitenHeteroscedastic",
+    "HeteroscedasticGaussianNLLLoss",
     "SubsetOfWeights",
     "FunctionalApproximation",
     "HessianStructure",

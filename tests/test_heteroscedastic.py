@@ -15,12 +15,12 @@ from torch.utils.data import DataLoader, TensorDataset
 from laplace import (
     HeteroscedasticGaussianLikelihood,
     Laplace,
+    LowRankLaplace,
     get_likelihood,
-    join_mean_variance,
     marglik_training,
 )
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
-from laplace.utils import RunningGaussianNLLMetric
+from laplace.utils import RunningGaussianNLLMetric, join_mean_variance
 from tests.utils import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
 
 pytestmark = pytest.mark.default_dtype(torch.float64)
@@ -458,6 +458,7 @@ def test_model_is_left_unchanged(data, loader):
     out = model(X)
     assert isinstance(out, tuple) and len(out) == 2
     assert not model._forward_hooks
+    assert not hasattr(model, "_joins_outputs")
     assert [name for name, _ in model.named_parameters()] == names
 
 
@@ -499,6 +500,17 @@ def test_sigma_noise_must_stay_one():
             subset_of_weights="all",
             sigma_noise=2.0,
         )
+
+
+# The parameter gives the test the `asdfghjkl` marker, see `tests/conftest.py`
+@pytest.mark.parametrize("laplace_cls", [LowRankLaplace])
+def test_low_rank_raises(laplace_cls, loader):
+    pytest.importorskip("asdfghjkl")
+
+    la = laplace_cls(MeanVarianceNet(), "heteroscedastic_gaussian")
+
+    with pytest.raises(ValueError, match="LowRankLaplace does not support"):
+        la.fit(loader)
 
 
 @pytest.mark.parametrize("structure", ["kron", "diag", "full"])

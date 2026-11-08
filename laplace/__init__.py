@@ -21,7 +21,6 @@ from laplace.likelihoods import (
     HeteroscedasticGaussianLikelihood,
     Likelihood,
     get_likelihood,
-    join_mean_variance,
 )
 from laplace.lllaplace import (
     DiagLLLaplace,
@@ -71,7 +70,6 @@ __all__ = [
     "BradleyTerryLikelihood",
     "HeteroscedasticGaussianLikelihood",
     "get_likelihood",
-    "join_mean_variance",
     # Enums
     "SubsetOfWeights",
     "FunctionalApproximation",

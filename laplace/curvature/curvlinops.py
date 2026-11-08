@@ -28,11 +28,11 @@ from laplace.curvature.curvature import (
 from laplace.likelihoods import (
     BernoulliLikelihood,
     HeteroscedasticGaussianLikelihood,
-    _as_joined_outputs,
     _is_heteroscedastic,
     _noise_per_output,
 )
 from laplace.utils import Kron, Likelihood
+from laplace.utils.heteroscedastic_utils import WhitenHeteroscedastic
 
 _FullLinearOperator: TypeAlias = (
     EFLinearOperator
@@ -122,7 +122,7 @@ class _KeepObserved(nn.Module):
 # Curvlinops whitens the outputs and the targets by the noise std per output, see
 # `_Whiten`, which is exact for every curvature. A heteroscedastic likelihood is
 # whitened by its predicted noise std, clamped at `eps`, and `full` only adds a
-# constant to the loss, see `_WhitenHeteroscedastic`.
+# constant to the loss, see `WhitenHeteroscedastic`.
 _WHITENED_OPTIONS = frozenset({"sigma_noise", "eps", "full"})
 
 
@@ -139,34 +139,6 @@ class _Whiten(nn.Module):
         out = self.model(x)
 
         return out / self.sigma_noise.to(out)
-
-
-class _WhitenHeteroscedastic(nn.Module):
-    """Divide the mean of a heteroscedastic network by its predicted noise std.
-
-    The noise std is detached, so the plain squared error of the whitened mean is
-    twice the negative log likelihood of the mean with the variance held fixed, up to
-    a constant. Its GGN, Hessian, and empirical Fisher are then those of the Laplace
-    approximation over the mean, see `HeteroscedasticGaussianLikelihood`.
-
-    Parameters
-    ----------
-    model : nn.Module
-        the model, which returns the pair `(mean, var)` or the joined outputs.
-    eps : float
-        lower bound of the variance.
-    """
-
-    def __init__(self, model: nn.Module, eps: float) -> None:
-        super().__init__()
-        self.model = model
-        self.eps = eps
-
-    def forward(self, x: Any) -> torch.Tensor:
-        """Compute the whitened mean `(batch, ..., K)`."""
-        mean, var = _as_joined_outputs(self.model(x)).chunk(2, dim=-1)
-
-        return mean / var.detach().clamp(min=self.eps).sqrt()
 
 
 class CurvlinopsInterface(CurvatureInterface):
@@ -214,7 +186,7 @@ class CurvlinopsInterface(CurvatureInterface):
             return _Whiten(self.model, sigma)
 
         if _is_heteroscedastic(self.likelihood):
-            return _WhitenHeteroscedastic(self.model, self.likelihood.eps)
+            return WhitenHeteroscedastic(self.model, self.likelihood.eps)
 
         return self.model
 
@@ -331,7 +303,7 @@ class CurvlinopsInterface(CurvatureInterface):
             curvature method, `"kron"` or `"full"`.
         f : torch.Tensor, optional
             joined outputs of a heteroscedastic likelihood, whose predicted noise std
-            whitens the targets, see `_WhitenHeteroscedastic`.
+            whitens the targets, see `WhitenHeteroscedastic`.
 
         Returns
         -------

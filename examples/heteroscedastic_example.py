@@ -99,6 +99,11 @@ print(f"prior precision: {la.prior_precision.item():.2f}")
 print(f"log marginal likelihood: {la.log_marginal_likelihood().item():.2f}")
 
 # %% [markdown]
+# ```
+# prior precision: 0.51
+# log marginal likelihood: -298.16
+# ```
+#
 # ## The predictive
 #
 # The network returns the mean and the aleatoric variance. The LA returns the same two,
@@ -112,6 +117,10 @@ print(
 )
 
 # %% [markdown]
+# ```
+# f_mean: (200, 1), f_alea: (200, 1), f_epis: (200, 1, 1)
+# ```
+#
 # With the default GLM predictive, `f_mean` and `f_alea` are what the network returns
 # at the trained weights, and `f_epis` is the covariance of the mean over the outputs,
 # `(batch, outputs, outputs)`. `diagonal_output=True` returns its diagonal instead, and
@@ -185,6 +194,11 @@ print(f"prior precision: {la.prior_precision.mean().item():.2f}")
 print(f"log marginal likelihood: {-margliks[-1]:.2f}")
 
 # %% [markdown]
+# ```
+# prior precision: 25.01
+# log marginal likelihood: -216.43
+# ```
+#
 # The returned `la` is fit at the end of the training, and its predictive works as
 # above:
 
