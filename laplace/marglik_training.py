@@ -69,6 +69,8 @@ def marglik_training(
     The `model` should return logits, i.e., no softmax should be applied.
     `likelihood` is a name, a `Likelihood` member, or a likelihood object, e.g.
     `CategoricalLikelihood()` (CrossEntropyLoss) or `GaussianLikelihood()` (MSELoss).
+    The data term sums the loss over each datum's outputs and averages it over the
+    batch, so a Gaussian's squared error is not divided by the number of outputs.
 
     As in [1], we optimize prior precision and, for regression, observation noise
     using the marginal likelihood. The prior precision structure can be chosen
@@ -191,10 +193,11 @@ def marglik_training(
             "support a likelihood with a noise std per output (#349)."
         )
 
-    # Class weights and ignored targets change the denominator of a "mean" loss, so the
-    # non-Gaussian data term is summed and divided by the batch size in the loop below,
-    # matching the summed loss that `Laplace.fit` uses
-    criterion = lik.loss_fn("mean" if lik.is_gaussian else "sum")
+    # The data term is summed and divided by the batch size in the loop below, matching
+    # the summed loss that `Laplace.fit` uses. A "mean" loss would divide a Gaussian's
+    # squared error by the number of outputs too, and class weights and ignored targets
+    # would change its denominator
+    criterion = lik.loss_fn("sum")
 
     # Cast buffers like class weights to the model, e.g. float32 weights to float64
     if isinstance(criterion, torch.nn.Module):
@@ -273,9 +276,7 @@ def marglik_training(
             delta = expand_prior_precision(prior_prec, model)
 
             f = model(X)
-            data_loss = criterion(f, y)
-            if not lik.is_gaussian:
-                data_loss = data_loss / len(y)
+            data_loss = criterion(f, y) / len(y)
 
             loss = data_loss + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()

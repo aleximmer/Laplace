@@ -148,6 +148,21 @@ def test_marglik_training_unweighted_categorical_loss_is_the_mean(model):
     assert math.isclose(loss, expected, rel_tol=1e-5)
 
 
+def test_marglik_training_sums_gaussian_loss_over_outputs(model):
+    # Two outputs, so a mean over all entries would halve the data term
+    loader = _loader("regression")
+    X, y = loader.dataset.tensors
+
+    with torch.no_grad():
+        expected = torch.nn.functional.mse_loss(
+            model(X), y, reduction="sum"
+        ).item() / len(X)
+
+    loss = _first_epoch_loss(model, loader, GaussianLikelihood())
+
+    assert math.isclose(loss, expected, rel_tol=1e-5)
+
+
 def _multilabel_loader(dtype: torch.dtype | None = None) -> DataLoader:
     return toy_multilabel_dataset(n_train=32, batch_size=8, out_dim=2, dtype=dtype)[2]
 
