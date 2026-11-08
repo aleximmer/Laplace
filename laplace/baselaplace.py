@@ -3999,9 +3999,13 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         log determinant term := \\( \\log | I + D^{1/2}K D^{1/2} | \\)
 
-        For `regression`, we use ["standard" GP marginal likelihood](https://stats.stackexchange.com/questions/280105/log-marginal-likelihood-for-gaussian-process):
+        For `regression`, we use the log determinant of the
+        ["standard" GP marginal likelihood](https://stats.stackexchange.com/questions/280105/log-marginal-likelihood-for-gaussian-process)
+        relative to the noise, which matches `log_det_ratio` of the weight-space
+        Laplace approximations:
 
-        log determinant term := \\( \\log | K + \\sigma_2 I | \\)
+        log determinant term := \\( \\log | I + K / \\sigma^2 | =
+        \\log | K + \\sigma^2 I | - \\log | \\sigma^2 I | \\)
         """
         if self.likelihood.name == Likelihood.REGRESSION.name:
             noise = self._noise_variance()
@@ -4011,21 +4015,29 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                     0.0, requires_grad=True, device=self._device, dtype=self._dtype
                 )
                 for c in range(self.n_outputs):
-                    log_det = log_det + torch.logdet(
-                        self.gp_kernel_prior_variance * self.K_MM[c]
-                        + torch.eye(
-                            n=self.K_MM[c].shape[0],
-                            device=self._device,
-                            dtype=self._dtype,
+                    log_det = (
+                        log_det
+                        + torch.logdet(
+                            self.gp_kernel_prior_variance * self.K_MM[c]
+                            + torch.eye(
+                                n=self.K_MM[c].shape[0],
+                                device=self._device,
+                                dtype=self._dtype,
+                            )
+                            * noise[c]
                         )
-                        * noise[c]
+                        - self.K_MM[c].shape[0] * noise[c].log()
                     )
                 return log_det
             else:
                 # The joint kernel runs over the outputs fastest
-                return torch.logdet(
-                    self.gp_kernel_prior_variance * self.K_MM
-                    + torch.diag(noise.tile(self.K_MM.shape[0] // self.n_outputs))
+                noise = noise.tile(self.K_MM.shape[0] // self.n_outputs)
+
+                return (
+                    torch.logdet(
+                        self.gp_kernel_prior_variance * self.K_MM + torch.diag(noise)
+                    )
+                    - noise.log().sum()
                 )
         else:
             if self.independent_outputs:
@@ -4324,6 +4336,16 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             if self.likelihood.name != Likelihood.REGRESSION.name:
                 raise ValueError("Can only change sigma_noise for regression.")
             self.sigma_noise = sigma_noise
+
+        if self.likelihood.name == Likelihood.REGRESSION.name:
+            # The GP evidence of the subset is exact for the linearized network. Its
+            # scatter term already holds the data fit, so only the Gaussian
+            # normalizer of the subset remains, and `log_det_ratio` drops its noise.
+            c = self.likelihood.log_normalizer(
+                self.n_subset, self.n_outputs, self.sigma_noise
+            )
+
+            return -c - 0.5 * (self.log_det_ratio + self.scatter)
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 
