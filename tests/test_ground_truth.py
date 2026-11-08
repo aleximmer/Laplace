@@ -8,6 +8,7 @@ predictive. The models have a few dozen parameters, so every matrix is dense.
 import copy
 import math
 from collections.abc import Callable
+from importlib.util import find_spec
 
 import pytest
 import torch
@@ -25,6 +26,7 @@ from laplace import (
     FunctionalLaplace,
     KronLaplace,
     KronLLLaplace,
+    LowRankLaplace,
 )
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 from laplace.likelihoods import BernoulliLikelihood
@@ -60,9 +62,11 @@ def _loader(X: torch.Tensor, y: torch.Tensor) -> DataLoader:
 
 
 def _flat(model: nn.Module) -> tuple[Callable, torch.Tensor]:
-    """The model as a function of its flat parameter vector, and that vector."""
-    names = [n for n, _ in model.named_parameters()]
-    shapes = [p.shape for p in model.parameters()]
+    """The model as a function of its flat trainable parameters, and their vector.
+    Frozen parameters stay fixed at their values in the model."""
+    trainable = [(n, p) for n, p in model.named_parameters() if p.requires_grad]
+    names = [n for n, _ in trainable]
+    shapes = [p.shape for _, p in trainable]
 
     def f(theta: torch.Tensor, X: torch.Tensor) -> torch.Tensor:
         params, i = {}, 0
@@ -73,7 +77,7 @@ def _flat(model: nn.Module) -> tuple[Callable, torch.Tensor]:
 
         return functional_call(model, params, (X,))
 
-    theta = torch.cat([p.detach().flatten() for p in model.parameters()])
+    theta = torch.cat([p.detach().flatten() for _, p in trainable])
 
     return f, theta
 
@@ -636,3 +640,164 @@ def test_marglik_training_reaches_the_tempered_map(T):
     torch.testing.assert_close(
         model.weight.detach().squeeze(0), theta, rtol=1e-5, atol=1e-7
     )
+
+
+def _kfac_reference(
+    model: nn.Module,
+    X: torch.Tensor,
+    y: torch.Tensor,
+    task: str,
+    curvature: str,
+    sigma: float,
+) -> torch.Tensor:
+    """Dense KFAC of `_mlp`, built from its layers by hand.
+
+    For each linear layer, KFAC is \\(G \\otimes A\\) with \\(A = \\sum_n a_n a_n^\\top\\)
+    over the layer inputs \\(a_n\\) and \\(G\\) the average over the data of the
+    curvature that reaches the layer's outputs. The bias is its own block, the sum of
+    that curvature.
+    """
+    lin1, lin2 = model[0], model[2]
+
+    with torch.no_grad():
+        a2 = torch.tanh(lin1(X))
+        out = lin2(a2)
+
+    n, n_out = out.shape
+
+    # Jacobians of the outputs with respect to the outputs of each layer
+    B2 = torch.eye(n_out).expand(n, n_out, n_out)
+    B1 = lin2.weight.detach()[None] * (1 - a2**2)[:, None, :]
+
+    if curvature == "ggn":
+        if task == "regression":
+            L = torch.eye(n_out).expand(n, n_out, n_out) / sigma**2
+        else:
+            p = out.softmax(-1)
+            L = torch.diag_embed(p) - p[:, :, None] * p[:, None, :]
+
+        def per_example(B: torch.Tensor) -> torch.Tensor:
+            return torch.einsum("nko,nkl,nlp->nop", B, L, B)
+    else:
+        if task == "regression":
+            r = (out - y) / sigma**2
+        else:
+            r = out.softmax(-1) - nn.functional.one_hot(y, n_out)
+
+        def per_example(B: torch.Tensor) -> torch.Tensor:
+            g = torch.einsum("nk,nko->no", r, B)
+            return g[:, :, None] * g[:, None, :]
+
+    blocks = []
+
+    for a, B in [(X, B1), (a2, B2)]:
+        C = per_example(B)
+        blocks += [torch.kron(C.mean(0), a.T @ a), C.sum(0)]
+
+    return torch.block_diag(*blocks)
+
+
+@pytest.mark.parametrize(
+    "backend,curvature",
+    [(b, "ggn") for b in GGN_BACKENDS] + [(CurvlinopsEF, "ef"), (AsdlEF, "ef")],
+)
+@pytest.mark.parametrize(
+    "task,n_out,sigma",
+    [
+        ("regression", 1, 1.0),
+        ("regression", 3, 0.7),
+        ("classification", 3, 1.0),
+    ],
+)
+def test_kron_matches_kfac_reference(backend, curvature, task, n_out, sigma):
+    # On a two-layer net KFAC is no longer the GGN, but every backend must compute
+    # the same KFAC. BackPACK has no Kronecker-factored EF.
+    model = _mlp(n_out)
+    X, y = _data(task, n_out)
+    ref = _kfac_reference(copy.deepcopy(model), X, y, task, curvature, sigma)
+
+    la = KronLaplace(model, task, sigma_noise=sigma, backend=backend)
+    la.fit(_loader(X, y))
+
+    _assert_close(la.H.to_matrix() * la._H_factor, ref)
+
+
+@pytest.mark.parametrize("backend", GGN_BACKENDS)
+@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+def test_single_layer_full_kron_diag_agree(backend, task, n_out):
+    # On one linear layer with a bias, the diagonal is the diagonal of the GGN. For
+    # the MSE, the output curvature is constant, so KFAC is exactly the GGN without
+    # the weight-bias cross terms. For the cross-entropy it isn't.
+    model = nn.Linear(N_IN, n_out)
+    X, y = _data(task, n_out)
+
+    full = FullLaplace(copy.deepcopy(model), task, sigma_noise=1.0, backend=backend)
+    full.fit(_loader(X, y))
+    H = full.H
+
+    diag = DiagLaplace(copy.deepcopy(model), task, backend=backend)
+    diag.fit(_loader(X, y))
+
+    _assert_close(diag.H, H.diagonal())
+
+    if task == "regression":
+        kron = KronLaplace(copy.deepcopy(model), task, backend=backend)
+        kron.fit(_loader(X, y))
+
+        n_weight = N_IN * n_out
+        blocks = torch.block_diag(H[:n_weight, :n_weight], H[n_weight:, n_weight:])
+
+        _assert_close(kron.H.to_matrix(), blocks)
+
+
+@pytest.mark.parametrize("backend", HESSIAN_BACKENDS)
+@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+def test_last_layer_hessian(backend, task, n_out):
+    # The Hessian of the last layer is that of the net with the body frozen
+    model = _mlp(n_out)
+    X, y = _data(task, n_out)
+
+    ll = FullLLLaplace(
+        copy.deepcopy(model), task, prior_precision=50.0, backend=backend
+    )
+    ll.fit(_loader(X, y))
+
+    frozen = copy.deepcopy(model)
+
+    for p in frozen[0].parameters():
+        p.requires_grad_(False)
+
+    ref = _reference(frozen, X, y, task, "hessian", prior=50.0)
+
+    _assert_close(ll.posterior_precision, ref["P"])
+    _assert_close(ll.log_marginal_likelihood(), ref["lml"])
+
+
+@pytest.mark.asdfghjkl
+@pytest.mark.skipif(
+    find_spec("asdfghjkl") is None, reason="The old asdfghjkl is not installed"
+)
+@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+def test_lowrank_eigenvalues_sum_over_batches(task, n_out):
+    # asdfghjkl averages its Hessian-vector products over the batches, so the
+    # eigenvalues must be scaled back by the number of batches. The power iteration
+    # starts from the same random vectors, but summing in another order moves where
+    # it stops, so the eigenvalues agree only loosely.
+    model = _mlp(n_out)
+    X, y = _data(task, n_out)
+    eigvals = []
+
+    for batch_size in [N_DATA, 5]:
+        torch.manual_seed(0)
+        la = LowRankLaplace(copy.deepcopy(model), task, backend_kwargs={"low_rank": 2})
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=batch_size))
+        eigvals.append(la.H[1])
+
+    torch.testing.assert_close(eigvals[1], eigvals[0], rtol=5e-2, atol=0)
+
+    # The power iteration stops while it still converges slowly, so the top
+    # eigenvalue is off by a few percent. That still catches a wrong scale.
+    P = _reference(model, X, y, task, "hessian", prior=1.0)["P"]
+    top = torch.linalg.eigvalsh(P - torch.eye(len(P)))[-1]
+
+    torch.testing.assert_close(eigvals[0][0], top, rtol=1e-1, atol=0)
