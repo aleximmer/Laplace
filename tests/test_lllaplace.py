@@ -1038,3 +1038,28 @@ def test_bernoulli_lllaplace(laplace, options):
 
     with pytest.raises(ValueError, match="softmax link only"):
         la(X, link_approx="bridge")
+
+
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_asdl_ef_full_matches_curvlinops(likelihood):
+    torch.manual_seed(0)
+    X = torch.randn(32, 4)
+    y = (
+        torch.randint(3, (32,))
+        if likelihood == "classification"
+        else torch.randn(32, 3)
+    )
+    loader = DataLoader(TensorDataset(X, y), batch_size=8)
+    model = nn.Sequential(nn.Linear(4, 8), nn.Tanh(), nn.Linear(8, 3))
+
+    la_asdl = FullLLLaplace(model, likelihood, backend=AsdlEF)
+    la_asdl.fit(loader)
+
+    la_curvlinops = FullLLLaplace(model, likelihood, backend=CurvlinopsEF)
+    la_curvlinops.fit(loader)
+
+    assert la_asdl.H.shape == (27, 27)
+    assert torch.allclose(la_asdl.H, la_curvlinops.H)
+    assert torch.allclose(
+        torch.as_tensor(la_asdl.loss), torch.as_tensor(la_curvlinops.loss)
+    )
