@@ -23,6 +23,7 @@ from laplace.curvature import _is_optional_backend
 from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.curvature import (
     CurvatureInterface,
+    EFInterface,
     _ignored_positions,
     _n_observed_examples,
     _observed_mask,
@@ -184,8 +185,9 @@ class BaseLaplace:
     prior_mean : torch.Tensor or float, default=0
         prior mean of a Gaussian prior, useful for continual learning
     temperature : float, default=1
-        temperature of the likelihood; lower temperature leads to more
-        concentrated posterior and vice versa.
+        temperature \\(T\\) of the likelihood, as in cold posteriors: the posterior is
+        \\(p(\\theta \\mid \\mathcal{D}) \\propto p(\\mathcal{D} \\mid \\theta)^{1/T} p(\\theta)\\).
+        A lower temperature gives a more concentrated posterior and vice versa.
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
@@ -389,11 +391,14 @@ class BaseLaplace:
         the observation noise which makes it differentiable in the latter for
         iterative updates.
 
+        With a temperature \\(T\\), this is the tempered log likelihood
+        \\(\\frac{1}{T} \\log p(\\mathcal{D} \\mid \\theta)\\), normalizer included.
+
         Returns
         -------
         log_likelihood : torch.Tensor
         """
-        factor = -self._H_factor
+        factor = -self._loss_factor
         sigma_noise = torch.as_tensor(
             self.sigma_noise, device=self._device, dtype=self._dtype
         )
@@ -404,7 +409,8 @@ class BaseLaplace:
             self.n_obs or self.n_data, self.n_outputs, sigma_noise
         )
 
-        return factor * self.loss - c
+        # `factor` already holds the temperature
+        return factor * self.loss - c / self.temperature
 
     def __call__(
         self,
@@ -862,9 +868,22 @@ class BaseLaplace:
         return sigma.to(device=self._device, dtype=self._dtype).square()
 
     @property
-    def _H_factor(self) -> torch.Tensor:
+    def _loss_factor(self) -> torch.Tensor:
+        # Turns the loss of the backend, at unit noise, into the negative log
+        # likelihood without its normalizer
         sigma2 = self.sigma_noise.square()
         return 1 / sigma2 / self.temperature
+
+    @property
+    def _H_factor(self) -> torch.Tensor:
+        # Turns the curvature of the backend, at unit noise, into the curvature of the
+        # tempered negative log likelihood. The GGN and Hessian scale with the
+        # precision \(1 / \sigma^2\). The EF is built from squared gradients, which
+        # each carry \(1 / \sigma^2\), so it scales with \(1 / \sigma^4\).
+        if issubclass(self._backend_cls, EFInterface):
+            return self._loss_factor / self.sigma_noise.square()
+
+        return self._loss_factor
 
     def _glm_forward_call(
         self,
@@ -3414,8 +3433,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     prior_mean : torch.Tensor or float, default=0
         prior mean of a Gaussian prior, useful for continual learning
     temperature : float, default=1
-        temperature of the likelihood; lower temperature leads to more
-        concentrated posterior and vice versa.
+        temperature \\(T\\) of the likelihood, as in cold posteriors: the posterior is
+        \\(p(\\theta \\mid \\mathcal{D}) \\propto p(\\mathcal{D} \\mid \\theta)^{1/T} p(\\theta)\\).
+        A lower temperature gives a more concentrated posterior and vice versa.
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
@@ -3985,33 +4005,46 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         log determinant term := \\( \\log | I + D^{1/2}K D^{1/2} | \\)
 
-        For `regression`, we use ["standard" GP marginal likelihood](https://stats.stackexchange.com/questions/280105/log-marginal-likelihood-for-gaussian-process):
+        For `regression`, we use the log determinant of the
+        ["standard" GP marginal likelihood](https://stats.stackexchange.com/questions/280105/log-marginal-likelihood-for-gaussian-process)
+        relative to the noise, which matches `log_det_ratio` of the weight-space
+        Laplace approximations:
 
-        log determinant term := \\( \\log | K + \\sigma_2 I | \\)
+        log determinant term := \\( \\log | I + K / \\sigma^2 | =
+        \\log | K + \\sigma^2 I | - \\log | \\sigma^2 I | \\)
         """
         if self.likelihood.name == Likelihood.REGRESSION.name:
-            noise = self._noise_variance()
+            # Tempering the Gaussian likelihood scales its variance by T
+            noise = self._noise_variance() * self.temperature
 
             if self.independent_outputs:
                 log_det = torch.tensor(
                     0.0, requires_grad=True, device=self._device, dtype=self._dtype
                 )
                 for c in range(self.n_outputs):
-                    log_det = log_det + torch.logdet(
-                        self.gp_kernel_prior_variance * self.K_MM[c]
-                        + torch.eye(
-                            n=self.K_MM[c].shape[0],
-                            device=self._device,
-                            dtype=self._dtype,
+                    log_det = (
+                        log_det
+                        + torch.logdet(
+                            self.gp_kernel_prior_variance * self.K_MM[c]
+                            + torch.eye(
+                                n=self.K_MM[c].shape[0],
+                                device=self._device,
+                                dtype=self._dtype,
+                            )
+                            * noise[c]
                         )
-                        * noise[c]
+                        - self.K_MM[c].shape[0] * noise[c].log()
                     )
                 return log_det
             else:
                 # The joint kernel runs over the outputs fastest
-                return torch.logdet(
-                    self.gp_kernel_prior_variance * self.K_MM
-                    + torch.diag(noise.tile(self.K_MM.shape[0] // self.n_outputs))
+                noise = noise.tile(self.K_MM.shape[0] // self.n_outputs)
+
+                return (
+                    torch.logdet(
+                        self.gp_kernel_prior_variance * self.K_MM + torch.diag(noise)
+                    )
+                    - noise.log().sum()
                 )
         else:
             if self.independent_outputs:
@@ -4055,7 +4088,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         """
         if self.likelihood.name == Likelihood.REGRESSION.name:
-            noise = self._noise_variance()
+            # Tempering the Gaussian likelihood scales its variance by T
+            noise = self._noise_variance() * self.temperature
         else:
             noise = torch.full(
                 (self.n_outputs,), eps, device=self._device, dtype=self._dtype
@@ -4310,6 +4344,18 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             if self.likelihood.name != Likelihood.REGRESSION.name:
                 raise ValueError("Can only change sigma_noise for regression.")
             self.sigma_noise = sigma_noise
+
+        if self.likelihood.name == Likelihood.REGRESSION.name:
+            # The GP evidence of the subset is exact for the linearized network. Its
+            # scatter term already holds the data fit, so only the Gaussian
+            # normalizer of the subset remains, and `log_det_ratio` drops its noise.
+            # With a temperature T, the tempered likelihood is a Gaussian with
+            # variance T sigma^2 up to a constant, which leaves the normalizer / T.
+            c = self.likelihood.log_normalizer(
+                self.n_subset, self.n_outputs, self.sigma_noise
+            )
+
+            return -c / self.temperature - 0.5 * (self.log_det_ratio + self.scatter)
 
         return self.log_likelihood - 0.5 * (self.log_det_ratio + self.scatter)
 

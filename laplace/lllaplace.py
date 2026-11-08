@@ -70,8 +70,9 @@ class LLLaplace(ParametricLaplace):
     prior_mean : torch.Tensor or float, default=0
         prior mean of a Gaussian prior, useful for continual learning
     temperature : float, default=1
-        temperature of the likelihood; lower temperature leads to more
-        concentrated posterior and vice versa.
+        temperature \\(T\\) of the likelihood, as in cold posteriors: the posterior is
+        \\(p(\\theta \\mid \\mathcal{D}) \\propto p(\\mathcal{D} \\mid \\theta)^{1/T} p(\\theta)\\).
+        A lower temperature gives a more concentrated posterior and vice versa.
     enable_backprop: bool, default=False
         whether to enable backprop to the input `x` through the Laplace predictive.
         Useful for e.g. Bayesian optimization.
