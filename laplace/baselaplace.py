@@ -3535,6 +3535,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         self._fitted = False
         self._recompute_Sigma = True
+        # The curvature factor that `Sigma_inv` was built with, see `_refresh_posterior`
+        self._Sigma_H_factor: torch.Tensor | None = None
 
     @staticmethod
     def _check_prior_precision(prior_precision: float | torch.Tensor):
@@ -3679,6 +3681,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
                 )
             )
         self._recompute_Sigma = False
+        self._Sigma_H_factor = self._H_factor.detach().clone()
 
     def _batch_inputs(
         self, data: tuple[torch.Tensor, ...] | MutableMapping
@@ -3857,18 +3860,27 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         )
 
     def _refresh_posterior(self) -> None:
-        """Rebuild the subset-of-data GP posterior after a prior change.
+        """Rebuild the subset-of-data GP posterior after a hyperparameter change.
+
+        The cached Cholesky factor holds the prior variance and the curvature factor,
+        which depends on `sigma_noise` and `temperature`. It's rebuilt when the prior
+        precision was set, or when the curvature factor differs from the one it was
+        built with.
 
         Warns
         -----
         UserWarning
-            If prior precision changed since fitting and the cached posterior
+            If the prior precision changed since fitting and the cached posterior
             must be recomputed.
         """
         if self._recompute_Sigma:
             warnings.warn(
                 "The prior precision has changed since fit; recomputing the GP posterior."
             )
+            self._build_Sigma_inv()
+        elif self._Sigma_H_factor is None or not torch.equal(
+            self._Sigma_H_factor, self._H_factor.detach()
+        ):
             self._build_Sigma_inv()
 
     @property
@@ -4442,6 +4454,15 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self._recompute_Sigma = True
 
     def state_dict(self) -> dict:
+        """Return the fitted subset-of-data GP posterior as a checkpoint.
+
+        Returns
+        -------
+        dict
+            The kernel and noise terms, the cached Cholesky factor and the curvature
+            factor it was built with, the data subset, and the hyperparameters. The
+            model parameters aren't included.
+        """
         state_dict = {
             "mean": self.mean,
             "num_data": self.n_subset,
@@ -4452,6 +4473,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             "_prior_factor_sod": self._prior_factor_sod,
             "_fitted": self._fitted,
             "_recompute_Sigma": self._recompute_Sigma,
+            "_Sigma_H_factor": self._Sigma_H_factor,
             "mu": self.mu,
             "L": self.L,
             "train_loader": self.train_loader,
@@ -4470,6 +4492,29 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         return state_dict
 
     def load_state_dict(self, state_dict: dict):
+        """Restore a checkpoint from `state_dict` into this instance.
+
+        Build this instance with the same model and likelihood as the saved one.
+        Checkpoints from before the curvature factor was saved rebuild the cached
+        Cholesky factor on first use.
+
+        Parameters
+        ----------
+        state_dict : dict
+            checkpoint from `state_dict`.
+
+        Raises
+        ------
+        ValueError
+            If the checkpoint is from another Laplace class, has a different
+            number of parameters, or has a different likelihood.
+
+        Warns
+        -----
+        UserWarning
+            If `temperature` or `enable_backprop` differ from the checkpoint, or
+            if this instance has no prior mean but the checkpoint does.
+        """
         # Dealbreaker errors
         if self.__class__.__name__ != state_dict["cls_name"]:
             raise ValueError(
@@ -4518,6 +4563,8 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         self.sigma_noise = state_dict["sigma_noise"]
         # The property setters mark the factor stale; restore the saved state.
         self._recompute_Sigma = state_dict["_recompute_Sigma"]
+        # Older checkpoints lack the factor, so their cache is rebuilt on first use
+        self._Sigma_H_factor = state_dict.get("_Sigma_H_factor")
         self.n_data = state_dict["n_data"]
         self.n_outputs = state_dict["n_outputs"]
         setattr(self.model, "output_size", self.n_outputs)
