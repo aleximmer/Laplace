@@ -1,6 +1,7 @@
 import warnings
 from collections import UserDict
 from collections.abc import MutableMapping
+from copy import deepcopy
 
 import numpy as np
 import pytest
@@ -812,9 +813,11 @@ def test_unsupported_error_names_ignore_index(model, class_Xy):
     y[0] = -100
 
     # The default `ignore_index` is not an option of the likelihood, but padding
-    # makes it one
-    with pytest.raises(ValueError, match="ignore_index"):
-        AsdlHessian(model, "classification").diag(X, y)
+    # makes it one. ASDL's diagonal GGN doesn't honour it.
+    error = AsdlGGN(model, "classification")._unsupported_error("diag", y=y)
+
+    assert isinstance(error, ValueError)
+    assert "ignore_index" in str(error)
 
 
 def test_custom_kron_raises(model, reg_Xy):
@@ -1013,3 +1016,77 @@ def test_bernoulli_is_rejected_by_asdfghjkl(model):
 
     with pytest.raises(ValueError, match="does not support the likelihood"):
         backend.eig_lowrank(loader)
+
+
+@pytest.mark.parametrize(
+    "backend_cls,method",
+    [
+        (CurvlinopsHessian, "diag"),
+        (CurvlinopsHessian, "kron"),
+        (AsdlHessian, "diag"),
+        (AsdlHessian, "kron"),
+        (AsdfghjklHessian, "diag"),
+        (AsdfghjklHessian, "kron"),
+        (BackPackEF, "kron"),
+    ],
+)
+def test_unavailable_structure_raises(backend_cls, method, model, reg_Xy):
+    X, y = reg_Xy
+    backend = backend_cls(model, "regression")
+    args = (X, y, len(X)) if method == "kron" else (X, y)
+
+    with pytest.raises(NotImplementedError, match=f"doesn't compute the `{method}`"):
+        getattr(backend, method)(*args)
+
+
+def _assert_no_backpack_state(model: nn.Module) -> None:
+    for module in model.modules():
+        assert not module._forward_hooks
+        assert not module._backward_hooks
+        assert module._is_full_backward_hook is None
+        assert not hasattr(module, "_backpack_extend")
+
+
+@requires_backpack
+@pytest.mark.parametrize(
+    "first,structure",
+    [
+        (BackPackGGN, "diag"),
+        (BackPackGGN, "kron"),
+        (BackPackGGN, "full"),
+        (BackPackEF, "diag"),
+        (BackPackEF, "full"),
+    ],
+)
+@pytest.mark.parametrize("then", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
+def test_backpack_leaves_the_model_as_it_was(model, reg_Xy, first, structure, then):
+    # BackPACK must remove its hooks after each computation. Left on the model, they
+    # break `torch.func`, ASDL, and later BackPACK computations on it.
+    X, y = reg_Xy
+    reference = deepcopy(model)
+    args = (X, y, len(X)) if structure == "kron" else (X, y)
+    getattr(first(model, "regression"), structure)(*args)
+
+    _assert_no_backpack_state(model)
+
+    _, H = then(model, "regression").diag(X, y)
+    _, H_ref = then(reference, "regression").diag(X, y)
+
+    torch.testing.assert_close(H, H_ref)
+
+
+@requires_backpack
+@pytest.mark.parametrize("asdl", [AsdlGGN, AsdlEF])
+def test_backpack_after_asdl_raises(model, reg_Xy, asdl):
+    # ASDL's regular backward hooks leave a mark on the modules that PyTorch checks
+    # before it registers BackPACK's full ones
+    X, y = reg_Xy
+    asdl(model, "regression").diag(X, y)
+
+    with pytest.raises(RuntimeError, match="regular backward hooks"):
+        BackPackGGN(model, "regression").diag(X, y)
+
+    # A fresh model with the same weights works, as the error says
+    fresh = nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 2))
+    fresh.load_state_dict(model.state_dict())
+    BackPackGGN(fresh, "regression").diag(X, y)

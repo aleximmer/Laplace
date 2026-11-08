@@ -2278,7 +2278,16 @@ class FullLaplace(ParametricLaplace):
         super().fit(train_loader, override=override, progress_bar=progress_bar)
 
     def _compute_scale(self) -> None:
-        self._posterior_scale = invsqrt_precision(self.posterior_precision)
+        try:
+            self._posterior_scale = invsqrt_precision(self.posterior_precision)
+        except torch.linalg.LinAlgError as err:
+            raise torch.linalg.LinAlgError(
+                "The posterior precision isn't positive definite, so it has no "
+                "posterior covariance. This happens with the exact Hessian away "
+                "from a minimum of the loss, or with a prior precision of zero and "
+                "a singular GGN. Train the model to convergence, use a GGN or EF "
+                "backend, or increase `prior_precision`."
+            ) from err
 
     @property
     def posterior_scale(self) -> torch.Tensor:

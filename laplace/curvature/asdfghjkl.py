@@ -257,7 +257,38 @@ class AsdfghjklHessian(AsdfghjklInterface):
 
     @property
     def _ggn_type(self) -> str:
-        raise NotImplementedError()
+        raise self._unavailable_error("diag")
+
+    def diag(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """asdfghjkl computes only the full or low-rank Hessian, so this raises.
+
+        Raises
+        ------
+        NotImplementedError
+            always.
+        """
+        raise self._unavailable_error("diag")
+
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
+        """asdfghjkl computes only the full or low-rank Hessian, so this raises.
+
+        Raises
+        ------
+        NotImplementedError
+            always.
+        """
+        raise self._unavailable_error("kron")
 
     def full(
         self,
@@ -294,11 +325,14 @@ class AsdfghjklHessian(AsdfghjklInterface):
             top_n=self.low_rank,
             max_iters=self.low_rank * 10,
         )
-        eigvals = torch.from_numpy(np.array(eigvals))
-        mask = eigvals > EPS
+        # asdfghjkl averages the Hessian-vector products over the batches, but the
+        # Hessian of the loss sums over them
+        eigvals = torch.from_numpy(np.array(eigvals)) * len(data_loader)
         eigvecs = torch.stack(
             [torch.cat([p.flatten() for p in params]) for params in eigvecs], dim=1
-        )[:, mask]
+        )
+        mask = eigvals > EPS
+        eigvecs = eigvecs[:, mask]
         device = eigvecs.device
         eigvals = eigvals[mask].to(eigvecs.dtype).to(device)
         loss = sum(

@@ -517,3 +517,19 @@ class CurvlinopsHessian(CurvlinopsInterface):
     @property
     def _linop_context(self) -> type[HessianLinearOperator]:
         return HessianLinearOperator
+
+    def kron(
+        self,
+        x: torch.Tensor | MutableMapping[str, torch.Tensor | Any],
+        y: torch.Tensor,
+        N: int,
+        **kwargs: dict[str, Any],
+    ) -> tuple[torch.Tensor, Kron]:
+        """The Hessian has no Kronecker factors in Curvlinops, so this raises.
+
+        Raises
+        ------
+        NotImplementedError
+            always.
+        """
+        raise self._unavailable_error("kron")

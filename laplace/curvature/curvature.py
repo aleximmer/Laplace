@@ -489,6 +489,63 @@ class CurvatureInterface:
             f"likelihood."
         )
 
+    def _unavailable_error(self, method: str) -> NotImplementedError:
+        """Error for a curvature structure that this backend doesn't compute at all.
+
+        Parameters
+        ----------
+        method : str
+            curvature method, e.g. `"kron"`.
+
+        Returns
+        -------
+        error : NotImplementedError
+        """
+        return NotImplementedError(
+            f"{type(self).__name__} doesn't compute the `{method}` curvature. "
+            f"Use another `hessian_structure`, or a backend that computes `{method}`, "
+            f"e.g. CurvlinopsGGN or CurvlinopsEF."
+        )
+
+    def _check_backward_hooks(self, full: bool) -> None:
+        """Check that the model takes the kind of backward hooks the library uses.
+
+        PyTorch refuses a module both regular and full backward hooks, and it
+        remembers the kind of a hook after the hook is removed. ASDL registers
+        regular hooks and leaves that mark on the model. BackPACK registers full
+        ones, but its backends remove them and the mark after each computation.
+
+        Parameters
+        ----------
+        full : bool
+            whether the library registers full backward hooks.
+
+        Raises
+        ------
+        RuntimeError
+            if a module of the model already had the other kind of backward hook.
+        """
+        clash = not full  # the flag PyTorch keeps for the other kind
+
+        if not any(
+            getattr(module, "_is_full_backward_hook", None) is clash
+            for module in self._model.modules()
+        ):
+            return
+
+        if full:
+            what = "regular backward hooks, e.g. from fitting an ASDL backend"
+        else:
+            what = "full backward hooks, from `register_full_backward_hook`"
+
+        raise RuntimeError(
+            f"{type(self).__name__} can't use a model that had {what}. PyTorch "
+            f"doesn't allow both kinds of backward hooks on one module, and it "
+            f"remembers the kind after a hook is removed. Use a Curvlinops backend, "
+            f"or a fresh instance of the model with the same weights, loaded with "
+            f"`load_state_dict`."
+        )
+
     def _check_targets(self, f: torch.Tensor, y: torch.Tensor) -> None:
         """Check that the targets `y` match the outputs `f` with the likelihood.
 
@@ -773,7 +830,7 @@ class CurvatureInterface:
         H : torch.Tensor
             Hessian approximation `(parameters, parameters)`
         """
-        raise NotImplementedError
+        raise self._unavailable_error("full")
 
     def kron(
         self,
@@ -804,7 +861,7 @@ class CurvatureInterface:
         H : `laplace.utils.matrix.Kron`
             Kronecker factored Hessian approximation.
         """
-        raise NotImplementedError
+        raise self._unavailable_error("kron")
 
     def diag(
         self,
@@ -828,7 +885,7 @@ class CurvatureInterface:
         H : torch.Tensor
             vector representing the diagonal of H
         """
-        raise NotImplementedError
+        raise self._unavailable_error("diag")
 
     functorch_jacobians = jacobians
 

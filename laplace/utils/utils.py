@@ -117,7 +117,7 @@ def parameters_per_layer(model: nn.Module) -> list[int]:
 
 
 def invsqrt_precision(M: torch.Tensor) -> torch.Tensor:
-    """Compute ``M^{-0.5}`` as a tridiagonal matrix.
+    """Compute ``M^{-0.5}`` as a lower-triangular matrix.
 
     Parameters
     ----------

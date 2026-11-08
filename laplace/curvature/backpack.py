@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import MutableMapping
+from collections.abc import Iterator, MutableMapping
+from contextlib import contextmanager
 from importlib.util import find_spec
 from typing import Any
 
@@ -54,20 +55,52 @@ class BackPackInterface(CurvatureInterface):
             model, likelihood, last_layer, subnetwork_indices, dict_key_x, dict_key_y
         )
 
-        extend(self._model)
+    @contextmanager
+    def _extended(self, module: nn.Module | None = None) -> Iterator[nn.Module]:
+        """Extend `module` and the loss with BackPACK for one computation.
 
-    @CurvatureInterface.likelihood.setter
-    def likelihood(self, likelihood: Likelihood | str | nn.Module) -> None:
-        """Set the likelihood as in `CurvatureInterface`, and extend the loss of a
-        Gaussian or categorical likelihood with BackPACK. BackPACK checks the options
-        of the loss only when it computes the curvature, after the fallback decision.
-        Other likelihoods, e.g. the Bernoulli one, always fall back, so their losses
-        aren't extended.
+        BackPACK's hooks stay on a module until they are removed, and they break
+        `torch.func` and other backends on the same model. So the hooks are added
+        here and removed on exit, together with the mark PyTorch keeps of their kind.
+        Only the loss of a Gaussian or categorical likelihood is extended. BackPACK
+        checks its options when it computes the curvature, after the fallback
+        decision. Other likelihoods, e.g. the Bernoulli one, always fall back.
+
+        Parameters
+        ----------
+        module : nn.Module, optional
+            module to extend, `self._model` by default.
+
+        Yields
+        ------
+        module : nn.Module
+            the extended module.
         """
-        CurvatureInterface.likelihood.fset(self, likelihood)
+        module = self._model if module is None else module
+        self._check_backward_hooks(full=True)
 
-        if type(self.likelihood) in self._library_types:
-            extend(self.lossfunc)
+        modules = list(module.modules())
+        kinds = [m._is_full_backward_hook for m in modules]
+        lossfunc = (
+            self.lossfunc if type(self.likelihood) in self._library_types else None
+        )
+
+        try:
+            extend(module)
+
+            if lossfunc is not None:
+                extend(lossfunc)
+
+            yield module
+        finally:
+            CTX.remove_hooks()
+            _cleanup(module)
+
+            if lossfunc is not None:
+                _cleanup(lossfunc)
+
+            for m, kind in zip(modules, kinds):
+                m._is_full_backward_hook = kind
 
     def _flatten_targets(self, f: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         """Flatten the targets to match the logits that are flattened to `(M, K)`.
@@ -127,36 +160,36 @@ class BackPackInterface(CurvatureInterface):
         input_grad = (
             x.grad.detach().clone() if x.is_leaf and x.grad is not None else None
         )
-        model = extend(self.model)
-        to_stack = []
-        for i in range(model.output_size):
-            model.zero_grad()
-            out = model(x)
-            with backpack(BatchGrad()):
-                if model.output_size > 1:
-                    out[:, i].sum().backward(
-                        create_graph=enable_backprop, retain_graph=enable_backprop
-                    )
-                else:
-                    out.sum().backward(
-                        create_graph=enable_backprop, retain_graph=enable_backprop
-                    )
-                to_cat = []
-                for param in model.parameters():
-                    to_cat.append(param.grad_batch.reshape(x.shape[0], -1))
-                    delattr(param, "grad_batch")
-                Jk = torch.cat(to_cat, dim=1)
-                if self.subnetwork_indices is not None:
-                    Jk = Jk[:, self.subnetwork_indices]
-            to_stack.append(Jk)
-            if i == 0:
-                f = out
+        with self._extended(self.model) as model:
+            to_stack = []
+            for i in range(model.output_size):
+                model.zero_grad()
+                out = model(x)
+                with backpack(BatchGrad()):
+                    if model.output_size > 1:
+                        out[:, i].sum().backward(
+                            create_graph=enable_backprop, retain_graph=enable_backprop
+                        )
+                    else:
+                        out.sum().backward(
+                            create_graph=enable_backprop, retain_graph=enable_backprop
+                        )
+                    to_cat = []
+                    for param in model.parameters():
+                        to_cat.append(param.grad_batch.reshape(x.shape[0], -1))
+                        delattr(param, "grad_batch")
+                    Jk = torch.cat(to_cat, dim=1)
+                    if self.subnetwork_indices is not None:
+                        Jk = Jk[:, self.subnetwork_indices]
+                to_stack.append(Jk)
+                if i == 0:
+                    f = out
 
-        model.zero_grad()
+            model.zero_grad()
+
         if x.is_leaf and x.requires_grad:
             x.grad = input_grad
-        CTX.remove_hooks()
-        _cleanup(model)
+
         if model.output_size > 1:
             J = torch.stack(to_stack, dim=2).transpose(1, 2)
         else:
@@ -183,10 +216,11 @@ class BackPackInterface(CurvatureInterface):
             gradients `(batch, parameters)`
         loss : torch.Tensor
         """
-        f = self.model(x)
-        loss = self.lossfunc(f, y)
-        with backpack(BatchGrad()):
-            loss.backward()
+        with self._extended():
+            f = self.model(x)
+            loss = self.lossfunc(f, y)
+            with backpack(BatchGrad()):
+                loss.backward()
         Gs = torch.cat(
             [p.grad_batch.data.flatten(start_dim=1) for p in self._model.parameters()],
             dim=1,
@@ -232,43 +266,41 @@ class BackPackInterface(CurvatureInterface):
         input_grad = (
             x.grad.detach().clone() if x.is_leaf and x.grad is not None else None
         )
-        model = extend(self.model)
-        columns = []
-        first_output = None
+        with self._extended(self.model) as model:
+            columns = []
+            first_output = None
 
-        for column in range(outputs.shape[1]):
-            model.zero_grad(set_to_none=True)
-            output = model(x)
-            if first_output is None:
-                first_output = output
+            for column in range(outputs.shape[1]):
+                model.zero_grad(set_to_none=True)
+                output = model(x)
+                if first_output is None:
+                    first_output = output
 
-            selected = output.gather(
-                1, outputs[:, column : column + 1].to(output.device)
-            ).sum()
+                selected = output.gather(
+                    1, outputs[:, column : column + 1].to(output.device)
+                ).sum()
 
-            with backpack(BatchGrad()):
-                selected.backward(
-                    create_graph=enable_backprop, retain_graph=enable_backprop
-                )
-                columns.append(
-                    torch.cat(
-                        [
-                            parameter.grad_batch.reshape(x.shape[0], -1)
-                            for parameter in model.parameters()
-                            if parameter.requires_grad
-                        ],
-                        dim=1,
+                with backpack(BatchGrad()):
+                    selected.backward(
+                        create_graph=enable_backprop, retain_graph=enable_backprop
                     )
-                )
-                for parameter in model.parameters():
-                    if hasattr(parameter, "grad_batch"):
-                        delattr(parameter, "grad_batch")
+                    columns.append(
+                        torch.cat(
+                            [
+                                parameter.grad_batch.reshape(x.shape[0], -1)
+                                for parameter in model.parameters()
+                                if parameter.requires_grad
+                            ],
+                            dim=1,
+                        )
+                    )
+                    for parameter in model.parameters():
+                        if hasattr(parameter, "grad_batch"):
+                            delattr(parameter, "grad_batch")
 
-        model.zero_grad(set_to_none=True)
-        if x.is_leaf and x.requires_grad:
-            x.grad = input_grad
-        CTX.remove_hooks()
-        _cleanup(model)
+            model.zero_grad(set_to_none=True)
+            if x.is_leaf and x.requires_grad:
+                x.grad = input_grad
 
         result = torch.stack(columns, dim=1)
         assert first_output is not None
@@ -341,17 +373,18 @@ class BackPackGGN(BackPackInterface, GGNInterface):
             return super().diag(x, y, **kwargs)
 
         context = DiagGGNMC if self.stochastic else DiagGGNExact
-        f = self.model(x)
-        y = self._flatten_targets(f, y)
-        # Assumes that the last dimension of f is of size outputs.
-        f = (
-            f
-            if self.likelihood.name == Likelihood.REGRESSION.name
-            else f.view(-1, f.size(-1))
-        )
-        loss = self.lossfunc(f, y)
-        with backpack(context()):
-            loss.backward()
+        with self._extended():
+            f = self.model(x)
+            y = self._flatten_targets(f, y)
+            # Assumes that the last dimension of f is of size outputs.
+            f = (
+                f
+                if self.likelihood.name == Likelihood.REGRESSION.name
+                else f.view(-1, f.size(-1))
+            )
+            loss = self.lossfunc(f, y)
+            with backpack(context()):
+                loss.backward()
         dggn = self._get_diag_ggn()
         if self.subnetwork_indices is not None:
             dggn = dggn[self.subnetwork_indices]
@@ -381,27 +414,28 @@ class BackPackGGN(BackPackInterface, GGNInterface):
 
             x, y = x[mask], y[mask]
 
-        # BackPACK's loss raises for any `ignore_index` but the default one. A plain
-        # loss does the same once the ignored positions are dropped, and it can't
-        # zero a sampled label that equals `ignore_index`.
-        if mask is not None or self._has_custom_ignore_index:
-            lossfunc = extend(
-                nn.CrossEntropyLoss(
-                    reduction="sum", label_smoothing=self.likelihood.label_smoothing
+        with self._extended():
+            # BackPACK's loss raises for any `ignore_index` but the default one. A plain
+            # loss does the same once the ignored positions are dropped, and it can't
+            # zero a sampled label that equals `ignore_index`.
+            if mask is not None or self._has_custom_ignore_index:
+                lossfunc = extend(
+                    nn.CrossEntropyLoss(
+                        reduction="sum", label_smoothing=self.likelihood.label_smoothing
+                    )
                 )
-            )
 
-        f = self.model(x)
-        y = self._flatten_targets(f, y)
-        # Assumes that the last dimension of f is of size outputs.
-        f = (
-            f
-            if self.likelihood.name == Likelihood.REGRESSION.name
-            else f.view(-1, f.size(-1))
-        )
-        loss = lossfunc(f, y)
-        with backpack(context()):
-            loss.backward()
+            f = self.model(x)
+            y = self._flatten_targets(f, y)
+            # Assumes that the last dimension of f is of size outputs.
+            f = (
+                f
+                if self.likelihood.name == Likelihood.REGRESSION.name
+                else f.view(-1, f.size(-1))
+            )
+            loss = lossfunc(f, y)
+            with backpack(context()):
+                loss.backward()
         kron = self._get_kron_factors()
         kron = self._rescale_kron_factors(kron, len(y), N)
 
@@ -426,17 +460,18 @@ class BackPackEF(BackPackInterface, EFInterface):
         if not self._honours("diag", y):
             return super().diag(x, y, **kwargs)
 
-        f = self.model(x)
-        y = self._flatten_targets(f, y)
-        # Assumes that the last dimension of f is of size outputs.
-        f = (
-            f
-            if self.likelihood.name == Likelihood.REGRESSION.name
-            else f.view(-1, f.size(-1))
-        )
-        loss = self.lossfunc(f, y)
-        with backpack(SumGradSquared()):
-            loss.backward()
+        with self._extended():
+            f = self.model(x)
+            y = self._flatten_targets(f, y)
+            # Assumes that the last dimension of f is of size outputs.
+            f = (
+                f
+                if self.likelihood.name == Likelihood.REGRESSION.name
+                else f.view(-1, f.size(-1))
+            )
+            loss = self.lossfunc(f, y)
+            with backpack(SumGradSquared()):
+                loss.backward()
         diag_EF = torch.cat(
             [p.sum_grad_squared.data.flatten() for p in self._model.parameters()]
         )
@@ -452,12 +487,14 @@ class BackPackEF(BackPackInterface, EFInterface):
         N: int,
         **kwargs: dict[str, Any],
     ) -> tuple[torch.Tensor, Kron]:
-        raise NotImplementedError("Unavailable through Backpack.")
+        raise self._unavailable_error("kron")
 
 
 def _cleanup(module: nn.Module) -> None:
+    """Free what BackPACK stored on `module` and its children, and drop the mark
+    `extend` left, so the next `extend` adds the hooks again."""
     for child in module.children():
         _cleanup(child)
 
-    setattr(module, "_backpack_extend", False)
+    module.__dict__.pop("_backpack_extend", None)
     memory_cleanup(module)
