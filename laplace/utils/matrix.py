@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from math import pow
 from typing import Iterable
 
 import numpy as np
@@ -11,6 +10,28 @@ from torch import nn
 from laplace.utils.utils import _is_valid_scalar, block_diag, kron, symeig
 
 __all__ = ["Kron", "KronDecomposed"]
+
+
+def _root(scalar: float | torch.Tensor, n: int) -> float | torch.Tensor:
+    """Take the `n`-th root of a scalar and keep a tensor in the autograd graph.
+
+    `math.pow` turns a tensor into a float, which cuts it from the graph, so
+    gradients of e.g. the marginal likelihood in `sigma_noise` would miss the
+    terms that go through Kronecker factors.
+
+    Parameters
+    ----------
+    scalar : float or torch.Tensor
+        A python or 0-dim tensor scalar.
+    n : int
+        The root to take, the number of Kronecker factors of a block.
+
+    Returns
+    -------
+    root : float or torch.Tensor
+        \\( \\text{scalar}^{1/n} \\), with the type of `scalar`.
+    """
+    return scalar ** (1 / n)
 
 
 class Kron:
@@ -100,7 +121,7 @@ class Kron:
     def __mul__(self, scalar: float | torch.Tensor) -> Kron:
         """Multiply all Kronecker factors by scalar.
         The multiplication is distributed across the number of factors
-        using `pow(scalar, 1 / len(F))`. `len(F)` is either `1` or `2`.
+        using the `len(F)`-th root of `scalar`. `len(F)` is either `1` or `2`.
 
         Parameters
         ----------
@@ -114,7 +135,7 @@ class Kron:
             raise ValueError("Input not valid python or torch scalar.")
 
         # distribute factors evenly so that each group is multiplied by factor
-        kfacs = [[pow(scalar, 1 / len(F)) * Hi for Hi in F] for F in self.kfacs]
+        kfacs = [[_root(scalar, len(F)) * Hi for Hi in F] for F in self.kfacs]
         return Kron(kfacs)
 
     def __len__(self) -> int:
@@ -375,7 +396,7 @@ class KronDecomposed:
             raise ValueError("Invalid argument, can only multiply Kron with scalar.")
 
         eigenvalues = [
-            [pow(scalar, 1 / len(ls)) * eigval for eigval in ls]
+            [_root(scalar, len(ls)) * eigval for eigval in ls]
             for ls in self.eigenvalues
         ]
         return KronDecomposed(
