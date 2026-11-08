@@ -119,6 +119,13 @@ The Laplace bridge is for the softmax, so `"bridge"` and `"bridge_norm"` raise a
 Gridsearch uses `RunningBernoulliNLLMetric` by default.
 See the [multi-label example](multilabel_example.py).
 
+`"heteroscedastic_gaussian"` is for a network that predicts its own noise, trained with `nn.GaussianNLLLoss`.
+The model returns the pair `(mean, var)`, and `la(x)` returns `f_mean, f_alea, f_epis`: the mean and the variance at the MAP, and the epistemic covariance of the mean.
+The LA is over the mean only, with the variance held fixed, as in [Immer et al. (2023)](https://openreview.net/forum?id=A6EquH0enk).
+It takes all weights or a subnetwork, but not the last layer, and the `diag`, `full`, and `kron` structures with the Curvlinops backends.
+Gridsearch uses `RunningGaussianNLLMetric` by default.
+See the [heteroscedastic regression example](heteroscedastic_example.py).
+
 For classification, the targets are class indices `(batch, ...)` or class probabilities `(batch, ..., classes)`, as in `nn.CrossEntropyLoss`.
 Class probabilities, such as one-hot or soft labels, must be floats. Integer one-hot targets raise a `ValueError` that asks for `.float()`.
 Every position of a sequence is an observation, while the class dimension of probability targets is not.
@@ -127,7 +134,7 @@ See the [soft label example](soft_label_example.py).
 #### Options
 
 The built-in likelihoods take the options of the matching PyTorch criterion, with the same names, defaults, and meaning.
-For example, `CategoricalLikelihood(weight, ignore_index, label_smoothing)` mirrors `nn.CrossEntropyLoss`, and `BernoulliLikelihood(weight, pos_weight)` mirrors `nn.BCEWithLogitsLoss`.
+For example, `CategoricalLikelihood(weight, ignore_index, label_smoothing)` mirrors `nn.CrossEntropyLoss`, `BernoulliLikelihood(weight, pos_weight)` mirrors `nn.BCEWithLogitsLoss`, and `HeteroscedasticGaussianLikelihood(eps, full)` mirrors `nn.GaussianNLLLoss`.
 The options of the Bernoulli likelihood are scalars or have one entry per output.
 You can also pass the criterion you trained with.
 Its `reduction` is ignored, since Laplace always sums the loss.
@@ -199,7 +206,7 @@ For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\m
 `link_approx` has no effect there.
 In the example above, the result is the expected Poisson rate.
 Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
-FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods and for `"bernoulli"`.
+FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods, `"bernoulli"`, and `"heteroscedastic_gaussian"`.
 FunctionalLaplace also accepts a `CategoricalLikelihood` with options.
 ELLA and VaLLA don't support likelihood options yet and raise a `ValueError` for them.
 
