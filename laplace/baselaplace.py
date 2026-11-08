@@ -3420,9 +3420,9 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
         self.K_MM = None
         self.Sigma_inv = None  # (K_{MM} + L_MM_inv)^{-1}
-        self.train_loader = (
-            None  # needed in functional variance and marginal log likelihood
-        )
+        # Batches of the data subset, drawn once in `fit`. The functional
+        # variance and the marginal likelihood need them.
+        self.train_loader: list | None = None
         self.batch_size = None
         self._prior_factor_sod = None
         self.mu = None  # mean in the scatter term of the log marginal likelihood
@@ -3667,12 +3667,15 @@ class FunctionalLaplace(BaseFunctionalLaplace):
             "`num_data` must be less than or equal to the original number of data points."
         )
 
-        train_loader = self._get_SoD_data_loader(train_loader)
+        # Draw the subset once. A loader with random augmentation returns new
+        # inputs on each pass, and K_MM and the predictive must all see the same ones.
+        train_loader = list(self._get_SoD_data_loader(train_loader))
         self.train_loader = train_loader
         self._prior_factor_sod = self.n_subset / self.n_data
 
         # The caches below are reset, so a failed refit leaves no usable posterior
         self._fitted = False
+        self.loss = 0.0
 
         self._init_K_MM()
         self._init_Sigma_inv()
