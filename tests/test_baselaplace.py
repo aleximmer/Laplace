@@ -3740,3 +3740,67 @@ def test_bernoulli_fit_rejects_bad_targets(laplace):
 
         with pytest.raises(ValueError, match="expects"):
             la.fit(DataLoader(TensorDataset(X, bad), batch_size=5))
+
+
+def _reduce_input_factor(X: torch.Tensor, observed: torch.Tensor) -> torch.Tensor:
+    """KFAC-reduce input factor of a first layer applied position-wise: the mean over
+    examples of the outer products of their inputs, averaged over observed positions."""
+    X_mean = (X * observed[..., None]).sum(1) / observed.sum(1, keepdim=True)
+    return X_mean.T @ X_mean / len(X)
+
+
+@pytest.mark.parametrize("batch_size", [1, 3, 8])
+def test_kron_reduce_ignored_input_factor_is_mean_over_examples(batch_size):
+    torch.manual_seed(0)
+    X, y = _ignored_data((5,))
+    model = _position_model()
+
+    la = KronLaplace(
+        model,
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=batch_size))
+
+    torch.testing.assert_close(
+        la.H_facs.kfacs[0][1], _reduce_input_factor(X, y != -100)
+    )
+
+
+def test_kron_reduce_varying_length_input_factor_is_mean_over_examples():
+    torch.manual_seed(0)
+    lengths = [2, 2, 6, 6, 3, 3]
+    data = [(torch.randn(L, 4), torch.randint(3, (L,))) for L in lengths]
+    model = _position_model()
+
+    la = KronLaplace(
+        model,
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    la.fit(DataLoader(data, batch_size=2))
+
+    X_mean = torch.stack([X.mean(0) for X, _ in data])
+    torch.testing.assert_close(la.H_facs.kfacs[0][1], X_mean.T @ X_mean / len(data))
+
+    # The same with one batch per example, and after a checkpoint and online update
+    per_example = KronLaplace(
+        deepcopy(model),
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    per_example.fit(DataLoader(data[:3], batch_size=1))
+
+    restored = KronLaplace(
+        deepcopy(model),
+        "classification",
+        backend=CurvlinopsGGN,
+        asdl_fisher_kwargs={"kfac_approx": "reduce"},
+    )
+    restored.load_state_dict(per_example.state_dict())
+    restored.fit(DataLoader(data[3:], batch_size=1), override=False)
+
+    torch.testing.assert_close(restored.H_facs.kfacs[0][1], la.H_facs.kfacs[0][1])

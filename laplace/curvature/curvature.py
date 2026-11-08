@@ -54,6 +54,29 @@ def _observed_mask(likelihood: Likelihood, y: torch.Tensor) -> torch.Tensor | No
     return y != likelihood.ignore_index
 
 
+def _n_observed_examples(y: torch.Tensor, mask: torch.Tensor | None) -> int:
+    """Number of examples in a batch with at least one observed position.
+
+    KFAC-reduce averages the input factors over these examples, so batches are
+    weighted by this count, not by their number of positions.
+
+    Parameters
+    ----------
+    y : torch.Tensor
+        targets of a batch `(B, ...)`.
+    mask : torch.Tensor or None
+        observed positions from `_observed_mask`, `None` if all are observed.
+
+    Returns
+    -------
+    n_examples : int
+    """
+    if mask is None:
+        return y.shape[0]
+
+    return int(mask.reshape(mask.shape[0], -1).any(dim=1).sum())
+
+
 @contextmanager
 def _observed_input_factors(
     model: nn.Module, mask: torch.Tensor, reduce: bool = False

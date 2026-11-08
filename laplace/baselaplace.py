@@ -24,6 +24,7 @@ from laplace.curvature.asdfghjkl import AsdfghjklHessian, AsdfghjklInterface
 from laplace.curvature.curvature import (
     CurvatureInterface,
     _ignored_positions,
+    _n_observed_examples,
     _observed_mask,
 )
 from laplace.curvature.curvlinops import CurvlinopsGGN
@@ -2343,7 +2344,9 @@ class KronLaplace(ParametricLaplace):
     For outputs `(B, ..., K)`, a position is an entry of the dims between the batch
     dim `B` and the output dim `K`, e.g. one of the `L` positions of a sequence
     `(B, L, K)` or a pixel of an image `(B, H, W, K)`. KFAC sums over the positions,
-    so the factors are normalized by the number of observations `n_obs`. Positions
+    so the factors are normalized by the number of observations `n_obs`. KFAC-reduce
+    first averages the inputs over the positions of each example, so its input
+    factors are normalized by the number of examples `n_obs_examples`. Positions
     that a categorical likelihood ignores, e.g. padding, are dropped from both
     Kronecker factors, as in `nn.CrossEntropyLoss`. A layer whose positions don't
     line up with the logits, e.g. a convolution before pooling, keeps all positions
@@ -2371,6 +2374,10 @@ class KronLaplace(ParametricLaplace):
     ):
         self.damping: bool = damping
         self.H_facs: Kron | None = None
+
+        # Examples with at least one observation. KFAC-reduce averages the input
+        # factors over them, as KFAC-expand does over the `n_obs` observations.
+        self.n_obs_examples: int = 0
 
         super().__init__(
             model,
@@ -2403,6 +2410,7 @@ class KronLaplace(ParametricLaplace):
         N: int,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         mask = _observed_mask(self.backend.likelihood, y)
+        self.n_obs_examples += _n_observed_examples(y, mask)
 
         # Nothing is observed, so there is no curvature, and no loss
         if mask is not None and not mask.any():
@@ -2422,6 +2430,14 @@ class KronLaplace(ParametricLaplace):
                 F[1] *= factor
         return kron
 
+    @property
+    def _n_input_rows(self) -> int:
+        """Number of rows the input factors average over: the observations `n_obs`
+        for KFAC-expand, and the examples `n_obs_examples` for KFAC-reduce."""
+        kfac_approx = self._asdl_fisher_kwargs.get("kfac_approx", "expand")
+
+        return self.n_obs_examples if kfac_approx == "reduce" else self.n_obs
+
     def fit(
         self,
         train_loader: DataLoader,
@@ -2435,11 +2451,16 @@ class KronLaplace(ParametricLaplace):
         observations `n_obs` instead, which leaves out the positions that a
         categorical likelihood ignores, e.g. padding. The backends drop those from
         the factors, so they are the same as for data without them.
+
+        KFAC-reduce (`asdl_fisher_kwargs={"kfac_approx": "reduce"}`) averages the
+        input factors over examples instead, so they are normalized by the number
+        of examples with an observation, `n_obs_examples`.
         """
         if override:
             self.H_facs = None
+            self.n_obs_examples = 0
 
-        n_obs_old: int = 0 if self.H_facs is None else self.n_obs
+        n_rows_old: int = 0 if self.H_facs is None else self._n_input_rows
         n_data_new: int = len(train_loader.dataset)
 
         if self.H_facs is not None:
@@ -2447,19 +2468,21 @@ class KronLaplace(ParametricLaplace):
 
         super().fit(train_loader, override=override, progress_bar=progress_bar)
 
-        # The backends sum the input factors over the observations of a batch and
-        # divide by `n_data_new`. Divide by the number of observations instead, which
-        # also holds when the sequence length varies between batches.
-        n_obs_new: int = self.n_obs - n_obs_old
-        if n_obs_new > 0:
-            self.H = self._rescale_factors(self.H, n_data_new / n_obs_new)
+        # The backends sum the input factors over the rows of a batch (observations,
+        # or examples for KFAC-reduce) and divide by `n_data_new`. Divide by the
+        # number of rows instead, which also holds when the sequence length varies
+        # between batches.
+        n_rows_new: int = self._n_input_rows - n_rows_old
+        if n_rows_new > 0:
+            self.H = self._rescale_factors(self.H, n_data_new / n_rows_new)
 
+        n_rows = self._n_input_rows
         if self.H_facs is None:
             self.H_facs = self.H
-        elif self.n_obs > 0:
-            # Weight previous and new Kronecker factors by their number of observations
-            self.H_facs = self._rescale_factors(self.H_facs, n_obs_old / self.n_obs)
-            self.H_facs += self._rescale_factors(self.H, n_obs_new / self.n_obs)
+        elif n_rows > 0:
+            # Weight previous and new Kronecker factors by their number of rows
+            self.H_facs = self._rescale_factors(self.H_facs, n_rows_old / n_rows)
+            self.H_facs += self._rescale_factors(self.H, n_rows_new / n_rows)
 
         # Decompose to self.H for all required quantities but keep H_facs for further inference
         self.H = self.H_facs.decompose(damping=self.damping)
@@ -2534,6 +2557,7 @@ class KronLaplace(ParametricLaplace):
         state_dict = super().state_dict()
         assert isinstance(self.H_facs, Kron)
         state_dict["H"] = self.H_facs.kfacs
+        state_dict["n_obs_examples"] = self.n_obs_examples
         return state_dict
 
     def load_state_dict(self, state_dict: dict[str, Any]):
@@ -2545,6 +2569,7 @@ class KronLaplace(ParametricLaplace):
             state from `KronLaplace.state_dict`.
         """
         super().load_state_dict(state_dict)
+        self.n_obs_examples = state_dict.get("n_obs_examples", self.n_data)
 
         self._init_H()
 
