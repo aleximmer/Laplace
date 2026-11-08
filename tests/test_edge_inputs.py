@@ -89,6 +89,12 @@ def test_batch_size_does_not_change_posterior(method, likelihood, n_out, batch_s
 def test_shuffled_loader_does_not_change_posterior(method, likelihood, n_out):
     _skip_unsupported(method, likelihood)
 
+    if method == "lowrank":
+        # The asdfghjkl power iteration starts from a random vector and stops before
+        # it converges, so the eigenpairs depend on the RNG state, which the
+        # shuffling changes
+        pytest.skip("LowRank depends on the RNG state")
+
     # The curvature sums over the data, and the subsets are drawn by index
     options = {"n_out": n_out, "likelihood": likelihood}
     torch.manual_seed(3)
