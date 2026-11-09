@@ -27,7 +27,6 @@ __all__ = [
     "to_device",
     "split_batch",
     "regression_targets",
-    "classification_targets",
     "training_indices",
     "subset_loader",
     "batch_size",
@@ -280,41 +279,21 @@ def regression_targets(targets: torch.Tensor, outputs: torch.Tensor) -> torch.Te
     return targets
 
 
-def classification_targets(targets: torch.Tensor) -> torch.Tensor:
-    """Convert class targets to a flat integer index tensor.
+def _class_labels(targets: torch.Tensor) -> torch.Tensor:
+    """One class per row: integer indices `[B]` as they are, the argmax of float
+    probabilities `[B, C]`. Anything else raises."""
+    if targets.ndim == 1 and not targets.is_floating_point():
+        return targets.long()
 
-    ELLA and VaLLA use this, and they only take hard labels. Floating-point targets
-    ``[B, C]`` are class probabilities, which an index can't represent, so they raise.
-
-    Parameters
-    ----------
-    targets : torch.Tensor
-        Flat indices ``[B]``, column indices ``[B, 1]``, or integer one-hot targets
-        ``[B, C]``.
-
-    Returns
-    -------
-    torch.Tensor
-        Class indices shaped ``[B]`` with integer dtype.
-
-    Raises
-    ------
-    ValueError
-        If the input cannot be interpreted as one class per row, e.g. if it holds
-        class probabilities.
-    """
     if targets.ndim == 2 and targets.shape[1] > 1 and targets.is_floating_point():
-        raise ValueError(
-            "ELLA and VaLLA do not support class probabilities as targets yet, but "
-            f"the targets are floats of shape {tuple(targets.shape)}. Pass class "
-            "indices, or use a parametric Laplace or `FunctionalLaplace`."
-        )
+        return targets.argmax(-1)
 
-    if targets.ndim == 2:
-        targets = targets[:, 0] if targets.shape[1] == 1 else targets.argmax(-1)
-    if targets.ndim != 1:
-        raise ValueError("Classification targets must have shape [B] or [B, C].")
-    return targets.long()
+    raise ValueError(
+        f"The targets have shape {tuple(targets.shape)} and dtype {targets.dtype}, "
+        "but they must be class indices of shape [B] with integer dtype, or class "
+        "probabilities of shape [B, C] with floating-point dtype. Call `.float()` on "
+        "one-hot targets, or pass class indices without the class dim."
+    )
 
 
 def training_indices(loader: DataLoader) -> torch.Tensor:

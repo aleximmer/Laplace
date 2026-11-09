@@ -168,9 +168,10 @@ Some caveats:
 - `kron` with a GGN or Monte Carlo Fisher backend raises a `ValueError` for the Bernoulli options `weight` and `pos_weight`, since Curvlinops' KFAC ignores them without a warning.
   This is tracked at [f-dangel/curvlinops#311](https://github.com/f-dangel/curvlinops/issues/311).
   `CurvlinopsEF` takes them with `kron`.
-- Function-space methods (`hessian_structure="gp"`) don't support sequence outputs, and `ELLA` and `VaLLA` only accept the default `ignore_index=-100`.
-  They leave out ignored rows, while `FunctionalLaplace` raises a `ValueError` if its sampled subset has any.
-- `ELLA` and `VaLLA` take hard labels only. Class probabilities raise a `ValueError`.
+- Function-space methods (`hessian_structure="gp"`) don't support sequence outputs.
+  `ELLA` and `VaLLA` leave out rows with the likelihood's `ignore_index`, while `FunctionalLaplace` raises a `ValueError` if its sampled subset has any.
+- `ELLA` and `VaLLA` take class indices or float class probabilities, as in `nn.CrossEntropyLoss`.
+  Integer one-hot targets and `(batch, 1)` column indices raise a `ValueError`.
   With the Bernoulli likelihood, they take float targets of the outputs' shape, and soft labels are fine.
 - With the Bernoulli likelihood, `ELLA(balanced=True)` needs one output, and `VaLLA` places all its inducing points on output 0.
 - Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
@@ -214,8 +215,7 @@ For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\m
 In the example above, the result is the expected Poisson rate.
 Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
 FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods and `"heteroscedastic_gaussian"`.
-FunctionalLaplace also accepts a `CategoricalLikelihood` or `BernoulliLikelihood` with options.
-ELLA and VaLLA don't support likelihood options yet and raise a `ValueError` for them.
+All three accept a `CategoricalLikelihood` or `BernoulliLikelihood` with options.
 
 ### Marginal likelihood
 

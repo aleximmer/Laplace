@@ -10,7 +10,6 @@ from laplace.utils.enums import (
 from laplace.utils.feature_extractor import FeatureExtractor
 from laplace.utils.functional_utils import (
     batch_size,
-    classification_targets,
     concatenate_rows,
     draw_gaussian,
     preserve_model_gradients,
@@ -78,7 +77,6 @@ __all__ = [
     "block_diag",
     "normal_samples",
     "batch_size",
-    "classification_targets",
     "concatenate_rows",
     "draw_gaussian",
     "preserve_model_gradients",

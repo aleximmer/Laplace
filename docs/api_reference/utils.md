@@ -12,7 +12,6 @@
             - "block_diag"
             - "normal_samples"
             - "batch_size"
-            - "classification_targets"
             - "concatenate_rows"
             - "draw_gaussian"
             - "preserve_model_gradients"

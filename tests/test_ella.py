@@ -107,25 +107,6 @@ def test_ella_temperature_update_refreshes_posterior(data):
         estimator.temperature = 0.0
 
 
-@pytest.mark.parametrize("target_format", ["column", "onehot"])
-def test_classification_target_shapes_agree(data, target_format):
-    x, _, model = data
-    flat = torch.tensor([0, 1, 1, 0])
-    alternative = (
-        flat[:, None]
-        if target_format == "column"
-        else torch.nn.functional.one_hot(flat, num_classes=2)
-    )
-    histories = []
-    for targets in (flat, alternative):
-        loader = DataLoader(TensorDataset(x, targets), batch_size=2)
-        estimator = make_ella(deepcopy(model))
-        estimator.fit(loader, val_loader=loader)
-        histories.append((estimator.fit_history_["val_nll"],))
-    for first, second in zip(histories[0], histories[1]):
-        torch.testing.assert_close(torch.tensor(first), torch.tensor(second))
-
-
 def test_classification_fit_predict_samples_and_model_preservation(data):
     x, loader, model = data
     before = {key: value.clone() for key, value in model.state_dict().items()}
@@ -973,23 +954,17 @@ def test_ella_checkpoint_likelihood_is_str(data, likelihood):
     assert restored.likelihood == likelihood
 
 
-def test_ella_rejects_likelihood_options_on_construction(data):
+def test_ella_takes_likelihood_options(data):
     _, _, model = data
+    smoothed = CategoricalLikelihood(label_smoothing=0.1)
+    estimator = make_ella(model, smoothed)
 
-    with pytest.raises(ValueError, match="ELLA doesn't support likelihood options"):
-        make_ella(model, CategoricalLikelihood(label_smoothing=0.1))
+    assert estimator.likelihood == smoothed
 
-
-def test_ella_rejects_likelihood_options_on_assignment(data):
-    _, _, model = data
-    estimator = make_ella(model)
     weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]), ignore_index=3)
+    estimator.likelihood = weighted
 
-    with pytest.raises(ValueError, match="ignore_index, weight"):
-        estimator.likelihood = weighted
-
-    # The likelihood stays as it was
-    assert estimator.likelihood == CategoricalLikelihood()
+    assert estimator.likelihood == weighted
 
 
 def test_ella_ignored_rows_gram(data):
@@ -1072,22 +1047,146 @@ def test_ella_tuning_restores_prior_if_validation_raises():
     torch.testing.assert_close(la._glm_predictive_distribution(X)[1], cov)
 
 
-@pytest.mark.parametrize("split", ["train", "val"])
-@pytest.mark.parametrize("soft", [False, True])
-def test_classification_probability_targets_raise(data, split, soft):
+def test_ella_one_hot_probability_targets_match_indices(data):
     x, _, model = data
     flat = torch.tensor([0, 1, 1, 0])
-    probabilities = torch.nn.functional.one_hot(flat, num_classes=2).to(x.dtype)
-    if soft:
-        probabilities = 0.8 * probabilities + 0.1
+    one_hot = torch.nn.functional.one_hot(flat, num_classes=2).to(x.dtype)
 
-    hard_loader = DataLoader(TensorDataset(x, flat), batch_size=2)
-    prob_loader = DataLoader(TensorDataset(x, probabilities), batch_size=2)
-    train_loader = prob_loader if split == "train" else hard_loader
-    val_loader = prob_loader if split == "val" else hard_loader
+    estimators = []
+    for targets in (flat, one_hot):
+        loader = DataLoader(TensorDataset(x, targets), batch_size=2)
+        estimator = make_ella(deepcopy(model))
+        estimator.fit(loader, val_loader=loader)
+        estimators.append((estimator, loader))
 
-    with pytest.raises(ValueError, match="class probabilities"):
+    (indices, index_loader), (probs, prob_loader) = estimators
+
+    torch.testing.assert_close(probs.feature_gram, indices.feature_gram)
+    torch.testing.assert_close(
+        probs.fit_history_["val_nll"], indices.fit_history_["val_nll"]
+    )
+
+    for first, second in zip(
+        probs.predictive_moments(x), indices.predictive_moments(x)
+    ):
+        torch.testing.assert_close(first, second)
+
+    torch.testing.assert_close(
+        probs._validation_nll(prob_loader), indices._validation_nll(index_loader)
+    )
+
+
+@pytest.mark.parametrize("balanced", [False, True])
+def test_ella_soft_targets_fit(data, balanced):
+    x, _, model = data
+    flat = torch.tensor([0, 1, 1, 0])
+    soft = 0.8 * torch.nn.functional.one_hot(flat, num_classes=2).to(x.dtype) + 0.1
+    loader = DataLoader(TensorDataset(x, soft), batch_size=2)
+
+    estimator = make_ella(model)
+    estimator.fit(loader, val_loader=loader, balanced=balanced)
+
+    mean, covariance = estimator.predictive_moments(x)
+
+    assert torch.isfinite(mean).all()
+    assert torch.isfinite(covariance).all()
+    assert torch.isfinite(estimator.feature_gram).all()
+    assert all(torch.isfinite(torch.tensor(estimator.fit_history_["val_nll"])))
+
+
+@pytest.mark.parametrize("balanced", [False, True])
+def test_ella_custom_ignore_index(balanced):
+    torch.manual_seed(5)
+    X, y = torch.randn(12, 3), torch.randint(2, (12,))
+    y[::3] = -1
+    observed = y != -1
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    la = make_ella(
+        model, CategoricalLikelihood(ignore_index=-1), subsample_size=6, n_eigenvalues=3
+    )
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=4), balanced=balanced)
+
+    # Balanced sampling doesn't take the ignored target for a class
+    if balanced:
+        basis = la._indices(DataLoader(TensorDataset(X, y), batch_size=4), True)
+
+        assert observed[basis].all()
+
+    # Ignored rows have no curvature
+    features, f = la._features(X)
+    p = torch.softmax(f, -1)
+    hessian = torch.diag_embed(p) - p[..., None] * p[..., None, :]
+    expected = torch.einsum(
+        "b,bck,bcd,bdl->kl", observed.to(f.dtype), features, hessian, features
+    )
+
+    torch.testing.assert_close(la.feature_gram, expected.detach())
+
+    padded = la._validation_nll(DataLoader(TensorDataset(X, y), batch_size=4))
+    dropped = la._validation_nll(
+        DataLoader(TensorDataset(X[observed], y[observed]), batch_size=4)
+    )
+
+    torch.testing.assert_close(padded, dropped)
+
+
+@pytest.mark.parametrize("targets", ["indices", "probabilities"])
+def test_ella_class_weights_scale_curvature(data, targets):
+    x, _, model = data
+    flat = torch.tensor([0, 1, 1, 0])
+    y = flat
+    if targets == "probabilities":
+        y = torch.tensor([[0.9, 0.1], [0.3, 0.7], [0.2, 0.8], [0.5, 0.5]])
+
+    weight = torch.tensor([1.0, 3.0])
+    likelihood = CategoricalLikelihood(weight=weight, label_smoothing=0.1)
+    la = make_ella(model, likelihood, subsample_size=4, n_eigenvalues=2)
+    la.fit(DataLoader(TensorDataset(x, y), batch_size=2))
+
+    # The GGN of the weighted cross-entropy scales each row by its weight under the
+    # smoothed targets
+    q = torch.nn.functional.one_hot(flat, 2).to(x.dtype) if y.ndim == 1 else y
+    q = 0.9 * q + 0.1 / 2
+    features, f = la._features(x)
+    p = torch.softmax(f, -1)
+    hessian = torch.diag_embed(p) - p[..., None] * p[..., None, :]
+    expected = torch.einsum(
+        "b,bck,bcd,bdl->kl", q @ weight, features, hessian, features
+    )
+
+    torch.testing.assert_close(la.feature_gram, expected.detach())
+
+
+@pytest.mark.parametrize("split", ["train", "val"])
+@pytest.mark.parametrize("target_format", ["integer-one-hot", "column"])
+def test_ella_classification_targets_like_torch(data, split, target_format):
+    x, _, model = data
+    flat = torch.tensor([0, 1, 1, 0])
+    bad = (
+        flat[:, None]
+        if target_format == "column"
+        else torch.nn.functional.one_hot(flat, num_classes=2)
+    )
+
+    good_loader = DataLoader(TensorDataset(x, flat), batch_size=2)
+    bad_loader = DataLoader(TensorDataset(x, bad), batch_size=2)
+    train_loader = bad_loader if split == "train" else good_loader
+    val_loader = bad_loader if split == "val" else good_loader
+
+    with pytest.raises(ValueError, match="targets"):
         make_ella(deepcopy(model)).fit(train_loader, val_loader=val_loader)
+
+
+def test_ella_balanced_rejects_integer_one_hot_targets(data):
+    x, _, model = data
+    one_hot = torch.nn.functional.one_hot(torch.tensor([0, 1, 1, 0]), num_classes=2)
+    loader = DataLoader(TensorDataset(x, one_hot), batch_size=2)
+
+    with pytest.raises(ValueError, match="class indices"):
+        make_ella(model)._indices(loader, balanced=True)
 
 
 @pytest.fixture
