@@ -97,12 +97,23 @@ class RunningGaussianNLLMetric(Metric):
     heteroscedastic likelihood, whose variance is the aleatoric plus the epistemic
     one. The NLL of a position is the sum over its outputs, and a position is an
     entry of the leading dims of the targets, as in `RunningBernoulliNLLMetric`.
+
+    For a Gaussian likelihood with a fixed noise, pass its variance as
+    `noise_variance`, which is added to the predictive variance.
+
+    Parameters
+    ----------
+    noise_variance: float or torch.Tensor, default = 0.0
+        observation noise variance, a scalar or one per output
     """
 
-    def __init__(self) -> None:
+    def __init__(self, noise_variance: float | torch.Tensor = 0.0) -> None:
         super().__init__()
         self.add_state("nll_sum", default=torch.tensor(0.0), dist_reduce_fx="sum")
         self.add_state("n_positions", default=torch.tensor(0.0), dist_reduce_fx="sum")
+
+        # A buffer, so `.to(device)` moves it along with the states
+        self.register_buffer("noise_variance", torch.as_tensor(noise_variance))
 
     def update(
         self, mean: torch.Tensor, var: torch.Tensor, targets: torch.Tensor
@@ -114,11 +125,17 @@ class RunningGaussianNLLMetric(Metric):
             predictive mean, shape (..., n_outputs)
 
         var: torch.Tensor
-            predictive variance with the shape of `mean`
+            predictive variance with the shape of `mean`, or the covariance of the
+            outputs, shape (..., n_outputs, n_outputs), of which only the diagonal
+            counts
 
         targets: torch.Tensor
             targets with the shape of `mean`
         """
+        if var.ndim == mean.ndim + 1:
+            var = var.diagonal(dim1=-2, dim2=-1)
+
+        var = var + self.noise_variance.to(var.dtype)
         self.nll_sum += F.gaussian_nll_loss(
             mean, targets.to(mean.dtype), var, full=True, reduction="sum"
         )

@@ -40,7 +40,13 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from laplace.utils import KronDecomposed, RunningBernoulliNLLMetric
+from laplace.utils import (
+    KronDecomposed,
+    RunningBernoulliNLLMetric,
+    RunningGaussianNLLMetric,
+    RunningNLLMetric,
+    validate,
+)
 from laplace.utils.enums import Likelihood
 from tests.utils import (
     AsdlEF,
@@ -1242,6 +1248,26 @@ def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
     assert f_mu.shape == f_var.shape
     assert f_var.shape == torch.Size([f_mu.shape[0], f_mu.shape[1]])
     assert len(f_mu) == len(reward_test_X)
+
+
+@pytest.mark.parametrize("independent_outputs", [False, True])
+def test_functional_reward_modeling_marglik(
+    independent_outputs, reward_model, reward_loader
+):
+    # While fitting, a reward model is a categorical model over each pair. So the GP
+    # evidence equals that of classification with the pair logits as outputs.
+    kwargs = {"n_subset": 10, "independent_outputs": independent_outputs}
+    reward = FunctionalLaplace(deepcopy(reward_model), "reward_modeling", **kwargs)
+    reward.fit(reward_loader)
+
+    classification = FunctionalLaplace(
+        deepcopy(reward_model), "classification", **kwargs
+    )
+    classification.fit(reward_loader)
+
+    torch.testing.assert_close(
+        reward.log_marginal_likelihood(), classification.log_marginal_likelihood()
+    )
 
 
 @pytest.mark.parametrize("laplace", [KronLaplace, DiagLaplace])
@@ -3398,6 +3424,111 @@ def test_gridsearch_default_metric_uses_ignore_index(model, class_loader):
         grid_size=3,
     )
     assert torch.isfinite(la.prior_precision).all()
+
+
+@pytest.mark.parametrize("likelihood", ["classification", "bernoulli"])
+def test_validate_resets_metric(model, class_loader, likelihood):
+    X, y = class_loader.dataset.tensors
+    make_metric = RunningNLLMetric
+
+    if likelihood == "bernoulli":
+        y = nn.functional.one_hot(y, 2).float()
+        make_metric = RunningBernoulliNLLMetric
+
+    loader = DataLoader(TensorDataset(X, y), batch_size=3)
+    la = DiagLaplace(model, likelihood)
+    la.fit(loader)
+    metric = make_metric()
+
+    la.prior_precision = 1e-2
+    validate(la, loader, metric)
+    la.prior_precision = 1.0
+    reused = validate(la, loader, metric)
+    fresh = validate(la, loader, make_metric())
+
+    # A reused metric must not average in the batches of the earlier call
+    assert reused == pytest.approx(fresh)
+
+
+class _LogVarianceDistance(torchmetrics.Metric):
+    """Squared distance of the log mean predictive variance from a target."""
+
+    def __init__(self, target: float) -> None:
+        super().__init__()
+        self.target = target
+        self.add_state("total", default=torch.tensor(0.0), dist_reduce_fx="sum")
+        self.add_state("count", default=torch.tensor(0), dist_reduce_fx="sum")
+
+    def update(self, mean: torch.Tensor, var: torch.Tensor, y: torch.Tensor) -> None:
+        self.total += var.diagonal(dim1=-2, dim2=-1).sum()
+        self.count += var.shape[0] * var.shape[-1]
+
+    def compute(self) -> torch.Tensor:
+        return (torch.log(self.total / self.count) - math.log(self.target)) ** 2
+
+
+def test_gridsearch_scores_each_prior_on_its_own(model, reg_loader):
+    la = DiagLaplace(model, "regression")
+    la.fit(reg_loader)
+
+    # The metric is smallest at the prior precision 1, in the middle of the grid
+    la.prior_precision = 1.0
+    _, var = la(reg_loader.dataset.tensors[0])
+    target = var.diagonal(dim1=-2, dim2=-1).mean().item()
+
+    la.optimize_prior_precision(
+        method="gridsearch",
+        val_loader=reg_loader,
+        loss=_LogVarianceDistance(target),
+        log_prior_prec_min=-4,
+        log_prior_prec_max=4,
+        grid_size=9,
+    )
+
+    torch.testing.assert_close(la.prior_precision, torch.ones(1))
+
+
+def test_gridsearch_regression_default_is_predictive_nll(model, reg_loader):
+    X, y = reg_loader.dataset.tensors
+    la = DiagLaplace(model, "regression", sigma_noise=0.5)
+    la.fit(reg_loader)
+
+    grid = torch.logspace(-4, 4, 9)
+    scores = []
+    for prior_prec in grid:
+        la.prior_precision = prior_prec
+        mean, cov = la(X)
+        var = cov.diagonal(dim1=-2, dim2=-1) + 0.25
+        nll = nn.functional.gaussian_nll_loss(mean, y, var, full=True, reduction="sum")
+        scores.append(nll.item() / len(X))
+
+    # The MSE of the mean is the same for every prior precision, so the default must
+    # score the predictive variance with the observation noise
+    la.optimize_prior_precision(
+        method="gridsearch",
+        val_loader=reg_loader,
+        log_prior_prec_min=-4,
+        log_prior_prec_max=4,
+        grid_size=9,
+    )
+
+    best = grid[int(np.argmin(scores))]
+    assert 0 < int(np.argmin(scores)) < len(grid) - 1
+    torch.testing.assert_close(la.prior_precision.reshape(()), best)
+
+
+def test_gaussian_nll_metric_noise_and_covariance():
+    mean, y = torch.randn(4, 3, 2), torch.randn(4, 3, 2)
+    var = torch.rand(4, 3, 2) + 0.1
+    noise = torch.tensor([0.5, 2.0])
+
+    metric = RunningGaussianNLLMetric(noise_variance=noise)
+    metric.update(mean, torch.diag_embed(var), y)
+
+    expected = nn.functional.gaussian_nll_loss(
+        mean, y, var + noise, full=True, reduction="sum"
+    )
+    torch.testing.assert_close(metric.compute(), expected / 12)
 
 
 @requires_old_asdfghjkl

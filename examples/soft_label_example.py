@@ -100,7 +100,7 @@ model = train(get_model(), noisy_loader)
 
 la = Laplace(
     model,
-    nn.CrossEntropyLoss(),
+    nn.CrossEntropyLoss(),  # or CategoricalLikelihood()
     subset_of_weights="last_layer",
     hessian_structure="full",
 )
@@ -126,6 +126,7 @@ smoothed_model = train(get_model(), index_loader, label_smoothing=0.1)
 
 la = Laplace(
     smoothed_model,
+    # or CategoricalLikelihood(label_smoothing=0.1)
     nn.CrossEntropyLoss(label_smoothing=0.1),
     subset_of_weights="last_layer",
     hessian_structure="kron",
@@ -169,7 +170,7 @@ val_loader = DataLoader(TensorDataset(X_val, teacher_targets(X_val)), batch_size
 
 la = Laplace(
     student,
-    nn.CrossEntropyLoss(),
+    nn.CrossEntropyLoss(),  # or CategoricalLikelihood()
     subset_of_weights="all",
     hessian_structure="kron",
 )
@@ -204,7 +205,7 @@ seq_loader = DataLoader(TensorDataset(X_seq, y_seq), batch_size=20)
 
 la = Laplace(
     model,
-    nn.CrossEntropyLoss(),
+    nn.CrossEntropyLoss(),  # or CategoricalLikelihood()
     subset_of_weights="all",
     hessian_structure="kron",
 )
@@ -234,16 +235,22 @@ y_one_hot = nn.functional.one_hot(y_train, N_CLASSES)
 one_hot_data = TensorDataset(X_train, y_one_hot)
 
 try:
-    Laplace(model, nn.CrossEntropyLoss(), hessian_structure="diag").fit(
-        DataLoader(one_hot_data, batch_size=100)
+    la = Laplace(
+        model,
+        nn.CrossEntropyLoss(),  # or CategoricalLikelihood()
+        hessian_structure="diag",
     )
+    la.fit(DataLoader(one_hot_data, batch_size=100))
 except ValueError as error:
     print(error)
 
 one_hot_data = TensorDataset(X_train, y_one_hot.float())
-Laplace(model, nn.CrossEntropyLoss(), hessian_structure="diag").fit(
-    DataLoader(one_hot_data, batch_size=100)
+la = Laplace(
+    model,
+    nn.CrossEntropyLoss(),  # or CategoricalLikelihood()
+    hessian_structure="diag",
 )
+la.fit(DataLoader(one_hot_data, batch_size=100))
 
 # %% [markdown]
 # ```

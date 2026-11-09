@@ -91,7 +91,12 @@ for epoch in range(500):
 # `full`, and `kron` structures work with the default backend.
 
 # %%
-la = Laplace(model, criterion, subset_of_weights="all", hessian_structure="kron")
+la = Laplace(
+    model,
+    criterion,  # or HeteroscedasticGaussianLikelihood()
+    subset_of_weights="all",
+    hessian_structure="kron",
+)
 la.fit(train_loader)
 la.optimize_prior_precision(method="marglik")
 
