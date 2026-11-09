@@ -7,7 +7,7 @@ from copy import deepcopy
 from importlib.util import find_spec
 from math import frexp, isfinite, log, pi, sqrt
 from numbers import Integral
-from typing import Any, Callable, ClassVar
+from typing import Any, Callable
 
 import numpy as np
 import torch
@@ -45,9 +45,9 @@ from laplace.utils.enums import (
 )
 from laplace.utils.functional_utils import (
     _check_model_fingerprint,
+    _class_labels,
     _individual_reward_inputs,
     _model_fingerprint,
-    classification_targets,
     concatenate_rows,
     draw_gaussian,
     preserve_model_gradients,
@@ -3084,10 +3084,6 @@ class BaseFunctionalLaplace(BaseLaplace):
     for ``FunctionalLaplace``, ``ELLA``, and ``VaLLA``.
     """
 
-    _supports_likelihood_options: ClassVar[bool] = False
-    """Whether the method takes likelihoods with options, i.e. a non-empty
-    `Likelihood.hyperparameters`."""
-
     @property
     def likelihood(self) -> Likelihood:
         """The likelihood object."""
@@ -3100,14 +3096,14 @@ class BaseFunctionalLaplace(BaseLaplace):
 
         The function-space methods pick their formulas, e.g. for the marginal
         likelihood and the predictive, by the likelihood's name. A subclass of a
-        built-in likelihood that keeps its name is fine. FunctionalLaplace also
-        takes the options of `CategoricalLikelihood` and `BernoulliLikelihood`,
-        while ELLA and VaLLA only take the `sigma_noise` of `GaussianLikelihood`.
+        built-in likelihood that keeps its name is fine. All three take the
+        options of `GaussianLikelihood`, `CategoricalLikelihood`, and
+        `BernoulliLikelihood`.
 
         Raises
         ------
         ValueError
-            if the method doesn't support the likelihood or its options.
+            if the method doesn't support the likelihood.
         """
         likelihood = get_likelihood(likelihood)
 
@@ -3116,16 +3112,6 @@ class BaseFunctionalLaplace(BaseLaplace):
                 "FunctionalLaplace, ELLA, and VaLLA support only the likelihoods "
                 f"named {sorted(_FUNCTIONAL_NAMES)}, not {likelihood.name!r}. Use a "
                 "parametric Laplace with the `diag` or `full` structure instead."
-            )
-
-        # The noise std per output of the Gaussian likelihood is always supported
-        options = set(likelihood.hyperparameters()) - {"sigma_noise"}
-
-        if options and not self._supports_likelihood_options:
-            raise ValueError(
-                f"{type(self).__name__} doesn't support likelihood options yet, but "
-                f"{likelihood!r} sets {', '.join(sorted(options))}. Use "
-                "FunctionalLaplace or a parametric Laplace instead."
             )
 
         BaseLaplace.likelihood.fset(self, likelihood)
@@ -3284,8 +3270,12 @@ class BaseFunctionalLaplace(BaseLaplace):
         x : torch.Tensor or MutableMapping
             Validation inputs.
         targets : torch.Tensor
-            Class targets for those inputs, or for the Bernoulli likelihood, float
-            targets of the outputs' shape.
+            Class targets for those inputs, either class indices `[B]` or class
+            probabilities `[B, C]` as in `nn.CrossEntropyLoss`. For the Bernoulli
+            likelihood, float targets of the outputs' shape. Rows with the
+            likelihood's `ignore_index` are left out. This is a predictive metric, so
+            it does not use the likelihood's class weights or label smoothing, like
+            the parametric Laplace validation metric.
 
         Returns
         -------
@@ -3303,8 +3293,20 @@ class BaseFunctionalLaplace(BaseLaplace):
                 mean / scale, targets.to(mean.dtype), reduction="sum"
             )
 
+        fit_likelihood = self.likelihood.fit_likelihood
+        fit_likelihood.check_targets(mean, targets)
+
+        # Class probabilities have the shape of the logits, indices do not
+        if targets.ndim == mean.ndim:
+            targets = targets.to(mean.dtype)
+        else:
+            targets = targets.long()
+
         return torch.nn.functional.cross_entropy(
-            mean / scale, classification_targets(targets), reduction="sum"
+            mean / scale,
+            targets,
+            ignore_index=fit_likelihood.ignore_index,
+            reduction="sum",
         )
 
     def __call__(
@@ -3644,9 +3646,6 @@ class FunctionalLaplace(BaseFunctionalLaplace):
 
     # key to map to correct subclass of BaseLaplace, (subset of weights, Hessian structure)
     _key = ("all", "gp")
-
-    # The formulas take the options of `CategoricalLikelihood`
-    _supports_likelihood_options = True
 
     def __init__(
         self,
@@ -4757,10 +4756,12 @@ class ELLA(BaseFunctionalLaplace):
     curvature. A numerically rank-deficient subset cannot supply the requested
     number of features.
 
-    For classification, the targets must be hard labels. Class probabilities, which
-    are floats of shape ``[B, C]``, raise a ``ValueError``. For the Bernoulli
-    likelihood, the targets are floats of the outputs' shape ``[B, K]``, as in
-    ``nn.BCEWithLogitsLoss``, and may be soft labels.
+    For classification, the targets are class indices ``[B]`` or class probabilities
+    ``[B, C]``, as in ``nn.CrossEntropyLoss``. Probabilities must be floats, so
+    integer one-hot targets and column indices ``[B, 1]`` raise a ``ValueError``. The
+    curvature uses the likelihood's ``weight``, ``label_smoothing``, and
+    ``ignore_index``. For the Bernoulli likelihood, the targets are floats of the
+    outputs' shape ``[B, K]``, as in ``nn.BCEWithLogitsLoss``, and may be soft labels.
 
     Parameters
     ----------
@@ -5001,9 +5002,15 @@ class ELLA(BaseFunctionalLaplace):
 
                 labels.append(int(target.round()))
             else:
-                labels.append(int(target.argmax() if target.numel() > 1 else target))
+                # Same target rules as the loss: indices `[]` or probabilities `[C]`
+                labels.append(int(_class_labels(target.unsqueeze(0))[0]))
         labels = torch.tensor(labels)
         classes = labels.unique(sorted=True)
+
+        # An ignored target is not a class, so its rows are not sampled
+        if not is_bernoulli:
+            classes = classes[classes != self.likelihood.fit_likelihood.ignore_index]
+
         queues = []
         for cls in classes:
             candidates = torch.where(labels == cls)[0]
@@ -5286,11 +5293,9 @@ class ELLA(BaseFunctionalLaplace):
                     "bck,bcl->kl", features, features
                 ).detach()
             else:
-                # With the targets, ignored rows have no Hessian. Bernoulli targets
-                # are floats of the outputs' shape, which its likelihood checks.
-                if self.likelihood.name != Likelihood.BERNOULLI.name:
-                    y = classification_targets(y)
-
+                # With the targets, ignored rows have no Hessian. The likelihood
+                # checks the targets: class indices or probabilities for the
+                # categorical one, floats of the outputs' shape for Bernoulli.
                 hessian = self.likelihood.fit_likelihood.output_hessian(output, y)
                 self.feature_gram += torch.einsum(
                     "bck,bcd,bdl->kl", features, hessian, features
@@ -5425,8 +5430,8 @@ class ELLA(BaseFunctionalLaplace):
         Parameters
         ----------
         loader : DataLoader
-            Nonempty validation loader with regression targets, class labels, or
-            Bernoulli targets.
+            Nonempty validation loader with regression targets, class indices or
+            class probabilities, or Bernoulli targets.
 
         Returns
         -------
@@ -5758,10 +5763,13 @@ class VaLLA(BaseFunctionalLaplace):
     The network weights remain fixed while ``fit`` optimizes the variational
     factor, inducing locations, prior precision, and regression noise.
 
-    For classification, the targets must be hard labels. Class probabilities, which
-    are floats of shape ``[B, C]``, raise a ``ValueError``. For the Bernoulli
-    likelihood, the targets are floats of the outputs' shape ``[B, K]``, as in
-    ``nn.BCEWithLogitsLoss``, and may be soft labels.
+    For classification, the targets are class indices ``[B]`` or class probabilities
+    ``[B, C]``, as in ``nn.CrossEntropyLoss``. Probabilities must be floats, so
+    integer one-hot targets and column indices ``[B, 1]`` raise a ``ValueError``. The
+    objective uses the likelihood's ``weight``, ``label_smoothing``, and
+    ``ignore_index``. Inducing outputs are chosen from the most likely class of each
+    row. For the Bernoulli likelihood, the targets are floats of the outputs' shape
+    ``[B, K]``, as in ``nn.BCEWithLogitsLoss``, and may be soft labels.
 
     Parameters
     ----------
@@ -6156,7 +6164,7 @@ class VaLLA(BaseFunctionalLaplace):
                     dtype=torch.long,
                 )
             elif self.likelihood.name == Likelihood.CLASSIFICATION.name:
-                labels = classification_targets(y)
+                labels = _class_labels(y)
             else:
                 labels = torch.zeros(y.shape[0], device=self._device, dtype=torch.long)
             candidates.append(x)
@@ -6498,7 +6506,9 @@ class VaLLA(BaseFunctionalLaplace):
         x : Any
             Batched model inputs.
         y : torch.Tensor
-            Regression targets, class labels, or Bernoulli targets.
+            Regression targets, class indices ``[B]`` or class probabilities
+            ``[B, C]``, or Bernoulli targets. Classification uses the likelihood's
+            weight, label smoothing, and ignore_index, as ``nn.CrossEntropyLoss``.
 
         Returns
         -------
@@ -6522,40 +6532,35 @@ class VaLLA(BaseFunctionalLaplace):
             log_term = -0.5 * (energy + torch.log(2 * torch.pi * noise_variance)).sum()
         else:
             bernoulli = self.likelihood.name == Likelihood.BERNOULLI.name
-            if bernoulli:
-                self.likelihood.check_targets(mean, y)
-                y = y.to(mean.dtype)
-            else:
-                y = classification_targets(y)
-                ignore_index = self.likelihood.fit_likelihood.ignore_index
-                observed = y != ignore_index
+            fit_likelihood = self.likelihood.fit_likelihood
+            fit_likelihood.check_targets(mean, y)
+
+            # Bernoulli targets and class probabilities have the shape of the
+            # outputs, class indices do not
+            y = y.to(mean.dtype) if y.ndim == mean.ndim else y.long()
 
             if self.mc_softmax_samples:
                 draws = draw_gaussian(
                     mean, covariance, self.mc_softmax_samples, self.generator
                 )
 
-                # The log likelihood of each row under each draw, `[samples, batch]`
+                # The log likelihood of each row under each draw, `[samples, batch]`.
+                # The torch losses apply the likelihood's options.
                 if bernoulli:
                     # A row's independent outputs add up
-                    selected = -torch.nn.functional.binary_cross_entropy_with_logits(
-                        draws, y.expand_as(draws), reduction="none"
-                    ).sum(dim=-1)
+                    criterion = fit_likelihood.loss_fn("none").to(draws)
+                    selected = -criterion(draws, y.expand_as(draws)).sum(dim=-1)
                 else:
-                    # An ignored target may not be a class, so look up class 0
-                    # instead and zero the terms of the ignored rows
-                    safe = torch.where(observed, y, torch.zeros_like(y))
-                    selected = (
-                        draws.log_softmax(dim=-1)
-                        .gather(
-                            -1,
-                            safe.long()
-                            .view(1, -1, 1)
-                            .expand(self.mc_softmax_samples, -1, 1),
-                        )
-                        .squeeze(-1)
+                    # Ignored rows give zero
+                    n_samples, n_rows = draws.shape[:2]
+                    y_expanded = y.unsqueeze(0).expand(n_samples, *y.shape)
+                    criterion = fit_likelihood._criterion(
+                        "none", fit_likelihood._weight_like(draws)
                     )
-                    selected = selected * observed
+                    selected = -criterion(
+                        draws.reshape(n_samples * n_rows, -1),
+                        y_expanded.reshape(n_samples * n_rows, *y.shape[1:]),
+                    ).view(n_samples, n_rows)
 
                 if self.alpha == 0:
                     log_term = selected.mean(dim=0).sum()
@@ -6568,14 +6573,7 @@ class VaLLA(BaseFunctionalLaplace):
                 scaled = mean / torch.sqrt(
                     1 + torch.pi / 8 * covariance.diagonal(dim1=-2, dim2=-1)
                 )
-                if bernoulli:
-                    log_term = -torch.nn.functional.binary_cross_entropy_with_logits(
-                        scaled, y, reduction="sum"
-                    )
-                else:
-                    log_term = -torch.nn.functional.cross_entropy(
-                        scaled, y.long(), ignore_index=ignore_index, reduction="sum"
-                    )
+                log_term = -fit_likelihood.loss(scaled, y)
 
         solved = torch.linalg.solve_triangular(triangular.T, features, upper=False)
         kl = triangular.diagonal().abs().log().sum() - 0.5 * solved.square().sum()
@@ -6587,8 +6585,8 @@ class VaLLA(BaseFunctionalLaplace):
         Parameters
         ----------
         loader : DataLoader
-            Nonempty validation loader with regression targets, class labels, or
-            Bernoulli targets.
+            Nonempty validation loader with regression targets, class indices or
+            class probabilities, or Bernoulli targets.
 
         Returns
         -------

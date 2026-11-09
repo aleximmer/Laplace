@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from laplace.baselaplace import FunctionalLaplace
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.lllaplace import FunctionalLLLaplace
+from laplace.utils.functional_utils import _class_labels
 from tests.utils import AsdlGGN, BackPackGGN
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
@@ -546,3 +547,55 @@ def test_refit_with_failing_loader_invalidates_posterior(model):
 
     with pytest.raises(RuntimeError, match="fit"):
         la.log_marginal_likelihood()
+
+
+def test_class_labels_index_targets():
+    labels = _class_labels(torch.tensor([2, 0, 1], dtype=torch.int32))
+
+    assert labels.dtype == torch.long
+    assert labels.tolist() == [2, 0, 1]
+
+
+def test_class_labels_probability_targets():
+    probs = torch.tensor([[0.1, 0.8, 0.1], [0.5, 0.2, 0.3]])
+
+    assert _class_labels(probs).tolist() == [1, 0]
+
+
+@pytest.mark.parametrize(
+    "targets",
+    [
+        torch.eye(3, dtype=torch.long),
+        torch.tensor([[1], [0]]),
+        torch.tensor([0.0, 1.0]),
+        torch.zeros(2, 3, 4),
+    ],
+    ids=["integer-one-hot", "column", "float-flat", "ndim-3"],
+)
+def test_class_labels_rejects_other_targets(targets):
+    with pytest.raises(ValueError, match="class indices"):
+        _class_labels(targets)
+
+
+def test_functional_laplace_tunes_with_probability_val_loader():
+    X, y = torch.randn(10, 3), torch.randint(2, (10,))
+    one_hot = torch.nn.functional.one_hot(y, num_classes=2).to(X.dtype)
+    model = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 2))
+
+    priors = []
+    for val_targets in (y, one_hot):
+        la = FunctionalLaplace(
+            model,
+            "classification",
+            n_subset=6,
+        )
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
+        la.optimize_prior_precision(
+            method="gridsearch",
+            link_approx="probit",
+            val_loader=DataLoader(TensorDataset(X, val_targets), batch_size=4),
+            grid_size=5,
+        )
+        priors.append(la.prior_precision.clone())
+
+    torch.testing.assert_close(priors[0], priors[1])

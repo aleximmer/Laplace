@@ -152,17 +152,12 @@ def test_function_space_methods_accept_bernoulli(data, likelihood, subset_of_wei
         assert ella.likelihood.name == valla.likelihood.name == "bernoulli"
 
 
-def test_bernoulli_options_only_for_functional_laplace(data):
+def test_bernoulli_options_for_function_space_methods(data):
     x, loader, model = data
     options = BernoulliLikelihood(pos_weight=torch.tensor([2.0, 1.0]))
-    match = "doesn't support likelihood options"
 
-    # FunctionalLaplace takes the options, ELLA and VaLLA don't
     FunctionalLaplace(model, options, n_subset=2)
     Laplace(model, options, "last_layer", "gp", n_subset=2)
 
-    with pytest.raises(ValueError, match=match):
-        make_ella(model, options)
-
-    with pytest.raises(ValueError, match=match):
-        make_valla(model, options, inducing_locations=x[:2])
+    assert make_ella(model, options).likelihood == options
+    assert make_valla(model, options, inducing_locations=x[:2]).likelihood == options

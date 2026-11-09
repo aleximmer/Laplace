@@ -15,6 +15,7 @@ from torch.utils.data import (
 from laplace import Laplace
 from laplace.curvature import CurvlinopsGGN
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
@@ -147,27 +148,6 @@ def test_valla_checkpoint_preserves_refit_initialization(data):
     torch.testing.assert_close(
         restored.inducing_locations.detach(), x[:2], atol=1e-06, rtol=0
     )
-
-
-@pytest.mark.parametrize("target_format", ["column", "onehot"])
-def test_classification_target_shapes_agree(data, target_format):
-    x, _, model = data
-    flat = torch.tensor([0, 1, 1, 0])
-    alternative = (
-        flat[:, None]
-        if target_format == "column"
-        else torch.nn.functional.one_hot(flat, num_classes=2)
-    )
-    histories = []
-    for targets in (flat, alternative):
-        loader = DataLoader(TensorDataset(x, targets), batch_size=2)
-        estimator = make_valla(deepcopy(model), inducing_locations=x[:2].clone())
-        estimator.fit(loader, iterations=1, val_loader=loader)
-        histories.append(
-            (estimator.fit_history_["objective"], estimator.fit_history_["val_nll"])
-        )
-    for first, second in zip(histories[0], histories[1]):
-        torch.testing.assert_close(torch.tensor(first), torch.tensor(second))
 
 
 def test_valla_functional_covariance_requires_fit_and_raw_jacobians(data):
@@ -1076,24 +1056,17 @@ def test_valla_checkpoint_likelihood_is_str(data):
     assert restored.likelihood == "classification"
 
 
-def test_valla_rejects_likelihood_options_on_construction(data):
+def test_valla_takes_likelihood_options(data):
     x, _, model = data
     smoothed = CategoricalLikelihood(label_smoothing=0.1)
+    estimator = make_valla(model, smoothed, inducing_locations=x[:2].clone())
 
-    with pytest.raises(ValueError, match="VaLLA doesn't support likelihood options"):
-        make_valla(model, smoothed, inducing_locations=x[:2].clone())
+    assert estimator.likelihood == smoothed
 
-
-def test_valla_rejects_likelihood_options_on_assignment(data):
-    x, _, model = data
-    estimator = make_valla(model, inducing_locations=x[:2].clone())
     weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]), ignore_index=3)
+    estimator.likelihood = weighted
 
-    with pytest.raises(ValueError, match="ignore_index, weight"):
-        estimator.likelihood = weighted
-
-    # The likelihood stays as it was
-    assert estimator.likelihood == CategoricalLikelihood()
+    assert estimator.likelihood == weighted
 
 
 @pytest.mark.parametrize("mc_softmax_samples", [0, 4], ids=["probit", "mc"])
@@ -1201,22 +1174,150 @@ def test_valla_validation_nll_needs_observed_targets():
         la._validation_nll(ignored)
 
 
-@pytest.mark.parametrize("split", ["train", "val"])
+def _fitted_objective(estimator, x, y, seed=3):
+    """Objective with the same Monte Carlo draws for every call."""
+    estimator.generator = torch.Generator().manual_seed(seed)
+
+    return estimator._objective(x, y)
+
+
+@pytest.mark.parametrize(
+    ("mc_softmax_samples", "alpha"),
+    [(0, 1.0), (4, 0.0), (4, 0.5)],
+    ids=["probit", "mc", "mc-alpha"],
+)
+def test_valla_one_hot_probability_targets_match_indices(
+    data, mc_softmax_samples, alpha
+):
+    x, loader, model = data
+    estimator = make_valla(
+        model,
+        inducing_locations=x[:2].clone(),
+        mc_softmax_samples=mc_softmax_samples,
+        alpha=alpha,
+    )
+    estimator.fit(loader, iterations=1)
+
+    y = torch.tensor([0, 1, 1, 0])
+    one_hot = torch.nn.functional.one_hot(y, num_classes=2).to(x.dtype)
+
+    torch.testing.assert_close(
+        _fitted_objective(estimator, x, one_hot),
+        _fitted_objective(estimator, x, y),
+        rtol=1e-5,
+        atol=1e-6,
+    )
+
+
+@pytest.mark.parametrize(
+    ("mc_softmax_samples", "alpha"), [(0, 1.0), (4, 0.0)], ids=["probit", "mc"]
+)
+def test_valla_objective_uses_likelihood_options(data, mc_softmax_samples, alpha):
+    x, loader, model = data
+    weight = torch.tensor([1.0, 3.0])
+    likelihood = CategoricalLikelihood(
+        weight=weight, label_smoothing=0.1, ignore_index=-1
+    )
+    estimator = make_valla(
+        model,
+        likelihood,
+        inducing_locations=x[:2].clone(),
+        mc_softmax_samples=mc_softmax_samples,
+        alpha=alpha,
+    )
+    estimator.fit(loader, iterations=1)
+
+    # Reference: the data term of the objective from torch, then the shared KL term
+    mean, covariance, features, triangular = estimator._latent_distribution(x)
+    solved = torch.linalg.solve_triangular(triangular.T, features, upper=False)
+    kl = triangular.diagonal().abs().log().sum() - 0.5 * solved.square().sum()
+
+    if mc_softmax_samples:
+        generator = torch.Generator().manual_seed(3)
+        logits = draw_gaussian(mean, covariance, mc_softmax_samples, generator)
+    else:
+        scale = torch.sqrt(1 + torch.pi / 8 * covariance.diagonal(dim1=-2, dim2=-1))
+        logits = (mean / scale)[None]
+
+    criterion = torch.nn.CrossEntropyLoss(
+        weight=weight, ignore_index=-1, label_smoothing=0.1, reduction="none"
+    )
+    indices = torch.tensor([0, -1, 1, 1])
+    probabilities = torch.tensor([[0.9, 0.1], [0.3, 0.7], [0.2, 0.8], [0.5, 0.5]])
+
+    # Index targets with an ignored row, and soft class probabilities
+    for y in (indices, probabilities):
+        log_term = -torch.stack([criterion(f, y) for f in logits]).mean(0).sum()
+        expected = (
+            -(estimator.n_data / y.shape[0]) * log_term / estimator.temperature + kl
+        )
+
+        torch.testing.assert_close(_fitted_objective(estimator, x, y), expected)
+
+
 @pytest.mark.parametrize("soft", [False, True])
-def test_classification_probability_targets_raise(data, split, soft):
+def test_valla_soft_targets_fit(data, soft):
     x, _, model = data
     flat = torch.tensor([0, 1, 1, 0])
     probabilities = torch.nn.functional.one_hot(flat, num_classes=2).to(x.dtype)
-    if soft:
-        probabilities = 0.8 * probabilities + 0.1
+    probabilities = 0.8 * probabilities + 0.1 if soft else probabilities
+    loader = DataLoader(TensorDataset(x, probabilities), batch_size=2)
 
-    hard_loader = DataLoader(TensorDataset(x, flat), batch_size=2)
-    prob_loader = DataLoader(TensorDataset(x, probabilities), batch_size=2)
-    train_loader = prob_loader if split == "train" else hard_loader
-    val_loader = prob_loader if split == "val" else hard_loader
+    # Random and k-means selection read a class per row from the probabilities
+    for strategy in ("random", "kmeans"):
+        estimator = make_valla(
+            deepcopy(model), inducing_locations=strategy, num_inducing=2
+        )
+        estimator.fit(loader, iterations=2, val_loader=loader)
+
+        assert len(estimator.inducing_classes) == 2
+        assert all(torch.isfinite(torch.tensor(estimator.fit_history_["objective"])))
+        assert all(torch.isfinite(torch.tensor(estimator.fit_history_["val_nll"])))
+
+
+def test_valla_validation_nll_probability_targets_and_custom_ignore_index(data):
+    x, loader, model = data
+    estimator = make_valla(model, inducing_locations=x[:2].clone())
+    estimator.fit(loader, iterations=1)
+
+    y = torch.tensor([0, 1, 1, 0])
+    one_hot = torch.nn.functional.one_hot(y, num_classes=2).to(x.dtype)
+
+    torch.testing.assert_close(
+        estimator._validation_nll(DataLoader(TensorDataset(x, one_hot), batch_size=2)),
+        estimator._validation_nll(DataLoader(TensorDataset(x, y), batch_size=2)),
+    )
+
+    estimator.likelihood = CategoricalLikelihood(ignore_index=-1)
+    padded = torch.tensor([0, -1, 1, -1])
+    observed = padded != -1
+
+    torch.testing.assert_close(
+        estimator._validation_nll(DataLoader(TensorDataset(x, padded), batch_size=2)),
+        estimator._validation_nll(
+            DataLoader(TensorDataset(x[observed], padded[observed]), batch_size=2)
+        ),
+    )
+
+
+@pytest.mark.parametrize("split", ["train", "val"])
+@pytest.mark.parametrize("target_format", ["integer-one-hot", "column"])
+def test_valla_classification_targets_like_torch(data, split, target_format):
+    x, _, model = data
+    flat = torch.tensor([0, 1, 1, 0])
+    bad = (
+        flat[:, None]
+        if target_format == "column"
+        else torch.nn.functional.one_hot(flat, num_classes=2)
+    )
+
+    good_loader = DataLoader(TensorDataset(x, flat), batch_size=2)
+    bad_loader = DataLoader(TensorDataset(x, bad), batch_size=2)
+    train_loader = bad_loader if split == "train" else good_loader
+    val_loader = bad_loader if split == "val" else good_loader
     estimator = make_valla(deepcopy(model), inducing_locations=x[:2].clone())
 
-    with pytest.raises(ValueError, match="class probabilities"):
+    with pytest.raises(ValueError, match="targets"):
         estimator.fit(train_loader, iterations=1, val_loader=val_loader)
 
 
@@ -1241,10 +1342,20 @@ def _kl(features: torch.Tensor) -> torch.Tensor:
     )
 
 
-def test_valla_bernoulli_probit_objective(bernoulli_data):
+# Without options, and with the options of `nn.BCEWithLogitsLoss`
+BERNOULLI_OPTIONS = [
+    {},
+    {"weight": torch.tensor([1.0, 2.0]), "pos_weight": torch.tensor([3.0, 0.5])},
+]
+
+
+@pytest.mark.parametrize("options", BERNOULLI_OPTIONS, ids=["plain", "options"])
+def test_valla_bernoulli_probit_objective(bernoulli_data, options):
     X, y, model = bernoulli_data
     loader = DataLoader(TensorDataset(X, y), batch_size=6)
-    la = make_valla(model, "bernoulli", inducing_locations=X[:3].clone())
+    la = make_valla(
+        model, BernoulliLikelihood(**options), inducing_locations=X[:3].clone()
+    )
     la.fit(loader, iterations=2)
 
     # Inducing points take output 0, as in regression
@@ -1254,20 +1365,21 @@ def test_valla_bernoulli_probit_objective(bernoulli_data):
     mean, cov, features, _ = la._latent_distribution(inputs)
     scaled = mean / torch.sqrt(1 + torch.pi / 8 * cov.diagonal(dim1=-2, dim2=-1))
     log_term = -torch.nn.functional.binary_cross_entropy_with_logits(
-        scaled, targets, reduction="sum"
+        scaled, targets, reduction="sum", **options
     )
     expected = -(la.n_data / len(inputs)) * log_term / la.temperature + _kl(features)
 
     torch.testing.assert_close(la._objective(inputs, targets), expected)
 
 
+@pytest.mark.parametrize("options", BERNOULLI_OPTIONS, ids=["plain", "options"])
 @pytest.mark.parametrize("alpha", [0.0, 0.5, 1.0])
-def test_valla_bernoulli_mc_objective(bernoulli_data, alpha):
+def test_valla_bernoulli_mc_objective(bernoulli_data, alpha, options):
     X, y, model = bernoulli_data
     loader = DataLoader(TensorDataset(X, y), batch_size=6)
     la = make_valla(
         model,
-        "bernoulli",
+        BernoulliLikelihood(**options),
         inducing_locations=X[:3].clone(),
         alpha=alpha,
         mc_softmax_samples=5,
@@ -1286,7 +1398,7 @@ def test_valla_bernoulli_mc_objective(bernoulli_data, alpha):
 
     # The log likelihood of a row sums over its binary outputs
     log_lik = -torch.nn.functional.binary_cross_entropy_with_logits(
-        draws, targets.expand_as(draws), reduction="none"
+        draws, targets.expand_as(draws), reduction="none", **options
     ).sum(-1)
 
     if alpha == 0:

@@ -259,5 +259,6 @@ la.fit(DataLoader(one_hot_data, batch_size=100))
 # i.e. with 1 dim.
 # ```
 #
-# > **Note:** The function-space methods `ELLA` and `VaLLA` take hard labels only, and
-# > class probabilities raise a `ValueError`.
+# > **Note:** The function-space methods `ELLA` and `VaLLA` take the same targets:
+# > class indices or float class probabilities. Integer one-hot targets raise the same
+# > `ValueError`.
