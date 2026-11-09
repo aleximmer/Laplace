@@ -370,20 +370,38 @@ def test_marglik_training_sums_sequence_gaussian_loss(model):
     assert math.isclose(loss, expected, rel_tol=1e-5)
 
 
-def test_marglik_training_sequence_accuracy_in_unit_interval(model, caplog):
+def test_marglik_training_sequence_accuracy_skips_ignored_targets(model, caplog):
+    # With a zero learning rate the network stays fixed, so the logged accuracy is
+    # known: the mean over the kept positions of each batch, times its size
+    loader = _sequence_loader("idx", ignore=True)
+
+    with torch.no_grad():
+        expected, unmasked = 0.0, 0.0
+
+        for X, y in loader:
+            hits = model(X).argmax(dim=-1) == y
+            kept = y != -100
+            expected += hits[kept].float().mean().item() * len(y)
+            unmasked += hits.float().mean().item() * len(y)
+
+    N = len(loader.dataset)
+
+    # Counting ignored positions as misses would change the logged value
+    assert f"{expected / N:.3f}" != f"{unmasked / N:.3f}"
+
     with caplog.at_level("INFO"):
         marglik_training(
             model,
-            _sequence_loader("idx", ignore=True),
+            loader,
             likelihood="classification",
             hessian_structure="diag",
+            optimizer_kwargs=dict(lr=0.0),
             n_epochs=2,
         )
 
-    perfs = [float(m.split("Perf=")[1]) for m in caplog.messages if "Perf=" in m]
+    perfs = [m.split("Perf=")[1] for m in caplog.messages if "Perf=" in m]
 
-    assert len(perfs) == 2
-    assert all(0.0 <= p <= 1.0 for p in perfs)
+    assert perfs == [f"{expected / N:.3f}"] * 2
 
 
 def test_marglik_training_custom_likelihood_sequence_outputs(model, caplog):
