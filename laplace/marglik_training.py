@@ -76,6 +76,8 @@ def marglik_training(
     `CategoricalLikelihood()` (CrossEntropyLoss) or `GaussianLikelihood()` (MSELoss).
     The data term sums the loss over each datum's outputs and averages it over the
     batch, so a Gaussian's squared error is not divided by the number of outputs.
+    With extra batch dims, such as logits `(batch, length, classes)` for sequences,
+    every position is an observation, as in `Laplace.fit`.
 
     As in [1], we optimize prior precision and, for regression, observation noise
     using the marginal likelihood. The prior precision structure can be chosen
@@ -202,16 +204,6 @@ def marglik_training(
             "support a likelihood with a noise std per output (#349)."
         )
 
-    # The data term is summed and divided by the batch size in the loop below, matching
-    # the summed loss that `Laplace.fit` uses. A "mean" loss would divide a Gaussian's
-    # squared error by the number of outputs too, and class weights and ignored targets
-    # would change its denominator
-    criterion = lik.loss_fn("sum")
-
-    # Cast buffers like class weights to the model, e.g. float32 weights to float64
-    if isinstance(criterion, torch.nn.Module):
-        criterion = criterion.to(device=device, dtype=dtype)
-
     if not lik.is_gaussian:
         sigma_noise = 1.0
     else:
@@ -285,7 +277,12 @@ def marglik_training(
             delta = expand_prior_precision(prior_prec, model)
 
             f = model(X)
-            data_loss = criterion(f, y) / len(y)
+
+            # Summed as in `Laplace.fit`, then divided by the batch size. `lik.loss`
+            # also flattens sequence outputs and casts options like class weights
+            # to the model's dtype. A heteroscedastic pair `(mean, var)` is joined
+            # first, since `lik.loss` checks the shape of one output tensor
+            data_loss = lik.loss(as_joined_outputs(f), y) / len(y)
 
             loss = data_loss + (0.5 * (delta * theta) @ theta) / N / crit_factor
             loss.backward()
@@ -304,10 +301,21 @@ def marglik_training(
                 epoch_perf += hits.float().mean().item() * len(y)
             else:
                 # Class probabilities have the shape of the logits
-                labels = y.argmax(dim=-1) if y.ndim == f.ndim else y
-                epoch_perf += torch.sum(
-                    torch.argmax(f.detach(), dim=-1) == labels
-                ).item()
+                is_prob = y.ndim == f.ndim
+                labels = y.argmax(dim=-1) if is_prob else y
+                hits = torch.argmax(f.detach(), dim=-1) == labels
+
+                # Ignored positions of index targets are not observations. A user
+                # likelihood may have no `ignore_index`, so every position counts
+                ignore_index = getattr(lik, "ignore_index", None)
+
+                if not is_prob and ignore_index is not None:
+                    hits = hits[labels != ignore_index]
+
+                # Batch mean over the observed positions, scaled by the batch size,
+                # so a sequence batch adds at most `len(y)`
+                if hits.numel() > 0:
+                    epoch_perf += hits.float().mean().item() * len(y)
 
             if scheduler is not None:
                 scheduler.step()

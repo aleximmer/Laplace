@@ -13,7 +13,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from tests.utils import toy_multilabel_dataset
+from tests.utils import DistributionOnlyCategorical, toy_multilabel_dataset
 
 
 @pytest.fixture
@@ -288,6 +288,122 @@ def test_marglik_training_soft_targets(model, hessian_structure, caplog):
     assert runs[True][2] == runs[False][2]
     assert torch.allclose(torch.tensor(runs[True][0]), torch.tensor(runs[False][0]))
     assert torch.allclose(torch.tensor(runs[True][1]), torch.tensor(runs[False][1]))
+
+
+def _sequence_loader(kind: str, ignore: bool = False) -> DataLoader:
+    # Sequences of length 4 with 2 classes, so the model outputs are `(B, 4, 2)`
+    torch.manual_seed(0)
+    X = torch.randn(32, 4, 3)
+
+    if kind == "regression":
+        y = torch.randn(32, 4, 2)
+    else:
+        y = torch.randint(0, 2, (32, 4))
+
+        if ignore:
+            y[torch.rand(32, 4) < 0.3] = -100
+
+        if kind == "prob":
+            y = torch.nn.functional.one_hot(y, 2).float()
+
+    return DataLoader(TensorDataset(X, y), batch_size=8)
+
+
+@pytest.mark.parametrize("hessian_structure", ["diag", "kron", "full"])
+@pytest.mark.parametrize("kind", ["idx", "prob"])
+def test_marglik_training_sequence_outputs(model, kind, hessian_structure):
+    la, _, margliks, losses = marglik_training(
+        model,
+        _sequence_loader(kind),
+        likelihood="classification",
+        hessian_structure=hessian_structure,
+        n_epochs=2,
+    )
+
+    assert all(math.isfinite(m) for m in margliks)
+    assert all(math.isfinite(loss) for loss in losses)
+    assert la.n_obs == 32 * 4
+
+
+@pytest.mark.parametrize("kind", ["idx", "prob"])
+def test_marglik_training_sums_sequence_categorical_loss(model, kind):
+    loader = _sequence_loader(kind)
+    X, y = loader.dataset.tensors
+
+    with torch.no_grad():
+        target = y.reshape(-1, 2) if kind == "prob" else y.reshape(-1)
+        expected = torch.nn.functional.cross_entropy(
+            model(X).reshape(-1, 2), target, reduction="sum"
+        ).item() / len(X)
+
+    loss = _first_epoch_loss(model, loader, CategoricalLikelihood())
+
+    assert math.isclose(loss, expected, rel_tol=1e-5)
+
+
+def test_marglik_training_sequence_ignore_index(model):
+    loader = _sequence_loader("idx", ignore=True)
+    X, y = loader.dataset.tensors
+    assert (y == -100).any()
+
+    with torch.no_grad():
+        expected = torch.nn.functional.cross_entropy(
+            model(X).reshape(-1, 2), y.reshape(-1), reduction="sum", ignore_index=-100
+        ).item() / len(X)
+
+    loss = _first_epoch_loss(model, loader, CategoricalLikelihood())
+
+    assert math.isclose(loss, expected, rel_tol=1e-5)
+
+
+def test_marglik_training_sums_sequence_gaussian_loss(model):
+    loader = _sequence_loader("regression")
+    X, y = loader.dataset.tensors
+
+    with torch.no_grad():
+        expected = torch.nn.functional.mse_loss(
+            model(X), y, reduction="sum"
+        ).item() / len(X)
+
+    loss = _first_epoch_loss(model, loader, GaussianLikelihood())
+
+    assert math.isclose(loss, expected, rel_tol=1e-5)
+
+
+def test_marglik_training_sequence_accuracy_in_unit_interval(model, caplog):
+    with caplog.at_level("INFO"):
+        marglik_training(
+            model,
+            _sequence_loader("idx", ignore=True),
+            likelihood="classification",
+            hessian_structure="diag",
+            n_epochs=2,
+        )
+
+    perfs = [float(m.split("Perf=")[1]) for m in caplog.messages if "Perf=" in m]
+
+    assert len(perfs) == 2
+    assert all(0.0 <= p <= 1.0 for p in perfs)
+
+
+def test_marglik_training_custom_likelihood_sequence_outputs(model, caplog):
+    # A user likelihood has no `ignore_index`, so the logged accuracy counts every
+    # position
+    with caplog.at_level("INFO"):
+        _, _, margliks, losses = marglik_training(
+            model,
+            _sequence_loader("idx"),
+            likelihood=DistributionOnlyCategorical(),
+            hessian_structure="diag",
+            n_epochs=2,
+        )
+
+    perfs = [float(m.split("Perf=")[1]) for m in caplog.messages if "Perf=" in m]
+
+    assert all(math.isfinite(m) for m in margliks)
+    assert all(math.isfinite(loss) for loss in losses)
+    assert len(perfs) == 2
+    assert all(0.0 <= p <= 1.0 for p in perfs)
 
 
 @pytest.mark.parametrize("hessian_structure", ["full", "kron", "diag"])
