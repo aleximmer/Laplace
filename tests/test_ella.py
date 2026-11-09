@@ -1088,3 +1088,113 @@ def test_classification_probability_targets_raise(data, split, soft):
 
     with pytest.raises(ValueError, match="class probabilities"):
         make_ella(deepcopy(model)).fit(train_loader, val_loader=val_loader)
+
+
+@pytest.fixture
+def bernoulli_data():
+    torch.manual_seed(11)
+    X = torch.randn(12, 3)
+    y = torch.randint(2, (12, 2)).float()
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    return X, y, model
+
+
+def test_ella_bernoulli_curvature(bernoulli_data):
+    X, y, model = bernoulli_data
+    la = make_ella(model, "bernoulli", subsample_size=6, n_eigenvalues=3)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=5))
+
+    # The Bernoulli GGN is diag(p (1 - p)) per output
+    features, f = la._features(X)
+    h = torch.sigmoid(f) * torch.sigmoid(-f)
+    expected = torch.einsum("bck,bc,bcl->kl", features, h, features)
+
+    torch.testing.assert_close(la.feature_gram, expected.detach())
+
+    # Without options, the GGN doesn't depend on the targets, so soft labels are fine
+    soft = make_ella(deepcopy(model), "bernoulli", subsample_size=6, n_eigenvalues=3)
+    soft.fit(DataLoader(TensorDataset(X, 0.8 * y + 0.1), batch_size=5))
+
+    torch.testing.assert_close(soft.feature_gram, la.feature_gram)
+
+
+def test_ella_bernoulli_validation_nll(bernoulli_data):
+    X, y, model = bernoulli_data
+    loader = DataLoader(TensorDataset(X, y), batch_size=5)
+    la = make_ella(model, "bernoulli", subsample_size=6, n_eigenvalues=3)
+    la.fit(loader, val_loader=loader)
+
+    # Probit-scaled logits, summed over the outputs and averaged over the rows
+    mean, cov = la.predictive_moments(X)
+    scaled = mean / torch.sqrt(1 + torch.pi / 8 * cov.diagonal(dim1=-2, dim2=-1))
+    expected = torch.nn.functional.binary_cross_entropy_with_logits(
+        scaled, y, reduction="sum"
+    ) / len(X)
+
+    torch.testing.assert_close(la._validation_nll(loader), expected)
+    torch.testing.assert_close(
+        torch.tensor(la.fit_history_["val_nll"][-1]), expected.detach()
+    )
+
+    la.optimize_hyperparameters(loader, [0.5, 2.0])
+    assert len(la.fit_history_["tuning"]) == 2
+
+
+def test_ella_bernoulli_predictive(bernoulli_data):
+    X, y, model = bernoulli_data
+    la = make_ella(model, "bernoulli", subsample_size=6, n_eigenvalues=3)
+    la.fit(DataLoader(TensorDataset(X, y), batch_size=5))
+
+    probit = la(X, link_approx="probit")
+    mc = la(X, link_approx="mc", n_samples=20000)
+
+    assert probit.shape == (12, 2)
+    assert torch.all((probit > 0) & (probit < 1))
+    torch.testing.assert_close(mc, probit, atol=0.02, rtol=0)
+
+    samples = la.predictive_samples(X, n_samples=5)
+    assert samples.shape == (5, 12, 2)
+    assert torch.all((samples > 0) & (samples < 1))
+
+    with pytest.raises(ValueError, match="Laplace bridge"):
+        la(X, link_approx="bridge")
+
+
+def test_ella_bernoulli_balanced_subset():
+    torch.manual_seed(32)
+    X = torch.randn(10, 2)
+    y = torch.tensor([0.0] * 9 + [1.0])[:, None]
+    loader = DataLoader(TensorDataset(X, y), batch_size=2)
+
+    la = make_ella(
+        torch.nn.Linear(2, 1), "bernoulli", subsample_size=4, n_eigenvalues=2
+    )
+    selected = la._indices(loader, balanced=True)
+
+    assert y[selected].sum() == 1
+
+    # Several outputs have no single class per row
+    multi = DataLoader(TensorDataset(X, y.repeat(1, 2)), batch_size=2)
+    la = make_ella(
+        torch.nn.Linear(2, 2), "bernoulli", subsample_size=4, n_eigenvalues=2
+    )
+
+    with pytest.raises(ValueError, match="one output"):
+        la.fit(multi, balanced=True)
+
+
+@pytest.mark.parametrize("targets", ["flat", "integer"])
+def test_ella_bernoulli_targets_like_torch(targets):
+    # As in `nn.BCEWithLogitsLoss`, the targets are floats of the outputs' shape
+    X = torch.randn(6, 2)
+    y = torch.randint(2, (6,))
+    y = y.float() if targets == "flat" else y[:, None]
+    la = make_ella(
+        torch.nn.Linear(2, 1), "bernoulli", subsample_size=4, n_eigenvalues=2
+    )
+
+    with pytest.raises(ValueError, match="BernoulliLikelihood expects"):
+        la.fit(DataLoader(TensorDataset(X, y), batch_size=2))

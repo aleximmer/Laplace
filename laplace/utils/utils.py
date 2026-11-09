@@ -56,6 +56,9 @@ def validate(
     if is_offline:
         output_means, output_vars = list(), list()
         targets = list()
+    else:
+        # Start from an empty metric, so a reused one doesn't average in earlier calls
+        loss.reset()
 
     for data in val_loader:
         if isinstance(data, MutableMapping):

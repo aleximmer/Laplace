@@ -41,14 +41,12 @@ LIKELIHOODS = [
 ]
 likelihoods = pytest.mark.parametrize("likelihood, n_out", LIKELIHOODS)
 
-FUNCTION_SPACE = {"functional", "ll_functional", "ella", "valla"}
-
 
 def _skip_unsupported(method: str, likelihood: str) -> None:
     _skip_lowrank_without_asdfghjkl(method)
 
-    # These raise a clear error for the Bernoulli likelihood
-    if likelihood == "bernoulli" and (method in FUNCTION_SPACE or method == "lowrank"):
+    # This raises a clear error for the Bernoulli likelihood
+    if likelihood == "bernoulli" and method == "lowrank":
         pytest.skip(f"{method} doesn't support the Bernoulli likelihood")
 
 

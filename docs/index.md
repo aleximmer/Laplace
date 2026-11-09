@@ -144,7 +144,12 @@ from torch import nn
 from laplace import Laplace
 
 criterion = nn.CrossEntropyLoss(ignore_index=-100, label_smoothing=0.1)
-la = Laplace(model, criterion, subset_of_weights="all", hessian_structure="diag")
+la = Laplace(
+    model,
+    criterion,  # or CategoricalLikelihood(ignore_index=-100, label_smoothing=0.1)
+    subset_of_weights="all",
+    hessian_structure="diag",
+)
 la.fit(train_loader)
 ```
 
@@ -166,6 +171,8 @@ Some caveats:
 - Function-space methods (`hessian_structure="gp"`) don't support sequence outputs, and `ELLA` and `VaLLA` only accept the default `ignore_index=-100`.
   They leave out ignored rows, while `FunctionalLaplace` raises a `ValueError` if its sampled subset has any.
 - `ELLA` and `VaLLA` take hard labels only. Class probabilities raise a `ValueError`.
+  With the Bernoulli likelihood, they take float targets of the outputs' shape, and soft labels are fine.
+- With the Bernoulli likelihood, `ELLA(balanced=True)` needs one output, and `VaLLA` places all its inducing points on output 0.
 - Options that reweight or smooth the loss, such as class weights or label smoothing, make the likelihood a generalized one.
   `log_marginal_likelihood()` is then no longer the model evidence in the strict sense.
 
@@ -206,8 +213,8 @@ For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\m
 `link_approx` has no effect there.
 In the example above, the result is the expected Poisson rate.
 Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
-FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods, `"bernoulli"`, and `"heteroscedastic_gaussian"`.
-FunctionalLaplace also accepts a `CategoricalLikelihood` with options.
+FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods and `"heteroscedastic_gaussian"`.
+FunctionalLaplace also accepts a `CategoricalLikelihood` or `BernoulliLikelihood` with options.
 ELLA and VaLLA don't support likelihood options yet and raise a `ValueError` for them.
 
 ### Marginal likelihood

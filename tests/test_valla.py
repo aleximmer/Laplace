@@ -19,6 +19,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
+from laplace.utils.functional_utils import draw_gaussian
 from tests.utils import AsdlGGN, BackPackGGN, requires_backpack
 
 torch.set_num_threads(1)
@@ -1217,3 +1218,127 @@ def test_classification_probability_targets_raise(data, split, soft):
 
     with pytest.raises(ValueError, match="class probabilities"):
         estimator.fit(train_loader, iterations=1, val_loader=val_loader)
+
+
+@pytest.fixture
+def bernoulli_data():
+    torch.manual_seed(11)
+    X = torch.randn(12, 3)
+    y = torch.randint(2, (12, 2)).float()
+    model = torch.nn.Sequential(
+        torch.nn.Linear(3, 4), torch.nn.Tanh(), torch.nn.Linear(4, 2)
+    )
+
+    return X, y, model
+
+
+def _kl(features: torch.Tensor) -> torch.Tensor:
+    hessian = torch.eye(features.shape[0], dtype=features.dtype) + features @ features.T
+
+    return 0.5 * (
+        torch.linalg.slogdet(hessian).logabsdet
+        - torch.trace(torch.linalg.solve(hessian, features @ features.T))
+    )
+
+
+def test_valla_bernoulli_probit_objective(bernoulli_data):
+    X, y, model = bernoulli_data
+    loader = DataLoader(TensorDataset(X, y), batch_size=6)
+    la = make_valla(model, "bernoulli", inducing_locations=X[:3].clone())
+    la.fit(loader, iterations=2)
+
+    # Inducing points take output 0, as in regression
+    assert la.inducing_classes.tolist() == [0, 0, 0]
+
+    inputs, targets = next(iter(loader))
+    mean, cov, features, _ = la._latent_distribution(inputs)
+    scaled = mean / torch.sqrt(1 + torch.pi / 8 * cov.diagonal(dim1=-2, dim2=-1))
+    log_term = -torch.nn.functional.binary_cross_entropy_with_logits(
+        scaled, targets, reduction="sum"
+    )
+    expected = -(la.n_data / len(inputs)) * log_term / la.temperature + _kl(features)
+
+    torch.testing.assert_close(la._objective(inputs, targets), expected)
+
+
+@pytest.mark.parametrize("alpha", [0.0, 0.5, 1.0])
+def test_valla_bernoulli_mc_objective(bernoulli_data, alpha):
+    X, y, model = bernoulli_data
+    loader = DataLoader(TensorDataset(X, y), batch_size=6)
+    la = make_valla(
+        model,
+        "bernoulli",
+        inducing_locations=X[:3].clone(),
+        alpha=alpha,
+        mc_softmax_samples=5,
+    )
+    la.fit(loader, iterations=2)
+    assert torch.isfinite(torch.tensor(la.fit_history_["objective"])).all()
+
+    # Replay the draws of the objective
+    inputs, targets = next(iter(loader))
+    state = la.generator.get_state()
+    objective = la._objective(inputs, targets)
+    la.generator.set_state(state)
+
+    mean, cov, features, _ = la._latent_distribution(inputs)
+    draws = draw_gaussian(mean, cov, 5, la.generator)
+
+    # The log likelihood of a row sums over its binary outputs
+    log_lik = -torch.nn.functional.binary_cross_entropy_with_logits(
+        draws, targets.expand_as(draws), reduction="none"
+    ).sum(-1)
+
+    if alpha == 0:
+        log_term = log_lik.mean(0).sum()
+    else:
+        log_term = (
+            torch.logsumexp(alpha * log_lik, 0) - torch.log(torch.tensor(5.0))
+        ).sum() / alpha
+
+    expected = -(la.n_data / len(inputs)) * log_term / la.temperature + _kl(features)
+
+    torch.testing.assert_close(objective, expected)
+
+
+def test_valla_bernoulli_alpha_requires_mc(bernoulli_data):
+    X, _, model = bernoulli_data
+
+    with pytest.raises(ValueError, match="mc_softmax_samples"):
+        make_valla(model, "bernoulli", inducing_locations=X[:2].clone(), alpha=0.5)
+
+
+def test_valla_bernoulli_fit_and_predict(bernoulli_data):
+    X, y, model = bernoulli_data
+    loader = DataLoader(TensorDataset(X, y), batch_size=6)
+
+    # Soft labels are fine, as in `nn.BCEWithLogitsLoss`
+    soft = DataLoader(TensorDataset(X, 0.8 * y + 0.1), batch_size=6)
+    la = make_valla(model, "bernoulli", inducing_locations="random", num_inducing=4)
+    la.fit(soft, iterations=3, val_loader=loader)
+
+    assert la.inducing_classes.tolist() == [0, 0, 0, 0]
+    assert torch.isfinite(torch.tensor(la.fit_history_["objective"])).all()
+
+    mean, cov = la.predictive_moments(X)
+    scaled = mean / torch.sqrt(1 + torch.pi / 8 * cov.diagonal(dim1=-2, dim2=-1))
+    expected = torch.nn.functional.binary_cross_entropy_with_logits(
+        scaled, y, reduction="sum"
+    ) / len(X)
+
+    torch.testing.assert_close(la._validation_nll(loader), expected)
+
+    probs = la(X, link_approx="probit")
+    assert probs.shape == (12, 2)
+    assert torch.all((probs > 0) & (probs < 1))
+    torch.testing.assert_close(
+        la(X, link_approx="mc", n_samples=20000), probs, atol=0.02, rtol=0
+    )
+
+
+def test_valla_bernoulli_targets_like_torch(bernoulli_data):
+    X, y, model = bernoulli_data
+    la = make_valla(model, "bernoulli", inducing_locations=X[:2].clone())
+
+    with pytest.raises(ValueError, match="BernoulliLikelihood expects"):
+        la.fit(DataLoader(TensorDataset(X, y.long()), batch_size=6), iterations=1)

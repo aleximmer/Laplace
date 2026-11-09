@@ -130,26 +130,39 @@ def test_functional_factory_likelihood_object_equivalence(data, likelihood):
     [
         "bernoulli",
         Likelihood.BERNOULLI,
-        BernoulliLikelihood(pos_weight=torch.tensor([2.0, 1.0])),
+        BernoulliLikelihood(),
         torch.nn.BCEWithLogitsLoss(),
     ],
-    ids=["name", "member", "options", "criterion"],
+    ids=["name", "member", "object", "criterion"],
 )
 @pytest.mark.parametrize("subset_of_weights", ["all", "last_layer"])
-def test_function_space_methods_reject_bernoulli(data, likelihood, subset_of_weights):
+def test_function_space_methods_accept_bernoulli(data, likelihood, subset_of_weights):
     x, loader, model = data
-    match = "support only the likelihoods"
 
-    # The error lists the likelihoods that they do support
-    with pytest.raises(ValueError, match=r"\['classification', 'regression'"):
-        Laplace(model, likelihood, subset_of_weights, "gp", n_subset=2)
+    la = Laplace(model, likelihood, subset_of_weights, "gp", n_subset=2)
+    assert isinstance(la, FunctionalLaplace)
+    assert la.likelihood.name == "bernoulli"
 
     if subset_of_weights == "all":
-        with pytest.raises(ValueError, match=match):
-            make_ella(model, likelihood)
+        ella = make_ella(model, likelihood)
+        valla = make_valla(model, likelihood, inducing_locations=x[:2])
 
-        with pytest.raises(ValueError, match=match):
-            make_valla(model, likelihood, inducing_locations=x[:2])
+        assert isinstance(ella, ELLA)
+        assert isinstance(valla, VaLLA)
+        assert ella.likelihood.name == valla.likelihood.name == "bernoulli"
+
+
+def test_bernoulli_options_only_for_functional_laplace(data):
+    x, loader, model = data
+    options = BernoulliLikelihood(pos_weight=torch.tensor([2.0, 1.0]))
+    match = "doesn't support likelihood options"
+
+    # FunctionalLaplace takes the options, ELLA and VaLLA don't
+    FunctionalLaplace(model, options, n_subset=2)
+    Laplace(model, options, "last_layer", "gp", n_subset=2)
 
     with pytest.raises(ValueError, match=match):
-        FunctionalLaplace(model, likelihood, n_subset=2)
+        make_ella(model, options)
+
+    with pytest.raises(ValueError, match=match):
+        make_valla(model, options, inducing_locations=x[:2])

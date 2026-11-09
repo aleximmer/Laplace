@@ -714,3 +714,39 @@ def test_vector_noise_function_space_checkpoint(
         make(GaussianLikelihood(sigma_noise=VECTOR_NOISE * 2)).load_state_dict(
             la.state_dict()
         )
+
+
+@pytest.mark.parametrize("functional_approximation", ["sod", "nystrom", "variational"])
+def test_bernoulli_function_space_checkpoint(
+    functional_approximation, model, multilabel_loader
+):
+    kwargs = {"functional_approximation": functional_approximation}
+
+    if functional_approximation == "sod":
+        kwargs["n_subset"] = 10
+    elif functional_approximation == "nystrom":
+        kwargs.update(subsample_size=4, n_eigenvalues=3)
+    else:
+        kwargs["inducing_locations"] = torch.randn(3, 3)
+
+    def make(likelihood):
+        return Laplace(model, likelihood, "all", "gp", **deepcopy(kwargs))
+
+    la = make("bernoulli")
+
+    if functional_approximation == "variational":
+        la.fit(multilabel_loader, iterations=2)
+    else:
+        la.fit(multilabel_loader)
+
+    state_dict = la.state_dict()
+    assert state_dict["likelihood"] == "bernoulli"
+
+    la2 = make(nn.BCEWithLogitsLoss())
+    la2.load_state_dict(state_dict)
+
+    X, _ = next(iter(multilabel_loader))
+    assert torch.allclose(la(X, link_approx="probit"), la2(X, link_approx="probit"))
+
+    with pytest.raises(ValueError, match="likelihood"):
+        make("classification").load_state_dict(state_dict)

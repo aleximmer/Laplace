@@ -98,7 +98,12 @@ print(f"MAP test NLL: {nll_map:.3f}")
 # The marginal likelihood tunes the prior precision without validation data:
 
 # %%
-la = Laplace(model, criterion, subset_of_weights="all", hessian_structure="kron")
+la = Laplace(
+    model,
+    criterion,  # or BernoulliLikelihood()
+    subset_of_weights="all",
+    hessian_structure="kron",
+)
 la.fit(train_loader)
 la.optimize_prior_precision(method="marglik")
 
@@ -176,7 +181,12 @@ print(f"LA validation NLL: {metric.compute().item():.3f}")
 y_soft = 0.9 * y_train + 0.05
 soft_loader = DataLoader(TensorDataset(X_train, y_soft), batch_size=100)
 
-la_soft = Laplace(model, criterion, subset_of_weights="all", hessian_structure="kron")
+la_soft = Laplace(
+    model,
+    criterion,  # or BernoulliLikelihood()
+    subset_of_weights="all",
+    hessian_structure="kron",
+)
 la_soft.fit(soft_loader)
 
 print(f"LA test NLL with soft labels: {nll(la_soft(X_test), y_test):.3f}")
@@ -218,5 +228,52 @@ print(f"LA test NLL (NN sampling): {nll(probs_nn, y_test):.3f}")
 
 # %% [markdown]
 # Other structures and subsets of weights only change the arguments of `Laplace`:
-# `last_layer` and `subnetwork` work like `all`. The function-space methods
-# (`hessian_structure="gp"`) don't support the Bernoulli likelihood yet.
+# `last_layer` and `subnetwork` work like `all`.
+#
+# ## Function-space methods
+#
+# With `hessian_structure="gp"`, the LA is a Gaussian process over the network
+# outputs instead of a Gaussian over the weights. Its kernel comes from the
+# Jacobians of the network. `FunctionalLaplace` fits it on a random subset of
+# `n_subset` training points. The Bernoulli likelihood gives every label its own
+# output, so the curvature of the outputs is diagonal and the GP needs no further
+# approximation on that subset.
+#
+# We tune the prior precision on the validation set:
+
+# %%
+la_gp = Laplace(
+    model,
+    criterion,  # or BernoulliLikelihood()
+    subset_of_weights="all",
+    hessian_structure="gp",
+    n_subset=100,
+)
+la_gp.fit(train_loader)
+la_gp.optimize_prior_precision(method="gridsearch", val_loader=val_loader)
+
+print(f"GP prior precision: {la_gp.prior_precision.item():.2f}")
+print(f"GP LA test NLL: {nll(la_gp(X_test), y_test):.3f}")
+
+# %% [markdown]
+# For larger data, `functional_approximation="nystrom"` gives ELLA, which builds a
+# low-rank kernel from `subsample_size` points and then goes over all the data.
+# ELLA has no marginal likelihood, so it tunes the prior precision on the
+# validation set. `"variational"` gives VaLLA, which takes the Bernoulli likelihood
+# too.
+
+# %%
+la_ella = Laplace(
+    model,
+    criterion,  # or BernoulliLikelihood()
+    subset_of_weights="all",
+    hessian_structure="gp",
+    functional_approximation="nystrom",
+    subsample_size=100,
+    n_eigenvalues=50,
+)
+la_ella.fit(train_loader)
+la_ella.optimize_prior_precision(val_loader=val_loader)
+
+print(f"ELLA prior precision: {la_ella.prior_precision.item():.2f}")
+print(f"ELLA test NLL: {nll(la_ella(X_test), y_test):.3f}")

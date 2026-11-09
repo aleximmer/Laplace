@@ -611,6 +611,104 @@ def test_functional_laplace_marglik_equals_full_at_map(n_out, T):
     )
 
 
+def _bernoulli_data(n_out: int) -> tuple[torch.Tensor, torch.Tensor]:
+    X = torch.randn(N_DATA, N_IN)
+
+    return X, torch.randint(2, (N_DATA, n_out)).double()
+
+
+@pytest.mark.parametrize("n_out", [1, 2])
+@pytest.mark.parametrize("weighted", [False, True])
+def test_functional_laplace_bernoulli_predictive_equals_full(n_out, weighted):
+    # The Bernoulli output Hessian is diagonal, so the diagonal noise of the GP is
+    # exact, and on all the data the GP and the weight-space GGN views agree
+    model = _mlp(n_out)
+    X, y = _bernoulli_data(n_out)
+    likelihood = (
+        BernoulliLikelihood(pos_weight=torch.linspace(3.0, 0.7, n_out))
+        if weighted
+        else BernoulliLikelihood()
+    )
+
+    full = FullLaplace(copy.deepcopy(model), likelihood, prior_precision=1.3)
+    full.fit(_loader(X, y))
+
+    gp = FunctionalLaplace(
+        copy.deepcopy(model),
+        likelihood,
+        n_subset=N_DATA,
+        prior_precision=1.3,
+        independent_outputs=False,
+    )
+    gp.fit(_loader(X, y))
+
+    X_test = torch.randn(4, N_IN)
+
+    for joint in [False, True]:
+        mean_full, var_full = full._glm_predictive_distribution(X_test, joint=joint)
+        mean_gp, var_gp = gp.predictive_moments(X_test, joint=joint)
+
+        _assert_close(mean_gp, mean_full)
+        _assert_close(var_gp, var_full)
+
+    _assert_close(gp(X_test, link_approx="probit"), full(X_test, link_approx="probit"))
+    _assert_close(gp.log_det_ratio, full.log_det_ratio)
+
+
+@pytest.mark.parametrize("n_out", [1, 2])
+@pytest.mark.parametrize("T", [1.0, 0.5])
+def test_functional_laplace_bernoulli_marglik_equals_full_at_map(n_out, T):
+    # At the MAP, the network's offset J theta is K times the output gradient, so
+    # the GP scatter term equals the prior term theta' P0 theta of the weight space
+    prior = 2.0
+    model = _mlp(n_out)
+    X, y = _bernoulli_data(n_out)
+
+    opt = torch.optim.LBFGS(
+        model.parameters(),
+        max_iter=5000,
+        tolerance_grad=1e-12,
+        tolerance_change=1e-15,
+        line_search_fn="strong_wolfe",
+    )
+
+    def closure():
+        opt.zero_grad()
+        loss = nn.functional.binary_cross_entropy_with_logits(
+            model(X), y, reduction="sum"
+        )
+        loss = loss / T + 0.5 * prior * sum((p**2).sum() for p in model.parameters())
+        loss.backward()
+
+        return loss
+
+    for _ in range(5):
+        opt.step(closure)
+
+    full = FullLaplace(
+        copy.deepcopy(model), "bernoulli", prior_precision=prior, temperature=T
+    )
+    full.fit(_loader(X, y))
+
+    gp = FunctionalLaplace(
+        copy.deepcopy(model),
+        "bernoulli",
+        n_subset=N_DATA,
+        prior_precision=prior,
+        temperature=T,
+        independent_outputs=False,
+    )
+    gp.fit(_loader(X, y))
+
+    # The scatter term adds a small jitter to the kernel
+    torch.testing.assert_close(
+        gp.log_marginal_likelihood(),
+        full.log_marginal_likelihood(),
+        rtol=1e-4,
+        atol=1e-5,
+    )
+
+
 @pytest.mark.parametrize("T", [1.0, 0.25])
 def test_marglik_training_reaches_the_tempered_map(T):
     # With the hyperparameters fixed, the training of a linear model ends at the
