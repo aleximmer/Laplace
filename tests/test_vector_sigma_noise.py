@@ -904,3 +904,13 @@ def test_noise_per_output_update_rejects_non_gaussian(model, data):
 
     with pytest.raises(ValueError, match="Gaussian"):
         noise_per_output_update(la, loader)
+
+
+def test_noise_per_output_update_keeps_no_graph_with_backprop(model, data):
+    _, _, loader = data
+    la = _laplace(
+        model, GaussianLikelihood(sigma_noise=SIGMA), "diag", enable_backprop=True
+    )
+    la.fit(loader)
+
+    assert not noise_per_output_update(la, loader).requires_grad

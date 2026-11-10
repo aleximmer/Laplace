@@ -528,7 +528,8 @@ def noise_per_output_update(
             X, y = data
             X = X.to(la._device)
 
-        f_mu, f_var = la._glm_predictive_marginals(X)
+        # A fixed-point statistic, so no graph is kept even with `enable_backprop`
+        f_mu, f_var = (t.detach() for t in la._glm_predictive_marginals(X))
         K = f_mu.shape[-1]
         y = y.to(la._device).reshape(-1, K)
 
