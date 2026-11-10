@@ -1,5 +1,7 @@
 """A known noise std per output, set on `GaussianLikelihood(sigma_noise=...)`."""
 
+import math
+
 import pytest
 import torch
 from torch import nn
@@ -9,6 +11,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from laplace import Laplace
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import GaussianLikelihood
+from laplace.marglik_training import marglik_training
+from laplace.utils import noise_per_output_update
 from tests.utils import AsdlGGN, BackPackGGN
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(123)]
@@ -720,3 +724,183 @@ def test_valla_wrong_number_of_outputs_raises():
 
     with pytest.raises(ValueError, match="2 outputs"):
         _valla(model, torch.ones(3), X).fit(loader, iterations=1)
+
+
+# Learning the noise per output with `marglik_training`
+
+
+def _marglik_data(sigma_true=(0.1, 1.0), n=200):
+    g = torch.Generator().manual_seed(5)
+    X = torch.rand(n, 1, generator=g, dtype=torch.float64) * 4 - 2
+    f = torch.cat([torch.sin(2 * X), 0.5 * X], dim=1)
+    y = f + torch.tensor(sigma_true, dtype=torch.float64) * torch.randn(
+        n, 2, generator=g, dtype=torch.float64
+    )
+
+    return DataLoader(TensorDataset(X, y), batch_size=100)
+
+
+def _marglik_model():
+    torch.manual_seed(0)
+
+    return nn.Sequential(nn.Linear(1, 16), nn.Tanh(), nn.Linear(16, 2))
+
+
+@pytest.mark.parametrize("structure", ["full", "diag"])
+@pytest.mark.parametrize("temperature", [1.0, 2.0])
+def test_noise_gradient_is_the_predictive_variance(model, data, structure, temperature):
+    # d log Z / d lambda_k = (1 / T) [N / (2 lambda_k) - SSE_k / 2 - sum_n Var f_nk / 2]
+    X, y, loader = data
+    sigma = torch.tensor([0.7, 1.9])
+    lam = sigma**-2
+    n = len(X)
+
+    def fit(lam):
+        likelihood = GaussianLikelihood(sigma_noise=lam**-0.5)
+        la = _laplace(model, likelihood, structure, temperature=temperature)
+        la.fit(loader)
+
+        return la
+
+    la = fit(lam)
+    f_mu, f_var = la._glm_predictive_marginals(X)
+    sse = (f_mu - y).square().sum(0)
+    expected = (n / (2 * lam) - sse / 2 - f_var.sum(0) / 2) / temperature
+
+    eps = 1e-6
+    for k in range(2):
+        step = torch.zeros(2)
+        step[k] = eps * lam[k]
+        up = fit(lam + step).log_marginal_likelihood()
+        down = fit(lam - step).log_marginal_likelihood()
+
+        assert (up - down) / (2 * step[k]) == pytest.approx(
+            expected[k].item(), rel=1e-5
+        )
+
+
+@pytest.mark.parametrize("structure", ["full", "diag", "kron"])
+def test_marglik_training_learns_noise_per_output(structure):
+    likelihood = GaussianLikelihood(sigma_noise=torch.ones(2, dtype=torch.float64))
+
+    lap, _, margliks, _ = marglik_training(
+        _marglik_model(),
+        _marglik_data(),
+        likelihood=likelihood,
+        hessian_structure=structure,
+        n_epochs=300,
+        optimizer_kwargs={"lr": 1e-2},
+        marglik_frequency=5,
+        n_epochs_burnin=100,
+        prior_structure="scalar",
+    )
+    learned = lap.likelihood.sigma_noise
+
+    assert lap.sigma_noise == 1
+    assert learned[0] == pytest.approx(0.1, abs=0.06)
+    assert learned[1] == pytest.approx(1.0, abs=0.3)
+    assert learned[0] < learned[1] / 3
+    assert all(math.isfinite(m) for m in margliks)
+
+
+def test_marglik_training_learns_noise_per_output_backpack():
+    lap, *_ = marglik_training(
+        _marglik_model(),
+        _marglik_data(),
+        likelihood=GaussianLikelihood(sigma_noise=torch.ones(2, dtype=torch.float64)),
+        hessian_structure="diag",
+        backend=BackPackGGN,
+        n_epochs=300,
+        optimizer_kwargs={"lr": 1e-2},
+        marglik_frequency=5,
+        n_epochs_burnin=100,
+        prior_structure="scalar",
+    )
+    learned = lap.likelihood.sigma_noise
+
+    assert learned[0] == pytest.approx(0.1, abs=0.06)
+    assert learned[1] == pytest.approx(1.0, abs=0.3)
+
+
+def test_marglik_training_keeps_the_users_likelihood():
+    sigma = torch.tensor([0.5, 2.0], dtype=torch.float64)
+    likelihood = GaussianLikelihood(sigma_noise=sigma)
+
+    lap, *_ = marglik_training(
+        _marglik_model(),
+        _marglik_data(),
+        likelihood=likelihood,
+        hessian_structure="diag",
+        n_epochs=3,
+    )
+
+    assert likelihood.sigma_noise is sigma
+    assert torch.equal(sigma, torch.tensor([0.5, 2.0], dtype=torch.float64))
+    assert lap.likelihood is not likelihood
+    assert not torch.equal(lap.likelihood.sigma_noise, sigma)
+
+
+def test_marglik_training_fixed_noise_per_output():
+    sigma = torch.tensor([0.5, 2.0], dtype=torch.float64)
+
+    lap, *_ = marglik_training(
+        _marglik_model(),
+        _marglik_data(),
+        likelihood=GaussianLikelihood(sigma_noise=sigma),
+        hessian_structure="diag",
+        n_epochs=3,
+        fix_sigma_noise=True,
+    )
+
+    assert lap.sigma_noise == 1
+    assert torch.equal(lap.likelihood.sigma_noise, sigma)
+
+
+def test_marglik_training_noise_per_output_rejects_sigma_noise_init():
+    with pytest.raises(ValueError, match="sigma_noise_init"):
+        marglik_training(
+            _marglik_model(),
+            _marglik_data(),
+            likelihood=GaussianLikelihood(sigma_noise=SIGMA),
+            sigma_noise_init=0.5,
+            n_epochs=1,
+        )
+
+
+@pytest.mark.parametrize("prior_structure", ["scalar", "layerwise", "diag"])
+@pytest.mark.parametrize("structure", ["diag", "full", "kron"])
+def test_marglik_training_noise_per_output_prior_structures(structure, prior_structure):
+    if structure == "kron" and prior_structure == "diag":
+        pytest.skip("Kron doesn't support a diagonal prior")
+
+    lap, _, margliks, _ = marglik_training(
+        _marglik_model(),
+        _marglik_data(n=40),
+        likelihood=GaussianLikelihood(sigma_noise=SIGMA),
+        hessian_structure=structure,
+        prior_structure=prior_structure,
+        n_epochs=3,
+    )
+
+    assert all(math.isfinite(m) for m in margliks)
+    assert bool(torch.isfinite(lap.likelihood.sigma_noise).all())
+
+
+@pytest.mark.parametrize("structure", ["full", "diag", "kron"])
+def test_noise_per_output_update_matches_the_predictive(model, data, structure):
+    X, y, loader = data
+    la = _laplace(model, GaussianLikelihood(sigma_noise=SIGMA), structure)
+    la.fit(loader)
+
+    f_mu, f_var = la(X, pred_type="glm")
+    expected = ((f_mu - y).square() + f_var.diagonal(dim1=-2, dim2=-1)).mean(0).sqrt()
+
+    assert torch.allclose(noise_per_output_update(la, loader), expected)
+
+
+def test_noise_per_output_update_rejects_non_gaussian(model, data):
+    _, _, loader = data
+    la = Laplace(model, "classification", hessian_structure="diag")
+
+    with pytest.raises(ValueError, match="Gaussian"):
+        noise_per_output_update(la, loader)

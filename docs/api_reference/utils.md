@@ -27,6 +27,7 @@
             - "_is_valid_scalar"
             - "expand_prior_precision"
             - "fix_prior_prec_structure"
+            - "noise_per_output_update"
             - "FeatureExtractor"
             - "Kron"
             - "KronDecomposed"

@@ -10,7 +10,8 @@
 # $$
 #
 # This page shows how to give this noise to a Laplace approximation (LA) and how to
-# use the predictive. The noise is fixed when you call `fit`. It is not learned.
+# use the predictive. The noise is fixed when you call `fit`, and the last section
+# shows how to learn it.
 #
 # We create data with two outputs of the same function family but different noise:
 # the first has noise std 0.05, the second 0.4.
@@ -123,6 +124,46 @@ print(
 # BackPACK and ASDL support `full` and `diag` through the generic GGN code, but raise
 # an error for `kron`.
 #
-# `marglik_training` raises an error for a likelihood with a noise per output, since it
-# learns a single noise std. Learning one std per output is tracked in
-# [issue #349](https://github.com/aleximmer/Laplace/issues/349).
+# ## Learning the noise per output
+#
+# If you don't know the noise, `marglik_training` can learn it. Pass a likelihood with
+# a starting vector (ones work fine). It then trains the network, the prior precision
+# and the vector together, and returns a Laplace approximation with the learned vector
+# in its likelihood and `sigma_noise=1`. The likelihood you pass is not changed.
+
+# %%
+from laplace.marglik_training import marglik_training
+
+torch.manual_seed(711)
+learn_model = nn.Sequential(nn.Linear(1, 32), nn.Tanh(), nn.Linear(32, 2))
+
+la_learned, learn_model, margliks, losses = marglik_training(
+    learn_model,
+    train_loader,
+    likelihood=GaussianLikelihood(sigma_noise=torch.ones(2)),
+    hessian_structure="kron",
+    n_epochs=300,
+    optimizer_kwargs={"lr": 1e-2},
+    n_epochs_burnin=100,
+    marglik_frequency=10,
+)
+
+print(f"true noise std:    {sigma}")
+print(f"learned noise std: {la_learned.likelihood.sigma_noise}")
+
+# %% [markdown]
+# The vector is learned with the evidence update of MacKay (1992), applied once each
+# time the marginal likelihood is estimated:
+#
+# $$
+#     \sigma_k^2 = \frac{1}{N} \sum_n \left[ (y_{nk} - f_{nk})^2 + \operatorname{Var}[f_k(x_n)] \right],
+# $$
+#
+# where $\operatorname{Var}[f_k(x_n)]$ is the GLM predictive variance of output $k$ at
+# the training inputs. It costs one pass over the training data. The update is exact
+# for `full` and `diag`, and approximate for `kron` in the same way as its Hessian.
+#
+# To keep the vector you pass instead, use `fix_sigma_noise=True`.
+
+# %%
+print(f"log marginal likelihood: {la_learned.log_marginal_likelihood().item():.2f}")

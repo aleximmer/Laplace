@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import MutableMapping
-from copy import deepcopy
+from copy import copy, deepcopy
 from typing import Type
 
 import numpy as np
@@ -32,6 +32,7 @@ from laplace.utils import (
     SubsetOfWeights,
     expand_prior_precision,
     fix_prior_prec_structure,
+    noise_per_output_update,
 )
 from laplace.utils.heteroscedastic_utils import as_joined_outputs
 
@@ -89,11 +90,24 @@ def marglik_training(
     how often to estimate the marginal likelihood (default of 1 re-estimates
     after every epoch, 5 would estimate every 5-th epoch).
 
+    A Gaussian likelihood with a noise std per output, e.g.
+    `GaussianLikelihood(sigma_noise=torch.tensor([0.1, 1.0]))`, starts from that vector
+    and learns it, unless `fix_sigma_noise=True`. Each marglik estimation takes one
+    step of [`noise_per_output_update`][laplace.utils.noise_per_output_update],
+    MacKay's closed-form evidence update [2], at the cost of one extra pass over
+    `train_loader`. The prior precision still takes `n_hypersteps` Adam steps, with
+    the noise held fixed. The returned Laplace approximation has the learned vector in
+    its likelihood and `sigma_noise=1`. The likelihood you pass is not changed.
+
     References
     ----------
     [1] Immer, A., Bauer, M., Fortuin, V., Rätsch, G., Khan, EM.
     [*Scalable Marginal Likelihood Estimation for Model Selection in Deep Learning*](https://arxiv.org/abs/2104.04975).
     ICML 2021.
+
+    [2] MacKay, D. J. C.
+    *Bayesian interpolation*.
+    Neural Computation 4(3), 1992.
 
     Parameters
     ----------
@@ -134,7 +148,8 @@ def marglik_training(
     prior_prec_init : float, default=1.0
         initial prior precision
     sigma_noise_init : float, default=1.0
-        initial observation noise (for regression only)
+        initial observation noise (for regression only). Must stay 1 for a likelihood
+        with a noise std per output, which starts from its own vector.
     temperature : float, default=1.0
         temperature \\(T\\) of the likelihood, as in cold posteriors: both the network
         training and the Laplace approximation use
@@ -143,7 +158,7 @@ def marglik_training(
         datum.
     fix_sigma_noise: bool, default=False
         if False, optimize observation noise via marglik otherwise use `sigma_noise_init` throughout.
-        Only works for regression.
+        Only works for regression. For a noise std per output, the vector is kept fixed.
     progress_bar: bool, default=False
         whether to show a progress bar (updated per epoch) or not
     enable_backprop : bool, default=False
@@ -198,11 +213,21 @@ def marglik_training(
             "Marginal-likelihood training does not support reward modeling."
         )
 
-    if _noise_per_output(lik) is not None:
-        raise ValueError(
-            "Marginal-likelihood training learns a single noise std, so it does not "
-            "support a likelihood with a noise std per output (#349)."
-        )
+    # A noise std per output lives in the likelihood, so the scalar noise is fixed at
+    # 1 and the vector, on a copy of the likelihood, gets the closed-form update below
+    # unless the user fixed it
+    sigma_vec = _noise_per_output(lik)
+    if sigma_vec is not None:
+        if sigma_noise_init != 1.0:
+            raise ValueError(
+                "`sigma_noise_init` must stay 1 for a likelihood with a noise std per "
+                f"output, which starts from its own vector, but it is {sigma_noise_init}."
+            )
+
+        learn_vec = not fix_sigma_noise
+        fix_sigma_noise = True
+        lik = copy(lik)
+        sigma_vec = lik.sigma_noise = sigma_vec.detach().clone().to(device, dtype)
 
     if not lik.is_gaussian:
         sigma_noise = 1.0
@@ -381,6 +406,7 @@ def marglik_training(
                     else sigma_noise_init
                 )
             best_marglik = margliks[-1]
+            best_vec = sigma_vec
             logging.info(
                 f"MARGLIK[epoch={epoch}]: marglik optimization. MargLik={best_marglik:.2f}. "
                 + "Saving new best model."
@@ -391,12 +417,18 @@ def marglik_training(
                 + f"No improvement over {best_marglik:.2f}"
             )
 
+        if sigma_vec is not None and learn_vec:
+            lap.prior_precision = prior_prec.detach()
+            sigma_vec = lik.sigma_noise = noise_per_output_update(lap, train_loader)
+
     logging.info("MARGLIK: finished training. Recover best model and fit Laplace.")
 
     if best_model_dict is not None:
         model.load_state_dict(best_model_dict)
         sigma_noise = best_sigma
         prior_prec = best_precision
+        if sigma_vec is not None:
+            lik.sigma_noise = best_vec
     logging.info(f"best params: {sigma_noise}, {prior_prec}")
 
     lap = Laplace(
