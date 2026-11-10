@@ -422,15 +422,3 @@ def test_marglik_training_custom_likelihood_sequence_outputs(model, caplog):
     assert all(math.isfinite(loss) for loss in losses)
     assert len(perfs) == 2
     assert all(0.0 <= p <= 1.0 for p in perfs)
-
-
-@pytest.mark.parametrize("hessian_structure", ["full", "kron", "diag"])
-def test_marglik_training_raises_for_noise_per_output(model, hessian_structure):
-    with pytest.raises(ValueError, match="#349"):
-        marglik_training(
-            model,
-            _loader("regression"),
-            likelihood=GaussianLikelihood(sigma_noise=torch.tensor([0.5, 2.0])),
-            hessian_structure=hessian_structure,
-            n_epochs=1,
-        )

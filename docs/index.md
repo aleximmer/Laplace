@@ -257,9 +257,9 @@ la.fit(train_loader)
 The vector is fixed at `fit`. It enters the loss, the curvature and the log likelihood,
 so `la.log_marginal_likelihood()` uses it. The `sigma_noise` argument of `Laplace`
 itself stays a scalar: it raises an error if you pass a vector, and it must stay 1 with
-a vector in the likelihood. Learning the vector is not supported yet, and
-`marglik_training` raises an error for it (see
-[#349](https://github.com/aleximmer/Laplace/issues/349)).
+a vector in the likelihood. `marglik_training` learns the vector with a closed-form
+update from the marginal likelihood, starting from the one in the likelihood. The
+[example](multioutput_noise_example.py) shows how and why it works.
 
 The vector works with the `full`, `diag` and `kron` structures for all weights and the
 last layer, with `full` and `diag` for subnetworks, and with `FunctionalLaplace`, `ELLA`

@@ -28,6 +28,7 @@ __all__ = [
     "symeig",
     "block_diag",
     "expand_prior_precision",
+    "noise_per_output_update",
     "SoDSampler",
     "hyperparameters_equal",
 ]
@@ -453,3 +454,90 @@ def _zero_like(x: torch.Tensor | float) -> torch.Tensor:
     device = x.device if isinstance(x, torch.Tensor) else None
 
     return torch.zeros((), dtype=_float_dtype(x), device=device)
+
+
+def noise_per_output_update(
+    la: laplace.baselaplace.BaseLaplace, train_loader: DataLoader
+) -> torch.Tensor:
+    """One step of MacKay's evidence update [1] for a Gaussian noise std per output.
+
+    With \\(\\lambda_k = \\sigma_k^{-2}\\), \\(N\\) observations per output and the
+    posterior precision \\(P = \\frac{1}{T} \\sum_k \\lambda_k H_k + P_0\\), where
+    \\(H_k\\) is the GGN of output \\(k\\) at unit noise, the log marginal likelihood
+    \\(\\log Z\\) has the gradient
+
+    $$
+        \\partial_{\\lambda_k} \\log Z = \\frac{1}{T} \\Big[ \\frac{N}{2 \\lambda_k}
+        - \\frac{1}{2} \\sum_n (y_{nk} - f_{nk})^2
+        - \\frac{1}{2} \\operatorname{tr}(P^{-1} H_k) \\Big].
+    $$
+
+    The trace is \\(\\operatorname{tr}(P^{-1} H_k) = \\sum_n \\mathrm{Var}[f_k(x_n)]\\), the
+    GLM predictive variance of output \\(k\\) at the training inputs, without
+    observation noise. Setting the gradient to zero, the temperature cancels and
+    leaves
+
+    $$
+        \\sigma_k^2 = \\frac{1}{N} \\sum_n \\left[ (y_{nk} - f_{nk})^2
+        + \\mathrm{Var}[f_k(x_n)] \\right].
+    $$
+
+    The variance depends on \\(\\sigma\\) through \\(P\\), so this is one step of a
+    fixed-point iteration: refit `la` with the new noise and repeat. Like every
+    Laplace evidence update, it holds the MAP fixed.
+
+    The identity for the trace is exact for `'full'` and `'diag'` with a GGN backend.
+    The predictive always uses the exact Jacobians, so with `'kron'`, `'lowrank'`, or
+    an empirical Fisher backend the trace is that of the exact GGN \\(H_k\\) under the
+    approximate posterior, while \\(P\\) itself uses the approximate curvature. The
+    error is of the same kind as the one these approximations make in the Hessian.
+
+    References
+    ----------
+    [1] MacKay, D. J. C.
+    *Bayesian interpolation*.
+    Neural Computation 4(3), 1992.
+
+    Parameters
+    ----------
+    la : BaseLaplace
+        a fitted Laplace approximation with a Gaussian likelihood.
+    train_loader : DataLoader
+        the data `la` was fitted on, one pass of which gives the squared errors and
+        the predictive variances.
+
+    Returns
+    -------
+    sigma_noise : torch.Tensor
+        the updated noise std per output `(outputs,)`.
+
+    Raises
+    ------
+    ValueError
+        if the likelihood of `la` is not Gaussian.
+    """
+    if not la.likelihood.is_gaussian:
+        raise ValueError("The noise update needs a Gaussian likelihood.")
+
+    sq_err, n = 0.0, 0
+
+    for data in train_loader:
+        if isinstance(data, MutableMapping):
+            X, y = data, data[la.dict_key_y]
+        else:
+            X, y = data
+            X = X.to(la._device)
+
+        # A fixed-point statistic, so no graph is kept even with `enable_backprop`
+        f_mu, f_var = (t.detach() for t in la._glm_predictive_marginals(X))
+        K = f_mu.shape[-1]
+        y = y.to(la._device).reshape(-1, K)
+
+        sq_err = (
+            sq_err
+            + (f_mu.reshape(-1, K) - y).square().sum(0)
+            + f_var.reshape(-1, K).sum(0)
+        )
+        n += len(y)
+
+    return (sq_err / n).sqrt()
