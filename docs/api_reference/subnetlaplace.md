@@ -1,3 +1,5 @@
+# Subnet Laplace
+
 ::: laplace.SubnetLaplace
 
 ::: laplace.DiagSubnetLaplace

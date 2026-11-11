@@ -1,3 +1,5 @@
+# Utilities
+
 ::: laplace.utils
     options:
         members:

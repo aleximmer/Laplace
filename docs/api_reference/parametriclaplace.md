@@ -1,3 +1,5 @@
+# Parametric Laplace
+
 ::: laplace.ParametricLaplace
 
 ::: laplace.DiagLaplace

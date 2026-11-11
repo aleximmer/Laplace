@@ -134,7 +134,7 @@ plugins:
             filters:
               - "!^_[^_]"
               - "!^(H_facs|K_MM|Kinv|L|Sigma_inv|V|alpha|assemble_full_samples|batch_size|chol_precision|damping|data|dict_key_x|dict_key_y|dual_directions|enable_backprop|feature_gram|fit_history_|functional_variance_fast|generator|gp_kernel_prior_variance|independent_outputs|inducing_classes|inducing_locations|is_subset_params|log_det_posterior_precision|log_det_prior_precision|log_det_ratio|log_noise_variance|log_prior_precision|mc_softmax_samples|mean_subnet|mu|n_eigenvalues|n_layers|n_obs|n_obs_examples|n_subset|num_inducing|params|prior_precision_diag|scatter|seed|square_norm|subsample_size|train_loader)$"
-            heading_level: 1
+            heading_level: 2
             members_order: source
             merge_init_into_class: true
             inherited_members: true

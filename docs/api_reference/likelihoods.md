@@ -1,3 +1,5 @@
+# Likelihoods
+
 ::: laplace.Likelihood
 
 ::: laplace.GaussianLikelihood

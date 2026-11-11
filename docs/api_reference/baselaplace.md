@@ -1,1 +1,3 @@
+# Base Laplace
+
 ::: laplace.BaseLaplace

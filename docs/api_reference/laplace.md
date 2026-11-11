@@ -1,3 +1,5 @@
+# Laplace Frontend
+
 The public API is every name in `laplace.__all__`, `laplace.curvature.__all__`
 and `laplace.utils.__all__`, plus the methods and attributes shown on these
 pages. Import Laplace classes, likelihoods, enums and `marglik_training` from

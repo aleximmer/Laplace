@@ -1,3 +1,5 @@
+# Laplace Options
+
 ::: laplace.SubsetOfWeights
 
 ::: laplace.HessianStructure

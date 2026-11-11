@@ -1,3 +1,5 @@
+# Last-Layer Laplace
+
 ::: laplace.LLLaplace
 
 ::: laplace.DiagLLLaplace
