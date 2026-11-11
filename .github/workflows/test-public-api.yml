@@ -16,14 +16,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # All backends, so the LowRankLaplace and ASDL checks run too
-          - name: full
-            extras: "--extra all"
+          # ASDL and BackPACK, as `--extra all` installs them
+          - name: all
+          # LowRankLaplace needs the old asdfghjkl, which replaces ASDL
+          - name: old-asdfghjkl
             old_asdfghjkl: true
-          # No optional backends, so the curvature exports shrink
-          - name: minimal
-            extras: ""
-            minimal: true
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -33,12 +30,9 @@ jobs:
       - name: Install the project
         run: |
           uv venv
-          uv pip install --torch-backend cpu -r pyproject.toml --extra dev ${{ matrix.extras }}
+          uv pip install --torch-backend cpu -r pyproject.toml --extra dev --extra all
       - name: Install the old asdfghjkl
         if: matrix.old_asdfghjkl
         run: uv pip install git+https://github.com/wiseodd/asdl@9c7640f8a870e82d5b439e6da59d753b207003b0
-      - name: Remove BackPACK
-        if: matrix.minimal
-        run: uv pip uninstall backpack-for-pytorch
       - name: Test the public API
         run: .venv/bin/python -m pytest tests -m public_api -v

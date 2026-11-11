@@ -58,11 +58,14 @@ def _describe(obj: object) -> list[dict]:
 
 
 def snapshot() -> dict[str, list[dict]]:
-    """Signatures of `Laplace`, `marglik_training` and the public methods."""
+    """Signatures of the public functions and methods."""
     from tests.test_public_api import PUBLIC_COMMON, PUBLIC_EXTRA
 
     names = PUBLIC_COMMON.union(*PUBLIC_EXTRA.values())
-    result = {q: _describe(resolve(q)) for q in ["Laplace", "marglik_training"]}
+    result = {
+        q: _describe(resolve(q))
+        for q in ["Laplace", "marglik_training", "get_likelihood"]
+    }
 
     for cls_name in CLASSES:
         cls = getattr(laplace, cls_name)

@@ -336,6 +336,12 @@ def _breaking_changes(old: list[dict], new: inspect.Signature) -> list[str]:
         if at_i is None or at_i.name != p["name"]:
             problems.append(f"positional parameter {i} is no longer `{p['name']}`")
 
+    # Behind `*args`, a new positional parameter takes an argument `*args` used to get
+    has_var_positional = any(p["kind"] == "VAR_POSITIONAL" for p in old)
+
+    if has_var_positional and len(new_positional) > len(old_positional):
+        problems.append("new positional parameter before `*args`")
+
     for p in old:
         if p["kind"] in ("VAR_POSITIONAL", "VAR_KEYWORD"):
             if not any(q.kind.name == p["kind"] for q in new_params):
@@ -407,6 +413,13 @@ def test_breaking_changes_flagged(new):
 )
 def test_compatible_changes_pass(new):
     assert _breaking_changes(OLD, _sig(new)) == []
+
+
+def test_positional_before_args_flagged():
+    old = [{"name": "args", "kind": "VAR_POSITIONAL", "has_default": False}]
+
+    assert _breaking_changes(old, _sig("def f(x=0, *args): ...")) != []
+    assert _breaking_changes(old, _sig("def f(*args, x=0): ...")) == []
 
 
 def test_removed_kwargs_flagged():

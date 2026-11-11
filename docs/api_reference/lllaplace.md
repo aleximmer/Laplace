@@ -7,3 +7,5 @@
 ::: laplace.KronLLLaplace
 
 ::: laplace.FullLLLaplace
+
+::: laplace.FunctionalLLLaplace

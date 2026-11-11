@@ -153,6 +153,13 @@
    "has_default": true
   }
  ],
+ "get_likelihood": [
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
  "FullLaplace.__init__": [
   {
    "name": "model",
