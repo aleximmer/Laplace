@@ -74,7 +74,6 @@ __all__ = [
     "SubsetOfWeights",
     "FunctionalApproximation",
     "HessianStructure",
-    "Likelihood",
     "PredType",
     "LinkApprox",
     "TuningMethod",

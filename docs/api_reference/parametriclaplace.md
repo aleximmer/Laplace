@@ -1,8 +1,9 @@
-::: laplace.baselaplace
-    options:
-        members:
-            - ParametricLaplace
-            - DiagLaplace
-            - KronLaplace
-            - LowRankLaplace
-            - FullLaplace
+::: laplace.ParametricLaplace
+
+::: laplace.DiagLaplace
+
+::: laplace.KronLaplace
+
+::: laplace.LowRankLaplace
+
+::: laplace.FullLaplace

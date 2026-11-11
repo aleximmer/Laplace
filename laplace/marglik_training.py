@@ -25,16 +25,18 @@ from laplace.likelihoods import (
     _noise_per_output,
     get_likelihood,
 )
-from laplace.utils import (
+from laplace.utils.enums import (
     HessianStructure,
     Likelihood,
     PriorStructure,
     SubsetOfWeights,
+)
+from laplace.utils.heteroscedastic_utils import as_joined_outputs
+from laplace.utils.utils import (
     expand_prior_precision,
     fix_prior_prec_structure,
     noise_per_output_update,
 )
-from laplace.utils.heteroscedastic_utils import as_joined_outputs
 
 
 def marglik_training(
@@ -93,7 +95,7 @@ def marglik_training(
     A Gaussian likelihood with a noise std per output, e.g.
     `GaussianLikelihood(sigma_noise=torch.tensor([0.1, 1.0]))`, starts from that vector
     and learns it, unless `fix_sigma_noise=True`. Each marglik estimation takes one
-    step of [`noise_per_output_update`][laplace.utils.noise_per_output_update],
+    step of `laplace.utils.noise_per_output_update`,
     MacKay's closed-form evidence update [2], at the cost of one extra pass over
     `train_loader`. The prior precision still takes `n_hypersteps` Adam steps, with
     the noise held fixed. The returned Laplace approximation has the learned vector in

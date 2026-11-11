@@ -35,7 +35,6 @@ from laplace.likelihoods import (
     _noise_per_output,
     get_likelihood,
 )
-from laplace.utils import SoDSampler, hyperparameters_equal
 from laplace.utils.enums import (
     Likelihood,
     LinkApprox,
@@ -71,7 +70,9 @@ from laplace.utils.metrics import (
     RunningNLLMetric,
 )
 from laplace.utils.utils import (
+    SoDSampler,
     fix_prior_prec_structure,
+    hyperparameters_equal,
     invsqrt_precision,
     normal_samples,
     validate,

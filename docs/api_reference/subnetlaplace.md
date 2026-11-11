@@ -1,6 +1,5 @@
-::: laplace.subnetlaplace
-    options:
-        members:
-            - SubnetLaplace
-            - DiagSubnetLaplace
-            - FullSubnetLaplace
+::: laplace.SubnetLaplace
+
+::: laplace.DiagSubnetLaplace
+
+::: laplace.FullSubnetLaplace

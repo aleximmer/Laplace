@@ -28,9 +28,8 @@ import torch.nn as nn
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from laplace import Laplace
-from laplace.curvature.asdl import AsdlEF, AsdlGGN
-from laplace.utils.enums import LinkApprox, PredType
+from laplace import Laplace, LinkApprox, PredType
+from laplace.curvature import AsdlEF, AsdlGGN
 
 BATCH_SIZE = 4  # B
 SEQ_LENGTH = 6  # L
@@ -160,7 +159,7 @@ print(pred_la_mean.shape, pred_la_var.shape)
 # predicts the next token at every position.
 
 # %%
-from laplace.curvature.curvlinops import CurvlinopsGGN
+from laplace.curvature import CurvlinopsGGN
 
 VOCAB_SIZE = 20  # V
 IDS_KEY = "input_ids"

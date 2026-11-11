@@ -6,8 +6,9 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import KronLaplace
-from laplace.utils import Kron, block_diag
-from laplace.utils import kron as kron_prod
+from laplace.utils import Kron
+from laplace.utils.utils import block_diag
+from laplace.utils.utils import kron as kron_prod
 from tests.utils import (
     AsdlGGN,
     BackPackGGN,

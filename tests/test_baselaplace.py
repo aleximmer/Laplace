@@ -45,9 +45,9 @@ from laplace.utils import (
     RunningBernoulliNLLMetric,
     RunningGaussianNLLMetric,
     RunningNLLMetric,
-    validate,
 )
 from laplace.utils.enums import Likelihood
+from laplace.utils.utils import validate
 from tests.utils import (
     AsdlEF,
     AsdlGGN,

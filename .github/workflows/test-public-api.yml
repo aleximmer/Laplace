@@ -1,0 +1,44 @@
+name: test-public-api
+
+# Checks that the public API (exports, members, signatures) has no breaking
+# change. See "Public API" in docs/devs_guide.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test-public-api:
+    name: test-public-api (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # All backends, so the LowRankLaplace and ASDL checks run too
+          - name: full
+            extras: "--extra all"
+            old_asdfghjkl: true
+          # No optional backends, so the curvature exports shrink
+          - name: minimal
+            extras: ""
+            minimal: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+          enable-cache: true
+      - name: Install the project
+        run: |
+          uv venv
+          uv pip install --torch-backend cpu -r pyproject.toml --extra dev ${{ matrix.extras }}
+      - name: Install the old asdfghjkl
+        if: matrix.old_asdfghjkl
+        run: uv pip install git+https://github.com/wiseodd/asdl@9c7640f8a870e82d5b439e6da59d753b207003b0
+      - name: Remove BackPACK
+        if: matrix.minimal
+        run: uv pip uninstall backpack-for-pytorch
+      - name: Test the public API
+        run: .venv/bin/python -m pytest tests -m public_api -v

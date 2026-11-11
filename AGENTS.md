@@ -53,11 +53,14 @@ uv run mkdocs build --strict     # docs, as checked in CI
 - Tests that use the old asdfghjkl backend carry the `asdfghjkl` marker. It is added automatically
   for `LowRankLaplace` and `Asdfghjkl*` test parameters; add it by hand if a test builds them in its
   body. CI's old-asdfghjkl job runs only `-m asdfghjkl`, so an unmarked test never runs there.
+- `tests/test_public_api.py` carries the `public_api` marker. Only the `test-public-api` workflow
+  runs it; `pytest.yml` deselects it.
 
 ## Conventions
 
 - Use blank lines liberally to separate logical blocks; whitespace aids readability.
 - Fix all ruff lint warnings manually; do not suppress them.
+- Public API = `__all__` of `laplace`, `laplace.curvature`, `laplace.utils` + allowlist in `tests/test_public_api.py`; new public names go in both and the docs.
 - Add docstrings and type hints for all changes. New public classes go in `docs/api_reference/*.md`
   and the `mkdocs.yml` nav.
 - Add an example under `examples/` when introducing new features, see the current examples. Use it as both tutorial and API explanation. Make the writing flow.

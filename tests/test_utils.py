@@ -5,8 +5,8 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import Laplace
-from laplace.utils import (
-    RunningNLLMetric,
+from laplace.utils import RunningNLLMetric
+from laplace.utils.utils import (
     diagonal_add_scalar,
     get_nll,
     invsqrt_precision,
