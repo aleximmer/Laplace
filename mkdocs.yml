@@ -26,18 +26,18 @@ nav:
   - "Example: Heteroscedastic Regression": heteroscedastic_example.py
   - API Reference:
       - Laplace Frontend: api_reference/laplace.md
-      - ELLA: api_reference/ella.md
-      - VaLLA: api_reference/valla.md
-      - Laplace Options: api_reference/enums.md
-      - Likelihoods: api_reference/likelihoods.md
-      - Base Laplace: api_reference/baselaplace.md
       - Parametric Laplace: api_reference/parametriclaplace.md
-      - Functional Laplace: api_reference/functionallaplace.md
+      - Likelihoods: api_reference/likelihoods.md
+      - Curvatures: api_reference/curvatures.md
       - Last-Layer Laplace: api_reference/lllaplace.md
       - Subnet Laplace: api_reference/subnetlaplace.md
-      - Curvatures: api_reference/curvatures.md
+      - Functional Laplace: api_reference/functionallaplace.md
+      - ELLA: api_reference/ella.md
+      - VaLLA: api_reference/valla.md
       - Marglik Training Utils: api_reference/marglik_training.md
+      - Laplace Options: api_reference/enums.md
       - Utilities: api_reference/utils.md
+      - Base Laplace: api_reference/baselaplace.md
 
 theme:
   name: material

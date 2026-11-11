@@ -49,12 +49,12 @@ td code {
   --doc-symbol-parameter-bg-color: #dfbe501a;
 }
 
-/* API reference ToC: list an object's members only while the reader is inside
-   that object. Material marks the link of the current section as active. */
-.md-nav--secondary > .md-nav__list > .md-nav__item:has(> a[href*="#laplace."]) > .md-nav {
+/* API reference ToC: list a class's members only while the reader is inside that
+   class. Material marks the link of the current section as active. */
+.md-nav--secondary .md-nav__item:has(> a .doc-symbol-class) > .md-nav {
   display: none;
 }
 
-.md-nav--secondary > .md-nav__list > .md-nav__item:has(> a[href*="#laplace."]):has(.md-nav__link--active) > .md-nav {
+.md-nav--secondary .md-nav__item:has(> a .doc-symbol-class):has(.md-nav__link--active) > .md-nav {
   display: block;
 }
