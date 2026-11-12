@@ -16,15 +16,16 @@ from torch.utils.data import (
 from laplace import Laplace
 from laplace.curvature import CurvlinopsGGN
 from laplace.likelihoods import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
 )
 from tests.ella_valla.helpers import RewardModel
-from tests.utils import AsdlGGN, BackPackGGN, DoubledCategorical
+from tests.utils import AsdlGGN, BackPackGGN, DoubledCategorical, lik_id
 
 
-def make_ella(model, likelihood="classification", **kwargs):
+def make_ella(model, likelihood=CategoricalLikelihood(), **kwargs):
     options = {"subsample_size": 2, "n_eigenvalues": 1}
     options.update(kwargs)
     return Laplace(
@@ -41,7 +42,7 @@ def test_ella_temperature_update_refreshes_posterior(data):
     x, _, _ = data
     targets = x.sum(dim=-1, keepdim=True)
     loader = DataLoader(TensorDataset(x, targets), batch_size=2)
-    estimator = make_ella(torch.nn.Linear(2, 1), "regression")
+    estimator = make_ella(torch.nn.Linear(2, 1), GaussianLikelihood())
     estimator.fit(loader)
     before = estimator.predictive_moments(x[:1])[1]
     estimator.temperature = 2.0
@@ -134,7 +135,9 @@ def test_ella_asdl_reverse_mode_fallback_retains_input_gradients():
     inputs = torch.tensor([[1.0], [2.0], [3.0], [4.0]])
     model = SquareModel()
     targets = model(inputs).detach()
-    estimator = make_ella(model, "regression", backend=AsdlGGN, enable_backprop=True)
+    estimator = make_ella(
+        model, GaussianLikelihood(), backend=AsdlGGN, enable_backprop=True
+    )
     estimator.fit(DataLoader(TensorDataset(inputs, targets), batch_size=2))
     for parameter in model.parameters():
         parameter.grad = torch.full_like(parameter, 7)
@@ -150,7 +153,8 @@ def test_ella_noise_and_validation_grid(data):
     x, _, model = data
     loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
     estimator = make_ella(
-        model=torch.nn.Sequential(torch.nn.Linear(2, 1)), likelihood="regression"
+        model=torch.nn.Sequential(torch.nn.Linear(2, 1)),
+        likelihood=GaussianLikelihood(),
     )
     estimator.fit(loader, val_loader=loader)
     low = estimator.predictive_moments(x)[1]
@@ -229,7 +233,7 @@ def test_ella_joint_prior_noise_grid_selects_best_candidate(data):
     loader = DataLoader(
         TensorDataset(inputs, inputs.sum(-1, keepdim=True)), batch_size=2
     )
-    estimator = make_ella(torch.nn.Linear(2, 1), "regression")
+    estimator = make_ella(torch.nn.Linear(2, 1), GaussianLikelihood())
     estimator.fit(loader)
     estimator.optimize_hyperparameters(loader, [(0.1, 0.5), (10.0, 2.0)])
     scores = estimator.fit_history_["tuning"]
@@ -246,7 +250,7 @@ def test_ella_rejects_rank_deficient_nystrom_subset():
     loader = DataLoader(TensorDataset(inputs, torch.zeros_like(inputs)), batch_size=2)
     estimator = make_ella(
         torch.nn.Linear(1, 1, bias=False),
-        "regression",
+        GaussianLikelihood(),
         subsample_size=2,
         n_eigenvalues=2,
     )
@@ -268,7 +272,11 @@ def test_ella_accepts_small_full_rank_subset_kernel(backend):
     inputs = torch.eye(2)
     loader = DataLoader(TensorDataset(inputs, torch.zeros(2, 1)), batch_size=2)
     estimator = make_ella(
-        ScaledLinear(), "regression", subsample_size=2, n_eigenvalues=1, backend=backend
+        ScaledLinear(),
+        GaussianLikelihood(),
+        subsample_size=2,
+        n_eigenvalues=1,
+        backend=backend,
     )
     estimator.fit(loader)
     _, covariance = estimator.predictive_moments(inputs)
@@ -295,7 +303,7 @@ def test_reward_modeling_pair_fit_single_prediction(mapping):
         else TensorDataset(pairs, labels)
     )
     loader = DataLoader(dataset, batch_size=2)
-    estimator = make_ella(RewardModel(), "reward_modeling")
+    estimator = make_ella(RewardModel(), BradleyTerryLikelihood())
     estimator.fit(loader)
     pair_input = {"input_ids": pairs[:2]} if mapping else pairs[:2]
     single_input = {"input_ids": pairs[:2, 0]} if mapping else pairs[:2, 0]
@@ -310,7 +318,7 @@ def test_reward_modeling_fitting_mc_uses_classification_link():
     torch.manual_seed(10)
     pairs = torch.randn(6, 2, 2)
     labels = torch.randint(0, 2, (6,))
-    estimator = make_ella(RewardModel(), "reward_modeling")
+    estimator = make_ella(RewardModel(), BradleyTerryLikelihood())
     estimator.fit(DataLoader(TensorDataset(pairs, labels), batch_size=2))
 
     gen = torch.Generator()
@@ -361,7 +369,7 @@ def test_single_output_regression_vector_targets():
     options = {"subsample_size": 2, "n_eigenvalues": 1}
     vector = Laplace(
         original,
-        "regression",
+        GaussianLikelihood(),
         "all",
         "gp",
         functional_approximation="nystrom",
@@ -369,7 +377,7 @@ def test_single_output_regression_vector_targets():
     )
     matrix = Laplace(
         model_copy,
-        "regression",
+        GaussianLikelihood(),
         "all",
         "gp",
         functional_approximation="nystrom",
@@ -405,7 +413,7 @@ def test_inducing_and_basis_respect_training_sampler():
     loader = DataLoader(
         TensorDataset(x, y), batch_size=1, sampler=SubsetRandomSampler([0, 1])
     )
-    estimator = make_ella(torch.nn.Linear(2, 1), "regression")
+    estimator = make_ella(torch.nn.Linear(2, 1), GaussianLikelihood())
     assert set(estimator._indices(loader, balanced=False).tolist()) == {0, 1}
     estimator.fit(loader)
     assert estimator.n_data == 2
@@ -424,7 +432,7 @@ def test_deterministic_drop_last_excludes_unseen_rows(custom_batch_sampler):
         if custom_batch_sampler
         else DataLoader(dataset, batch_size=2, drop_last=True)
     )
-    estimator = make_ella(torch.nn.Linear(2, 1), "regression")
+    estimator = make_ella(torch.nn.Linear(2, 1), GaussianLikelihood())
     estimator.fit(loader)
     assert estimator.n_data == 4
     assert torch.all(estimator._indices(loader, balanced=False) < 4)
@@ -456,7 +464,7 @@ def test_joint_functional_samples_follow_joint_covariance():
     loader = DataLoader(TensorDataset(train_x, torch.zeros(2, 1)), batch_size=1)
     estimator = Laplace(
         torch.nn.Linear(2, 1, bias=False),
-        "regression",
+        GaussianLikelihood(),
         "all",
         "gp",
         functional_approximation="nystrom",
@@ -493,7 +501,7 @@ def test_ella_samples_basis_and_training_independently(drop_last):
     sampler.epochs = []
     loader = DataLoader(dataset, batch_size=2, sampler=sampler, drop_last=drop_last)
     estimator = make_ella(
-        torch.nn.Linear(2, 1), "regression", subsample_size=2, n_eigenvalues=2
+        torch.nn.Linear(2, 1), GaussianLikelihood(), subsample_size=2, n_eigenvalues=2
     )
     basis_indices = []
     fitted_indices = []
@@ -535,7 +543,7 @@ def test_ella_counts_examples_from_fitting_pass(empty_fitting_pass):
         TensorDataset(inputs, inputs.sum(dim=-1, keepdim=True)),
         batch_sampler=ChangingBatchSampler(),
     )
-    estimator = make_ella(torch.nn.Linear(2, 1), "regression")
+    estimator = make_ella(torch.nn.Linear(2, 1), GaussianLikelihood())
 
     if empty_fitting_pass:
         with pytest.raises(ValueError, match="nonempty training loader"):
@@ -566,10 +574,12 @@ def test_seeded_ella_map_mean_reference():
     torch.testing.assert_close(mean, expected)
 
 
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+@pytest.mark.parametrize(
+    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
+)
 def test_ella_likelihood_object_equivalence(data, likelihood):
     x, loader, model = data
-    if likelihood == "regression":
+    if isinstance(likelihood, GaussianLikelihood):
         model = torch.nn.Sequential(torch.nn.Linear(2, 1))
         loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
         as_object = GaussianLikelihood()
@@ -596,7 +606,7 @@ def test_ella_reward_likelihood_object_equivalence():
     loader = DataLoader(TensorDataset(pairs, labels), batch_size=2)
     model = RewardModel()
 
-    by_name = make_ella(deepcopy(model), "reward_modeling")
+    by_name = make_ella(deepcopy(model), BradleyTerryLikelihood())
     by_object = make_ella(deepcopy(model), BradleyTerryLikelihood())
     by_name.fit(loader)
     by_object.fit(loader)
@@ -613,7 +623,7 @@ def test_ella_reward_likelihood_object_equivalence():
 
 def test_ella_uses_likelihood_output_hessian(data):
     x, loader, model = data
-    default = make_ella(deepcopy(model), "classification")
+    default = make_ella(deepcopy(model), CategoricalLikelihood())
     doubled = make_ella(deepcopy(model), DoubledCategorical())
     default.fit(loader)
     doubled.fit(loader)
@@ -621,10 +631,12 @@ def test_ella_uses_likelihood_output_hessian(data):
     assert not torch.allclose(default.feature_gram, doubled.feature_gram)
 
 
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+@pytest.mark.parametrize(
+    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
+)
 def test_ella_checkpoint_likelihood_is_str(data, likelihood):
     x, loader, model = data
-    if likelihood == "regression":
+    if isinstance(likelihood, GaussianLikelihood):
         model = torch.nn.Sequential(torch.nn.Linear(2, 1))
         loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
 
@@ -889,7 +901,7 @@ def bernoulli_data():
 
 def test_ella_bernoulli_curvature(bernoulli_data):
     X, y, model = bernoulli_data
-    la = make_ella(model, "bernoulli", subsample_size=6, n_eigenvalues=3)
+    la = make_ella(model, BernoulliLikelihood(), subsample_size=6, n_eigenvalues=3)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=5))
 
     # The Bernoulli GGN is diag(p (1 - p)) per output
@@ -900,7 +912,9 @@ def test_ella_bernoulli_curvature(bernoulli_data):
     torch.testing.assert_close(la.feature_gram, expected.detach())
 
     # Without options, the GGN doesn't depend on the targets, so soft labels are fine
-    soft = make_ella(deepcopy(model), "bernoulli", subsample_size=6, n_eigenvalues=3)
+    soft = make_ella(
+        deepcopy(model), BernoulliLikelihood(), subsample_size=6, n_eigenvalues=3
+    )
     soft.fit(DataLoader(TensorDataset(X, 0.8 * y + 0.1), batch_size=5))
 
     torch.testing.assert_close(soft.feature_gram, la.feature_gram)
@@ -909,7 +923,7 @@ def test_ella_bernoulli_curvature(bernoulli_data):
 def test_ella_bernoulli_validation_nll(bernoulli_data):
     X, y, model = bernoulli_data
     loader = DataLoader(TensorDataset(X, y), batch_size=5)
-    la = make_ella(model, "bernoulli", subsample_size=6, n_eigenvalues=3)
+    la = make_ella(model, BernoulliLikelihood(), subsample_size=6, n_eigenvalues=3)
     la.fit(loader, val_loader=loader)
 
     # Probit-scaled logits, summed over the outputs and averaged over the rows
@@ -930,7 +944,7 @@ def test_ella_bernoulli_validation_nll(bernoulli_data):
 
 def test_ella_bernoulli_predictive(bernoulli_data):
     X, y, model = bernoulli_data
-    la = make_ella(model, "bernoulli", subsample_size=6, n_eigenvalues=3)
+    la = make_ella(model, BernoulliLikelihood(), subsample_size=6, n_eigenvalues=3)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=5))
 
     probit = la(X, link_approx="probit")
@@ -955,7 +969,7 @@ def test_ella_bernoulli_balanced_subset():
     loader = DataLoader(TensorDataset(X, y), batch_size=2)
 
     la = make_ella(
-        torch.nn.Linear(2, 1), "bernoulli", subsample_size=4, n_eigenvalues=2
+        torch.nn.Linear(2, 1), BernoulliLikelihood(), subsample_size=4, n_eigenvalues=2
     )
     selected = la._indices(loader, balanced=True)
 
@@ -964,7 +978,7 @@ def test_ella_bernoulli_balanced_subset():
     # Several outputs have no single class per row
     multi = DataLoader(TensorDataset(X, y.repeat(1, 2)), batch_size=2)
     la = make_ella(
-        torch.nn.Linear(2, 2), "bernoulli", subsample_size=4, n_eigenvalues=2
+        torch.nn.Linear(2, 2), BernoulliLikelihood(), subsample_size=4, n_eigenvalues=2
     )
 
     with pytest.raises(ValueError, match="one output"):
@@ -978,7 +992,7 @@ def test_ella_bernoulli_targets_like_torch(targets):
     y = torch.randint(2, (6,))
     y = y.float() if targets == "flat" else y[:, None]
     la = make_ella(
-        torch.nn.Linear(2, 1), "bernoulli", subsample_size=4, n_eigenvalues=2
+        torch.nn.Linear(2, 1), BernoulliLikelihood(), subsample_size=4, n_eigenvalues=2
     )
 
     with pytest.raises(ValueError, match="BernoulliLikelihood expects"):

@@ -18,7 +18,7 @@ import torch.distributions as dists
 from helper.models import load_cifar10_resnet18, tiny_cifar10_cnn
 from netcal.metrics import ECE
 
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 
 warnings.simplefilter("ignore", UserWarning)
 
@@ -97,7 +97,10 @@ print(f"[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.3}")
 # %%
 # Laplace
 la = Laplace(
-    model, "classification", subset_of_weights="last_layer", hessian_structure="kron"
+    model,
+    CategoricalLikelihood(),
+    subset_of_weights="last_layer",
+    hessian_structure="kron",
 )
 la.fit(train_loader)
 la.optimize_prior_precision(method="marglik")

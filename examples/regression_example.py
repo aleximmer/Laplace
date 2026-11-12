@@ -15,7 +15,7 @@ import torch
 from helper.dataloaders import get_sinusoid_example
 from helper.util import plot_regression
 
-from laplace import Laplace, marglik_training
+from laplace import GaussianLikelihood, Laplace, marglik_training
 
 n_epochs = 1000
 torch.manual_seed(711)
@@ -53,14 +53,16 @@ for i in range(n_epochs):
 # ## Fitting and optimizing the LA with empirical Bayes
 #
 # With the MAP model at hand, we estimate the prior precision and the observation
-# noise by empirical Bayes, after training. `Laplace` builds an LA for
-# `"regression"` over `"all"` weights. By default `Laplace` uses a Kronecker-factored
+# noise by empirical Bayes, after training. `Laplace` builds an LA for a Gaussian
+# likelihood over `"all"` weights. By default `Laplace` uses a Kronecker-factored
 # Hessian; this example is small, so we use `"full"` instead. We fit the LA to the
 # training data, initialize `log_prior` and `log_sigma`, and minimize the negative
 # log marginal likelihood with Adam for `n_epochs`.
 
 # %%
-la = Laplace(model, "regression", subset_of_weights="all", hessian_structure="full")
+la = Laplace(
+    model, GaussianLikelihood(), subset_of_weights="all", hessian_structure="full"
+)
 la.fit(train_loader)
 
 log_prior, log_sigma = (
@@ -81,7 +83,9 @@ for i in range(n_epochs):
 state_dict = la.state_dict()
 torch.save(state_dict, "state_dict.bin")
 
-la = Laplace(model, "regression", subset_of_weights="all", hessian_structure="full")
+la = Laplace(
+    model, GaussianLikelihood(), subset_of_weights="all", hessian_structure="full"
+)
 la.load_state_dict(torch.load("state_dict.bin"))
 
 print(
@@ -143,7 +147,7 @@ model = get_model()
 la, model, margliks, losses = marglik_training(
     model=model,
     train_loader=train_loader,
-    likelihood="regression",
+    likelihood=GaussianLikelihood(),
     hessian_structure="full",
     n_epochs=n_epochs,
     optimizer_kwargs={"lr": 1e-2},

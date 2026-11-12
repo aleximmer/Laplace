@@ -26,7 +26,7 @@ import torch.distributions as dists
 from helper.models import load_cifar10_resnet18, tiny_cifar10_cnn
 from netcal.metrics import ECE
 
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 
 warnings.simplefilter("ignore", UserWarning)
 
@@ -109,7 +109,7 @@ for m in args.subset_sizes:
     print(f"Fitting Laplace-GP for m={m}")
     la = Laplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subset_of_weights="last_layer",
         hessian_structure="gp",
         independent_outputs=True,

@@ -86,13 +86,13 @@ the `"probit"` predictive for classification.
     the ones you want to pass in `la(x, ...)` during prediction.
 
 ```python
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 
 # Pre-trained model
 model = load_map_model()
 
 # User-specified LA flavor
-la = Laplace(model, "classification",
+la = Laplace(model, CategoricalLikelihood(),
              subset_of_weights="all",
              hessian_structure="diag")
 la.fit(train_loader)
@@ -109,21 +109,21 @@ pred = la(x, pred_type="glm", link_approx="probit")
 
 ### Likelihoods
 
-The `likelihood` argument takes a likelihood object, its name, or a PyTorch criterion, see the [likelihoods API](api_reference/likelihoods.md).
-`likelihood="classification"` and `likelihood=CategoricalLikelihood()` give the same result.
-`"bernoulli"` is for binary and multi-label targets: every output is a logit with its own sigmoid, and `nn.BCEWithLogitsLoss` is its loss.
+The `likelihood` argument takes a likelihood object or a PyTorch criterion, see the [likelihoods API](api_reference/likelihoods.md).
+The built-in ones are `GaussianLikelihood()`, `CategoricalLikelihood()`, `BernoulliLikelihood()`, `HeteroscedasticGaussianLikelihood()`, and `BradleyTerryLikelihood()` for reward modeling.
+Passing a `nn.CrossEntropyLoss()` gives the same result as `CategoricalLikelihood()`.
+The task names `"regression"`, `"classification"`, and `"reward_modeling"` are deprecated and will be removed in 0.9, as are `Likelihood.REGRESSION` and the other enum-style members.
+`BernoulliLikelihood()` is for binary and multi-label targets: every output is a logit with its own sigmoid, and `nn.BCEWithLogitsLoss` is its loss.
 The targets are floats with the shape of the outputs, and they may be soft labels in $[0, 1]$.
 It takes the parametric structures (`diag`, `kron`, `full`) and the GLM and NN predictives.
 The default `link_approx="probit"` is a closed form that applies the sigmoid to each logit scaled by its variance, and `"mc"` samples.
 The Laplace bridge is for the softmax, so `"bridge"` and `"bridge_norm"` raise a `ValueError`.
-Gridsearch uses `RunningBernoulliNLLMetric` by default.
 See the [multi-label example](multilabel_example.py).
 
-`"heteroscedastic_gaussian"` is for a network that predicts its own noise, trained with `nn.GaussianNLLLoss`.
+`HeteroscedasticGaussianLikelihood()` is for a network that predicts its own noise, trained with `nn.GaussianNLLLoss`.
 The model returns the pair `(mean, var)`, and `la(x)` returns `f_mean, f_alea, f_epis`: the mean and the variance at the MAP, and the epistemic covariance of the mean.
 The LA is over the mean only, with the variance held fixed, as in [Immer et al. (2023)](https://openreview.net/forum?id=A6EquH0enk).
 It takes all weights or a subnetwork, but not the last layer, and the `diag`, `full`, and `kron` structures with the Curvlinops backends.
-Gridsearch uses `RunningGaussianNLLMetric` by default.
 See the [heteroscedastic regression example](heteroscedastic_example.py).
 
 For classification, the targets are class indices `(batch, ...)` or class probabilities `(batch, ..., classes)`, as in `nn.CrossEntropyLoss`.
@@ -186,6 +186,10 @@ For distributions with finite support, such as the Bernoulli or the categorical,
 For other distributions, it is a Monte Carlo estimate, and a warning says so.
 If you know the Fisher in closed form, override `output_hessian` to make it exact and cheap.
 The `Likelihood` docstring lists every member you can override.
+`predictive_distribution` and `n_predictive_outputs` describe the predictive.
+The first returns the distribution of the targets given the GLM moments or the network samples, by default a Monte Carlo mixture of `distribution(f)`.
+Override it if your likelihood has a closed-form predictive.
+The second gives the number of predictive outputs for a model with a given number of outputs, by default the same number.
 
 ```python
 import torch
@@ -213,8 +217,8 @@ For a Gaussian likelihood, the GLM predictive returns the moments of \(f\), and 
 For any other likelihood, it draws `n_samples` samples \(f \sim \mathcal{N}(f_\mu, \Sigma_f)\) from the GLM predictive and averages the `inverse_link` \(g\) over them, a Monte Carlo estimate of \(\mathbb{E}[g(f)]\).
 `link_approx` has no effect there.
 In the example above, the result is the expected Poisson rate.
-Gridsearch has no default loss for a custom likelihood, so pass `loss` to `optimize_prior_precision`.
-FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods and `"heteroscedastic_gaussian"`.
+Gridsearch scores the validation targets by their negative log predictive density, so it needs no `loss` for a custom likelihood.
+FunctionalLaplace, ELLA, and VaLLA raise a `ValueError` for custom likelihoods and `HeteroscedasticGaussianLikelihood()`.
 All three accept a `CategoricalLikelihood` or `BernoulliLikelihood` with options.
 
 ### Marginal likelihood
@@ -225,13 +229,13 @@ Here, we fit the library default, KFAC last-layer LA and differentiate
 the log marginal likelihood.
 
 ```python
-from laplace import Laplace
+from laplace import GaussianLikelihood, Laplace
 
 # Un- or pre-trained model
 model = load_model()
 
 # Default to recommended last-layer KFAC LA:
-la = Laplace(model, likelihood="regression")
+la = Laplace(model, likelihood=GaussianLikelihood())
 la.fit(train_loader)
 
 # ML w.r.t. prior precision and observation noise
@@ -318,7 +322,7 @@ for p in model.hf_model.score.parameters():
 
 la = Laplace(
     model,
-    likelihood="classification",
+    likelihood=CategoricalLikelihood(),
     # Will only hit the last-layer since it's the only one that is grad-enabled
     subset_of_weights="all",
     hessian_structure="diag",
@@ -356,7 +360,7 @@ lora_model.eval()
 
 lora_la = Laplace(
     lora_model,
-    likelihood="classification",
+    likelihood=CategoricalLikelihood(),
     subset_of_weights="all",
     hessian_structure="diag",
     backend=AsdlGGN,  # needs laplace-torch[asdl]
@@ -401,7 +405,7 @@ import torch
 subnetwork_indices = torch.tensor([0, 4, 11, 42, 123, 2021])
 
 # Define and fit subnetwork LA using the specified subnetwork indices
-la = Laplace(model, "classification",
+la = Laplace(model, CategoricalLikelihood(),
              subset_of_weights="subnetwork",
              hessian_structure="full",
              subnetwork_indices=subnetwork_indices)
@@ -444,7 +448,7 @@ torch.save(la.state_dict(), "la_state_dict.bin")
 # Load serialized data
 model2 = MyModel(...)
 model2.load_state_dict(torch.load("model_state_dict.bin"))
-la2 = Laplace(model2, "classification",
+la2 = Laplace(model2, CategoricalLikelihood(),
               subset_of_weights="all",
               hessian_structure="diag")
 la2.load_state_dict(torch.load("la_state_dict.bin"))

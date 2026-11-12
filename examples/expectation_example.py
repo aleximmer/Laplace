@@ -28,9 +28,9 @@ from torch import nn, optim
 
 from laplace import (
     BaseLaplace,
+    GaussianLikelihood,
     HessianStructure,
     Laplace,
-    Likelihood,
     PredType,
     SubsetOfWeights,
 )
@@ -91,7 +91,7 @@ def fit_laplace(seed: int = 123) -> tuple[BaseLaplace, torch.Tensor, torch.Tenso
 
     la = Laplace(
         model,
-        Likelihood.REGRESSION,
+        GaussianLikelihood(),
         subset_of_weights=SubsetOfWeights.ALL,
         hessian_structure=HessianStructure.KRON,
         sigma_noise=0.05,

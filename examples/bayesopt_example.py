@@ -24,7 +24,7 @@ from botorch.test_functions import Branin
 from gpytorch.distributions import MultivariateNormal
 from torch import nn, optim
 
-from laplace import Laplace
+from laplace import GaussianLikelihood, Laplace
 
 warnings.filterwarnings("ignore")
 
@@ -151,7 +151,7 @@ class LaplaceBNN(Model):
 
         self.la = Laplace(
             self.net,
-            "regression",
+            GaussianLikelihood(),
             subset_of_weights="all",
             hessian_structure="kron",
             enable_backprop=True,

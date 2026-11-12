@@ -24,6 +24,7 @@ from tests.utils import (
     ListDataset,
     ScaledGaussian,
     dict_data_collator,
+    lik_id,
     requires_backpack,
     toy_classification_dataset,
     toy_model,
@@ -54,11 +55,11 @@ def test_gp_equivalence_regression(laplace, independent_outputs):
 
     parametric_laplace, functional_laplace = laplace
     full_la = parametric_laplace(
-        model, "regression", sigma_noise=true_sigma_noise, prior_precision=2.0
+        model, GaussianLikelihood(), sigma_noise=true_sigma_noise, prior_precision=2.0
     )
     functional_gp_la = functional_laplace(
         model,
-        "regression",
+        GaussianLikelihood(),
         n_subset=M,
         sigma_noise=true_sigma_noise,
         independent_outputs=independent_outputs,
@@ -88,11 +89,11 @@ def test_gp_equivalence_regression_multivariate(
     model = toy_model(train_loader, in_dim=c, out_dim=c)
 
     full_la = parametric_laplace(
-        model, "regression", sigma_noise=true_sigma_noise, prior_precision=2.0
+        model, GaussianLikelihood(), sigma_noise=true_sigma_noise, prior_precision=2.0
     )
     functional_gp_la = functional_laplace(
         model,
-        "regression",
+        GaussianLikelihood(),
         n_subset=len(X_train),
         sigma_noise=true_sigma_noise,
         independent_outputs=False,
@@ -126,10 +127,10 @@ def test_gp_equivalence_classification(laplace, independent_outputs, gp_backend,
     model = toy_model(train_loader, in_dim=4, out_dim=c, regression=False)
 
     parametric_laplace, functional_laplace = laplace
-    full_la = parametric_laplace(model, "classification", prior_precision=1.0)
+    full_la = parametric_laplace(model, CategoricalLikelihood(), prior_precision=1.0)
     functional_gp_la = functional_laplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         n_subset=len(X_train),
         independent_outputs=independent_outputs,
         prior_precision=1.0,
@@ -151,7 +152,7 @@ def test_default_backend_is_curvlinops(laplace, passed):
     model = torch.nn.Sequential(
         torch.nn.Linear(3, 8), torch.nn.Tanh(), torch.nn.Linear(8, 2)
     )
-    la = laplace(model, "regression", n_subset=5, **passed)
+    la = laplace(model, GaussianLikelihood(), n_subset=5, **passed)
 
     assert la._backend_cls is CurvlinopsGGN
 
@@ -163,7 +164,7 @@ def test_accepts_curvlinops_subclass():
     model = torch.nn.Sequential(
         torch.nn.Linear(3, 8), torch.nn.Tanh(), torch.nn.Linear(8, 2)
     )
-    la = FunctionalLaplace(model, "regression", n_subset=5, backend=MyGGN)
+    la = FunctionalLaplace(model, GaussianLikelihood(), n_subset=5, backend=MyGGN)
 
     assert la._backend_cls is MyGGN
 
@@ -180,7 +181,9 @@ def test_backpack_dict_inputs_suggest_default_backend():
 
     data = [{"input_ids": torch.randn(3), "labels": torch.randn(2)} for _ in range(8)]
     loader = DataLoader(ListDataset(data), batch_size=4, collate_fn=dict_data_collator)
-    la = FunctionalLaplace(DictModel(), "regression", n_subset=4, backend=BackPackGGN)
+    la = FunctionalLaplace(
+        DictModel(), GaussianLikelihood(), n_subset=4, backend=BackPackGGN
+    )
 
     with pytest.raises(ValueError, match="CurvlinopsGGN"):
         la.fit(loader)
@@ -214,9 +217,9 @@ def test_dict_inputs_match_tensor_inputs(independent_outputs):
     )
 
     kwargs = dict(n_subset=6, independent_outputs=independent_outputs)
-    la_tensor = FunctionalLaplace(deepcopy(linear), "regression", **kwargs)
+    la_tensor = FunctionalLaplace(deepcopy(linear), GaussianLikelihood(), **kwargs)
     la_dict = FunctionalLaplace(
-        _DictInputModel(deepcopy(linear)), "regression", **kwargs
+        _DictInputModel(deepcopy(linear)), GaussianLikelihood(), **kwargs
     )
     la_tensor.fit(tensor_loader)
     la_dict.fit(dict_loader)
@@ -242,7 +245,7 @@ def test_sod_loader_keeps_collate_fn():
         batch_size=4,
         collate_fn=dict_data_collator,
     )
-    la = FunctionalLaplace(torch.nn.Linear(3, 2), "regression", n_subset=4)
+    la = FunctionalLaplace(torch.nn.Linear(3, 2), GaussianLikelihood(), n_subset=4)
 
     assert la._get_SoD_data_loader(loader).collate_fn is dict_data_collator
 
@@ -259,11 +262,17 @@ class _FixedLinear(torch.nn.Module):
         return torch.nn.functional.linear(x, self.weight, self.bias)
 
 
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+@pytest.mark.parametrize(
+    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
+)
 def test_frozen_parameters_match_fixed_features(likelihood):
     torch.manual_seed(711)
     X = torch.randn(16, 3)
-    y = torch.randn(16, 2) if likelihood == "regression" else torch.randint(0, 2, (16,))
+    y = (
+        torch.randn(16, 2)
+        if isinstance(likelihood, GaussianLikelihood)
+        else torch.randint(0, 2, (16,))
+    )
     loader = DataLoader(TensorDataset(X, y), batch_size=8)
 
     first, last = torch.nn.Linear(3, 4), torch.nn.Linear(4, 2)
@@ -285,9 +294,11 @@ def test_frozen_parameters_match_fixed_features(likelihood):
         assert torch.allclose(out_frozen, out_fixed)
 
 
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+@pytest.mark.parametrize(
+    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
+)
 def test_functional_likelihood_object_equivalence(likelihood):
-    if likelihood == "regression":
+    if isinstance(likelihood, GaussianLikelihood):
         X_train, y_train, train_loader, X_test = toy_regression_dataset_1d(
             sigma=true_sigma_noise, batch_size=60
         )
@@ -313,7 +324,7 @@ def test_functional_likelihood_object_equivalence(likelihood):
     assert torch.allclose(var_str, var_obj)
     assert torch.allclose(la_str.loss, la_obj.loss)
 
-    if likelihood == "regression":
+    if isinstance(likelihood, GaussianLikelihood):
         assert torch.allclose(
             la_str.log_marginal_likelihood(), la_obj.log_marginal_likelihood()
         )
@@ -326,7 +337,7 @@ def test_functional_uses_likelihood_output_hessian():
     model = toy_model(train_loader, in_dim=4, out_dim=2, regression=False)
 
     kwargs = dict(n_subset=len(X_train), prior_precision=2.0)
-    default = FunctionalLaplace(model, "classification", **kwargs)
+    default = FunctionalLaplace(model, CategoricalLikelihood(), **kwargs)
     doubled = FunctionalLaplace(model, DoubledCategorical(), **kwargs)
     default.fit(train_loader)
     doubled.fit(train_loader)
@@ -347,7 +358,7 @@ def test_functional_rejects_custom_likelihood_name():
     with pytest.raises(ValueError, match=match):
         ELLA(model, ScaledGaussian(), subsample_size=5, n_eigenvalues=2)
 
-    la = FunctionalLaplace(model, "regression", n_subset=5)
+    la = FunctionalLaplace(model, GaussianLikelihood(), n_subset=5)
 
     with pytest.raises(ValueError, match=match):
         la.likelihood = ScaledGaussian()

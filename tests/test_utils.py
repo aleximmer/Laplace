@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 from laplace.utils import RunningNLLMetric
 from laplace.utils.utils import (
     diagonal_add_scalar,
@@ -102,7 +102,7 @@ def test_validate():
     model = torch.nn.Sequential(
         torch.nn.Linear(10, 20), torch.nn.ReLU(), torch.nn.Linear(20, 3)
     )
-    la = Laplace(model, "classification", "all")
+    la = Laplace(model, CategoricalLikelihood(), "all")
     la.fit(dataloader)
 
     res = validate(

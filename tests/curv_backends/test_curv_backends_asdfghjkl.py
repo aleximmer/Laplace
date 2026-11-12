@@ -4,6 +4,7 @@ from asdfghjkl.operations import Bias, Scale
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
+from laplace import CategoricalLikelihood
 from laplace.curvature import AsdfghjklEF, AsdfghjklGGN
 from tests.utils import BackPackEF, BackPackGGN
 
@@ -61,7 +62,7 @@ def complex_class_Xy():
 
 def test_diag_ggn_cls_kazuki_against_backpack_full(class_Xy, model):
     X, y = class_Xy
-    backend = AsdfghjklGGN(model, "classification", stochastic=False)
+    backend = AsdfghjklGGN(model, CategoricalLikelihood(), stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -71,7 +72,7 @@ def test_diag_ggn_cls_kazuki_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "classification", stochastic=False)
+    backend = BackPackGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -79,7 +80,7 @@ def test_diag_ggn_cls_kazuki_against_backpack_full(class_Xy, model):
 
 def test_diag_ef_cls_kazuki_against_backpack_full(class_Xy, model):
     X, y = class_Xy
-    backend = AsdfghjklEF(model, "classification")
+    backend = AsdfghjklEF(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -89,7 +90,7 @@ def test_diag_ef_cls_kazuki_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model, "classification")
+    backend = BackPackEF(model, CategoricalLikelihood())
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -97,13 +98,13 @@ def test_diag_ef_cls_kazuki_against_backpack_full(class_Xy, model):
 
 def test_diag_ggn_stoch_cls_kazuki(class_Xy, model):
     X, y = class_Xy
-    backend = AsdfghjklGGN(model, "classification", stochastic=True)
+    backend = AsdfghjklGGN(model, CategoricalLikelihood(), stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
 
     # same order of magnitude os non-stochastic.
-    backend = AsdfghjklGGN(model, "classification", stochastic=False)
+    backend = AsdfghjklGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_ns, dggn_ns = backend.diag(X, y)
     assert loss_ns == loss
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)
@@ -113,7 +114,7 @@ def test_diag_ggn_stoch_cls_kazuki(class_Xy, model):
 def test_kron_kazuki_vs_diag_class(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
@@ -124,7 +125,7 @@ def test_kron_kazuki_vs_diag_class(class_Xy, model, Backend):
 @pytest.mark.parametrize("Backend", [AsdfghjklEF, AsdfghjklGGN])
 def test_kron_batching_correction_kazuki(class_Xy, model, Backend):
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == model.n_params
 
@@ -142,7 +143,7 @@ def test_kron_batching_correction_kazuki(class_Xy, model, Backend):
 def test_kron_summing_up_vs_diag_kazuki(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
@@ -150,7 +151,7 @@ def test_kron_summing_up_vs_diag_kazuki(class_Xy, model, Backend):
 
 def test_complex_diag_ggn_stoch_cls_kazuki(complex_class_Xy, complex_model):
     X, y = complex_class_Xy
-    backend = AsdfghjklGGN(complex_model, "classification", stochastic=True)
+    backend = AsdfghjklGGN(complex_model, CategoricalLikelihood(), stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -165,7 +166,7 @@ def test_complex_diag_ggn_stoch_cls_kazuki(complex_class_Xy, complex_model):
 def test_complex_kron_kazuki_vs_diag_kazuki(complex_class_Xy, complex_model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -178,7 +179,7 @@ def test_complex_kron_batching_correction_kazuki(
     complex_class_Xy, complex_model, Backend
 ):
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == complex_model.n_params
 
@@ -198,7 +199,7 @@ def test_complex_kron_summing_up_vs_diag_class_kazuki(
 ):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)

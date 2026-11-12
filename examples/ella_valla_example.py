@@ -16,7 +16,7 @@
 import torch
 from helper.dataloaders import get_sinusoid_example
 
-from laplace import Laplace
+from laplace import GaussianLikelihood, Laplace
 
 torch.manual_seed(711)
 X_train, y_train, train_loader, X_test = get_sinusoid_example(sigma_noise=0.3)
@@ -57,7 +57,7 @@ for i in range(1000):
 # %%
 la = Laplace(
     model,
-    "regression",
+    GaussianLikelihood(),
     subset_of_weights="all",
     hessian_structure="full",
     sigma_noise=0.3,
@@ -83,7 +83,7 @@ la.optimize_prior_precision(method="marglik")
 # %%
 ella = Laplace(
     model,
-    "regression",
+    GaussianLikelihood(),
     subset_of_weights="all",
     hessian_structure="gp",
     functional_approximation="nystrom",
@@ -147,7 +147,7 @@ ella.prior_precision = shared_prior
 # %%
 valla = Laplace(
     model,
-    "regression",
+    GaussianLikelihood(),
     subset_of_weights="all",
     hessian_structure="gp",
     functional_approximation="variational",

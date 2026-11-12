@@ -82,7 +82,7 @@ for epoch in range(500):
 #
 # Pass the criterion as the likelihood. `Laplace` turns `nn.GaussianNLLLoss` into a
 # `HeteroscedasticGaussianLikelihood` with the same `eps` and `full`, and you can also
-# pass that object or its name, `"heteroscedastic_gaussian"`.
+# pass that object directly.
 #
 # The LA is over the mean of the network, as in Immer et al. (2023): it holds the
 # variance at its value under the trained weights. So the parameters of the variance

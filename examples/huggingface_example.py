@@ -25,7 +25,7 @@ import torch
 import torch.utils.data as data_utils
 from torch import nn
 
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 
 logging.basicConfig(level="ERROR")
 warnings.filterwarnings("ignore")
@@ -159,7 +159,7 @@ model.eval()
 
 la = Laplace(
     model,
-    likelihood="classification",
+    likelihood=CategoricalLikelihood(),
     subset_of_weights="last_layer",
     hessian_structure="full",
     # This must reflect faithfully the reduction technique used in the model
@@ -202,7 +202,7 @@ for p in model.hf_model.score.parameters():
 la = Laplace(
     model,
     # Will only hit the last-layer since it's the only one that is grad-enabled
-    likelihood="classification",
+    likelihood=CategoricalLikelihood(),
     subset_of_weights="all",
     hessian_structure="diag",
 )
@@ -248,7 +248,7 @@ lora_model.eval()
 
 lora_la = Laplace(
     lora_model,
-    likelihood="classification",
+    likelihood=CategoricalLikelihood(),
     subset_of_weights="all",
     hessian_structure="kron",
 )

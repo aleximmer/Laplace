@@ -3,6 +3,7 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
+from laplace import CategoricalLikelihood
 from laplace.baselaplace import DiagLaplace, FullLaplace, KronLaplace
 from laplace.laplace import Laplace
 from laplace.lllaplace import DiagLLLaplace, FullLLLaplace, KronLLLaplace
@@ -33,14 +34,14 @@ def model():
     return model
 
 
-def test_default_init(model, likelihood="classification"):
+def test_default_init(model, likelihood=CategoricalLikelihood()):
     # test if default initialization works, id=(last-layer, kron)
     lap = Laplace(model, likelihood)
     assert isinstance(lap, KronLLLaplace)
 
 
 @pytest.mark.parametrize("laplace, key", list(zip(flavors, all_keys)))
-def test_all_init(laplace, key, model, likelihood="classification"):
+def test_all_init(laplace, key, model, likelihood=CategoricalLikelihood()):
     # test if all flavors are correctly initialized
     w, s = key
     lap = Laplace(model, likelihood, subset_of_weights=w, hessian_structure=s)
@@ -48,7 +49,7 @@ def test_all_init(laplace, key, model, likelihood="classification"):
 
 
 @pytest.mark.parametrize("key", all_keys)
-def test_opt_keywords(key, model, likelihood="classification"):
+def test_opt_keywords(key, model, likelihood=CategoricalLikelihood()):
     # test if optional keywords are correctly passed on
     w, s = key
     prior_mean = torch.zeros_like(parameters_to_vector(model.parameters()))

@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import KronLaplace
+from laplace import GaussianLikelihood, KronLaplace
 from laplace.utils import Kron
 from laplace.utils.utils import block_diag
 from laplace.utils.utils import kron as kron_prod
@@ -149,7 +149,7 @@ def test_bmm_dense(small_model):
     y = torch.randn(5, 2)
 
     # Dense Kronecker factors.
-    backend = BackPackGGN(model, "regression", stochastic=False)
+    backend = BackPackGGN(model, GaussianLikelihood(), stochastic=False)
     _, kron = backend.kron(X, y, N=5)
     kron_decomp = kron.decompose()
     Js, _ = jacobians_naive(model, X)
@@ -215,7 +215,7 @@ def test_bmm_diag(small_model):
     y = torch.randn(5, 2)
 
     # Diagonal Kronecker factors.
-    backend = AsdlGGN(model, "regression", stochastic=False)
+    backend = AsdlGGN(model, GaussianLikelihood(), stochastic=False)
     _, kron = backend.kron(X, y, N=5, diag_A=True, diag_B=True)
     kron_decomp = kron.decompose()
     Js, _ = jacobians_naive(model, X)
@@ -349,7 +349,7 @@ def test_kron_posterior_precision_preserves_damping(damping):
     inputs = torch.tensor([[-1.0, 0.0], [0.0, 1.0], [1.0, 2.0], [2.0, -1.0]])
     posterior = KronLaplace(
         model,
-        "regression",
+        GaussianLikelihood(),
         damping=damping,
         sigma_noise=0.8,
         temperature=1.3,
@@ -398,7 +398,7 @@ def test_bmm_preserves_singleton_shapes(
 def test_kron_square_norm_single_parameter():
     model = nn.Linear(1, 1, bias=False).double()
     inputs = torch.tensor([[-1.0], [0.0], [1.0], [2.0]])
-    posterior = KronLaplace(model, "regression")
+    posterior = KronLaplace(model, GaussianLikelihood())
     posterior.fit(DataLoader(TensorDataset(inputs, 0.5 * inputs), batch_size=2))
     value = posterior.mean.detach() + 0.3
     delta = value - posterior.mean

@@ -22,10 +22,10 @@ from laplace.likelihoods import (
 )
 from laplace.utils.functional_utils import draw_gaussian
 from tests.ella_valla.helpers import RewardModel
-from tests.utils import AsdlGGN, BackPackGGN
+from tests.utils import AsdlGGN, BackPackGGN, lik_id
 
 
-def make_valla(model, likelihood="classification", **kwargs):
+def make_valla(model, likelihood=CategoricalLikelihood(), **kwargs):
     return Laplace(
         model,
         likelihood,
@@ -202,7 +202,7 @@ def test_valla_regression_alpha_energy(data, alpha):
     loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
     estimator = make_valla(
         model,
-        "regression",
+        GaussianLikelihood(),
         inducing_locations=x[:2].clone(),
         alpha=alpha,
         sigma_noise=0.5,
@@ -263,7 +263,7 @@ def test_valla_random_inducing_and_prior_fit(data):
     loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
     estimator = make_valla(
         torch.nn.Sequential(torch.nn.Linear(2, 1)),
-        "regression",
+        GaussianLikelihood(),
         inducing_locations="random",
         num_inducing=2,
         sigma_noise=0.5,
@@ -292,7 +292,10 @@ def test_valla_kmeans_rejects_mapping_inputs():
         batch_size=2,
     )
     estimator = make_valla(
-        RewardModel(), "reward_modeling", inducing_locations="kmeans", num_inducing=2
+        RewardModel(),
+        BradleyTerryLikelihood(),
+        inducing_locations="kmeans",
+        num_inducing=2,
     )
     with pytest.raises(ValueError, match="kmeans requires floating-point tensor"):
         estimator.fit(loader, iterations=1)
@@ -330,7 +333,10 @@ def test_reward_modeling_pair_fit_single_prediction(mapping):
     )
     loader = DataLoader(dataset, batch_size=2)
     estimator = make_valla(
-        RewardModel(), "reward_modeling", inducing_locations="random", num_inducing=2
+        RewardModel(),
+        BradleyTerryLikelihood(),
+        inducing_locations="random",
+        num_inducing=2,
     )
     estimator.fit(loader, iterations=1, lr=0.001)
     if mapping:
@@ -361,7 +367,7 @@ def test_selected_output_jacobians_match_autograd(backend):
     model.output_size = 3
     inputs = torch.randn(3, 2)
     selectors = torch.tensor([2, 0, 1])
-    interface = backend(model, "classification")
+    interface = backend(model, CategoricalLikelihood())
     observed, outputs = interface.selected_output_jacobians(inputs, selectors)
     expected_outputs = model(inputs)
     rows = []
@@ -387,7 +393,7 @@ def test_single_output_regression_vector_targets():
     options = {"inducing_locations": x[:2].clone()}
     vector = Laplace(
         original,
-        "regression",
+        GaussianLikelihood(),
         "all",
         "gp",
         functional_approximation="variational",
@@ -395,7 +401,7 @@ def test_single_output_regression_vector_targets():
     )
     matrix = Laplace(
         model_copy,
-        "regression",
+        GaussianLikelihood(),
         "all",
         "gp",
         functional_approximation="variational",
@@ -423,7 +429,9 @@ def test_valla_mapping_state_is_a_snapshot():
         ],
         batch_size=2,
     )
-    estimator = make_valla(RewardModel(), "reward_modeling", inducing_locations=inputs)
+    estimator = make_valla(
+        RewardModel(), BradleyTerryLikelihood(), inducing_locations=inputs
+    )
     estimator.fit(loader, iterations=1, lr=0.001)
     estimator.fit_history_["objective"] = [1.0]
     state = estimator.state_dict()
@@ -439,7 +447,9 @@ def test_valla_mapping_state_is_a_snapshot():
 def test_valla_fixed_mapping_accepts_nonleaf_inputs():
     inputs = torch.randn(2, 2, requires_grad=True) * 2
     estimator = make_valla(
-        RewardModel(), "reward_modeling", inducing_locations={"input_ids": inputs}
+        RewardModel(),
+        BradleyTerryLikelihood(),
+        inducing_locations={"input_ids": inputs},
     )
     selected = estimator.inducing_locations["input_ids"]
     torch.testing.assert_close(selected, inputs)
@@ -467,7 +477,10 @@ def test_inducing_and_basis_respect_training_sampler():
         TensorDataset(x, y), batch_size=1, sampler=SubsetRandomSampler([0, 1])
     )
     estimator = make_valla(
-        torch.nn.Linear(2, 1), "regression", inducing_locations="random", num_inducing=2
+        torch.nn.Linear(2, 1),
+        GaussianLikelihood(),
+        inducing_locations="random",
+        num_inducing=2,
     )
     estimator.fit(loader, iterations=1, lr=0.001)
     selected = estimator.inducing_locations.detach()
@@ -494,7 +507,10 @@ def test_deterministic_drop_last_excludes_unseen_rows(custom_batch_sampler):
         else DataLoader(dataset, batch_size=2, drop_last=True)
     )
     estimator = make_valla(
-        torch.nn.Linear(2, 1), "regression", inducing_locations="random", num_inducing=2
+        torch.nn.Linear(2, 1),
+        GaussianLikelihood(),
+        inducing_locations="random",
+        num_inducing=2,
     )
     estimator.fit(loader, iterations=1)
     assert estimator.n_data == 4
@@ -515,7 +531,7 @@ def test_valla_large_float32_features_keep_positive_variance(scale):
     loader = DataLoader(
         TensorDataset(torch.zeros(2, 1), torch.zeros(2, 1)), batch_size=2
     )
-    estimator = make_valla(model, "regression", inducing_locations=inducing)
+    estimator = make_valla(model, GaussianLikelihood(), inducing_locations=inducing)
     estimator.fit(loader, iterations=1, lr=1e-12)
     query = torch.tensor([[0.99 * scale], [0.98 * scale]])
     _, covariance = estimator.predictive_moments(query)
@@ -534,7 +550,9 @@ def test_valla_rank_deficient_inducing_features_keep_finite_gradients():
         model.weight.zero_()
     inputs = torch.tensor([[1.0], [2.0]])
     loader = DataLoader(TensorDataset(inputs, torch.zeros_like(inputs)), batch_size=2)
-    estimator = make_valla(model, "regression", inducing_locations=torch.zeros(2, 1))
+    estimator = make_valla(
+        model, GaussianLikelihood(), inducing_locations=torch.zeros(2, 1)
+    )
     estimator.fit(loader, iterations=1)
     assert torch.isfinite(torch.tensor(estimator.fit_history_["objective"])).all()
     assert torch.isfinite(estimator.L).all()
@@ -550,7 +568,7 @@ def test_valla_large_duplicate_inducing_features_keep_precision_invertible():
     loader = DataLoader(
         TensorDataset(torch.zeros(2, 1), torch.zeros(2, 1)), batch_size=2
     )
-    estimator = make_valla(model, "regression", inducing_locations=inducing)
+    estimator = make_valla(model, GaussianLikelihood(), inducing_locations=inducing)
     estimator.fit(loader, iterations=1, lr=1e-12)
     query = torch.tensor([[0.99 * scale]])
     variance = estimator.predictive_moments(query)[1][0, 0, 0]
@@ -622,7 +640,7 @@ def test_seeded_valla_regression_reference():
     loader = DataLoader(TensorDataset(inputs, targets), batch_size=2)
     estimator = make_valla(
         model,
-        "regression",
+        GaussianLikelihood(),
         inducing_locations=inputs[:2].clone(),
         sigma_noise=0.5,
         prior_precision=1.0,
@@ -638,10 +656,12 @@ def test_seeded_valla_regression_reference():
     assert estimator.fit_history_["objective"] == pytest.approx([3.631515], rel=0.0001)
 
 
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+@pytest.mark.parametrize(
+    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
+)
 def test_valla_likelihood_object_equivalence(data, likelihood):
     x, loader, model = data
-    if likelihood == "regression":
+    if isinstance(likelihood, GaussianLikelihood):
         model = torch.nn.Sequential(torch.nn.Linear(2, 1))
         loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
         as_object = GaussianLikelihood()
@@ -674,7 +694,7 @@ def test_valla_reward_likelihood_object_equivalence():
     model = RewardModel()
 
     estimators = []
-    for lik in ("reward_modeling", BradleyTerryLikelihood()):
+    for lik in (BradleyTerryLikelihood(), BradleyTerryLikelihood()):
         torch.manual_seed(3)
         estimator = make_valla(
             deepcopy(model), lik, inducing_locations=pairs[:2, 0].clone(), seed=1
@@ -706,7 +726,7 @@ def test_valla_checkpoint_likelihood_is_str(data):
     )
     restored.load_state_dict(state)
 
-    assert restored.likelihood == "classification"
+    assert isinstance(restored.likelihood, CategoricalLikelihood)
 
 
 def test_valla_takes_likelihood_options(data):
@@ -1070,7 +1090,9 @@ def test_valla_bernoulli_alpha_requires_mc(bernoulli_data):
     X, _, model = bernoulli_data
 
     with pytest.raises(ValueError, match="mc_softmax_samples"):
-        make_valla(model, "bernoulli", inducing_locations=X[:2].clone(), alpha=0.5)
+        make_valla(
+            model, BernoulliLikelihood(), inducing_locations=X[:2].clone(), alpha=0.5
+        )
 
 
 def test_valla_bernoulli_fit_and_predict(bernoulli_data):
@@ -1079,7 +1101,9 @@ def test_valla_bernoulli_fit_and_predict(bernoulli_data):
 
     # Soft labels are fine, as in `nn.BCEWithLogitsLoss`
     soft = DataLoader(TensorDataset(X, 0.8 * y + 0.1), batch_size=6)
-    la = make_valla(model, "bernoulli", inducing_locations="random", num_inducing=4)
+    la = make_valla(
+        model, BernoulliLikelihood(), inducing_locations="random", num_inducing=4
+    )
     la.fit(soft, iterations=3, val_loader=loader)
 
     assert la.inducing_classes.tolist() == [0, 0, 0, 0]
@@ -1103,7 +1127,7 @@ def test_valla_bernoulli_fit_and_predict(bernoulli_data):
 
 def test_valla_bernoulli_targets_like_torch(bernoulli_data):
     X, y, model = bernoulli_data
-    la = make_valla(model, "bernoulli", inducing_locations=X[:2].clone())
+    la = make_valla(model, BernoulliLikelihood(), inducing_locations=X[:2].clone())
 
     with pytest.raises(ValueError, match="BernoulliLikelihood expects"):
         la.fit(DataLoader(TensorDataset(X, y.long()), batch_size=6), iterations=1)

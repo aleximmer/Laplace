@@ -2,6 +2,7 @@ import pytest
 import torch
 from torch import nn
 
+from laplace import CategoricalLikelihood, GaussianLikelihood
 from laplace.curvature import CurvatureInterface
 from laplace.utils import FeatureExtractor
 from tests.utils import AsdlInterface, BackPackInterface, jacobians_naive
@@ -39,7 +40,7 @@ def X():
 )
 def test_linear_jacobians(linear_model, X, backend_cls):
     # jacobian of linear model is input X.
-    backend = backend_cls(linear_model, "classification")
+    backend = backend_cls(linear_model, CategoricalLikelihood())
     Js, f = backend.jacobians(X)
     # into Jacs shape (batch_size, output_size, params)
     true_Js = X.reshape(len(X), 1, -1)
@@ -53,7 +54,7 @@ def test_linear_jacobians(linear_model, X, backend_cls):
 )
 def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = singleoutput_model
-    backend = backend_cls(model, "classification")
+    backend = backend_cls(model, CategoricalLikelihood())
     Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
@@ -67,7 +68,7 @@ def test_jacobians_singleoutput(singleoutput_model, X, backend_cls):
 )
 def test_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = multioutput_model
-    backend = backend_cls(model, "classification")
+    backend = backend_cls(model, CategoricalLikelihood())
     Js, f = backend.jacobians(X)
     Js_naive, f_naive = jacobians_naive(model, X)
     assert Js.shape == Js_naive.shape
@@ -81,7 +82,7 @@ def test_jacobians_multioutput(multioutput_model, X, backend_cls):
 )
 def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     model = FeatureExtractor(singleoutput_model)
-    backend = backend_cls(model, "classification")
+    backend = backend_cls(model, CategoricalLikelihood())
     Js, f = backend.last_layer_jacobians(X)
     _, phi = model.forward_with_features(X)
     Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
@@ -96,7 +97,7 @@ def test_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
 )
 def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     model = FeatureExtractor(multioutput_model)
-    backend = backend_cls(model, "classification")
+    backend = backend_cls(model, CategoricalLikelihood())
     Js, f = backend.last_layer_jacobians(X)
     _, phi = model.forward_with_features(X)
     Js_naive, f_naive = jacobians_naive(model.last_layer, phi)
@@ -109,7 +110,7 @@ def test_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
 @pytest.mark.parametrize("backend_cls", [CurvatureInterface, BackPackInterface])
 def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     X.requires_grad = True
-    backend = backend_cls(singleoutput_model, "regression")
+    backend = backend_cls(singleoutput_model, GaussianLikelihood())
 
     try:
         Js, f = backend.jacobians(X, enable_backprop=True)
@@ -127,7 +128,7 @@ def test_backprop_jacobians_singleoutput(singleoutput_model, X, backend_cls):
 @pytest.mark.parametrize("backend_cls", [CurvatureInterface, BackPackInterface])
 def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
     X.requires_grad = True
-    backend = backend_cls(multioutput_model, "regression")
+    backend = backend_cls(multioutput_model, GaussianLikelihood())
 
     try:
         Js, f = backend.jacobians(X, enable_backprop=True)
@@ -147,7 +148,7 @@ def test_backprop_jacobians_multioutput(multioutput_model, X, backend_cls):
 def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(
-        FeatureExtractor(singleoutput_model, enable_backprop=True), "regression"
+        FeatureExtractor(singleoutput_model, enable_backprop=True), GaussianLikelihood()
     )
 
     try:
@@ -167,7 +168,7 @@ def test_backprop_last_layer_jacobians_singleoutput(singleoutput_model, X, backe
 def test_backprop_last_layer_jacobians_multioutput(multioutput_model, X, backend_cls):
     X.requires_grad = True
     backend = backend_cls(
-        FeatureExtractor(multioutput_model, enable_backprop=True), "regression"
+        FeatureExtractor(multioutput_model, enable_backprop=True), GaussianLikelihood()
     )
 
     try:
