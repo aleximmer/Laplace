@@ -8,10 +8,12 @@ from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import (
+    CategoricalLikelihood,
     DiagLaplace,
     DiagSubnetLaplace,
     FullLaplace,
     FullSubnetLaplace,
+    GaussianLikelihood,
     KronLaplace,
 )
 from laplace.curvature.asdfghjkl import AsdfghjklEF, AsdfghjklGGN, AsdfghjklHessian
@@ -22,6 +24,7 @@ from tests.utils import (
     AsdlHessian,
     BackPackEF,
     BackPackGGN,
+    lik_id,
     requires_backpack,
 )
 
@@ -62,7 +65,9 @@ def reg_loader():
 
 
 @pytest.mark.parametrize(
-    "laplace,lh", list(product(flavors, ["classification", "regression"]))
+    "laplace,lh",
+    list(product(flavors, [CategoricalLikelihood(), GaussianLikelihood()])),
+    ids=lik_id,
 )
 @pytest.mark.parametrize(
     "backend",
@@ -77,7 +82,9 @@ def test_compatible_backend(laplace, lh, backend, model):
 @requires_backpack
 @pytest.mark.asdfghjkl
 @pytest.mark.parametrize(
-    "laplace,lh", list(product(flavors, ["classification", "regression"]))
+    "laplace,lh",
+    list(product(flavors, [CategoricalLikelihood(), GaussianLikelihood()])),
+    ids=lik_id,
 )
 def test_incompatible_backend(laplace, lh, model):
     with pytest.raises(ValueError):
@@ -100,7 +107,7 @@ def test_incompatible_backend(laplace, lh, model):
 @pytest.mark.parametrize("backend", valid_backends)
 def test_mean_clf(laplace, backend, model, class_loader):
     n_params = model[0].weight.numel()
-    lap = laplace(model, "classification", backend=backend)
+    lap = laplace(model, CategoricalLikelihood(), backend=backend)
     lap.fit(class_loader)
     assert lap.mean.shape == (n_params,)
 
@@ -109,7 +116,7 @@ def test_mean_clf(laplace, backend, model, class_loader):
 @pytest.mark.parametrize("backend", valid_backends)
 def test_mean_reg(laplace, backend, model, reg_loader):
     n_params = model[0].weight.numel()
-    lap = laplace(model, "regression", backend=backend)
+    lap = laplace(model, GaussianLikelihood(), backend=backend)
     lap.fit(reg_loader)
     assert lap.mean.shape == (n_params,)
 
@@ -117,7 +124,7 @@ def test_mean_reg(laplace, backend, model, reg_loader):
 @pytest.mark.parametrize("backend", valid_backends)
 def test_post_precision_diag(model, backend, class_loader):
     n_params = model[0].weight.numel()
-    lap = DiagLaplace(model, "classification", backend=backend)
+    lap = DiagLaplace(model, CategoricalLikelihood(), backend=backend)
     lap.fit(class_loader)
     assert lap.posterior_precision.shape == (n_params,)
 
@@ -125,7 +132,7 @@ def test_post_precision_diag(model, backend, class_loader):
 @pytest.mark.parametrize("backend", valid_backends)
 def test_post_precision_kron(model, backend, class_loader):
     n_params = model[0].weight.numel()
-    lap = KronLaplace(model, "classification", backend=backend)
+    lap = KronLaplace(model, CategoricalLikelihood(), backend=backend)
     lap.fit(class_loader)
     assert lap.posterior_precision.to_matrix().shape == (n_params, n_params)
 
@@ -133,20 +140,22 @@ def test_post_precision_kron(model, backend, class_loader):
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize("backend", valid_backends)
 def test_predictive(laplace, backend, model, class_loader):
-    lap = laplace(model, "classification", backend=backend)
+    lap = laplace(model, CategoricalLikelihood(), backend=backend)
     lap.fit(class_loader)
     lap(torch.randn(5, 3), pred_type="nn", link_approx="mc")
 
 
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize("backend", valid_backends)
-@pytest.mark.parametrize("lh", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "lh", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_predictive_glm(laplace, backend, lh, model, class_loader, reg_loader):
     lap = laplace(model, lh, backend=backend)
-    lap.fit(class_loader if lh == "classification" else reg_loader)
+    lap.fit(class_loader if isinstance(lh, CategoricalLikelihood) else reg_loader)
 
     X = torch.randn(5, 3)
-    if lh == "classification":
+    if isinstance(lh, CategoricalLikelihood):
         probs = lap(X, pred_type="glm", link_approx="probit")
         assert probs.shape == (5, 2)
         assert torch.allclose(probs.sum(-1), torch.ones(5))
@@ -165,7 +174,7 @@ def test_predictive_glm(laplace, backend, lh, model, class_loader, reg_loader):
 def test_predictive_glm_matches_subnetwork(
     laplace, subnet_laplace, backend, model, reg_loader
 ):
-    lap = laplace(model, "regression", backend=backend)
+    lap = laplace(model, GaussianLikelihood(), backend=backend)
     lap.fit(reg_loader)
 
     # The same subset of weights, selected by indices instead of `requires_grad`.
@@ -176,7 +185,7 @@ def test_predictive_glm_matches_subnetwork(
 
     lap_subnet = subnet_laplace(
         model_subnet,
-        "regression",
+        GaussianLikelihood(),
         subnetwork_indices=torch.arange(model[0].weight.numel()),
         backend=backend,
     )
@@ -194,7 +203,7 @@ def test_predictive_glm_matches_subnetwork(
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize("backend", valid_backends)
 def test_marglik_glm(laplace, backend, model, class_loader):
-    lap = laplace(model, "classification", backend=backend)
+    lap = laplace(model, CategoricalLikelihood(), backend=backend)
     lap.fit(class_loader)
     lap.optimize_prior_precision(method="marglik")
 
@@ -202,7 +211,7 @@ def test_marglik_glm(laplace, backend, model, class_loader):
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize("backend", valid_backends)
 def test_marglik_nn(laplace, backend, model, class_loader):
-    lap = laplace(model, "classification", backend=backend)
+    lap = laplace(model, CategoricalLikelihood(), backend=backend)
     lap.fit(class_loader)
     lap.optimize_prior_precision(
         method="gridsearch", val_loader=class_loader, pred_type="nn", link_approx="mc"

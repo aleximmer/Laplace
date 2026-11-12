@@ -39,7 +39,7 @@ from laplace.curvature.curvature import (
     _observed_input_factors,
     _observed_mask,
 )
-from laplace.likelihoods import Likelihood
+from laplace.likelihoods import GaussianLikelihood, Likelihood
 from laplace.utils import Kron
 from laplace.utils.utils import _is_batchnorm
 
@@ -71,7 +71,7 @@ class AsdlInterface(CurvatureInterface):
     def loss_type(self) -> str:
         return (
             LOSS_MSE
-            if self.likelihood.name == Likelihood.REGRESSION.name
+            if self.likelihood.name == GaussianLikelihood.name
             else LOSS_CROSS_ENTROPY
         )
 
@@ -526,7 +526,7 @@ class AsdlInterface(CurvatureInterface):
         if not self._honours("kron"):
             raise self._unsupported_error("kron")
 
-        if self.likelihood.name == Likelihood.REGRESSION.name and y.ndim > 2:
+        if self.likelihood.name == GaussianLikelihood.name and y.ndim > 2:
             raise NotImplementedError(
                 "Kronecker-factored curvature with ASDL does not support regression "
                 "targets with more than one batch dimension (e.g. sequences). "

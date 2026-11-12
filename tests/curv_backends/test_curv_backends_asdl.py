@@ -5,7 +5,9 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
+from laplace import CategoricalLikelihood, GaussianLikelihood
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
+from laplace.likelihoods import BernoulliLikelihood
 from tests.utils import (
     AsdlEF,
     AsdlGGN,
@@ -16,6 +18,7 @@ from tests.utils import (
     bce_data,
     bce_model,
     bce_options,
+    lik_id,
     requires_asdl,
 )
 
@@ -78,7 +81,7 @@ def complex_class_Xy():
 def test_diag_ggn_cls_asdl_against_backpack_full(class_Xy, model):
     X, y = class_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, "classification", stochastic=False)
+    backend = AsdlGGN(model, CategoricalLikelihood(), stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -88,7 +91,7 @@ def test_diag_ggn_cls_asdl_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model2, "classification", stochastic=False)
+    backend = BackPackGGN(model2, CategoricalLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -97,7 +100,7 @@ def test_diag_ggn_cls_asdl_against_backpack_full(class_Xy, model):
 def test_diag_ggn_reg_asdl_against_backpack_full(reg_Xy, model):
     X, y = reg_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, "regression", stochastic=False)
+    backend = AsdlGGN(model, GaussianLikelihood(), stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -107,7 +110,7 @@ def test_diag_ggn_reg_asdl_against_backpack_full(reg_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model2, "regression", stochastic=False)
+    backend = BackPackGGN(model2, GaussianLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -116,7 +119,7 @@ def test_diag_ggn_reg_asdl_against_backpack_full(reg_Xy, model):
 def test_diag_ef_cls_asdl_against_backpack_full(class_Xy, model):
     X, y = class_Xy
     model2 = deepcopy(model)
-    backend = AsdlEF(model, "classification")
+    backend = AsdlEF(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -126,7 +129,7 @@ def test_diag_ef_cls_asdl_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model2, "classification")
+    backend = BackPackEF(model2, CategoricalLikelihood())
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diagonal())
@@ -135,7 +138,7 @@ def test_diag_ef_cls_asdl_against_backpack_full(class_Xy, model):
 def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
     X, y = reg_Xy
     model2 = deepcopy(model)
-    backend = AsdlEF(model, "regression")
+    backend = AsdlEF(model, GaussianLikelihood())
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -145,7 +148,7 @@ def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model2, "regression")
+    backend = BackPackEF(model2, GaussianLikelihood())
     loss_bp, dggn_bp = backend.diag(X, y)
     assert torch.allclose(loss, loss_bp)
     assert torch.allclose(dggn, dggn_bp)  # H_ggn.diagonal())
@@ -153,13 +156,13 @@ def test_diag_ef_reg_asdl_against_backpack_full(reg_Xy, model):
 
 def test_diag_ggn_stoch_cls_asdl(class_Xy, model):
     X, y = class_Xy
-    backend = AsdlGGN(model, "classification", stochastic=True)
+    backend = AsdlGGN(model, CategoricalLikelihood(), stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
 
     # same order of magnitude os non-stochastic.
-    backend = AsdlGGN(model, "classification", stochastic=False)
+    backend = AsdlGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_ns, dggn_ns = backend.diag(X, y)
     assert loss_ns == loss
     assert torch.allclose(dggn, dggn_ns, atol=1e-8, rtol=1e1)
@@ -167,7 +170,7 @@ def test_diag_ggn_stoch_cls_asdl(class_Xy, model):
 
 def test_diag_ggn_asdl_subnetwork_index_order(class_Xy, model):
     X, y = class_Xy
-    backend = AsdlGGN(model, "classification")
+    backend = AsdlGGN(model, CategoricalLikelihood())
     _, full_diag = backend.diag(X, y)
     indices = torch.LongTensor([model.n_params - 1, 0, model.n_params // 2])
 
@@ -186,10 +189,15 @@ def test_diag_ggn_asdl_subnetwork_with_frozen_module(class_Xy, stochastic):
     indices = torch.LongTensor([7, 0])
 
     torch.manual_seed(711)
-    _, full_diag = AsdlGGN(model, "classification", stochastic=stochastic).diag(X, y)
+    _, full_diag = AsdlGGN(model, CategoricalLikelihood(), stochastic=stochastic).diag(
+        X, y
+    )
     torch.manual_seed(711)
     _, subnet_diag = AsdlGGN(
-        model, "classification", subnetwork_indices=indices, stochastic=stochastic
+        model,
+        CategoricalLikelihood(),
+        subnetwork_indices=indices,
+        stochastic=stochastic,
     ).diag(X, y)
 
     assert full_diag.numel() == 8
@@ -204,10 +212,10 @@ def test_diag_ggn_asdl_subnetwork_with_partially_frozen_module(class_Xy, frozen_
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     indices = torch.LongTensor([n_params - 1, 0])
 
-    _, full_diag = AsdlGGN(model, "classification").diag(X, y)
-    _, subnet_diag = AsdlGGN(model, "classification", subnetwork_indices=indices).diag(
-        X, y
-    )
+    _, full_diag = AsdlGGN(model, CategoricalLikelihood()).diag(X, y)
+    _, subnet_diag = AsdlGGN(
+        model, CategoricalLikelihood(), subnetwork_indices=indices
+    ).diag(X, y)
 
     assert full_diag.numel() == n_params
     assert torch.allclose(subnet_diag, full_diag[indices])
@@ -224,7 +232,7 @@ def test_diag_ggn_asdl_uses_fisher_dtype(class_Xy):
 
     X, y = class_Xy
     model = CastOutput()
-    _, diag = AsdlGGN(model, "classification").diag(X.double(), y)
+    _, diag = AsdlGGN(model, CategoricalLikelihood()).diag(X.double(), y)
     fisher_diag = torch.cat(list(model.linear.fisher.to_vector()))
 
     assert diag.dtype == torch.float64
@@ -245,12 +253,12 @@ def test_diag_ggn_asdl_respects_parameter_registration_order(class_Xy):
     bias_first.load_state_dict(standard.state_dict())
     assert list(dict(bias_first.named_parameters())) == ["bias", "weight"]
 
-    _, standard_diag = AsdlGGN(standard, "classification").diag(X, y)
-    _, bias_first_diag = AsdlGGN(bias_first, "classification").diag(X, y)
+    _, standard_diag = AsdlGGN(standard, CategoricalLikelihood()).diag(X, y)
+    _, bias_first_diag = AsdlGGN(bias_first, CategoricalLikelihood()).diag(X, y)
     expected = torch.cat([standard_diag[-2:], standard_diag[:-2]])
     indices = torch.LongTensor([0, 2, 7])
     _, subnet_diag = AsdlGGN(
-        bias_first, "classification", subnetwork_indices=indices
+        bias_first, CategoricalLikelihood(), subnetwork_indices=indices
     ).diag(X, y)
 
     assert torch.allclose(bias_first_diag, expected)
@@ -260,12 +268,12 @@ def test_diag_ggn_asdl_respects_parameter_registration_order(class_Xy):
 def test_kron_ggn_cls_asdl_against_backpack(class_Xy, model):
     X, y = class_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, "classification", stochastic=False)
+    backend = AsdlGGN(model, CategoricalLikelihood(), stochastic=False)
     loss, kron = backend.kron(X[:5], y[:5], len(y))
     loss2, kron2 = backend.kron(X[5:], y[5:], len(y))
     loss += loss2
     kron += kron2
-    backend_bp = BackPackGGN(model2, "classification", stochastic=False)
+    backend_bp = BackPackGGN(model2, CategoricalLikelihood(), stochastic=False)
     loss_bp, kron_bp = backend_bp.kron(X, y, len(y))
 
     # sanity check size of diag ggn
@@ -277,13 +285,13 @@ def test_kron_ggn_cls_asdl_against_backpack(class_Xy, model):
 def test_kron_ggn_reg_asdl_against_backpack(reg_Xy, model):
     X, y = reg_Xy
     model2 = deepcopy(model)
-    backend = AsdlGGN(model, "regression", stochastic=False)
+    backend = AsdlGGN(model, GaussianLikelihood(), stochastic=False)
     # loss, kron = backend.kron(X, y, len(y))
     loss, kron = backend.kron(X[:5], y[:5], len(y))
     loss2, kron2 = backend.kron(X[5:], y[5:], len(y))
     loss += loss2
     kron += kron2
-    backend_bp = BackPackGGN(model2, "regression", stochastic=False)
+    backend_bp = BackPackGGN(model2, GaussianLikelihood(), stochastic=False)
     loss_bp, kron_bp = backend_bp.kron(X, y, len(y))
 
     # sanity check size of diag ggn
@@ -296,7 +304,7 @@ def test_kron_ggn_reg_asdl_against_backpack(reg_Xy, model):
 def test_kron_asdl_vs_diag_class(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
@@ -308,7 +316,7 @@ def test_kron_asdl_vs_diag_class(class_Xy, model, Backend):
 def test_kron_asdl_vs_diag_reg(reg_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = reg_Xy
-    backend = Backend(model, "regression")
+    backend = Backend(model, GaussianLikelihood())
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == model.n_params
@@ -319,7 +327,7 @@ def test_kron_asdl_vs_diag_reg(reg_Xy, model, Backend):
 @pytest.mark.parametrize("Backend", [AsdlEF, AsdlGGN])
 def test_kron_batching_correction_asdl(class_Xy, model, Backend):
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == model.n_params
 
@@ -337,7 +345,7 @@ def test_kron_batching_correction_asdl(class_Xy, model, Backend):
 def test_kron_summing_up_vs_diag_asdl(class_Xy, model, Backend):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
@@ -345,7 +353,7 @@ def test_kron_summing_up_vs_diag_asdl(class_Xy, model, Backend):
 
 def test_complex_diag_ggn_stoch_cls_asdl(complex_class_Xy, complex_model):
     X, y = complex_class_Xy
-    backend = AsdlGGN(complex_model, "classification", stochastic=True)
+    backend = AsdlGGN(complex_model, CategoricalLikelihood(), stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -360,7 +368,7 @@ def test_complex_diag_ggn_stoch_cls_asdl(complex_class_Xy, complex_model):
 def test_complex_kron_asdl_vs_diag_asdl(complex_class_Xy, complex_model, Backend):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -373,7 +381,7 @@ def test_complex_kron_batching_correction_asdl(
     complex_class_Xy, complex_model, Backend
 ):
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == complex_model.n_params
 
@@ -393,15 +401,17 @@ def test_complex_kron_summing_up_vs_diag_class_asdl(
 ):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
 
 
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_kron_summation_ggn(likelihood, class_Xy, reg_Xy, model):
-    X, y = class_Xy if likelihood == "classification" else reg_Xy
+    X, y = class_Xy if isinstance(likelihood, CategoricalLikelihood) else reg_Xy
     X = torch.repeat_interleave(X[:1], 7, 0)
     y = torch.repeat_interleave(y[:1], 7, 0)
     backend = AsdlGGN(model, likelihood, stochastic=False)
@@ -434,7 +444,7 @@ _BCE = bce_options()
 def test_bernoulli_kron_raises_in_asdl(Backend, stochastic):
     X, y = bce_data((8,), soft=False)
     kwargs = {"stochastic": True} if stochastic and Backend is AsdlGGN else {}
-    backend = Backend(bce_model(), "bernoulli", **kwargs)
+    backend = Backend(bce_model(), BernoulliLikelihood(), **kwargs)
 
     with pytest.raises(ValueError, match="does not support the likelihood"):
         backend.kron(X, y, len(X))
@@ -444,13 +454,13 @@ def test_bernoulli_hessian_raises_in_asdl():
     X, y = bce_data((8,), soft=False)
 
     with pytest.raises(ValueError, match="does not support the likelihood"):
-        AsdlHessian(bce_model(), "bernoulli").full(X, y)
+        AsdlHessian(bce_model(), BernoulliLikelihood()).full(X, y)
 
 
 def test_bernoulli_asdl_gradients_count_one_observation_per_row():
     # The targets `(B, K)` have `K` entries per datum, but a datum is one observation
     X, y = bce_data((8,), soft=True)
-    backend = AsdlEF(bce_model(), "bernoulli")
+    backend = AsdlEF(bce_model(), BernoulliLikelihood())
 
     Gs, _ = backend.gradients(X, y)
 
@@ -477,13 +487,13 @@ def test_non_contiguous_logits(Backend, structure):
     X, y = torch.randn(6, 3), torch.randint(2, (6, 4))
     assert not model(X).is_contiguous()
 
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     kwargs = {"N": len(X)} if structure == "kron" else {}
     loss, H = getattr(backend, structure)(X, y, **kwargs)
 
     # Same curvature as for contiguous logits
     contiguous = nn.Sequential(model, _Contiguous())
-    loss_ref, H_ref = getattr(Backend(contiguous, "classification"), structure)(
+    loss_ref, H_ref = getattr(Backend(contiguous, CategoricalLikelihood()), structure)(
         X, y, **kwargs
     )
 
@@ -514,7 +524,7 @@ def test_kron_raises_for_conv_with_multidim_outputs(Backend):
     X, y = torch.randn(5, 2, 3, 3), torch.randint(3, (5, 3, 3))
 
     with pytest.raises(NotImplementedError, match="Curvlinops"):
-        Backend(_ImageLogits(), "classification").kron(X, y, N=len(X))
+        Backend(_ImageLogits(), CategoricalLikelihood()).kron(X, y, N=len(X))
 
 
 @pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
@@ -529,8 +539,8 @@ def test_kron_conv_with_pooled_outputs_matches_curvlinops(Backend):
     )
     X, y = torch.randn(5, 2, 4, 4), torch.randint(3, (5,))
 
-    _, H = Backend(model, "classification").kron(X, y, N=len(X))
+    _, H = Backend(model, CategoricalLikelihood()).kron(X, y, N=len(X))
     Reference = CurvlinopsGGN if Backend is AsdlGGN else CurvlinopsEF
-    _, H_ref = Reference(model, "classification").kron(X, y, N=len(X))
+    _, H_ref = Reference(model, CategoricalLikelihood()).kron(X, y, N=len(X))
 
     assert torch.allclose(H.to_matrix(), H_ref.to_matrix())

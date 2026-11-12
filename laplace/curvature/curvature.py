@@ -234,7 +234,7 @@ class CurvatureInterface:
     model : torch.nn.Module or `laplace.utils.FeatureExtractor`
         torch model (neural network)
     likelihood : Likelihood or str or torch.nn.Module
-        a likelihood object, its name, or a torch criterion, see
+        a likelihood object, such as `GaussianLikelihood()`, or a torch criterion, see
         [`get_likelihood`][laplace.get_likelihood]. A composite
         likelihood like reward modeling is not supported, pass its
         `fit_likelihood` instead.
@@ -900,7 +900,7 @@ class GGNInterface(CurvatureInterface):
     model : torch.nn.Module or `laplace.utils.FeatureExtractor`
         torch model (neural network)
     likelihood : Likelihood or str or torch.nn.Module
-        a likelihood object, its name, or a torch criterion, see
+        a likelihood object, such as `GaussianLikelihood()`, or a torch criterion, see
         [`get_likelihood`][laplace.get_likelihood].
     last_layer : bool, default=False
         only consider curvature of last layer
@@ -1108,7 +1108,7 @@ class EFInterface(CurvatureInterface):
     model : torch.nn.Module or `laplace.utils.FeatureExtractor`
         torch model (neural network)
     likelihood : Likelihood or str or torch.nn.Module
-        a likelihood object, its name, or a torch criterion, see
+        a likelihood object, such as `GaussianLikelihood()`, or a torch criterion, see
         [`get_likelihood`][laplace.get_likelihood].
     last_layer : bool, default=False
         only consider curvature of last layer

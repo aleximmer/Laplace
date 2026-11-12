@@ -92,6 +92,10 @@ markers = [
 filterwarnings = [
   "error:::laplace",
 
+  # The deprecated task-name likelihood API (removed in 0.9). Tests that use it on
+  # purpose assert the warning with `pytest.warns`.
+  "error:.*is deprecated and will be.*removed in 0.9:DeprecationWarning",
+
   # Raised by the library in normal use; the caller can't avoid them. Remove these
   # once the library stops emitting them (#378).
   "ignore:Full backward hook is firing when gradients are computed:UserWarning",

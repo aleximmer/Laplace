@@ -23,7 +23,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 from laplace.curvature import CurvlinopsGGN
 
 torch.manual_seed(0)
@@ -118,7 +118,7 @@ for module in model.modules():
 # %%
 la = Laplace(
     model,
-    "classification",
+    CategoricalLikelihood(),
     subset_of_weights="all",
     hessian_structure="kron",
     backend=CurvlinopsGGN,

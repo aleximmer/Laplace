@@ -35,7 +35,11 @@ from laplace.curvature.curvature import (
     _TARGET_FREE_OPTIONS,
     _observed_mask,
 )
-from laplace.likelihoods import Likelihood, _flatten_categorical_targets
+from laplace.likelihoods import (
+    GaussianLikelihood,
+    Likelihood,
+    _flatten_categorical_targets,
+)
 from laplace.utils import Kron
 
 
@@ -124,7 +128,7 @@ class BackPackInterface(CurvatureInterface):
         ValueError
             if the targets don't fit the outputs.
         """
-        if self.likelihood.name == Likelihood.REGRESSION.name:
+        if self.likelihood.name == GaussianLikelihood.name:
             return y
 
         self._check_targets(f, y)
@@ -379,7 +383,7 @@ class BackPackGGN(BackPackInterface, GGNInterface):
             # Assumes that the last dimension of f is of size outputs.
             f = (
                 f
-                if self.likelihood.name == Likelihood.REGRESSION.name
+                if self.likelihood.name == GaussianLikelihood.name
                 else f.view(-1, f.size(-1))
             )
             loss = self.lossfunc(f, y)
@@ -430,7 +434,7 @@ class BackPackGGN(BackPackInterface, GGNInterface):
             # Assumes that the last dimension of f is of size outputs.
             f = (
                 f
-                if self.likelihood.name == Likelihood.REGRESSION.name
+                if self.likelihood.name == GaussianLikelihood.name
                 else f.view(-1, f.size(-1))
             )
             loss = lossfunc(f, y)
@@ -466,7 +470,7 @@ class BackPackEF(BackPackInterface, EFInterface):
             # Assumes that the last dimension of f is of size outputs.
             f = (
                 f
-                if self.likelihood.name == Likelihood.REGRESSION.name
+                if self.likelihood.name == GaussianLikelihood.name
                 else f.view(-1, f.size(-1))
             )
             loss = self.lossfunc(f, y)

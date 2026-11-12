@@ -28,7 +28,13 @@ import torch.nn as nn
 from tensordict import TensorDict
 from torch.utils.data import DataLoader
 
-from laplace import Laplace, LinkApprox, PredType
+from laplace import (
+    CategoricalLikelihood,
+    GaussianLikelihood,
+    Laplace,
+    LinkApprox,
+    PredType,
+)
 from laplace.curvature import AsdlEF, AsdlGGN
 
 BATCH_SIZE = 4  # B
@@ -86,7 +92,7 @@ for mod_name, mod in model.named_modules():
 # GLM
 la = Laplace(
     model,
-    "regression",
+    GaussianLikelihood(),
     hessian_structure="full",
     subset_of_weights="all",
     backend=AsdlEF,
@@ -129,7 +135,7 @@ print(pred_la_mean.shape, pred_la_var.shape)
 # MC
 la = Laplace(
     model,
-    "regression",
+    GaussianLikelihood(),
     hessian_structure="diag",
     subset_of_weights="all",
     backend=AsdlGGN,
@@ -205,7 +211,7 @@ for mod_name, mod in model.named_modules():
 
 la = Laplace(
     model,
-    "classification",
+    CategoricalLikelihood(),
     hessian_structure="kron",
     subset_of_weights="all",
     backend=CurvlinopsGGN,

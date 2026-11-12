@@ -4,7 +4,7 @@ from typing import Any
 
 import torch
 
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace, Likelihood
 
 METHODS = ["ella", "valla"]
 
@@ -28,7 +28,7 @@ class RewardModel(torch.nn.Module):
 def make_estimator(
     method: str,
     model: torch.nn.Module,
-    likelihood: str = "classification",
+    likelihood: Likelihood = CategoricalLikelihood(),
     x: torch.Tensor | None = None,
     *,
     ella: dict[str, Any] | None = None,
@@ -43,8 +43,8 @@ def make_estimator(
         Which estimator to build.
     model : torch.nn.Module
         The pretrained model.
-    likelihood : str, default="classification"
-        The likelihood name.
+    likelihood : Likelihood, default=CategoricalLikelihood()
+        The likelihood.
     x : torch.Tensor or None, default=None
         If given, VaLLA uses `x[:2].clone()` as its inducing locations.
     ella, valla : dict or None

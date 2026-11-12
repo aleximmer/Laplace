@@ -6,9 +6,10 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
+from laplace import BradleyTerryLikelihood, CategoricalLikelihood, GaussianLikelihood
 from laplace.curvature import CurvlinopsGGN
 from tests.ella_valla.helpers import fit_estimator, make_estimator
-from tests.utils import AsdlGGN, BackPackGGN
+from tests.utils import AsdlGGN, BackPackGGN, lik_id
 
 pytestmark = [
     pytest.mark.cuda,
@@ -26,7 +27,9 @@ def cuda_device(request):
 
 
 @pytest.mark.parametrize("backend", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_cuda_fit_moments_sampling_and_gradients(
     method, cuda_device, backend, likelihood
 ):
@@ -36,7 +39,7 @@ def test_cuda_fit_moments_sampling_and_gradients(
     )
     targets = (
         torch.tensor([0, 1, 0, 1, 1, 0])
-        if likelihood == "classification"
+        if isinstance(likelihood, CategoricalLikelihood)
         else torch.stack([inputs.sum(dim=-1), inputs[:, 0] - inputs[:, 1]], dim=-1)
     )
     loader = DataLoader(TensorDataset(inputs, targets), batch_size=3)
@@ -82,7 +85,7 @@ def test_cuda_fit_moments_sampling_and_gradients(
     assert draws.shape == predictive.shape == (3, 2, 2)
     assert draws.device == predictive.device == cuda_device
     assert torch.isfinite(draws).all() and torch.isfinite(predictive).all()
-    if likelihood == "classification":
+    if isinstance(likelihood, CategoricalLikelihood):
         probabilities = estimator(query.detach())
         assert probabilities.shape == (2, 2)
         torch.testing.assert_close(
@@ -128,7 +131,7 @@ def test_cuda_reward_mapping_and_checkpoint(method, cuda_device, backend):
     original_model = deepcopy(model)
     valla_options = {"inducing_locations": "random", "num_inducing": 2}
     estimator = make_estimator(
-        method, model, "reward_modeling", valla=valla_options, backend=backend
+        method, model, BradleyTerryLikelihood(), valla=valla_options, backend=backend
     )
     fit_estimator(method, estimator, loader)
     if method == "valla":
@@ -147,7 +150,11 @@ def test_cuda_reward_mapping_and_checkpoint(method, cuda_device, backend):
         rtol=1e-05,
     )
     restored = make_estimator(
-        method, original_model, "reward_modeling", valla=valla_options, backend=backend
+        method,
+        original_model,
+        BradleyTerryLikelihood(),
+        valla=valla_options,
+        backend=backend,
     )
     restored.load_state_dict(estimator.state_dict())
     restored_mean, restored_covariance = restored.predictive_moments(single_query)

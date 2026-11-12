@@ -84,13 +84,13 @@ After that, the resulting LA is used for prediction with
 the `"probit"` predictive for classification.
 
 ```python
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 
 # Pre-trained model
 model = load_map_model()
 
 # User-specified LA flavor
-la = Laplace(model, "classification",
+la = Laplace(model, CategoricalLikelihood(),
              subset_of_weights="all",
              hessian_structure="diag")
 la.fit(train_loader)

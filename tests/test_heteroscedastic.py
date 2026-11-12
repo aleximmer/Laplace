@@ -13,6 +13,7 @@ from torch.func import functional_call, hessian, jacrev
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import (
+    GaussianLikelihood,
     HeteroscedasticGaussianLikelihood,
     Laplace,
     LowRankLaplace,
@@ -136,7 +137,7 @@ def _references(model, X, y) -> dict[str, torch.Tensor]:
 
 
 def test_get_likelihood():
-    assert type(get_likelihood("heteroscedastic_gaussian")) is (
+    assert type(get_likelihood(HeteroscedasticGaussianLikelihood())) is (
         HeteroscedasticGaussianLikelihood
     )
 
@@ -305,13 +306,13 @@ def test_kron_matches_gaussian_kfac(backend, loader):
     scale = 1 / var if backend is CurvlinopsGGN else 1 / var**2
 
     kwargs = dict(subset_of_weights="all", hessian_structure="kron", backend=backend)
-    la = Laplace(model, "heteroscedastic_gaussian", **kwargs)
+    la = Laplace(model, HeteroscedasticGaussianLikelihood(), **kwargs)
     la.fit(loader)
 
     # The Gaussian reference has no variance head to differentiate
     mean_only = copy.deepcopy(model)
     mean_only.var.requires_grad_(False)
-    la_gauss = Laplace(MeanOnly(mean_only), "regression", **kwargs)
+    la_gauss = Laplace(MeanOnly(mean_only), GaussianLikelihood(), **kwargs)
     la_gauss.fit(loader)
 
     H, H_gauss = la.H.to_matrix(), la_gauss.H.to_matrix()
@@ -325,7 +326,7 @@ def test_kron_matches_gaussian_kfac(backend, loader):
 def test_kron_raises_for_other_backends(backend, loader):
     la = Laplace(
         MeanVarianceNet(),
-        "heteroscedastic_gaussian",
+        HeteroscedasticGaussianLikelihood(),
         subset_of_weights="all",
         hessian_structure="kron",
         backend=backend,
@@ -342,7 +343,7 @@ def test_subnetwork_matches_reference(data, loader):
 
     la = Laplace(
         model,
-        "heteroscedastic_gaussian",
+        HeteroscedasticGaussianLikelihood(),
         subset_of_weights="subnetwork",
         hessian_structure="full",
         subnetwork_indices=indices,
@@ -356,7 +357,7 @@ def test_log_likelihood(data, loader):
     model = MeanVarianceNet()
     X, y = data
 
-    la = Laplace(model, "heteroscedastic_gaussian", subset_of_weights="all")
+    la = Laplace(model, HeteroscedasticGaussianLikelihood(), subset_of_weights="all")
     la.fit(loader)
 
     mean, var = model(X)
@@ -418,7 +419,7 @@ def test_shared_variance_is_expanded(data, loader):
     model = MeanVarianceNet(shared=True)
     X, _ = data
 
-    la = Laplace(model, "heteroscedastic_gaussian", subset_of_weights="all")
+    la = Laplace(model, HeteroscedasticGaussianLikelihood(), subset_of_weights="all")
     la.fit(loader)
 
     _, f_alea, _ = la(X)
@@ -430,7 +431,7 @@ def test_nn_predictive_and_samples(data, loader):
     model = MeanVarianceNet()
     X, _ = data
 
-    la = Laplace(model, "heteroscedastic_gaussian", subset_of_weights="all")
+    la = Laplace(model, HeteroscedasticGaussianLikelihood(), subset_of_weights="all")
     la.fit(loader)
 
     f_mean, f_alea, f_var = la(X, pred_type="nn", link_approx="mc", n_samples=7)
@@ -450,7 +451,7 @@ def test_model_is_left_unchanged(data, loader):
     X, _ = data
     names = [name for name, _ in model.named_parameters()]
 
-    la = Laplace(model, "heteroscedastic_gaussian", subset_of_weights="all")
+    la = Laplace(model, HeteroscedasticGaussianLikelihood(), subset_of_weights="all")
     la.fit(loader)
     la(X)
     la.predictive_samples(X, n_samples=2)
@@ -468,7 +469,10 @@ def test_aleatoric_variance_backprop(data, loader):
     X, _ = data
 
     la = Laplace(
-        model, "heteroscedastic_gaussian", subset_of_weights="all", enable_backprop=True
+        model,
+        HeteroscedasticGaussianLikelihood(),
+        subset_of_weights="all",
+        enable_backprop=True,
     )
     la.fit(loader)
 
@@ -480,7 +484,9 @@ def test_aleatoric_variance_backprop(data, loader):
 
 
 def test_gridsearch_default_metric(data, loader):
-    la = Laplace(MeanVarianceNet(), "heteroscedastic_gaussian", subset_of_weights="all")
+    la = Laplace(
+        MeanVarianceNet(), HeteroscedasticGaussianLikelihood(), subset_of_weights="all"
+    )
     la.fit(loader)
 
     la.optimize_prior_precision(
@@ -497,7 +503,7 @@ def test_sigma_noise_must_stay_one():
     with pytest.raises(ValueError, match="Sigma noise"):
         Laplace(
             MeanVarianceNet(),
-            "heteroscedastic_gaussian",
+            HeteroscedasticGaussianLikelihood(),
             subset_of_weights="all",
             sigma_noise=2.0,
         )
@@ -508,7 +514,7 @@ def test_sigma_noise_must_stay_one():
 def test_low_rank_raises(laplace_cls, loader):
     pytest.importorskip("asdfghjkl")
 
-    la = laplace_cls(MeanVarianceNet(), "heteroscedastic_gaussian")
+    la = laplace_cls(MeanVarianceNet(), HeteroscedasticGaussianLikelihood())
 
     with pytest.raises(ValueError, match="LowRankLaplace does not support"):
         la.fit(loader)
@@ -518,7 +524,9 @@ def test_low_rank_raises(laplace_cls, loader):
 def test_last_layer_raises(structure):
     with pytest.raises(ValueError, match="#254"):
         Laplace(
-            MeanVarianceNet(), "heteroscedastic_gaussian", hessian_structure=structure
+            MeanVarianceNet(),
+            HeteroscedasticGaussianLikelihood(),
+            hessian_structure=structure,
         )
 
 
@@ -534,7 +542,7 @@ def test_functional_methods_raise(approximation, kwargs):
     with pytest.raises(ValueError):
         Laplace(
             MeanVarianceNet(),
-            "heteroscedastic_gaussian",
+            HeteroscedasticGaussianLikelihood(),
             subset_of_weights="all",
             hessian_structure="gp",
             functional_approximation=approximation,
@@ -587,7 +595,7 @@ def test_state_dict_round_trip(tmp_path, data, loader):
 
     la3 = Laplace(
         model,
-        "heteroscedastic_gaussian",
+        HeteroscedasticGaussianLikelihood(),
         subset_of_weights="all",
         hessian_structure="diag",
     )

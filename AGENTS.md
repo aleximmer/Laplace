@@ -68,7 +68,8 @@ uv run mkdocs build --strict     # docs, as checked in CI
 - Add an example under `examples/` when introducing new features, see the current examples. Use it as both tutorial and API explanation. Make the writing flow.
   Examples are jupytext percent scripts rendered as doc pages; follow "Writing an example" in `docs/devs_guide.md`.
 - Run docstrings, comments, and docs through the
-  [humanizer](https://github.com/blader/humanizer) skill to strip AI-sounding prose.
+  [humanizer](https://github.com/blader/humanizer) skill to strip AI-sounding prose,
+  whoever wrote them (you, a subagent, or a script). Asking a writer to "write plainly" doesn't count.
 - Add tests for every change; all must pass.
 - Data loaders yield `(X, y)` or dict-like batches (keys `dict_key_x`, `dict_key_y`);
   `len(loader.dataset)` must work.

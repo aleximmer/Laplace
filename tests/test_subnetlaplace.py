@@ -16,6 +16,7 @@ from laplace.likelihoods import (
     BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
+    GaussianLikelihood,
 )
 from laplace.utils import (
     LargestMagnitudeSubnetMask,
@@ -36,6 +37,7 @@ from tests.utils import (
     CustomCategorical,
     ListDataset,
     dict_data_collator,
+    lik_id,
     requires_asdl,
     toy_multilabel_dataset,
 )
@@ -50,7 +52,7 @@ score_based_subnet_masks = [
 ]
 layer_subnet_masks = [ParamNameSubnetMask, ModuleNameSubnetMask, LastLayerSubnetMask]
 all_subnet_masks = score_based_subnet_masks + layer_subnet_masks
-likelihoods = ["classification", "regression"]
+likelihoods = [CategoricalLikelihood(), GaussianLikelihood()]
 hessian_structures = ["full", "diag"]
 backends = [
     AsdlEF,
@@ -88,7 +90,7 @@ def test_asdl_diag_with_unused_module(class_loader, stochastic):
     indices = torch.LongTensor([0, first_size + unused_size])
     lap = DiagSubnetLaplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subnetwork_indices=indices,
         backend=AsdlGGN,
         backend_kwargs={"stochastic": stochastic},
@@ -96,7 +98,9 @@ def test_asdl_diag_with_unused_module(class_loader, stochastic):
 
     lap.fit(class_loader)
 
-    reference_backend = AsdlGGN(reference, "classification", stochastic=stochastic)
+    reference_backend = AsdlGGN(
+        reference, CategoricalLikelihood(), stochastic=stochastic
+    )
     reference_indices = torch.LongTensor([0, first_size])
     X, y = next(iter(class_loader))
     torch.manual_seed(711)
@@ -123,7 +127,7 @@ def test_asdl_diag_rejects_selected_parameters_without_fisher(class_loader):
     model = nn.Sequential(Scale(), nn.Linear(3, 2))
     supported_lap = DiagSubnetLaplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subnetwork_indices=torch.LongTensor([1]),
         backend=AsdlGGN,
     )
@@ -132,7 +136,7 @@ def test_asdl_diag_rejects_selected_parameters_without_fisher(class_loader):
 
     lap = DiagSubnetLaplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subnetwork_indices=torch.LongTensor([0]),
         backend=AsdlGGN,
     )
@@ -141,7 +145,7 @@ def test_asdl_diag_rejects_selected_parameters_without_fisher(class_loader):
         lap.fit(class_loader)
 
 
-@pytest.mark.parametrize("likelihood", likelihoods)
+@pytest.mark.parametrize("likelihood", likelihoods, ids=lik_id)
 def test_subnet_laplace_init(model, likelihood):
     # use random subnet mask for this test
     subnetwork_mask = RandomSubnetMask
@@ -201,7 +205,7 @@ def test_subnet_laplace_init(model, likelihood):
         )
 
 
-@pytest.mark.parametrize("likelihood", likelihoods)
+@pytest.mark.parametrize("likelihood", likelihoods, ids=lik_id)
 @pytest.mark.parametrize("hessian_structure", hessian_structures)
 @pytest.mark.parametrize("backend", backends)
 def test_subnet_laplace_backend_init(model, likelihood, hessian_structure, backend):
@@ -260,7 +264,9 @@ def test_subnet_laplace_large_init(large_model, likelihood, hessian_structure):
 def test_custom_subnetwork_indices(
     model, likelihood, class_loader, reg_loader, hessian_structure
 ):
-    loader = class_loader if likelihood == "classification" else reg_loader
+    loader = (
+        class_loader if isinstance(likelihood, CategoricalLikelihood) else reg_loader
+    )
 
     # subnetwork indices that are None should raise an error
     subnetwork_indices = None
@@ -453,7 +459,9 @@ def test_custom_subnetwork_indices(
 def test_score_based_subnet_masks(
     model, likelihood, subnetwork_mask, class_loader, reg_loader, hessian_structure
 ):
-    loader = class_loader if likelihood == "classification" else reg_loader
+    loader = (
+        class_loader if isinstance(likelihood, CategoricalLikelihood) else reg_loader
+    )
     model_params = parameters_to_vector(model.parameters())
 
     # set subnetwork mask arguments
@@ -532,7 +540,9 @@ def test_score_based_subnet_masks(
 def test_layer_subnet_masks(
     model, likelihood, subnetwork_mask, class_loader, reg_loader, hessian_structure
 ):
-    loader = class_loader if likelihood == "classification" else reg_loader
+    loader = (
+        class_loader if isinstance(likelihood, CategoricalLikelihood) else reg_loader
+    )
     subnetmask_kwargs = dict(model=model)
 
     # fit last-layer Laplace model
@@ -734,7 +744,9 @@ def test_layer_subnet_masks(
 def test_full_subnet_mask(
     model, likelihood, class_loader, reg_loader, hessian_structure
 ):
-    loader = class_loader if likelihood == "classification" else reg_loader
+    loader = (
+        class_loader if isinstance(likelihood, CategoricalLikelihood) else reg_loader
+    )
 
     # define full model 'subnet' mask class (i.e. where all parameters are part of the subnet)
     class FullSubnetMask(SubnetMask):
@@ -780,9 +792,9 @@ def test_regression_predictive(model, reg_loader, subnetwork_mask, hessian_struc
     if subnetwork_mask in score_based_subnet_masks:
         subnetmask_kwargs.update(n_params_subnet=32)
         if subnetwork_mask == LargestVarianceSWAGSubnetMask:
-            subnetmask_kwargs.update(likelihood="regression")
+            subnetmask_kwargs.update(likelihood=GaussianLikelihood())
         elif subnetwork_mask == LargestVarianceDiagLaplaceSubnetMask:
-            diag_laplace_model = DiagLaplace(model, "regression")
+            diag_laplace_model = DiagLaplace(model, GaussianLikelihood())
             subnetmask_kwargs.update(diag_laplace_model=diag_laplace_model)
     elif subnetwork_mask == ParamNameSubnetMask:
         subnetmask_kwargs.update(parameter_names=["0.weight", "1.bias"])
@@ -793,7 +805,7 @@ def test_regression_predictive(model, reg_loader, subnetwork_mask, hessian_struc
     subnetmask.select(reg_loader)
     lap = Laplace(
         model,
-        likelihood="regression",
+        likelihood=GaussianLikelihood(),
         subset_of_weights="subnetwork",
         subnetwork_indices=subnetmask.indices,
         hessian_structure=hessian_structure,
@@ -832,9 +844,9 @@ def test_classification_predictive(
     if subnetwork_mask in score_based_subnet_masks:
         subnetmask_kwargs.update(n_params_subnet=32)
         if subnetwork_mask == LargestVarianceSWAGSubnetMask:
-            subnetmask_kwargs.update(likelihood="classification")
+            subnetmask_kwargs.update(likelihood=CategoricalLikelihood())
         elif subnetwork_mask == LargestVarianceDiagLaplaceSubnetMask:
-            diag_laplace_model = DiagLaplace(model, "classification")
+            diag_laplace_model = DiagLaplace(model, CategoricalLikelihood())
             subnetmask_kwargs.update(diag_laplace_model=diag_laplace_model)
     elif subnetwork_mask == ParamNameSubnetMask:
         subnetmask_kwargs.update(parameter_names=["0.weight", "1.bias"])
@@ -845,7 +857,7 @@ def test_classification_predictive(
     subnetmask.select(class_loader)
     lap = Laplace(
         model,
-        likelihood="classification",
+        likelihood=CategoricalLikelihood(),
         subset_of_weights="subnetwork",
         subnetwork_indices=subnetmask.indices,
         hessian_structure=hessian_structure,
@@ -911,7 +923,9 @@ def test_subnet_marginal_likelihood(
         subnetmask_kwargs.update(module_names=["0"])
 
     subnetmask = subnetwork_mask(**subnetmask_kwargs)
-    loader = class_loader if likelihood == "classification" else reg_loader
+    loader = (
+        class_loader if isinstance(likelihood, CategoricalLikelihood) else reg_loader
+    )
     subnetmask.select(loader)
     lap = Laplace(
         model,
@@ -930,7 +944,9 @@ def test_subnet_marginal_likelihood(
     "likelihood,hessian_structure", list(product(likelihoods, hessian_structures))
 )
 def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
-    loader = class_loader if likelihood == "classification" else reg_loader
+    loader = (
+        class_loader if isinstance(likelihood, CategoricalLikelihood) else reg_loader
+    )
 
     n_params_subnet = 10
     subnetmask = RandomSubnetMask(model=model, n_params_subnet=n_params_subnet)
@@ -1007,7 +1023,9 @@ def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
 )
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_dtype(laplace, backend, dtype, likelihood):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
@@ -1057,12 +1075,14 @@ class DictModel(nn.Module):
 
 
 @pytest.mark.parametrize("laplace", [FullSubnetLaplace, DiagSubnetLaplace])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_ef_dict_inputs(laplace, likelihood):
     X = torch.randn(10, 3)
     y = (
         torch.randint(2, (10,))
-        if likelihood == "classification"
+        if isinstance(likelihood, CategoricalLikelihood)
         else torch.randn(10, 2)
     )
     data = [{"input_ids": x_i, "labels": y_i} for x_i, y_i in zip(X, y)]
@@ -1110,7 +1130,7 @@ def test_custom_dict_keys(laplace):
 
     la = laplace(
         model,
-        "regression",
+        GaussianLikelihood(),
         subnetwork_indices=subnetmask.indices,
         backend=CurvlinopsGGN,
         dict_key_x="test_input_key",
@@ -1121,7 +1141,7 @@ def test_custom_dict_keys(laplace):
     # Must match the same model fitted on tensor inputs
     la_tensor = laplace(
         deepcopy(net),
-        "regression",
+        GaussianLikelihood(),
         subnetwork_indices=subnetmask.indices,
         backend=CurvlinopsGGN,
     )
@@ -1142,7 +1162,7 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
     subnetmask = LargestMagnitudeSubnetMask(model, n_params_subnet=20)
     subnetmask.select()
 
-    lap = laplace(model, "regression", subnetwork_indices=subnetmask.indices)
+    lap = laplace(model, GaussianLikelihood(), subnetwork_indices=subnetmask.indices)
     lap.fit(reg_loader)
     x = reg_loader.dataset.tensors[0][:3]
 
@@ -1165,7 +1185,7 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
 def test_subnetmask_accepts_object():
     masks = []
 
-    for lik in ("classification", CategoricalLikelihood()):
+    for lik in (CategoricalLikelihood(), CategoricalLikelihood()):
         torch.manual_seed(0)
         model = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
         X = torch.randn(12, 3)
@@ -1193,7 +1213,7 @@ def test_subnetmask_accepts_custom_object():
 def test_subnetmask_rejects_reward_modeling():
     model = nn.Linear(3, 2)
 
-    for lik in ("reward_modeling", BradleyTerryLikelihood()):
+    for lik in (BradleyTerryLikelihood(), BradleyTerryLikelihood()):
         with pytest.raises(
             ValueError, match="Only available for classification and regression!"
         ):
@@ -1250,7 +1270,10 @@ def test_swag_subnetmask_with_bernoulli_likelihood():
     model = nn.Sequential(nn.Linear(3, 6), nn.Tanh(), nn.Linear(6, 4))
     loader = toy_multilabel_dataset(batch_size=4, soft=True)[2]
 
-    for lik in ("bernoulli", BernoulliLikelihood(pos_weight=torch.tensor(2.0))):
+    for lik in (
+        BernoulliLikelihood(),
+        BernoulliLikelihood(pos_weight=torch.tensor(2.0)),
+    ):
         mask = LargestVarianceSWAGSubnetMask(
             model, n_params_subnet=7, likelihood=lik, swag_n_snapshots=3
         )

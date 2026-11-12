@@ -14,6 +14,12 @@ Two more check a single output, and that the function-space methods match
 import pytest
 import torch
 
+from laplace import (
+    BernoulliLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+    Likelihood,
+)
 from tests.test_contracts import (
     METHODS,
     N_DATA,
@@ -35,18 +41,18 @@ deterministic_methods = pytest.mark.parametrize(
 
 
 LIKELIHOODS = [
-    pytest.param("regression", N_OUT, id="regression"),
-    pytest.param("classification", 3, id="classification"),
-    pytest.param("bernoulli", 1, id="bernoulli"),
+    pytest.param(GaussianLikelihood(), N_OUT, id="gaussian"),
+    pytest.param(CategoricalLikelihood(), 3, id="categorical"),
+    pytest.param(BernoulliLikelihood(), 1, id="bernoulli"),
 ]
 likelihoods = pytest.mark.parametrize("likelihood, n_out", LIKELIHOODS)
 
 
-def _skip_unsupported(method: str, likelihood: str) -> None:
+def _skip_unsupported(method: str, likelihood: Likelihood) -> None:
     _skip_lowrank_without_asdfghjkl(method)
 
     # This raises a clear error for the Bernoulli likelihood
-    if likelihood == "bernoulli" and method == "lowrank":
+    if isinstance(likelihood, BernoulliLikelihood) and method == "lowrank":
         pytest.skip(f"{method} doesn't support the Bernoulli likelihood")
 
 

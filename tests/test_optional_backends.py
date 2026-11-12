@@ -13,7 +13,13 @@ from importlib.util import find_spec
 import pytest
 import torch
 
-from laplace import FullLaplace, KronLaplace, LowRankLaplace
+from laplace import (
+    CategoricalLikelihood,
+    FullLaplace,
+    GaussianLikelihood,
+    KronLaplace,
+    LowRankLaplace,
+)
 from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.asdfghjkl import AsdfghjklGGN, AsdfghjklHessian
 from tests.conftest import _uses_old_asdfghjkl
@@ -40,7 +46,7 @@ def test_fit_without_optional_backends(blocked):
     from torch.utils.data import DataLoader, TensorDataset
 
     import laplace.curvature
-    from laplace import Laplace
+    from laplace import GaussianLikelihood, Laplace
     from laplace.curvature import *
 
     print("ALL", laplace.curvature.__all__)
@@ -55,7 +61,7 @@ def test_fit_without_optional_backends(blocked):
         for hessian_structure in ["full", "kron", "diag"]:
             la = Laplace(
                 model,
-                "regression",
+                GaussianLikelihood(),
                 subset_of_weights=subset_of_weights,
                 hessian_structure=hessian_structure,
             )
@@ -162,8 +168,8 @@ def test_dir_hides_missing_backends():
     [
         (LowRankLaplace, True),
         (AsdfghjklGGN, True),
-        ((KronLaplace, "classification"), False),
-        ((LowRankLaplace, "regression"), True),
+        ((KronLaplace, CategoricalLikelihood()), False),
+        ((LowRankLaplace, GaussianLikelihood()), True),
         ([FullLaplace, AsdfghjklHessian], True),
         (CurvlinopsGGN, False),
         ("lowrank", False),

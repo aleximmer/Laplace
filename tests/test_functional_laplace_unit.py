@@ -4,11 +4,12 @@ from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
 
+from laplace import CategoricalLikelihood, GaussianLikelihood
 from laplace.baselaplace import FunctionalLaplace
 from laplace.curvature.curvlinops import CurvlinopsGGN
 from laplace.lllaplace import FunctionalLLLaplace
 from laplace.utils.functional_utils import _class_labels
-from tests.utils import AsdlGGN, BackPackGGN
+from tests.utils import AsdlGGN, BackPackGGN, lik_id
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(240)]
 
@@ -66,7 +67,7 @@ def reg_Xy():
 
 def test_sod_data_loader(reg_loader, model):
     M = 5
-    func_la = FunctionalLaplace(model, "regression", M)
+    func_la = FunctionalLaplace(model, GaussianLikelihood(), M)
     sod_data_loader = func_la._get_SoD_data_loader(reg_loader)
 
     first_iter = []
@@ -85,7 +86,9 @@ def test_sod_data_loader(reg_loader, model):
 
 def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
     C = model.output_size
-    func_la = FunctionalLaplace(model, "regression", M, independent_outputs=False)
+    func_la = FunctionalLaplace(
+        model, GaussianLikelihood(), M, independent_outputs=False
+    )
     func_la.n_outputs = C
     func_la.batch_size = batch_size
 
@@ -144,7 +147,9 @@ def test_store_K_batch_full_kernel(reg_loader, model, M=3, batch_size=2):
 
 def test_store_K_batch_block_diagonal_kernel(reg_loader, model, M=3, batch_size=2):
     C = model.output_size
-    func_la = FunctionalLaplace(model, "regression", M, independent_outputs=True)
+    func_la = FunctionalLaplace(
+        model, GaussianLikelihood(), M, independent_outputs=True
+    )
     func_la.n_outputs = C
     func_la.batch_size = batch_size
 
@@ -270,7 +275,7 @@ def test_gp_kernel(
     X, y = reg_Xy
     func_la = FunctionalLaplace(
         model,
-        "regression",
+        GaussianLikelihood(),
         n_subset=X.shape[0],
         prior_precision=1.0,
         independent_outputs=False,
@@ -320,7 +325,9 @@ def test_gp_kernel(
 
 
 def test_joint_independent_outputs_predictive_moments(model, reg_loader):
-    func_la = FunctionalLaplace(model, "regression", 5, independent_outputs=True)
+    func_la = FunctionalLaplace(
+        model, GaussianLikelihood(), 5, independent_outputs=True
+    )
     with pytest.warns(UserWarning, match="multivariate regression"):
         func_la.fit(reg_loader)
 
@@ -338,7 +345,7 @@ def test_joint_independent_outputs_predictive_moments(model, reg_loader):
 
 
 def test_functional_samples(model, reg_loader):
-    lap = FunctionalLaplace(model, "regression", n_subset=5)
+    lap = FunctionalLaplace(model, GaussianLikelihood(), n_subset=5)
     lap.fit(reg_loader)
     X, y = reg_loader.dataset.tensors
     f = model(X)
@@ -356,7 +363,7 @@ def test_functional_samples(model, reg_loader):
     assert fsamples_reg_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
 
     # The samples should not be affected by the likelihood
-    lap.likelihood = "classification"
+    lap.likelihood = CategoricalLikelihood()
 
     fsamples_clf_glm = lap.functional_samples(
         X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
@@ -372,10 +379,14 @@ def test_functional_samples(model, reg_loader):
 
 
 def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
-    la = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
+    la = FunctionalLaplace(
+        model_1d, GaussianLikelihood(), 10, independent_outputs=False
+    )
     la.fit(reg_loader_1d)
 
-    la2 = FunctionalLaplace(model_1d, "regression", 10, independent_outputs=False)
+    la2 = FunctionalLaplace(
+        model_1d, GaussianLikelihood(), 10, independent_outputs=False
+    )
 
     with pytest.raises(ValueError):
         la2.fit(reg_loader_1d_flat)
@@ -388,7 +399,9 @@ def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
 @pytest.mark.parametrize("backend", [AsdlGGN, BackPackGGN, CurvlinopsGGN])
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
 @pytest.mark.parametrize("independent_outputs", [True, False])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_dtype(laplace, backend, dtype, independent_outputs, likelihood):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
@@ -436,7 +449,7 @@ def test_sod_rejects_ignored_targets(model):
     y[3] = -100
     loader = DataLoader(TensorDataset(X, y), batch_size=5)
 
-    func_la = FunctionalLaplace(model, "classification", 10)
+    func_la = FunctionalLaplace(model, CategoricalLikelihood(), 10)
 
     with pytest.raises(ValueError, match="subset"):
         func_la.fit(loader)
@@ -447,7 +460,7 @@ def test_failed_refit_invalidates_posterior(model):
     y_ignored = y.clone()
     y_ignored[0] = -100
 
-    la = FunctionalLaplace(model, "classification", n_subset=8)
+    la = FunctionalLaplace(model, CategoricalLikelihood(), n_subset=8)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
 
     with pytest.raises(ValueError, match="subset"):
@@ -464,7 +477,7 @@ def test_failed_refit_invalidates_posterior(model):
 
 
 def test_refit_resets_loss(model, reg_loader):
-    la = FunctionalLaplace(model, "regression", n_subset=10)
+    la = FunctionalLaplace(model, GaussianLikelihood(), n_subset=10)
 
     la.fit(reg_loader)
     loss = la.loss.clone()
@@ -496,7 +509,7 @@ def test_stochastic_loader_gives_symmetric_K_MM(model, independent_outputs):
 
     la = FunctionalLaplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         n_subset=20,
         independent_outputs=independent_outputs,
     )
@@ -535,7 +548,7 @@ class _FailingDataset(torch.utils.data.Dataset):
 def test_refit_with_failing_loader_invalidates_posterior(model):
     X, y = torch.randn(8, 3), torch.randint(2, (8,))
 
-    la = FunctionalLaplace(model, "classification", n_subset=8)
+    la = FunctionalLaplace(model, CategoricalLikelihood(), n_subset=8)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=4))
 
     # The first batch is read fine, the subset is not
@@ -589,7 +602,7 @@ def test_functional_laplace_tunes_with_probability_val_loader():
     for val_targets in (y, one_hot):
         la = FunctionalLaplace(
             model,
-            "classification",
+            CategoricalLikelihood(),
             n_subset=6,
         )
         la.fit(DataLoader(TensorDataset(X, y), batch_size=4))

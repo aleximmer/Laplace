@@ -27,7 +27,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Dataset
 
-from laplace import Laplace
+from laplace import GaussianLikelihood, Laplace
 from laplace.curvature import CurvlinopsGGN
 
 torch.manual_seed(0)
@@ -156,7 +156,7 @@ for p in model.denoiser.body.parameters():
 
 la = Laplace(
     model,
-    "regression",
+    GaussianLikelihood(),
     subset_of_weights="all",
     hessian_structure="diag",
     backend=CurvlinopsGGN,
@@ -212,7 +212,7 @@ subnetwork_indices = subnetwork_mask.select()
 
 la = Laplace(
     model,
-    "regression",
+    GaussianLikelihood(),
     subset_of_weights="subnetwork",
     hessian_structure="full",
     subnetwork_indices=subnetwork_indices,

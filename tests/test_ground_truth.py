@@ -18,6 +18,7 @@ from torch.func import functional_call, hessian, jacrev
 from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import (
+    CategoricalLikelihood,
     DiagLaplace,
     DiagLLLaplace,
     DiagSubnetLaplace,
@@ -25,14 +26,16 @@ from laplace import (
     FullLLLaplace,
     FullSubnetLaplace,
     FunctionalLaplace,
+    GaussianLikelihood,
     KronLaplace,
     KronLLLaplace,
+    Likelihood,
     LowRankLaplace,
 )
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
 from laplace.likelihoods import BernoulliLikelihood
 from laplace.marglik_training import marglik_training
-from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPackGGN
+from tests.utils import AsdlEF, AsdlGGN, AsdlHessian, BackPackEF, BackPackGGN, lik_id
 
 pytestmark = pytest.mark.default_dtype(torch.float64)
 
@@ -48,10 +51,10 @@ def _mlp(n_out: int) -> nn.Module:
     return nn.Sequential(nn.Linear(N_IN, 4), nn.Tanh(), nn.Linear(4, n_out))
 
 
-def _data(task: str, n_out: int) -> tuple[torch.Tensor, torch.Tensor]:
+def _data(task: Likelihood, n_out: int) -> tuple[torch.Tensor, torch.Tensor]:
     X = torch.randn(N_DATA, N_IN)
 
-    if task == "regression":
+    if isinstance(task, GaussianLikelihood):
         return X, torch.randn(N_DATA, n_out)
 
     return X, torch.randint(n_out, (N_DATA,))
@@ -83,16 +86,18 @@ def _flat(model: nn.Module) -> tuple[Callable, torch.Tensor]:
     return f, theta
 
 
-def _nll(task: str, out: torch.Tensor, y: torch.Tensor, sigma: float) -> torch.Tensor:
+def _nll(
+    task: Likelihood, out: torch.Tensor, y: torch.Tensor, sigma: float
+) -> torch.Tensor:
     # Negative log likelihood without the Gaussian normalizer
-    if task == "regression":
+    if isinstance(task, GaussianLikelihood):
         return 0.5 * ((out - y) ** 2).sum() / sigma**2
 
     return nn.functional.cross_entropy(out, y, reduction="sum")
 
 
-def _log_normalizer(task: str, n_out: int, sigma: float) -> float:
-    if task == "regression":
+def _log_normalizer(task: Likelihood, n_out: int, sigma: float) -> float:
+    if isinstance(task, GaussianLikelihood):
         return N_DATA * n_out * math.log(sigma * math.sqrt(2 * math.pi))
 
     return 0.0
@@ -102,7 +107,7 @@ def _reference(
     model: nn.Module,
     X: torch.Tensor,
     y: torch.Tensor,
-    task: str,
+    task: Likelihood,
     curvature: str = "ggn",
     sigma: float = 1.0,
     prior: float = 1.0,
@@ -115,7 +120,7 @@ def _reference(
     if curvature == "ggn":
         J = jacrev(f)(theta, X)
 
-        if task == "regression":
+        if isinstance(task, GaussianLikelihood):
             L = torch.eye(n_out).expand(N_DATA, n_out, n_out) / sigma**2
         else:
             p = out.softmax(-1)
@@ -155,10 +160,11 @@ def _assert_close(actual: torch.Tensor, expected: torch.Tensor) -> None:
 @pytest.mark.parametrize(
     "task,n_out,sigma,prior",
     [
-        ("regression", 1, 1.0, 1.0),
-        ("regression", 2, 0.7, 2.5),
-        ("classification", 3, 1.0, 2.5),
+        (GaussianLikelihood(), 1, 1.0, 1.0),
+        (GaussianLikelihood(), 2, 0.7, 2.5),
+        (CategoricalLikelihood(), 3, 1.0, 2.5),
     ],
+    ids=lik_id,
 )
 def test_full_and_diag_ggn(backend, task, n_out, sigma, prior):
     model = _mlp(n_out)
@@ -186,7 +192,9 @@ def test_full_and_diag_ggn(backend, task, n_out, sigma, prior):
 
 
 @pytest.mark.parametrize("backend", HESSIAN_BACKENDS)
-@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+@pytest.mark.parametrize(
+    "task,n_out", [(GaussianLikelihood(), 2), (CategoricalLikelihood(), 3)], ids=lik_id
+)
 def test_full_hessian(backend, task, n_out):
     model = _mlp(n_out)
     X, y = _data(task, n_out)
@@ -205,10 +213,10 @@ def test_full_hessian(backend, task, n_out):
 @pytest.mark.parametrize("backend", EF_BACKENDS)
 def test_full_ef_classification(backend):
     model = _mlp(3)
-    X, y = _data("classification", 3)
-    ref = _reference(copy.deepcopy(model), X, y, "classification", "ef")
+    X, y = _data(CategoricalLikelihood(), 3)
+    ref = _reference(copy.deepcopy(model), X, y, CategoricalLikelihood(), "ef")
 
-    la = FullLaplace(model, "classification", backend=backend)
+    la = FullLaplace(model, CategoricalLikelihood(), backend=backend)
     la.fit(_loader(X, y))
 
     _assert_close(la.posterior_precision, ref["P"])
@@ -218,21 +226,23 @@ def test_full_ef_classification(backend):
 @pytest.mark.parametrize("sigma", [1.0, 0.5])
 def test_full_ef_regression(backend, sigma):
     model = _mlp(2)
-    X, y = _data("regression", 2)
-    ref = _reference(copy.deepcopy(model), X, y, "regression", "ef", sigma)
+    X, y = _data(GaussianLikelihood(), 2)
+    ref = _reference(copy.deepcopy(model), X, y, GaussianLikelihood(), "ef", sigma)
 
-    la = FullLaplace(model, "regression", sigma_noise=sigma, backend=backend)
+    la = FullLaplace(model, GaussianLikelihood(), sigma_noise=sigma, backend=backend)
     la.fit(_loader(X, y))
 
     _assert_close(la.posterior_precision, ref["P"])
 
-    la = DiagLaplace(model, "regression", sigma_noise=sigma, backend=backend)
+    la = DiagLaplace(model, GaussianLikelihood(), sigma_noise=sigma, backend=backend)
     la.fit(_loader(X, y))
 
     _assert_close(la.posterior_precision, ref["P"].diagonal())
 
 
-@pytest.mark.parametrize("task,n_out", [("regression", 1), ("classification", 3)])
+@pytest.mark.parametrize(
+    "task,n_out", [(GaussianLikelihood(), 1), (CategoricalLikelihood(), 3)], ids=lik_id
+)
 def test_temperature_scales_classification_and_curvature(task, n_out):
     # A temperature T divides the curvature by T. For classification it also divides
     # the whole log likelihood. Regression is checked below.
@@ -250,21 +260,21 @@ def test_temperature_scales_classification_and_curvature(task, n_out):
         (ref["P"] - torch.eye(len(theta))) / T + torch.eye(len(theta)),
     )
 
-    if task == "classification":
+    if isinstance(task, CategoricalLikelihood):
         _assert_close(la.log_likelihood, -_nll(task, f(theta, X), y, 1.0) / T)
 
 
 def test_temperature_regression_log_likelihood():
     T, sigma = 0.5, 0.7
     model = _mlp(1)
-    X, y = _data("regression", 1)
+    X, y = _data(GaussianLikelihood(), 1)
     f, theta = _flat(model)
 
-    la = FullLaplace(model, "regression", sigma_noise=sigma, temperature=T)
+    la = FullLaplace(model, GaussianLikelihood(), sigma_noise=sigma, temperature=T)
     la.fit(_loader(X, y))
 
-    log_lik = -_nll("regression", f(theta, X), y, sigma) - _log_normalizer(
-        "regression", 1, sigma
+    log_lik = -_nll(GaussianLikelihood(), f(theta, X), y, sigma) - _log_normalizer(
+        GaussianLikelihood(), 1, sigma
     )
 
     _assert_close(la.log_likelihood, log_lik / T)
@@ -276,12 +286,16 @@ def test_kron_exact_on_single_linear_layer(backend, n_out):
     # Without a bias, a linear layer's GGN under the MSE is exactly A ⊗ I, so
     # KFAC is exact and so are all Kron quantities
     model = nn.Linear(N_IN, n_out, bias=False)
-    X, y = _data("regression", n_out)
+    X, y = _data(GaussianLikelihood(), n_out)
     ref_model = copy.deepcopy(model)
-    ref = _reference(ref_model, X, y, "regression", "ggn", sigma=0.7, prior=2.0)
+    ref = _reference(ref_model, X, y, GaussianLikelihood(), "ggn", sigma=0.7, prior=2.0)
 
     la = KronLaplace(
-        model, "regression", sigma_noise=0.7, prior_precision=2.0, backend=backend
+        model,
+        GaussianLikelihood(),
+        sigma_noise=0.7,
+        prior_precision=2.0,
+        backend=backend,
     )
     la.fit(_loader(X, y))
 
@@ -296,7 +310,9 @@ def test_kron_exact_on_single_linear_layer(backend, n_out):
     _assert_close(la(X_test, pred_type="glm")[1], var)
 
 
-@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+@pytest.mark.parametrize(
+    "task,n_out", [(GaussianLikelihood(), 2), (CategoricalLikelihood(), 3)], ids=lik_id
+)
 @pytest.mark.parametrize(
     "prior,sigma,T",
     [(1.3, 1.0, 1.0), (torch.tensor([0.5, 1.0, 2.0, 4.0]), 1.0, 0.3), (0.9, 0.6, 1.0)],
@@ -304,7 +320,7 @@ def test_kron_exact_on_single_linear_layer(backend, n_out):
 def test_kron_decomposition_matches_dense(task, n_out, prior, sigma, T):
     # On a deep net KFAC is an approximation, but everything computed from its
     # eigendecomposition must match the dense matrix it represents
-    if task == "classification" and sigma != 1.0:
+    if isinstance(task, CategoricalLikelihood) and sigma != 1.0:
         pytest.skip("classification has no noise")
 
     model = _mlp(n_out)
@@ -347,7 +363,7 @@ def test_prior_structures_in_marglik(cls, prior, prior_mean):
         pytest.skip("Kron takes a scalar or per-layer prior only")
 
     model = nn.Linear(N_IN, 2)
-    X, y = _data("regression", 2)
+    X, y = _data(GaussianLikelihood(), 2)
     n_params = 8
     prior = (
         torch.rand(n_params) + 0.5
@@ -356,7 +372,7 @@ def test_prior_structures_in_marglik(cls, prior, prior_mean):
     )
     mu = torch.randn(n_params) if prior_mean == "random" else torch.zeros(n_params)
 
-    la = cls(model, "regression", prior_precision=prior, prior_mean=mu)
+    la = cls(model, GaussianLikelihood(), prior_precision=prior, prior_mean=mu)
     la.fit(_loader(X, y))
 
     if prior.numel() == 2:
@@ -385,8 +401,8 @@ def test_prior_structures_in_marglik(cls, prior, prior_mean):
 @pytest.mark.parametrize("cls", [FullLaplace, KronLaplace, DiagLaplace])
 def test_marglik_gradient_matches_finite_differences(cls):
     model = _mlp(2)
-    X, y = _data("regression", 2)
-    la = cls(model, "regression")
+    X, y = _data(GaussianLikelihood(), 2)
+    la = cls(model, GaussianLikelihood())
     la.fit(_loader(X, y))
 
     def lml(log_prior, log_sigma):
@@ -421,7 +437,9 @@ def test_marglik_gradient_matches_finite_differences(cls):
         (DiagLaplace, DiagLLLaplace),
     ],
 )
-@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+@pytest.mark.parametrize(
+    "task,n_out", [(GaussianLikelihood(), 2), (CategoricalLikelihood(), 3)], ids=lik_id
+)
 def test_last_layer_equals_frozen_body(full_cls, ll_cls, task, n_out):
     model = _mlp(n_out)
     X, y = _data(task, n_out)
@@ -441,7 +459,7 @@ def test_last_layer_equals_frozen_body(full_cls, ll_cls, task, n_out):
 
     X_test = torch.randn(4, N_IN)
 
-    if task == "regression":
+    if isinstance(task, GaussianLikelihood):
         _assert_close(ll(X_test)[1], full(X_test)[1])
     else:
         _assert_close(ll(X_test), full(X_test))
@@ -453,18 +471,18 @@ def test_last_layer_equals_frozen_body(full_cls, ll_cls, task, n_out):
 )
 def test_subnet_on_last_layer_equals_last_layer(subnet_cls, ll_cls):
     model = _mlp(3)
-    X, y = _data("classification", 3)
+    X, y = _data(CategoricalLikelihood(), 3)
 
     # The first layer has 16 parameters, the last layer the remaining 15
     sub = subnet_cls(
         copy.deepcopy(model),
-        "classification",
+        CategoricalLikelihood(),
         subnetwork_indices=torch.arange(16, 31),
         prior_precision=1.7,
     )
     sub.fit(_loader(X, y))
 
-    ll = ll_cls(copy.deepcopy(model), "classification", prior_precision=1.7)
+    ll = ll_cls(copy.deepcopy(model), CategoricalLikelihood(), prior_precision=1.7)
     ll.fit(_loader(X, y))
 
     X_test = torch.randn(4, N_IN)
@@ -517,16 +535,19 @@ def test_functional_laplace_predictive_equals_full(n_out, sigma, prior):
     # On all the training data, the GP view and the GGN weight-space view of the
     # linearized network give the same predictive
     model = _mlp(n_out)
-    X, y = _data("regression", n_out)
+    X, y = _data(GaussianLikelihood(), n_out)
 
     full = FullLaplace(
-        copy.deepcopy(model), "regression", sigma_noise=sigma, prior_precision=prior
+        copy.deepcopy(model),
+        GaussianLikelihood(),
+        sigma_noise=sigma,
+        prior_precision=prior,
     )
     full.fit(_loader(X, y))
 
     gp = FunctionalLaplace(
         copy.deepcopy(model),
-        "regression",
+        GaussianLikelihood(),
         n_subset=N_DATA,
         sigma_noise=sigma,
         prior_precision=prior,
@@ -564,7 +585,7 @@ def _train_to_map(
 
     def closure():
         opt.zero_grad()
-        loss = _nll("regression", model(X), y, sigma) / T
+        loss = _nll(GaussianLikelihood(), model(X), y, sigma) / T
         loss = loss + 0.5 * prior * sum((p**2).sum() for p in model.parameters())
         loss.backward()
 
@@ -581,12 +602,12 @@ def test_functional_laplace_marglik_equals_full_at_map(n_out, T):
     # exact, and so is the GP evidence on all the data, also when tempered
     sigma, prior = 0.6, 2.0
     model = _mlp(n_out)
-    X, y = _data("regression", n_out)
+    X, y = _data(GaussianLikelihood(), n_out)
     _train_to_map(model, X, y, sigma, prior, T)
 
     full = FullLaplace(
         copy.deepcopy(model),
-        "regression",
+        GaussianLikelihood(),
         sigma_noise=sigma,
         prior_precision=prior,
         temperature=T,
@@ -595,7 +616,7 @@ def test_functional_laplace_marglik_equals_full_at_map(n_out, T):
 
     gp = FunctionalLaplace(
         copy.deepcopy(model),
-        "regression",
+        GaussianLikelihood(),
         n_subset=N_DATA,
         sigma_noise=sigma,
         prior_precision=prior,
@@ -686,13 +707,16 @@ def test_functional_laplace_bernoulli_marglik_equals_full_at_map(n_out, T):
         opt.step(closure)
 
     full = FullLaplace(
-        copy.deepcopy(model), "bernoulli", prior_precision=prior, temperature=T
+        copy.deepcopy(model),
+        BernoulliLikelihood(),
+        prior_precision=prior,
+        temperature=T,
     )
     full.fit(_loader(X, y))
 
     gp = FunctionalLaplace(
         copy.deepcopy(model),
-        "bernoulli",
+        BernoulliLikelihood(),
         n_subset=N_DATA,
         prior_precision=prior,
         temperature=T,
@@ -715,12 +739,12 @@ def test_marglik_training_reaches_the_tempered_map(T):
     # ridge solution of the tempered posterior p(D | theta)^(1/T) p(theta)
     sigma, prior = 0.5, 3.0
     model = nn.Linear(N_IN, 1, bias=False)
-    X, y = _data("regression", 1)
+    X, y = _data(GaussianLikelihood(), 1)
 
     marglik_training(
         model,
         DataLoader(TensorDataset(X, y), batch_size=N_DATA),
-        "regression",
+        GaussianLikelihood(),
         hessian_structure="diag",
         optimizer_cls=torch.optim.SGD,
         optimizer_kwargs={"lr": 0.1},
@@ -745,7 +769,7 @@ def _kfac_reference(
     model: nn.Module,
     X: torch.Tensor,
     y: torch.Tensor,
-    task: str,
+    task: Likelihood,
     curvature: str,
     sigma: float,
 ) -> torch.Tensor:
@@ -769,7 +793,7 @@ def _kfac_reference(
     B1 = lin2.weight.detach()[None] * (1 - a2**2)[:, None, :]
 
     if curvature == "ggn":
-        if task == "regression":
+        if isinstance(task, GaussianLikelihood):
             L = torch.eye(n_out).expand(n, n_out, n_out) / sigma**2
         else:
             p = out.softmax(-1)
@@ -778,7 +802,7 @@ def _kfac_reference(
         def per_example(B: torch.Tensor) -> torch.Tensor:
             return torch.einsum("nko,nkl,nlp->nop", B, L, B)
     else:
-        if task == "regression":
+        if isinstance(task, GaussianLikelihood):
             r = (out - y) / sigma**2
         else:
             r = out.softmax(-1) - nn.functional.one_hot(y, n_out)
@@ -803,10 +827,11 @@ def _kfac_reference(
 @pytest.mark.parametrize(
     "task,n_out,sigma",
     [
-        ("regression", 1, 1.0),
-        ("regression", 3, 0.7),
-        ("classification", 3, 1.0),
+        (GaussianLikelihood(), 1, 1.0),
+        (GaussianLikelihood(), 3, 0.7),
+        (CategoricalLikelihood(), 3, 1.0),
     ],
+    ids=lik_id,
 )
 def test_kron_matches_kfac_reference(backend, curvature, task, n_out, sigma):
     # On a two-layer net KFAC is no longer the GGN, but every backend must compute
@@ -822,7 +847,9 @@ def test_kron_matches_kfac_reference(backend, curvature, task, n_out, sigma):
 
 
 @pytest.mark.parametrize("backend", GGN_BACKENDS)
-@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+@pytest.mark.parametrize(
+    "task,n_out", [(GaussianLikelihood(), 2), (CategoricalLikelihood(), 3)], ids=lik_id
+)
 def test_single_layer_full_kron_diag_agree(backend, task, n_out):
     # On one linear layer with a bias, the diagonal is the diagonal of the GGN. For
     # the MSE, the output curvature is constant, so KFAC is exactly the GGN without
@@ -839,7 +866,7 @@ def test_single_layer_full_kron_diag_agree(backend, task, n_out):
 
     _assert_close(diag.H, H.diagonal())
 
-    if task == "regression":
+    if isinstance(task, GaussianLikelihood):
         kron = KronLaplace(copy.deepcopy(model), task, backend=backend)
         kron.fit(_loader(X, y))
 
@@ -850,7 +877,9 @@ def test_single_layer_full_kron_diag_agree(backend, task, n_out):
 
 
 @pytest.mark.parametrize("backend", HESSIAN_BACKENDS)
-@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+@pytest.mark.parametrize(
+    "task,n_out", [(GaussianLikelihood(), 2), (CategoricalLikelihood(), 3)], ids=lik_id
+)
 def test_last_layer_hessian(backend, task, n_out):
     # The Hessian of the last layer is that of the net with the body frozen
     model = _mlp(n_out)
@@ -876,7 +905,9 @@ def test_last_layer_hessian(backend, task, n_out):
 @pytest.mark.skipif(
     find_spec("asdfghjkl") is None, reason="The old asdfghjkl is not installed"
 )
-@pytest.mark.parametrize("task,n_out", [("regression", 2), ("classification", 3)])
+@pytest.mark.parametrize(
+    "task,n_out", [(GaussianLikelihood(), 2), (CategoricalLikelihood(), 3)], ids=lik_id
+)
 def test_lowrank_eigenvalues_sum_over_batches(task, n_out):
     # asdfghjkl averages its Hessian-vector products over the batches, so the
     # eigenvalues must be scaled back by the number of batches. The power iteration

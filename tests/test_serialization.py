@@ -32,7 +32,7 @@ from laplace.likelihoods import (
     CategoricalLikelihood,
     GaussianLikelihood,
 )
-from tests.utils import ScaledGaussian, toy_multilabel_dataset
+from tests.utils import ScaledGaussian, lik_id, toy_multilabel_dataset
 
 # These tests load only checkpoints written by the same test process.
 # Explicit pickle loading preserves their intent on PyTorch 2.6 and newer.
@@ -106,13 +106,13 @@ def in_tmp_path(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_serialize(laplace, model, reg_loader):
-    la = laplace(model, "regression")
+    la = laplace(model, GaussianLikelihood())
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model, "regression")
+    la2 = laplace(model, GaussianLikelihood())
     la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
     assert la.sigma_noise == la2.sigma_noise
@@ -126,7 +126,7 @@ def test_serialize(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors_functional)
 def test_serialize_functional(laplace, model, reg_loader):
-    la = laplace(model, "regression", n_subset=10)
+    la = laplace(model, GaussianLikelihood(), n_subset=10)
     la.fit(reg_loader)
 
     with pytest.warns(UserWarning, match="Use of method=.marglik."):
@@ -135,7 +135,7 @@ def test_serialize_functional(laplace, model, reg_loader):
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model, "regression", n_subset=10)
+    la2 = laplace(model, GaussianLikelihood(), n_subset=10)
     la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
     assert la.sigma_noise == la2.sigma_noise
@@ -149,14 +149,14 @@ def test_serialize_functional(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors_no_llla[:-1])
 def test_serialize_override(laplace, model, reg_loader):
-    la = laplace(model, "regression")
+    la = laplace(model, GaussianLikelihood())
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     H_orig = la.H_facs.to_matrix() if laplace == KronLaplace else la.H
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model, "regression")
+    la2 = laplace(model, GaussianLikelihood())
     la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
     # Emulating continual learning
@@ -168,7 +168,7 @@ def test_serialize_override(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_serialize_no_pickle(laplace, model, reg_loader):
-    la = laplace(model, "regression")
+    la = laplace(model, GaussianLikelihood())
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
@@ -185,7 +185,7 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors_functional)
 def test_serialize_no_pickle_functional(laplace, model, reg_loader):
-    la = laplace(model, "regression", n_subset=10)
+    la = laplace(model, GaussianLikelihood(), n_subset=10)
     la.fit(reg_loader)
 
     with pytest.warns(UserWarning, match="Use of method=.marglik."):
@@ -207,13 +207,13 @@ def test_serialize_no_pickle_functional(laplace, model, reg_loader):
 @pytest.mark.parametrize("laplace", flavors_subnet)
 def test_serialize_subnetlaplace(laplace, model, reg_loader):
     subnetwork_indices = torch.LongTensor([1, 10, 104, 44])
-    la = laplace(model, "regression", subnetwork_indices=subnetwork_indices)
+    la = laplace(model, GaussianLikelihood(), subnetwork_indices=subnetwork_indices)
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model, "regression", subnetwork_indices=subnetwork_indices)
+    la2 = laplace(model, GaussianLikelihood(), subnetwork_indices=subnetwork_indices)
     la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
     assert la.sigma_noise == la2.sigma_noise
@@ -227,27 +227,29 @@ def test_serialize_subnetlaplace(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors_no_llla)
 def test_serialize_fail_different_models(laplace, model, model2, reg_loader):
-    la = laplace(model, "regression")
+    la = laplace(model, GaussianLikelihood())
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model2, "regression")
+    la2 = laplace(model2, GaussianLikelihood())
 
     with pytest.raises(ValueError):
         la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
 
 
 def test_serialize_fail_different_hess_structures(model, reg_loader):
-    la = Laplace(model, "regression", subset_of_weights="all", hessian_structure="kron")
+    la = Laplace(
+        model, GaussianLikelihood(), subset_of_weights="all", hessian_structure="kron"
+    )
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
     la2 = Laplace(
-        model, "regression", subset_of_weights="all", hessian_structure="diag"
+        model, GaussianLikelihood(), subset_of_weights="all", hessian_structure="diag"
     )
 
     with pytest.raises(ValueError):
@@ -256,7 +258,10 @@ def test_serialize_fail_different_hess_structures(model, reg_loader):
 
 def test_serialize_fail_different_subset_of_weights(model, reg_loader):
     la = Laplace(
-        model, "regression", subset_of_weights="last_layer", hessian_structure="diag"
+        model,
+        GaussianLikelihood(),
+        subset_of_weights="last_layer",
+        hessian_structure="diag",
     )
     la.fit(reg_loader)
     la.optimize_prior_precision()
@@ -264,7 +269,7 @@ def test_serialize_fail_different_subset_of_weights(model, reg_loader):
     torch.save(la.state_dict(), "state_dict.bin")
 
     la2 = Laplace(
-        model, "regression", subset_of_weights="all", hessian_structure="diag"
+        model, GaussianLikelihood(), subset_of_weights="all", hessian_structure="diag"
     )
 
     with pytest.raises(ValueError):
@@ -273,13 +278,13 @@ def test_serialize_fail_different_subset_of_weights(model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_serialize_fail_different_liks(laplace, model, reg_loader):
-    la = laplace(model, "regression")
+    la = laplace(model, GaussianLikelihood())
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model, "classification")
+    la2 = laplace(model, CategoricalLikelihood())
 
     with pytest.raises(ValueError):
         la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
@@ -289,13 +294,13 @@ def test_serialize_fail_different_liks(laplace, model, reg_loader):
 def test_serialize_fail_llla_different_last_layer_name(
     laplace, model, model3, reg_loader
 ):
-    la = laplace(model, "regression", last_layer_name="1")
+    la = laplace(model, GaussianLikelihood(), last_layer_name="1")
     la.fit(reg_loader)
     la.optimize_prior_precision()
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
-    la2 = laplace(model3, "classification", last_layer_name="clf")
+    la2 = laplace(model3, CategoricalLikelihood(), last_layer_name="clf")
 
     with pytest.raises(ValueError):
         la2.load_state_dict(torch.load("state_dict.bin", weights_only=False))
@@ -345,7 +350,7 @@ def test_map_location(
             return torch.save(obj, fn)
 
     device = torch.device(model_device_str)
-    kwds = dict(model=model.to(device), likelihood="regression")
+    kwds = dict(model=model.to(device), likelihood=GaussianLikelihood())
     if issubclass(laplace, SubnetLaplace):
         kwds.update(subnetwork_indices=torch.LongTensor([1, 10, 104, 44]))
     la = laplace(**kwds)
@@ -407,7 +412,7 @@ def class_loader():
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
 def test_load_old_string_checkpoint(laplace, model, class_loader):
-    la = laplace(model, "classification")
+    la = laplace(model, CategoricalLikelihood())
     la.fit(class_loader)
     state_dict = la.state_dict()
     state_dict["likelihood"] = "classification"
@@ -425,24 +430,24 @@ def test_load_old_string_checkpoint(laplace, model, class_loader):
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize("likelihood", ["regression", GaussianLikelihood()])
-def test_state_dict_likelihood_is_str(laplace, likelihood, model, reg_loader):
+def test_state_dict_likelihood_is_str(laplace, model, reg_loader):
+    likelihood = GaussianLikelihood()
     la = laplace(model, likelihood)
     la.fit(reg_loader)
     state_dict = la.state_dict()
 
     assert type(state_dict["likelihood"]) is str
-    assert state_dict["likelihood"] == "regression"
+    assert state_dict["likelihood"] == "gaussian"
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
 @pytest.mark.parametrize(
-    "likelihood", [CategoricalLikelihood(), BradleyTerryLikelihood()]
+    "likelihood", [CategoricalLikelihood(), BradleyTerryLikelihood()], ids=lik_id
 )
 def test_deepcopy_and_pickle_object_likelihood(
     laplace, likelihood, model, class_loader
 ):
-    if likelihood == "reward_modeling":
+    if isinstance(likelihood, BradleyTerryLikelihood):
         X_train = torch.randn(10, 2, 3)
         net = nn.Sequential(nn.Linear(3, 1), nn.Flatten(1))
         loader = DataLoader(
@@ -475,19 +480,19 @@ def test_checkpoint_stores_likelihood_hyperparameters(model, reg_loader):
     with pytest.raises(ValueError, match="Different likelihoods"):
         DiagLaplace(model, ScaledGaussian(1.0)).load_state_dict(state_dict)
 
-    default = DiagLaplace(model, "regression")
+    default = DiagLaplace(model, GaussianLikelihood())
     default.fit(reg_loader)
     assert default.state_dict()["likelihood_hyperparameters"] == {}
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
 def test_old_checkpoint_without_hyperparameters_loads(laplace, model, class_loader):
-    la = laplace(model, "classification")
+    la = laplace(model, CategoricalLikelihood())
     la.fit(class_loader)
     state_dict = la.state_dict()
     del state_dict["likelihood_hyperparameters"]
 
-    la2 = laplace(model, "classification")
+    la2 = laplace(model, CategoricalLikelihood())
     la2.load_state_dict(state_dict)
 
     X, _ = next(iter(class_loader))
@@ -571,7 +576,7 @@ def test_bernoulli_checkpoint_rejects_other_options(model, multilabel_loader):
             DiagLaplace(model, other).load_state_dict(state_dict)
 
     # And the other way around
-    default = DiagLaplace(model, "bernoulli")
+    default = DiagLaplace(model, BernoulliLikelihood())
     default.fit(multilabel_loader)
 
     with pytest.raises(ValueError, match="Different likelihoods"):
@@ -609,7 +614,7 @@ VECTOR_NOISE_FLAVORS = [
 ]
 
 
-def _vector_noise_laplace(model, subset, structure, likelihood="regression"):
+def _vector_noise_laplace(model, subset, structure, likelihood=GaussianLikelihood()):
     kwargs = {}
 
     if subset == "subnetwork":
@@ -753,7 +758,7 @@ def test_bernoulli_function_space_checkpoint(
     def make(likelihood):
         return Laplace(model, likelihood, "all", "gp", **deepcopy(kwargs))
 
-    la = make("bernoulli")
+    la = make(BernoulliLikelihood())
 
     if functional_approximation == "variational":
         la.fit(multilabel_loader, iterations=2)
@@ -770,4 +775,4 @@ def test_bernoulli_function_space_checkpoint(
     assert torch.allclose(la(X, link_approx="probit"), la2(X, link_approx="probit"))
 
     with pytest.raises(ValueError, match="likelihood"):
-        make("classification").load_state_dict(state_dict)
+        make(CategoricalLikelihood()).load_state_dict(state_dict)

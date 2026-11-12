@@ -2,6 +2,7 @@ import pytest
 import torch
 from torch import nn
 
+from laplace import GaussianLikelihood
 from laplace.curvature import (
     CurvlinopsEF,
     CurvlinopsGGN,
@@ -21,6 +22,7 @@ from tests.utils import (
     bce_data,
     bce_model,
     bce_options,
+    lik_id,
     loss_hessian,
 )
 
@@ -33,9 +35,11 @@ def complex_reg_Xy():
     return X, y
 
 
-@pytest.mark.parametrize("loss_type", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "loss_type", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_full_hess_curvlinops_vs_asdl(class_Xy, reg_Xy, model, loss_type):
-    X, y = class_Xy if loss_type == "classification" else reg_Xy
+    X, y = class_Xy if isinstance(loss_type, CategoricalLikelihood) else reg_Xy
 
     backend = CurvlinopsHessian(model, loss_type)
     loss, H = backend.full(X, y)
@@ -50,10 +54,10 @@ def test_full_hess_curvlinops_vs_asdl(class_Xy, reg_Xy, model, loss_type):
 def test_full_ggn_curvlinops_vs_asdl(class_Xy, model):
     X, y = class_Xy
 
-    backend = CurvlinopsGGN(model, "classification", stochastic=False)
+    backend = CurvlinopsGGN(model, CategoricalLikelihood(), stochastic=False)
     loss, H = backend.full(X, y)
 
-    backend = AsdlGGN(model, "classification", stochastic=False)
+    backend = AsdlGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_ref, H_ref = backend.full(X, y)
 
     assert torch.allclose(loss, loss_ref, rtol=1e-4)
@@ -64,13 +68,13 @@ def test_full_ggn_stochastic(class_Xy, model):
     torch.manual_seed(123)
     X, y = class_Xy
 
-    backend = CurvlinopsGGN(model, "classification", stochastic=True)
+    backend = CurvlinopsGGN(model, CategoricalLikelihood(), stochastic=True)
     loss_mc1, H_mc1 = backend.full(X, y, mc_samples=1)
 
-    backend = CurvlinopsGGN(model, "classification", stochastic=True)
+    backend = CurvlinopsGGN(model, CategoricalLikelihood(), stochastic=True)
     loss_mc100, H_mc100 = backend.full(X, y, mc_samples=100)
 
-    backend = CurvlinopsGGN(model, "classification", stochastic=False)
+    backend = CurvlinopsGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_exact, H_exact = backend.full(X, y)
 
     assert torch.allclose(loss_mc1, loss_exact)
@@ -83,19 +87,21 @@ def test_full_ggn_stochastic(class_Xy, model):
 def test_full_ef_curvlinops_vs_asdl(class_Xy, model):
     X, y = class_Xy
 
-    backend = CurvlinopsEF(model, "classification")
+    backend = CurvlinopsEF(model, CategoricalLikelihood())
     loss, H = backend.full(X, y)
 
-    backend = AsdlEF(model, "classification")
+    backend = AsdlEF(model, CategoricalLikelihood())
     loss_ref, H_ref = backend.full(X, y)
 
     assert torch.allclose(loss, loss_ref, rtol=1e-4)
     assert torch.allclose(H, H_ref, rtol=1e-4)
 
 
-@pytest.mark.parametrize("loss_type", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "loss_type", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_kron_ggn_curvlinops_vs_backpack(class_Xy, reg_Xy, model, loss_type):
-    X, y = class_Xy if loss_type == "classification" else reg_Xy
+    X, y = class_Xy if isinstance(loss_type, CategoricalLikelihood) else reg_Xy
 
     backend = CurvlinopsGGN(model, loss_type, stochastic=False)
     loss, kron = backend.kron(X, y, N=1)
@@ -107,9 +113,11 @@ def test_kron_ggn_curvlinops_vs_backpack(class_Xy, reg_Xy, model, loss_type):
     assert torch.allclose(kron.to_matrix(), kron_ref.to_matrix(), rtol=5e-5)
 
 
-@pytest.mark.parametrize("loss_type", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "loss_type", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_kron_ggn_stochastic(class_Xy, reg_Xy, model, loss_type):
-    X, y = class_Xy if loss_type == "classification" else reg_Xy
+    X, y = class_Xy if isinstance(loss_type, CategoricalLikelihood) else reg_Xy
 
     backend = CurvlinopsGGN(model, loss_type, stochastic=True)
     loss_mc1, kron_mc1 = backend.kron(X, y, N=1, mc_samples=1)
@@ -128,11 +136,17 @@ def test_kron_ggn_stochastic(class_Xy, reg_Xy, model, loss_type):
     assert torch.norm(diff_mc1) > torch.norm(diff_mc100)
 
 
-@pytest.mark.parametrize("loss_type", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "loss_type", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_kron_ggn_set_kfac_approx(
     complex_class_Xy, complex_reg_Xy, complex_model, loss_type
 ):
-    X, y = complex_class_Xy if loss_type == "classification" else complex_reg_Xy
+    X, y = (
+        complex_class_Xy
+        if isinstance(loss_type, CategoricalLikelihood)
+        else complex_reg_Xy
+    )
 
     backend = CurvlinopsGGN(complex_model, loss_type, stochastic=False)
     loss_expand, kron_expand = backend.kron(X, y, N=1, kfac_approx="expand")
@@ -146,10 +160,10 @@ def test_kron_ggn_set_kfac_approx(
 
 def test_kron_ef_cls_curvlinops_vs_backpack(class_Xy, model):
     X, y = class_Xy
-    backend = CurvlinopsEF(model, "classification")
+    backend = CurvlinopsEF(model, CategoricalLikelihood())
     loss, kron = backend.kron(X, y, N=1)
 
-    backend = AsdlEF(model, "classification")
+    backend = AsdlEF(model, CategoricalLikelihood())
     loss_ref, kron_ref = backend.kron(X, y, N=1)
 
     assert torch.allclose(loss, loss_ref)
@@ -159,7 +173,7 @@ def test_kron_ef_cls_curvlinops_vs_backpack(class_Xy, model):
 @pytest.mark.parametrize("Backend", [CurvlinopsEF, CurvlinopsGGN])
 def test_kron_batching_correction_cls_curvlinops(class_Xy, model, Backend):
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == model.n_params
 
@@ -176,7 +190,7 @@ def test_kron_batching_correction_cls_curvlinops(class_Xy, model, Backend):
 @pytest.mark.parametrize("Backend", [CurvlinopsEF, CurvlinopsGGN])
 def test_kron_batching_correction_reg_curvlinops(reg_Xy, model, Backend):
     X, y = reg_Xy
-    backend = Backend(model, "regression")
+    backend = Backend(model, GaussianLikelihood())
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == model.n_params
 
@@ -193,7 +207,7 @@ def test_kron_batching_correction_reg_curvlinops(reg_Xy, model, Backend):
 @pytest.mark.parametrize("Backend", [CurvlinopsEF, CurvlinopsGGN])
 def test_kron_summing_up_vs_diag_cls_curvlinops(class_Xy, model, Backend):
     X, y = class_Xy
-    backend = Backend(model, "classification")
+    backend = Backend(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-1)
@@ -201,7 +215,7 @@ def test_kron_summing_up_vs_diag_cls_curvlinops(class_Xy, model, Backend):
 
 def test_complex_diag_ggn_stoch_cls_curvlinops(complex_class_Xy, complex_model):
     X, y = complex_class_Xy
-    backend = CurvlinopsGGN(complex_model, "classification", stochastic=True)
+    backend = CurvlinopsGGN(complex_model, CategoricalLikelihood(), stochastic=True)
     loss, dggn = backend.diag(X, y)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -218,7 +232,7 @@ def test_complex_kron_curvlinops_vs_diag_curvlinops(
 ):
     # For a single data point, Kron is exact and should equal diag GGN
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:1], y[:1], N=1)
     # sanity check size of diag ggn
     assert len(dggn) == complex_model.n_params
@@ -231,7 +245,7 @@ def test_complex_kron_batching_correction_curvlinops(
     complex_class_Xy, complex_model, Backend
 ):
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, kron = backend.kron(X, y, N=len(X))
     assert len(kron.diag()) == complex_model.n_params
 
@@ -251,7 +265,7 @@ def test_complex_kron_summing_up_vs_diag_class_curvlinops(
 ):
     # For a single data point, Kron is exact and should equal diag class_Xy
     X, y = complex_class_Xy
-    backend = Backend(complex_model, "classification")
+    backend = Backend(complex_model, CategoricalLikelihood())
     loss, dggn = backend.diag(X, y, N=len(X))
     loss, kron = backend.kron(X, y, N=len(X))
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
@@ -262,7 +276,7 @@ def test_custom_likelihood_honoured_by_curvlinops_ggn(class_Xy, model, structure
     # The custom `output_hessian` is used through the torch.func fallback
     X, y = class_Xy
 
-    _, H = getattr(CurvlinopsGGN(model, "classification"), structure)(X, y)
+    _, H = getattr(CurvlinopsGGN(model, CategoricalLikelihood()), structure)(X, y)
     _, H_doubled = getattr(CurvlinopsGGN(model, DoubledCategorical()), structure)(X, y)
 
     # Curvlinops and torch.func round differently in float32
@@ -277,7 +291,7 @@ def test_custom_likelihood_rejected_by_curvlinops_kron_and_hessian(
     backend = Backend(model, DoubledCategorical())
 
     # Equal to the built-in by name, but still not honoured, since it isn't one
-    assert backend.likelihood == "classification"
+    assert isinstance(backend.likelihood, CategoricalLikelihood)
 
     if Backend is CurvlinopsHessian:
         with pytest.raises(ValueError, match="diag"):
@@ -291,7 +305,7 @@ def test_custom_likelihood_used_by_curvlinops_ggn_diag(class_Xy, model):
     # The diagonal GGN goes through `GGNInterface`, which uses `output_hessian`
     X, y = class_Xy
 
-    _, diag = CurvlinopsGGN(model, "classification").diag(X, y)
+    _, diag = CurvlinopsGGN(model, CategoricalLikelihood()).diag(X, y)
     _, diag_doubled = CurvlinopsGGN(model, DoubledCategorical()).diag(X, y)
 
     assert torch.allclose(diag_doubled, 2 * diag)
@@ -300,7 +314,7 @@ def test_custom_likelihood_used_by_curvlinops_ggn_diag(class_Xy, model):
 def test_custom_likelihood_jacobians_curvlinops(class_Xy, model):
     X, _ = class_Xy
 
-    Js, f = CurvlinopsGGN(model, "classification").jacobians(X)
+    Js, f = CurvlinopsGGN(model, CategoricalLikelihood()).jacobians(X)
     Js_doubled, f_doubled = CurvlinopsGGN(model, DoubledCategorical()).jacobians(X)
 
     assert torch.allclose(Js, Js_doubled)
@@ -385,7 +399,7 @@ def test_bernoulli_kron_ggn_matches_closed_form(batch_shape, soft):
     model = bce_model(kron=True)
     N = len(X)
 
-    loss, kron = CurvlinopsGGN(model, "bernoulli").kron(X, y, N)
+    loss, kron = CurvlinopsGGN(model, BernoulliLikelihood()).kron(X, y, N)
 
     # The loss comes from the real targets, soft or not
     f = model(X).detach()
@@ -408,7 +422,9 @@ def test_bernoulli_kron_mc_input_factor_matches_closed_form(batch_shape):
     X, y = bce_data(batch_shape, soft=True)
     model = bce_model(kron=True)
 
-    _, kron = CurvlinopsGGN(model, "bernoulli", stochastic=True).kron(X, y, len(X))
+    _, kron = CurvlinopsGGN(model, BernoulliLikelihood(), stochastic=True).kron(
+        X, y, len(X)
+    )
 
     # The input factor does not depend on the sampled labels
     _, exp_w_A = _kron_closed_form(X, torch.eye(3), len(X))[0]
@@ -420,8 +436,8 @@ def test_bernoulli_kron_ggn_matches_the_ggn_blocks_for_a_single_position(batch_s
     X, y = bce_data((1,) * len(batch_shape), soft=True)
     model = bce_model(kron=True)
 
-    _, kron = CurvlinopsGGN(model, "bernoulli").kron(X, y, 1)
-    _, H = CurvlinopsGGN(model, "bernoulli").full(X, y)
+    _, kron = CurvlinopsGGN(model, BernoulliLikelihood()).kron(X, y, 1)
+    _, H = CurvlinopsGGN(model, BernoulliLikelihood()).full(X, y)
     K = kron.to_matrix()
 
     # KFAC is exact within the weight and within the bias, but drops their
@@ -439,13 +455,13 @@ def test_bernoulli_kron_ggn_ignores_soft_labels(batch_shape, stochastic):
     model = bce_model(kron=True)
 
     torch.manual_seed(0)
-    _, kron_soft = CurvlinopsGGN(model, "bernoulli", stochastic=stochastic).kron(
-        X, y, len(X)
-    )
+    _, kron_soft = CurvlinopsGGN(
+        model, BernoulliLikelihood(), stochastic=stochastic
+    ).kron(X, y, len(X))
     torch.manual_seed(0)
-    _, kron_hard = CurvlinopsGGN(model, "bernoulli", stochastic=stochastic).kron(
-        X, (y >= 0.5).to(y.dtype), len(X)
-    )
+    _, kron_hard = CurvlinopsGGN(
+        model, BernoulliLikelihood(), stochastic=stochastic
+    ).kron(X, (y >= 0.5).to(y.dtype), len(X))
 
     assert torch.allclose(kron_soft.to_matrix(), kron_hard.to_matrix())
 
@@ -507,9 +523,9 @@ def test_bernoulli_kron_without_options_runs_everywhere():
     model = bce_model(kron=True)
 
     for backend in (
-        CurvlinopsGGN(model, "bernoulli"),
-        CurvlinopsGGN(model, "bernoulli", stochastic=True),
-        CurvlinopsEF(model, "bernoulli"),
+        CurvlinopsGGN(model, BernoulliLikelihood()),
+        CurvlinopsGGN(model, BernoulliLikelihood(), stochastic=True),
+        CurvlinopsEF(model, BernoulliLikelihood()),
     ):
         _, kron = backend.kron(X, y, len(X))
         assert torch.isfinite(kron.to_matrix()).all()
@@ -528,7 +544,7 @@ def test_bernoulli_stochastic_full_takes_soft_labels(batch_shape):
     X, y_soft = bce_data(batch_shape, soft=True)
     y_hard = (y_soft >= 0.5).to(y_soft.dtype)
 
-    backend = CurvlinopsGGN(bce_model(), "bernoulli", stochastic=True)
+    backend = CurvlinopsGGN(bce_model(), BernoulliLikelihood(), stochastic=True)
     assert backend._honours("full", y_soft)
 
     # Curvlinops' MC Fisher takes hard labels only, but it ignores the targets, so
@@ -544,7 +560,7 @@ def test_bernoulli_stochastic_full_takes_soft_labels(batch_shape):
     assert torch.allclose(H, H_hard)
 
     # With more samples, it approaches the exact GGN
-    _, H_exact = CurvlinopsGGN(bce_model(), "bernoulli").full(X, y_hard)
+    _, H_exact = CurvlinopsGGN(bce_model(), BernoulliLikelihood()).full(X, y_hard)
     torch.manual_seed(0)
     _, H_mc = backend.full(X, y_soft, mc_samples=400)
 
@@ -567,7 +583,7 @@ def test_bernoulli_stochastic_options_raise():
 
 def test_bernoulli_diag_and_jacobians():
     X, y = bce_data((8,), soft=True)
-    backend = CurvlinopsGGN(bce_model(), "bernoulli")
+    backend = CurvlinopsGGN(bce_model(), BernoulliLikelihood())
 
     Js, f = backend.jacobians(X)
     _, diag = backend.diag(X, y)

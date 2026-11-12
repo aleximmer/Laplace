@@ -35,6 +35,7 @@ from tests.utils import (
     ScaledGaussian,
     bce_options,
     check_bernoulli_falls_back_to_torch_func,
+    lik_id,
     loss_hessian,
     requires_backpack,
 )
@@ -42,10 +43,10 @@ from tests.utils import (
 
 def test_batchgrad_cls(class_Xy, model):
     X, y = class_Xy
-    backend = CurvatureInterface(model, "classification")
+    backend = CurvatureInterface(model, CategoricalLikelihood())
     batchgrads, loss = backend.gradients(X, y)
 
-    backend_asdl = AsdlEF(model, "classification")
+    backend_asdl = AsdlEF(model, CategoricalLikelihood())
     batchgrads_ref, loss_ref = backend_asdl.gradients(X, y)
 
     torch.allclose(batchgrads, batchgrads_ref)
@@ -53,10 +54,10 @@ def test_batchgrad_cls(class_Xy, model):
 
 def test_batchgrad_cls_complex(complex_class_Xy, complex_model):
     X, y = complex_class_Xy
-    backend = CurvatureInterface(complex_model, "classification")
+    backend = CurvatureInterface(complex_model, CategoricalLikelihood())
     batchgrads, loss = backend.gradients(X, y)
 
-    backend_asdl = AsdlEF(complex_model, "classification")
+    backend_asdl = AsdlEF(complex_model, CategoricalLikelihood())
     batchgrads_ref, loss_ref = backend_asdl.gradients(X, y)
 
     torch.allclose(batchgrads, batchgrads_ref)
@@ -64,10 +65,10 @@ def test_batchgrad_cls_complex(complex_class_Xy, complex_model):
 
 def test_batchgrad_reg(reg_Xy, model):
     X, y = reg_Xy
-    backend = CurvatureInterface(model, "regression")
+    backend = CurvatureInterface(model, GaussianLikelihood())
     batchgrads, loss = backend.gradients(X, y)
 
-    backend_asdl = BackPackEF(model, "regression")
+    backend_asdl = BackPackEF(model, GaussianLikelihood())
     batchgrads_ref, loss_ref = backend_asdl.gradients(X, y)
 
     torch.allclose(batchgrads, batchgrads_ref)
@@ -77,7 +78,7 @@ def test_diag_ggn_cls_curvlinops_against_backpack_full(class_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = class_Xy
-    backend = GGNInterface(model, "classification", stochastic=False)
+    backend = GGNInterface(model, CategoricalLikelihood(), stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -87,7 +88,7 @@ def test_diag_ggn_cls_curvlinops_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "classification", stochastic=False)
+    backend = BackPackGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diag())
@@ -99,7 +100,7 @@ def test_diag_ggn_complex_cls_curvlinops_against_backpack_full(
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = complex_class_Xy
-    backend = GGNInterface(complex_model, "classification", stochastic=False)
+    backend = GGNInterface(complex_model, CategoricalLikelihood(), stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -109,7 +110,7 @@ def test_diag_ggn_complex_cls_curvlinops_against_backpack_full(
     assert len(dggn) == complex_model.n_params
 
     # check against manually computed full GGN:
-    backend = AsdlGGN(complex_model, "classification", stochastic=False)
+    backend = AsdlGGN(complex_model, CategoricalLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diag())
@@ -119,7 +120,9 @@ def test_diag_ggn_stoch_cls_curvlinops_against_backpack_full(class_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = class_Xy
-    backend = GGNInterface(model, "classification", stochastic=True, num_samples=10000)
+    backend = GGNInterface(
+        model, CategoricalLikelihood(), stochastic=True, num_samples=10000
+    )
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -129,7 +132,7 @@ def test_diag_ggn_stoch_cls_curvlinops_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "classification", stochastic=False)
+    backend = BackPackGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diag(), atol=0.01)
@@ -139,7 +142,7 @@ def test_diag_ef_cls_curvlinops_against_backpack_full(class_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = class_Xy
-    backend = EFInterface(model, "classification")
+    backend = EFInterface(model, CategoricalLikelihood())
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -149,7 +152,7 @@ def test_diag_ef_cls_curvlinops_against_backpack_full(class_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model, "classification")
+    backend = BackPackEF(model, CategoricalLikelihood())
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diag())
@@ -159,7 +162,7 @@ def test_diag_ggn_reg_curvlinops_against_backpack_full(reg_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = reg_Xy
-    backend = GGNInterface(model, "regression", stochastic=False)
+    backend = GGNInterface(model, GaussianLikelihood(), stochastic=False)
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -169,7 +172,7 @@ def test_diag_ggn_reg_curvlinops_against_backpack_full(reg_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "regression", stochastic=False)
+    backend = BackPackGGN(model, GaussianLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diag())
@@ -179,7 +182,9 @@ def test_diag_ggn_stoch_reg_curvlinops_against_backpack_full(reg_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = reg_Xy
-    backend = GGNInterface(model, "regression", stochastic=True, num_samples=10000)
+    backend = GGNInterface(
+        model, GaussianLikelihood(), stochastic=True, num_samples=10000
+    )
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -189,7 +194,7 @@ def test_diag_ggn_stoch_reg_curvlinops_against_backpack_full(reg_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "regression", stochastic=False)
+    backend = BackPackGGN(model, GaussianLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diag(), atol=0.1)
@@ -199,7 +204,7 @@ def test_diag_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = reg_Xy
-    backend = EFInterface(model, "regression")
+    backend = EFInterface(model, GaussianLikelihood())
     loss, dggn = backend.diag(X[:5], y[:5])
     loss2, dggn2 = backend.diag(X[5:], y[5:])
     loss += loss2
@@ -209,7 +214,7 @@ def test_diag_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     assert len(dggn) == model.n_params
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model, "regression")
+    backend = BackPackEF(model, GaussianLikelihood())
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(dggn, H_ggn.diag())
@@ -219,7 +224,7 @@ def test_full_ggn_cls_curvlinops_against_backpack_full(class_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = class_Xy
-    backend = GGNInterface(model, "classification", stochastic=False)
+    backend = GGNInterface(model, CategoricalLikelihood(), stochastic=False)
     loss, fggn = backend.full(X[:5], y[:5])
     loss2, fggn2 = backend.full(X[5:], y[5:])
     loss += loss2
@@ -229,7 +234,7 @@ def test_full_ggn_cls_curvlinops_against_backpack_full(class_Xy, model):
     assert fggn.shape == (model.n_params, model.n_params)
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "classification", stochastic=False)
+    backend = BackPackGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.1)
@@ -239,7 +244,9 @@ def test_full_ggn_stoch_cls_curvlinops_against_backpack_full(class_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = class_Xy
-    backend = GGNInterface(model, "classification", stochastic=True, num_samples=10000)
+    backend = GGNInterface(
+        model, CategoricalLikelihood(), stochastic=True, num_samples=10000
+    )
     loss, fggn = backend.full(X[:5], y[:5])
     loss2, fggn2 = backend.full(X[5:], y[5:])
     loss += loss2
@@ -249,7 +256,7 @@ def test_full_ggn_stoch_cls_curvlinops_against_backpack_full(class_Xy, model):
     assert fggn.shape == (model.n_params, model.n_params)
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "classification", stochastic=False)
+    backend = BackPackGGN(model, CategoricalLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.1)
@@ -259,7 +266,7 @@ def test_full_ef_cls_curvlinops_against_backpack_full(class_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = class_Xy
-    backend = EFInterface(model, "classification")
+    backend = EFInterface(model, CategoricalLikelihood())
     loss, fggn = backend.full(X[:5], y[:5])
     loss2, fggn2 = backend.full(X[5:], y[5:])
     loss += loss2
@@ -269,7 +276,7 @@ def test_full_ef_cls_curvlinops_against_backpack_full(class_Xy, model):
     assert fggn.shape == (model.n_params, model.n_params)
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model, "classification")
+    backend = BackPackEF(model, CategoricalLikelihood())
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.0001)
@@ -279,7 +286,7 @@ def test_full_ggn_reg_curvlinops_against_backpack_full(reg_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = reg_Xy
-    backend = GGNInterface(model, "regression", stochastic=False)
+    backend = GGNInterface(model, GaussianLikelihood(), stochastic=False)
     loss, fggn = backend.full(X[:5], y[:5])
     loss2, fggn2 = backend.full(X[5:], y[5:])
     loss += loss2
@@ -289,7 +296,7 @@ def test_full_ggn_reg_curvlinops_against_backpack_full(reg_Xy, model):
     assert fggn.shape == (model.n_params, model.n_params)
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "regression", stochastic=False)
+    backend = BackPackGGN(model, GaussianLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.1)
@@ -299,7 +306,9 @@ def test_full_ggn_stoch_reg_curvlinops_against_backpack_full(reg_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = reg_Xy
-    backend = GGNInterface(model, "regression", stochastic=True, num_samples=10000)
+    backend = GGNInterface(
+        model, GaussianLikelihood(), stochastic=True, num_samples=10000
+    )
     loss, fggn = backend.full(X[:5], y[:5])
     loss2, fggn2 = backend.full(X[5:], y[5:])
     loss += loss2
@@ -309,7 +318,7 @@ def test_full_ggn_stoch_reg_curvlinops_against_backpack_full(reg_Xy, model):
     assert fggn.shape == (model.n_params, model.n_params)
 
     # check against manually computed full GGN:
-    backend = BackPackGGN(model, "regression", stochastic=False)
+    backend = BackPackGGN(model, GaussianLikelihood(), stochastic=False)
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.1)
@@ -319,7 +328,7 @@ def test_full_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     torch.manual_seed(0)
     np.random.seed(0)
     X, y = reg_Xy
-    backend = EFInterface(model, "regression")
+    backend = EFInterface(model, GaussianLikelihood())
     loss, fggn = backend.full(X[:5], y[:5])
     loss2, fggn2 = backend.full(X[5:], y[5:])
     loss += loss2
@@ -329,7 +338,7 @@ def test_full_ef_reg_curvlinops_against_backpack_full(reg_Xy, model):
     assert fggn.shape == (model.n_params, model.n_params)
 
     # check against manually computed full GGN:
-    backend = BackPackEF(model, "regression")
+    backend = BackPackEF(model, GaussianLikelihood())
     loss_f, H_ggn = backend.full(X, y)
     assert torch.allclose(loss, loss_f)
     assert torch.allclose(fggn, H_ggn, atol=0.0001)
@@ -346,7 +355,9 @@ class DictModel(nn.Module):
 
 
 @pytest.mark.parametrize("dict_cls", [dict, UserDict])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 @pytest.mark.parametrize("multidim", [False, True])
 def test_batchgrad_dict_inputs(dict_cls, likelihood, multidim, model):
     torch.manual_seed(711)
@@ -354,7 +365,7 @@ def test_batchgrad_dict_inputs(dict_cls, likelihood, multidim, model):
     X = torch.randn(*lead_dims, 3)
     y = (
         torch.randint(2, lead_dims)
-        if likelihood == "classification"
+        if isinstance(likelihood, CategoricalLikelihood)
         else torch.randn(*lead_dims, 2)
     )
 
@@ -372,7 +383,9 @@ def test_batchgrad_dict_inputs(dict_cls, likelihood, multidim, model):
 
 
 @pytest.mark.parametrize("dict_cls", [dict, UserDict])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 @pytest.mark.parametrize("multidim", [False, True])
 def test_batchgrad_nested_dict_inputs(dict_cls, likelihood, multidim, model):
     class NestedDictModel(nn.Module):
@@ -389,7 +402,7 @@ def test_batchgrad_nested_dict_inputs(dict_cls, likelihood, multidim, model):
     X = torch.randn(*lead_dims, 3)
     y = (
         torch.randint(2, lead_dims)
-        if likelihood == "classification"
+        if isinstance(likelihood, CategoricalLikelihood)
         else torch.randn(*lead_dims, 2)
     )
 
@@ -416,10 +429,10 @@ def test_multidim_classification_equivalent_to_flat(backend_cls, structure):
     X, y = torch.randn(B, L, D), torch.randint(C, (B, L))
     net = nn.Sequential(nn.Linear(D, 4), nn.Tanh(), nn.Linear(4, C))
 
-    loss_flat, H_flat = getattr(backend_cls(net, "classification"), structure)(
+    loss_flat, H_flat = getattr(backend_cls(net, CategoricalLikelihood()), structure)(
         X.reshape(-1, D), y.reshape(-1)
     )
-    loss, H = getattr(backend_cls(net, "classification"), structure)(X, y)
+    loss, H = getattr(backend_cls(net, CategoricalLikelihood()), structure)(X, y)
 
     assert torch.allclose(loss, loss_flat)
     assert torch.allclose(H, H_flat)
@@ -430,7 +443,7 @@ def test_loss_multidim_classification_targets():
     f = torch.randn(B, L, C)
     y = torch.randint(C, (B, L))
     y_prob = nn.functional.one_hot(y, C).to(f.dtype)
-    backend = GGNInterface(nn.Linear(2, C), "classification")
+    backend = GGNInterface(nn.Linear(2, C), CategoricalLikelihood())
 
     loss_flat = nn.CrossEntropyLoss(reduction="sum")(f.reshape(-1, C), y.reshape(-1))
     assert torch.allclose(backend._loss(f, y), loss_flat)
@@ -454,41 +467,15 @@ def test_batchgrad_data_dependent_control_flow(class_Xy, model):
             return self.net(x)
 
     X, y = class_Xy
-    backend = CurvatureInterface(BranchingModel(model), "classification")
+    backend = CurvatureInterface(BranchingModel(model), CategoricalLikelihood())
 
     with pytest.raises(ValueError, match="data-dependent control flow"):
         backend.gradients({"input_ids": X, "labels": y}, y)
 
 
-@pytest.mark.parametrize("backend_cls", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
-@pytest.mark.parametrize("structure", ["diag", "kron", "full"])
-@pytest.mark.parametrize(
-    "name,likelihood",
-    [
-        ("regression", GaussianLikelihood()),
-        ("classification", CategoricalLikelihood()),
-    ],
-)
-def test_backend_accepts_likelihood_object(
-    backend_cls, structure, name, likelihood, model, class_Xy, reg_Xy
-):
-    X, y = reg_Xy if name == "regression" else class_Xy
+def test_backend_rejects_unsupported_likelihood(model):
+    likelihood = BradleyTerryLikelihood()
 
-    extra = (len(X),) if structure == "kron" else ()
-
-    loss_str, H_str = getattr(backend_cls(model, name), structure)(X, y, *extra)
-    loss_obj, H_obj = getattr(backend_cls(model, likelihood), structure)(X, y, *extra)
-
-    assert torch.allclose(loss_str, loss_obj)
-
-    if structure == "kron":
-        H_str, H_obj = H_str.to_matrix(), H_obj.to_matrix()
-
-    assert torch.allclose(H_str, H_obj)
-
-
-@pytest.mark.parametrize("likelihood", [BradleyTerryLikelihood(), "reward_modeling"])
-def test_backend_rejects_unsupported_likelihood(likelihood, model):
     with pytest.raises(ValueError, match="fit_likelihood"):
         CurvatureInterface(model, likelihood)
 
@@ -506,55 +493,33 @@ def test_regression_rejects_target_with_fewer_dims(backend_cls):
     net = nn.Sequential(nn.Linear(3, 4), nn.Tanh(), nn.Linear(4, 1))
 
     with pytest.raises(ValueError, match="dims but the target has"):
-        backend_cls(net, "regression").diag(X, y)
+        backend_cls(net, GaussianLikelihood()).diag(X, y)
 
 
-@pytest.mark.parametrize("structure", ["diag", "full"])
-@pytest.mark.parametrize(
-    "name,likelihood",
-    [
-        ("regression", GaussianLikelihood()),
-        ("classification", CategoricalLikelihood()),
-    ],
-)
-def test_mc_fisher_str_vs_object(structure, name, likelihood, model, class_Xy, reg_Xy):
-    # `stochastic=True` samples targets in `_get_mc_functional_fisher`
-    X, y = reg_Xy if name == "regression" else class_Xy
+def test_backend_likelihood_setter(model):
+    backend = CurvlinopsGGN(model, GaussianLikelihood())
 
-    outs = []
-    for lik in (name, likelihood):
-        backend = GGNInterface(model, lik, stochastic=True, num_samples=3)
-
-        torch.manual_seed(0)
-        outs.append(getattr(backend, structure)(X, y))
-
-    (loss_str, H_str), (loss_obj, H_obj) = outs
-
-    assert torch.allclose(loss_str, loss_obj)
-    assert torch.equal(H_str, H_obj)
-
-
-def test_backend_likelihood_setter_coerces_str(model):
-    backend = CurvlinopsGGN(model, "regression")
-
-    backend.likelihood = "classification"
+    backend.likelihood = CategoricalLikelihood()
     assert type(backend.likelihood) is CategoricalLikelihood
 
     with pytest.raises(ValueError, match="fit_likelihood"):
-        backend.likelihood = "reward_modeling"
+        backend.likelihood = BradleyTerryLikelihood()
 
 
 def test_backend_legacy_pickle_state(model, class_Xy):
     X, y = class_Xy
-    backend = CurvlinopsGGN(model, "classification")
+    backend = CurvlinopsGGN(model, CategoricalLikelihood())
     loss, H = backend.diag(X, y)
 
     # Pickles made before likelihood objects stored a plain string
     state = dict(vars(backend))
-    state["likelihood"] = str(state.pop("_likelihood"))
+    state["likelihood"] = "classification"
+    del state["_likelihood"]
 
     legacy = CurvlinopsGGN.__new__(CurvlinopsGGN)
-    legacy.__setstate__(state)
+
+    with pytest.warns(DeprecationWarning):
+        legacy.__setstate__(state)
 
     assert type(legacy.likelihood) is CategoricalLikelihood
     assert "likelihood" not in vars(legacy)
@@ -575,7 +540,7 @@ def test_backend_accepts_custom_name(model):
 def test_custom_ggn_matches_closed_form(backend_cls, structure, model, reg_Xy):
     X, y = reg_Xy
 
-    _, H_reg = getattr(backend_cls(model, "regression"), structure)(X, y)
+    _, H_reg = getattr(backend_cls(model, GaussianLikelihood()), structure)(X, y)
     loss, H = getattr(backend_cls(model, ScaledGaussian(2.0)), structure)(X, y)
 
     # The output Hessian of a Gaussian with scale 2 is I / 4
@@ -750,7 +715,7 @@ def test_unhonoured_options_raise(model, class_Xy):
         CurvlinopsGGN(model, weighted, stochastic=True).full(X, y)
 
     # The GGN of a smoothed cross-entropy doesn't depend on the targets
-    _, kron = CurvlinopsGGN(model, "classification").kron(X, y, len(X))
+    _, kron = CurvlinopsGGN(model, CategoricalLikelihood()).kron(X, y, len(X))
     _, kron_smooth = CurvlinopsGGN(
         model, CategoricalLikelihood(label_smoothing=0.1)
     ).kron(X, y, len(X))
@@ -765,7 +730,7 @@ def test_unsupported_error_names_ignore_index(model, class_Xy):
 
     # The default `ignore_index` is not an option of the likelihood, but padding
     # makes it one. ASDL's diagonal GGN doesn't honour it.
-    error = AsdlGGN(model, "classification")._unsupported_error("diag", y=y)
+    error = AsdlGGN(model, CategoricalLikelihood())._unsupported_error("diag", y=y)
 
     assert isinstance(error, ValueError)
     assert "ignore_index" in str(error)
@@ -848,7 +813,9 @@ def test_padded_positions_match_reference(backend_cls, method, stochastic):
 
 def test_mc_fisher_masks_padded_positions():
     X, y, keep = _padded_data()
-    backend = GGNInterface(_options_model(False), "classification", stochastic=True)
+    backend = GGNInterface(
+        _options_model(False), CategoricalLikelihood(), stochastic=True
+    )
 
     # A padded datum gets no curvature, whatever the samples
     _, H_pad = backend.diag(X[~keep], y[~keep])
@@ -867,7 +834,7 @@ def test_mc_fisher_masks_padded_positions():
 )
 def test_kron_drops_padded_positions(backend_cls):
     X, y, keep = _padded_data()
-    backend = backend_cls(_options_model(False), "classification")
+    backend = backend_cls(_options_model(False), CategoricalLikelihood())
 
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*ignored positions")
@@ -880,7 +847,7 @@ def test_kron_drops_padded_positions(backend_cls):
 
 def test_honours_counts_padding_as_ignore_index(model, class_Xy):
     X, y = class_Xy
-    backend = CurvlinopsGGN(model, "classification", stochastic=True)
+    backend = CurvlinopsGGN(model, CategoricalLikelihood(), stochastic=True)
 
     # The MC Fisher of the dense operator honours label smoothing only
     assert backend._honours("full", y)
@@ -898,16 +865,16 @@ def test_honours_counts_padding_as_ignore_index(model, class_Xy):
 def test_bernoulli_is_known_to_curvlinops_only(model):
     # Curvlinops has the loss of `nn.BCEWithLogitsLoss`, while BackPACK and ASDL
     # don't, so they must not treat it like a Gaussian or categorical likelihood
-    assert CurvlinopsGGN(model, "bernoulli")._honours("full")
-    assert CurvlinopsEF(model, "bernoulli")._honours("full")
-    assert CurvlinopsHessian(model, "bernoulli")._honours("full")
-    assert CurvlinopsGGN(model, "bernoulli")._honours("kron")
+    assert CurvlinopsGGN(model, BernoulliLikelihood())._honours("full")
+    assert CurvlinopsEF(model, BernoulliLikelihood())._honours("full")
+    assert CurvlinopsHessian(model, BernoulliLikelihood())._honours("full")
+    assert CurvlinopsGGN(model, BernoulliLikelihood())._honours("kron")
 
     for backend in (
-        AsdlGGN(model, "bernoulli"),
-        AsdlEF(model, "bernoulli"),
-        AsdlHessian(model, "bernoulli"),
-        GGNInterface(model, "bernoulli"),
+        AsdlGGN(model, BernoulliLikelihood()),
+        AsdlEF(model, BernoulliLikelihood()),
+        AsdlHessian(model, BernoulliLikelihood()),
+        GGNInterface(model, BernoulliLikelihood()),
     ):
         assert not any(
             backend._honours(method) for method in ("diag", "full", "kron")
@@ -916,15 +883,17 @@ def test_bernoulli_is_known_to_curvlinops_only(model):
     # The torch.func backends still compute it
     X, y = torch.randn(4, 3), torch.rand(4, 2)
 
-    assert torch.isfinite(GGNInterface(model, "bernoulli").full(X, y)[1]).all()
-    assert torch.isfinite(EFInterface(model, "bernoulli").diag(X, y)[1]).all()
+    assert torch.isfinite(
+        GGNInterface(model, BernoulliLikelihood()).full(X, y)[1]
+    ).all()
+    assert torch.isfinite(EFInterface(model, BernoulliLikelihood()).diag(X, y)[1]).all()
 
 
 def test_bernoulli_error_names_the_likelihood(model):
     X, y = torch.randn(4, 3), torch.rand(4, 2)
 
     with pytest.raises(ValueError, match=r"does not support the likelihood Bernoulli"):
-        AsdlHessian(model, "bernoulli").full(X, y)
+        AsdlHessian(model, BernoulliLikelihood()).full(X, y)
 
     # Options of a library likelihood are named instead
     weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 2.0]))
@@ -944,7 +913,9 @@ def test_bernoulli_stochastic_fisher_raises_for_options(model):
 
     # Without options, soft targets are fine, since the samples ignore them
     for method in ("diag", "full"):
-        _, H = getattr(GGNInterface(model, "bernoulli", stochastic=True), method)(X, y)
+        _, H = getattr(
+            GGNInterface(model, BernoulliLikelihood(), stochastic=True), method
+        )(X, y)
         assert torch.isfinite(H).all()
 
 
@@ -954,11 +925,11 @@ def test_bernoulli_is_rejected_by_asdfghjkl(model):
 
     for backend_cls in (AsdfghjklGGN, AsdfghjklEF):
         with pytest.raises(ValueError, match="only supports classification"):
-            backend_cls(model, "bernoulli")
+            backend_cls(model, BernoulliLikelihood())
 
     # The Hessian-based backend of `LowRankLaplace` must not take the categorical
     # path either
-    backend = AsdfghjklHessian(model, "bernoulli")
+    backend = AsdfghjklHessian(model, BernoulliLikelihood())
 
     with pytest.raises(ValueError, match="does not support the likelihood"):
         backend.full(X, y)
@@ -983,7 +954,7 @@ def test_bernoulli_is_rejected_by_asdfghjkl(model):
 )
 def test_unavailable_structure_raises(backend_cls, method, model, reg_Xy):
     X, y = reg_Xy
-    backend = backend_cls(model, "regression")
+    backend = backend_cls(model, GaussianLikelihood())
     args = (X, y, len(X)) if method == "kron" else (X, y)
 
     with pytest.raises(NotImplementedError, match=f"doesn't compute the `{method}`"):
@@ -1016,12 +987,12 @@ def test_backpack_leaves_the_model_as_it_was(model, reg_Xy, first, structure, th
     X, y = reg_Xy
     reference = deepcopy(model)
     args = (X, y, len(X)) if structure == "kron" else (X, y)
-    getattr(first(model, "regression"), structure)(*args)
+    getattr(first(model, GaussianLikelihood()), structure)(*args)
 
     _assert_no_backpack_state(model)
 
-    _, H = then(model, "regression").diag(X, y)
-    _, H_ref = then(reference, "regression").diag(X, y)
+    _, H = then(model, GaussianLikelihood()).diag(X, y)
+    _, H_ref = then(reference, GaussianLikelihood()).diag(X, y)
 
     torch.testing.assert_close(H, H_ref)
 
@@ -1032,15 +1003,15 @@ def test_backpack_after_asdl_raises(model, reg_Xy, asdl):
     # ASDL's regular backward hooks leave a mark on the modules that PyTorch checks
     # before it registers BackPACK's full ones
     X, y = reg_Xy
-    asdl(model, "regression").diag(X, y)
+    asdl(model, GaussianLikelihood()).diag(X, y)
 
     with pytest.raises(RuntimeError, match="regular backward hooks"):
-        BackPackGGN(model, "regression").diag(X, y)
+        BackPackGGN(model, GaussianLikelihood()).diag(X, y)
 
     # A fresh model with the same weights works, as the error says
     fresh = nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 2))
     fresh.load_state_dict(model.state_dict())
-    BackPackGGN(fresh, "regression").diag(X, y)
+    BackPackGGN(fresh, GaussianLikelihood()).diag(X, y)
 
 
 requires_old_asdfghjkl = pytest.mark.skipif(
@@ -1050,19 +1021,19 @@ requires_old_asdfghjkl = pytest.mark.skipif(
 # The old asdfghjkl backends need their package, which the stand-ins in
 # `tests/utils.py` don't cover. `tests/conftest.py` marks these `asdfghjkl`.
 _KRON_NORMALIZATION_BACKENDS = [
-    (CurvlinopsGGN, "classification"),
-    (AsdlGGN, "classification"),
-    (AsdlGGN, "regression"),
-    pytest.param(AsdfghjklGGN, "classification", marks=requires_old_asdfghjkl),
-    (CurvlinopsEF, "classification"),
-    (AsdlEF, "classification"),
-    pytest.param(AsdfghjklEF, "classification", marks=requires_old_asdfghjkl),
+    (CurvlinopsGGN, CategoricalLikelihood()),
+    (AsdlGGN, CategoricalLikelihood()),
+    (AsdlGGN, GaussianLikelihood()),
+    pytest.param(AsdfghjklGGN, CategoricalLikelihood(), marks=requires_old_asdfghjkl),
+    (CurvlinopsEF, CategoricalLikelihood()),
+    (AsdlEF, CategoricalLikelihood()),
+    pytest.param(AsdfghjklEF, CategoricalLikelihood(), marks=requires_old_asdfghjkl),
 ]
 
 
 @pytest.mark.parametrize("Backend,likelihood", _KRON_NORMALIZATION_BACKENDS)
 def test_kron_normalization(Backend, likelihood, class_Xy, reg_Xy, model):
-    X, y = class_Xy if likelihood == "classification" else reg_Xy
+    X, y = class_Xy if isinstance(likelihood, CategoricalLikelihood) else reg_Xy
     xi, yi = X[:1], y[:1]
     kwargs = {"stochastic": False} if issubclass(Backend, GGNInterface) else {}
     backend = Backend(model, likelihood, **kwargs)
@@ -1082,7 +1053,7 @@ def test_custom_likelihood_honoured_by_ggn(Backend, class_Xy, model, structure):
     # The custom `output_hessian` is used through the torch.func fallback
     X, y = class_Xy
 
-    _, H = getattr(Backend(model, "classification"), structure)(X, y)
+    _, H = getattr(Backend(model, CategoricalLikelihood()), structure)(X, y)
     _, H_doubled = getattr(Backend(model, DoubledCategorical()), structure)(X, y)
 
     assert torch.allclose(H_doubled, 2 * H)
@@ -1094,7 +1065,7 @@ def test_custom_likelihood_ef_equals_builtin(Backend, class_Xy, model, structure
     # The EF depends only on the loss, which `DoubledCategorical` keeps
     X, y = class_Xy
 
-    _, H = getattr(Backend(model, "classification"), structure)(X, y)
+    _, H = getattr(Backend(model, CategoricalLikelihood()), structure)(X, y)
     _, H_doubled = getattr(Backend(model, DoubledCategorical()), structure)(X, y)
 
     assert torch.allclose(H_doubled, H)

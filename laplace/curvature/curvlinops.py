@@ -27,6 +27,7 @@ from laplace.curvature.curvature import (
 )
 from laplace.likelihoods import (
     BernoulliLikelihood,
+    CategoricalLikelihood,
     HeteroscedasticGaussianLikelihood,
     Likelihood,
     _is_heteroscedastic,
@@ -178,7 +179,7 @@ class CurvlinopsInterface(CurvatureInterface):
     @property
     def _linop_model(self) -> nn.Module:
         """The model that is passed to the Curvlinops linear operators."""
-        if self.likelihood.name == Likelihood.CLASSIFICATION.name:
+        if self.likelihood.name == CategoricalLikelihood.name:
             return _ClassDimFirst(self.model)
 
         # Whitening makes the curvature of the plain squared error exact

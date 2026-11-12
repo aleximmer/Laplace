@@ -21,7 +21,7 @@ from datasets import Dataset
 from torch import nn, optim
 from torch.nn import functional as F
 
-from laplace import Laplace
+from laplace import BradleyTerryLikelihood, Laplace
 
 logging.basicConfig(level="ERROR")
 warnings.filterwarnings("ignore")
@@ -137,12 +137,12 @@ for epoch in range(10):
 # %% [markdown]
 # ## Applying Laplace
 #
-# Applying Laplace to this model is a breeze. Simply state that the likelihood is `reward_modeling`.
+# Applying Laplace to this model is a breeze. Pass `BradleyTerryLikelihood()` as the likelihood.
 
 # %%
 # Laplace !!! Notice the likelihood !!!
 reward_model.eval()
-la = Laplace(reward_model, likelihood="reward_modeling", subset_of_weights="all")
+la = Laplace(reward_model, likelihood=BradleyTerryLikelihood(), subset_of_weights="all")
 la.fit(tensor_dataloader)
 la.optimize_prior_precision()
 

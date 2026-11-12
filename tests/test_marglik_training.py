@@ -10,10 +10,12 @@ from laplace import marglik_training
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import (
     BernoulliLikelihood,
+    BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
+    Likelihood,
 )
-from tests.utils import DistributionOnlyCategorical, toy_multilabel_dataset
+from tests.utils import DistributionOnlyCategorical, lik_id, toy_multilabel_dataset
 
 
 @pytest.fixture
@@ -23,10 +25,10 @@ def model():
     )
 
 
-def _loader(likelihood: str) -> DataLoader:
+def _loader(likelihood: Likelihood) -> DataLoader:
     X = torch.randn(32, 3)
 
-    if likelihood == "regression":
+    if isinstance(likelihood, GaussianLikelihood):
         y = torch.randn(32, 2)
     else:
         y = torch.randint(0, 2, (32,))
@@ -39,7 +41,9 @@ def test_default_backend_is_curvlinops():
     assert default is CurvlinopsGGN
 
 
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+@pytest.mark.parametrize(
+    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
+)
 @pytest.mark.parametrize("hessian_structure", ["full", "kron", "diag"])
 def test_marglik_training_default_backend(model, likelihood, hessian_structure):
     la, model, margliks, losses = marglik_training(
@@ -54,38 +58,19 @@ def test_marglik_training_default_backend(model, likelihood, hessian_structure):
     assert all(math.isfinite(m) for m in margliks)
 
 
-@pytest.mark.parametrize(
-    "likelihood,obj",
-    [("regression", GaussianLikelihood()), ("classification", CategoricalLikelihood())],
-)
-def test_marglik_training_object_equivalence(likelihood, obj):
-    results = []
-
-    for lik in (likelihood, obj):
-        torch.manual_seed(0)
-        model = torch.nn.Sequential(
-            torch.nn.Linear(3, 8), torch.nn.Tanh(), torch.nn.Linear(8, 2)
-        )
-        loader = _loader(likelihood)
-
-        _, _, margliks, _ = marglik_training(
-            model, loader, likelihood=lik, hessian_structure="kron", n_epochs=2
-        )
-        results.append(margliks)
-
-    assert results[0] == results[1]
-
-
 def test_marglik_training_rejects_reward_modeling(model):
     with pytest.raises(ValueError, match="reward modeling"):
         marglik_training(
-            model, _loader("classification"), likelihood="reward_modeling", n_epochs=1
+            model,
+            _loader(CategoricalLikelihood()),
+            likelihood=BradleyTerryLikelihood(),
+            n_epochs=1,
         )
 
 
 @pytest.mark.parametrize("hessian_structure", ["diag", "full"])
 def test_marglik_training_casts_class_weights(model, hessian_structure):
-    loader = _loader("classification")
+    loader = _loader(CategoricalLikelihood())
     X, y = loader.dataset.tensors
     loader = DataLoader(TensorDataset(X.double(), y), batch_size=8)
 
@@ -122,7 +107,7 @@ def _first_epoch_loss(model, loader, likelihood):
 
 
 def test_marglik_training_sums_weighted_categorical_loss(model):
-    loader = _loader("classification")
+    loader = _loader(CategoricalLikelihood())
     X, y = loader.dataset.tensors
     weighted = CategoricalLikelihood(weight=torch.tensor([1.0, 3.0]))
 
@@ -137,7 +122,7 @@ def test_marglik_training_sums_weighted_categorical_loss(model):
 
 
 def test_marglik_training_unweighted_categorical_loss_is_the_mean(model):
-    loader = _loader("classification")
+    loader = _loader(CategoricalLikelihood())
     X, y = loader.dataset.tensors
 
     with torch.no_grad():
@@ -150,7 +135,7 @@ def test_marglik_training_unweighted_categorical_loss_is_the_mean(model):
 
 def test_marglik_training_sums_gaussian_loss_over_outputs(model):
     # Two outputs, so a mean over all entries would halve the data term
-    loader = _loader("regression")
+    loader = _loader(GaussianLikelihood())
     X, y = loader.dataset.tensors
 
     with torch.no_grad():
@@ -176,7 +161,7 @@ def _check_bernoulli_marglik_training(model, likelihood, hessian_structure):
         n_epochs=2,
     )
 
-    assert la.likelihood == "bernoulli"
+    assert la.likelihood == BernoulliLikelihood()
     assert len(margliks) > 0
     assert all(math.isfinite(m) for m in margliks)
     assert all(math.isfinite(loss) for loss in losses)
@@ -189,7 +174,7 @@ def _check_bernoulli_marglik_training(model, likelihood, hessian_structure):
 
 @pytest.mark.parametrize("hessian_structure", ["diag", "full", "kron"])
 def test_marglik_training_bernoulli(model, hessian_structure):
-    _check_bernoulli_marglik_training(model, "bernoulli", hessian_structure)
+    _check_bernoulli_marglik_training(model, BernoulliLikelihood(), hessian_structure)
 
 
 def test_marglik_training_bernoulli_from_criterion(model):
@@ -275,7 +260,7 @@ def test_marglik_training_soft_targets(model, hessian_structure, caplog):
             _, _, margliks, losses = marglik_training(
                 deepcopy(model),
                 _soft_loader(one_hot),
-                likelihood="classification",
+                likelihood=CategoricalLikelihood(),
                 hessian_structure=hessian_structure,
                 n_epochs=2,
             )
@@ -295,7 +280,7 @@ def _sequence_loader(kind: str, ignore: bool = False) -> DataLoader:
     torch.manual_seed(0)
     X = torch.randn(32, 4, 3)
 
-    if kind == "regression":
+    if kind == "real":
         y = torch.randn(32, 4, 2)
     else:
         y = torch.randint(0, 2, (32, 4))
@@ -315,7 +300,7 @@ def test_marglik_training_sequence_outputs(model, kind, hessian_structure):
     la, _, margliks, losses = marglik_training(
         model,
         _sequence_loader(kind),
-        likelihood="classification",
+        likelihood=CategoricalLikelihood(),
         hessian_structure=hessian_structure,
         n_epochs=2,
     )
@@ -357,7 +342,7 @@ def test_marglik_training_sequence_ignore_index(model):
 
 
 def test_marglik_training_sums_sequence_gaussian_loss(model):
-    loader = _sequence_loader("regression")
+    loader = _sequence_loader("real")
     X, y = loader.dataset.tensors
 
     with torch.no_grad():
@@ -393,7 +378,7 @@ def test_marglik_training_sequence_accuracy_skips_ignored_targets(model, caplog)
         marglik_training(
             model,
             loader,
-            likelihood="classification",
+            likelihood=CategoricalLikelihood(),
             hessian_structure="diag",
             optimizer_kwargs=dict(lr=0.0),
             n_epochs=2,

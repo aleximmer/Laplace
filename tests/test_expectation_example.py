@@ -9,7 +9,7 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import BaseLaplace, Laplace
+from laplace import BaseLaplace, GaussianLikelihood, Laplace
 from laplace.utils import LargestMagnitudeSubnetMask
 
 EXAMPLE = Path(__file__).resolve().parents[1] / "examples" / "expectation_example.py"
@@ -198,7 +198,7 @@ def test_linearized_thompson_subnetwork() -> None:
     indices = LargestMagnitudeSubnetMask(model, n_params_subnet=20).select()
     la = Laplace(
         model,
-        "regression",
+        GaussianLikelihood(),
         subset_of_weights="subnetwork",
         hessian_structure="full",
         subnetwork_indices=indices,

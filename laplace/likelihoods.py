@@ -6,11 +6,13 @@ how to sample targets.
 from __future__ import annotations
 
 import inspect
+import sys
 import warnings
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterator
+from functools import cache
 from math import log, pi, sqrt
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 from torch import nn
@@ -18,26 +20,94 @@ from torch import nn
 from laplace.utils.heteroscedastic_utils import HeteroscedasticGaussianNLLLoss
 from laplace.utils.utils import _float_dtype, _zero_like, hyperparameters_equal
 
-_BUILTIN_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING", "BERNOULLI")
+# Deprecated strings that `get_likelihood` still accepts, with the name of their
+# likelihood
+_LEGACY_NAMES = {
+    "regression": "gaussian",
+    "classification": "categorical",
+    "reward_modeling": "bradley_terry",
+    "bernoulli": "bernoulli",
+    "heteroscedastic_gaussian": "heteroscedastic_gaussian",
+}
+
+# Keys of the old `Likelihood` enum, whose values were the keys in lowercase
+_ENUM_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING", "BERNOULLI")
+
+
+def _warn_deprecated(message: str) -> None:
+    """Issue a `DeprecationWarning` that points at the first frame outside `laplace`,
+    i.e. at the user's code."""
+    stacklevel, frame = 2, sys._getframe(1)
+
+    while frame is not None and frame.f_globals.get("__name__", "").split(".")[0] == (
+        "laplace"
+    ):
+        stacklevel, frame = stacklevel + 1, frame.f_back
+
+    warnings.warn(message, DeprecationWarning, stacklevel=stacklevel)
+
+
+def _warn_enum_api(what: str) -> None:
+    """Warn that the enum-style `Likelihood` API, here `what`, is deprecated."""
+    _warn_deprecated(
+        f"{what} is deprecated and will be removed in 0.9. Instantiate the "
+        "likelihood class instead, e.g. CategoricalLikelihood()."
+    )
+
+
+def _canonical_name(name: str) -> str:
+    """The `name` of the likelihood that a string stands for. Task names from before
+    the rename map to the new name, e.g. in old checkpoints."""
+    return _LEGACY_NAMES.get(name, name)
+
+
+@cache
+def _enum_members() -> dict[str, Likelihood]:
+    """The shared instances behind the old enum keys, built on first use."""
+    return {key: _CLASSES_BY_NAME[_canonical_name(key.lower())]() for key in _ENUM_KEYS}
 
 
 class _LikelihoodMeta(ABCMeta):
-    """Gives `Likelihood` the class-level API of the enum it replaced: lookup by
-    value with `Likelihood("regression")`, lookup by key with
-    `Likelihood["REGRESSION"]`, iteration, `len`, and `in`.
+    """Keeps the class-level API of the enum that `Likelihood` replaced, with a
+    `DeprecationWarning`: the members `Likelihood.REGRESSION` etc., lookup by value
+    with `Likelihood("regression")`, lookup by key with `Likelihood["REGRESSION"]`,
+    iteration, `len`, and `in`.
     """
+
+    def __getattr__(cls, key: str) -> Likelihood:
+        # Only called when normal lookup fails, so it serves the members lazily
+        if key in _ENUM_KEYS and vars(cls).get("_is_base", False):
+            _warn_enum_api(f"`Likelihood.{key}`")
+
+            return _enum_members()[key]
+
+        raise AttributeError(f"type object {cls.__name__!r} has no attribute {key!r}")
 
     def __call__(cls, *args: Any, **kwargs: Any) -> Any:
         # Only the abstract base looks up by value, the way `Enum("value")` does. This
         # also unpickles members of the old enum, which pickled as `Likelihood(value)`.
         if vars(cls).get("_is_base", False) and len(args) == 1 and not kwargs:
-            likelihood = get_likelihood(args[0])
-            if likelihood is args[0]:
+            (value,) = args
+            _warn_enum_api("`Likelihood(value)`")
+
+            if isinstance(value, str):
+                value = _name_of(value)
+
+                if not value.islower() or value.upper() not in _ENUM_KEYS:
+                    raise ValueError(f"{value!r} is not a valid Likelihood")
+
+                return _enum_members()[value.upper()]
+
+            likelihood = get_likelihood(value)
+
+            if likelihood is value:
                 return likelihood
 
             # Like an enum member, a built-in likelihood is a single shared instance.
             # A criterion with non-default options matches none of them.
-            return next((m for m in cls if m == likelihood), likelihood)
+            return next(
+                (m for m in _enum_members().values() if m == likelihood), likelihood
+            )
 
         return super().__call__(*args, **kwargs)
 
@@ -48,24 +118,35 @@ class _LikelihoodMeta(ABCMeta):
 
     def __getitem__(cls, key: str) -> Likelihood:
         cls._require_base()
+        _warn_enum_api("`Likelihood[key]`")
 
-        if key not in _BUILTIN_KEYS:
+        if key not in _ENUM_KEYS:
             raise KeyError(key)
 
-        return getattr(cls, key)
+        return _enum_members()[key]
 
     def __iter__(cls) -> Iterator[Likelihood]:
         cls._require_base()
+        _warn_enum_api("Iterating over `Likelihood`")
 
-        return (getattr(cls, key) for key in _BUILTIN_KEYS)
+        return iter(_enum_members().values())
 
     def __len__(cls) -> int:
         cls._require_base()
+        _warn_enum_api("`len(Likelihood)`")
 
-        return len(_BUILTIN_KEYS)
+        return len(_ENUM_KEYS)
 
     def __contains__(cls, item: object) -> bool:
-        return any(item == member for member in cls)
+        cls._require_base()
+        _warn_enum_api("`item in Likelihood`")
+
+        if isinstance(item, str):
+            return _canonical_name(_name_of(item)) in {
+                _canonical_name(key.lower()) for key in _ENUM_KEYS
+            }
+
+        return any(item == member for member in _enum_members().values())
 
 
 class Likelihood(metaclass=_LikelihoodMeta):
@@ -120,36 +201,41 @@ class Likelihood(metaclass=_LikelihoodMeta):
     change with options that only reweight or smooth the loss.
 
     Two likelihoods are equal if they have the same `name` and the same
-    `hyperparameters()`, the options that differ from their defaults. A string equals
-    a likelihood with that name. Internally, the library dispatches on `name`, so a
-    subclass of `CategoricalLikelihood` that keeps its name and carries options still
-    takes the classification code paths, even though it does not equal
-    `Likelihood.CLASSIFICATION`.
+    `hyperparameters()`, the options that differ from their defaults. Internally, the
+    library dispatches on `name`, so a subclass of `CategoricalLikelihood` that keeps
+    its name and carries options still takes the categorical code paths, even though
+    it does not equal `CategoricalLikelihood()`.
+
+    The built-in names are `"gaussian"`, `"categorical"`, `"bradley_terry"`,
+    `"bernoulli"`, and `"heteroscedastic_gaussian"`. Passing a likelihood as a string
+    is deprecated, both the task names `"regression"`, `"classification"`, and
+    `"reward_modeling"` and the strings `"bernoulli"` and `"heteroscedastic_gaussian"`.
+    So are the enum-style members `Likelihood.REGRESSION`,
+    `Likelihood.CLASSIFICATION`, `Likelihood.REWARD_MODELING`, and
+    `Likelihood.BERNOULLI`, lookups such as `Likelihood("regression")`, comparing a
+    likelihood with a string, and `value`. They warn and will be removed in 0.9.
+    Instantiate the likelihood class instead, e.g. `CategoricalLikelihood()`. Old
+    checkpoints that store a task name still load.
 
     Weight-space Laplace fits a custom likelihood with the `diag` or `full`
     structure and a GGN or EF backend, which use its `output_hessian` and `loss_fn`.
     The `kron` structure and the Hessian backends raise a `ValueError` for it. The
     GLM predictive of a likelihood that is neither Gaussian nor categorical is the
     Monte Carlo average of `inverse_link` over the GLM predictive of the outputs.
-    FunctionalLaplace, ELLA, and VaLLA only accept the names of the regression,
-    classification, and reward-modeling likelihoods, but a subclass that keeps one of
-    them may override members such as `output_hessian`.
+    FunctionalLaplace, ELLA, and VaLLA only accept the names of the Gaussian,
+    categorical, Bradley-Terry, and Bernoulli likelihoods, but a subclass that keeps
+    one of them may override members such as `output_hessian`.
     """
 
     name: ClassVar[str]
     """Identifier of the likelihood, e.g. what is stored in `state_dict()`."""
 
-    REGRESSION: ClassVar[GaussianLikelihood]
-    """The built-in `GaussianLikelihood`."""
-
-    CLASSIFICATION: ClassVar[CategoricalLikelihood]
-    """The built-in `CategoricalLikelihood`."""
-
-    REWARD_MODELING: ClassVar[BradleyTerryLikelihood]
-    """The built-in `BradleyTerryLikelihood`."""
-
-    BERNOULLI: ClassVar[BernoulliLikelihood]
-    """The built-in `BernoulliLikelihood`."""
+    if TYPE_CHECKING:
+        # Deprecated, served by the metaclass
+        REGRESSION: ClassVar[GaussianLikelihood]
+        CLASSIFICATION: ClassVar[CategoricalLikelihood]
+        REWARD_MODELING: ClassVar[BradleyTerryLikelihood]
+        BERNOULLI: ClassVar[BernoulliLikelihood]
 
     fisher_samples: ClassVar[int] = 100
     """Number of samples for the Monte Carlo Fisher in the default `output_hessian`.
@@ -185,7 +271,12 @@ class Likelihood(metaclass=_LikelihoodMeta):
             )
 
         if isinstance(other, str):
-            return self.name == _name_of(other)
+            _warn_deprecated(
+                "Comparing a likelihood with a string is deprecated and will be "
+                "removed in 0.9. Compare with a likelihood object or use isinstance."
+            )
+
+            return self.name == _canonical_name(_name_of(other))
 
         return NotImplemented
 
@@ -223,7 +314,11 @@ class Likelihood(metaclass=_LikelihoodMeta):
 
     @property
     def value(self) -> str:
-        """Same as `name`."""
+        """Same as `name`. Deprecated."""
+        _warn_deprecated(
+            "`Likelihood.value` is deprecated and will be removed in 0.9. Use `name`."
+        )
+
         return self.name
 
     @abstractmethod
@@ -562,7 +657,7 @@ class GaussianLikelihood(Likelihood):
         if `sigma_noise` is not a floating 1-D tensor with positive, finite entries.
     """
 
-    name: ClassVar[str] = "regression"
+    name: ClassVar[str] = "gaussian"
 
     # Class-level default keeps subclasses working that override `__init__` without
     # calling `super().__init__()`
@@ -1019,7 +1114,7 @@ class CategoricalLikelihood(Likelihood):
         if `weight` is not 1-D or `label_smoothing` is outside \\([0, 1]\\).
     """
 
-    name: ClassVar[str] = "classification"
+    name: ClassVar[str] = "categorical"
 
     # Class-level defaults keep subclasses working that override `__init__` without
     # calling `super().__init__()`
@@ -1407,7 +1502,7 @@ class BradleyTerryLikelihood(Likelihood):
     over the reward \\(r(x)\\).
     """
 
-    name: ClassVar[str] = "reward_modeling"
+    name: ClassVar[str] = "bradley_terry"
 
     def __init__(self) -> None:
         self._fit = CategoricalLikelihood()
@@ -1513,9 +1608,10 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     Parameters
     ----------
     likelihood : Likelihood or str or nn.Module
-        an instance, which is returned as is, one of `'regression'`,
-        `'classification'`, `'reward_modeling'`, `'bernoulli'`, and
-        `'heteroscedastic_gaussian'`, or a torch criterion. `nn.MSELoss` becomes a
+        an instance, which is returned as is, a deprecated name (`'regression'`,
+        `'classification'`, `'reward_modeling'`, `'bernoulli'`, or
+        `'heteroscedastic_gaussian'`), or a torch criterion. A name warns and gives
+        the matching likelihood object. `nn.MSELoss` becomes a
         `GaussianLikelihood`, `nn.CrossEntropyLoss` a `CategoricalLikelihood` with the
         criterion's `weight`, `ignore_index`, and `label_smoothing`,
         `nn.BCEWithLogitsLoss` a `BernoulliLikelihood` with its `weight` and
@@ -1530,7 +1626,7 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     Raises
     ------
     ValueError
-        if `likelihood` is neither a likelihood instance, a known name, nor one of
+        if `likelihood` is neither a likelihood instance, a deprecated name, nor one of
         the four criteria above. Subclasses of the criteria are not accepted. Also
         if the `weight` or `pos_weight` of a `nn.BCEWithLogitsLoss` has more than one
         dim.
@@ -1539,15 +1635,21 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
         return likelihood
 
     if isinstance(likelihood, str):
-        for cls in (
-            GaussianLikelihood,
-            CategoricalLikelihood,
-            BradleyTerryLikelihood,
-            BernoulliLikelihood,
-            HeteroscedasticGaussianLikelihood,
-        ):
-            if cls.name == _name_of(likelihood):
-                return cls()
+        name = _name_of(likelihood)
+
+        if name in _LEGACY_NAMES:
+            cls = _CLASSES_BY_NAME[_canonical_name(name)]
+            _warn_deprecated(
+                f'"{name}" is deprecated and will be removed in 0.9. Pass '
+                f"{cls.__name__}() instead."
+            )
+
+            return cls()
+
+        raise ValueError(
+            f"Invalid likelihood type {likelihood!r}. Pass a Likelihood object, "
+            "e.g. CategoricalLikelihood(), or a torch criterion."
+        )
 
     if type(likelihood) is nn.MSELoss:
         return GaussianLikelihood()
@@ -1572,7 +1674,13 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     raise ValueError(f"Invalid likelihood type {likelihood}")
 
 
-Likelihood.REGRESSION = GaussianLikelihood()
-Likelihood.CLASSIFICATION = CategoricalLikelihood()
-Likelihood.REWARD_MODELING = BradleyTerryLikelihood()
-Likelihood.BERNOULLI = BernoulliLikelihood()
+_CLASSES_BY_NAME: dict[str, type[Likelihood]] = {
+    cls.name: cls
+    for cls in (
+        GaussianLikelihood,
+        CategoricalLikelihood,
+        BradleyTerryLikelihood,
+        BernoulliLikelihood,
+        HeteroscedasticGaussianLikelihood,
+    )
+}

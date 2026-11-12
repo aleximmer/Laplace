@@ -146,7 +146,7 @@ def test_ef_matches_per_position_gradients(Backend, structure, batch_shape):
     model = mlp()
     G = position_gradients(model, X, y)
 
-    loss, H = getattr(Backend(model, "classification"), structure)(X, y)
+    loss, H = getattr(Backend(model, CategoricalLikelihood()), structure)(X, y)
 
     expected = G.T @ G if structure == "full" else (G**2).sum(0)
 
@@ -162,7 +162,7 @@ def test_ef_matches_per_position_gradients(Backend, structure, batch_shape):
 def test_ggn_equals_ggn_of_argmax_labels(Backend, structure, batch_shape):
     # The GGN depends on the model only, while the loss comes from the soft targets
     X, y = soft_data(batch_shape)
-    backend = Backend(mlp(), "classification")
+    backend = Backend(mlp(), CategoricalLikelihood())
 
     loss, H = curvature(backend, structure, X, y)
     _, H_hard = curvature(backend, structure, X, y.argmax(-1))
@@ -172,7 +172,9 @@ def test_ggn_equals_ggn_of_argmax_labels(Backend, structure, batch_shape):
 
     if structure != "kron":
         # The generic torch.func code is an independent reference
-        _, H_ref = curvature(GGNInterface(mlp(), "classification"), structure, X, y)
+        _, H_ref = curvature(
+            GGNInterface(mlp(), CategoricalLikelihood()), structure, X, y
+        )
         assert torch.allclose(H, H_ref, atol=1e-8, rtol=1e-6)
 
 
@@ -203,7 +205,7 @@ def test_hessian_matches_autograd(Backend, structure, batch_shape):
     X, y = soft_data(batch_shape)
     model = mlp()
 
-    loss, H = Backend(model, "classification").full(X, y)
+    loss, H = Backend(model, CategoricalLikelihood()).full(X, y)
 
     assert torch.allclose(H, loss_hessian(mlp(), soft_ce, X, y), atol=1e-8, rtol=1e-6)
     assert torch.allclose(loss, soft_ce(mlp()(X), y))
@@ -242,7 +244,7 @@ def test_kron_ggn_matches_hand_computation(batch_shape):
     X, y = soft_data(batch_shape)
     N = len(X)
 
-    loss, kron = CurvlinopsGGN(linear(), "classification").kron(X, y, N)
+    loss, kron = CurvlinopsGGN(linear(), CategoricalLikelihood()).kron(X, y, N)
 
     # The output factor is the sum of diag(p) - p p^T over positions, and it does not
     # depend on the targets
@@ -273,7 +275,7 @@ def test_stochastic_soft_loss_is_real_loss(Backend, structure, batch_shape):
     # The Monte Carlo Fisher samples its own labels. The loss is still the one of the
     # soft targets, and the curvature does not depend on them.
     X, y = soft_data(batch_shape)
-    backend = Backend(mlp(), "classification", stochastic=True)
+    backend = Backend(mlp(), CategoricalLikelihood(), stochastic=True)
 
     torch.manual_seed(0)
     loss, H = curvature(backend, structure, X, y)
@@ -297,9 +299,11 @@ def test_float_one_hot_equals_index(Backend, structure, batch_shape):
     y = y.argmax(-1)
     y_one_hot = F.one_hot(y, K).to(X.dtype)
 
-    loss_index, H_index = curvature(Backend(mlp(), "classification"), structure, X, y)
+    loss_index, H_index = curvature(
+        Backend(mlp(), CategoricalLikelihood()), structure, X, y
+    )
     loss_one_hot, H_one_hot = curvature(
-        Backend(mlp(), "classification"), structure, X, y_one_hot
+        Backend(mlp(), CategoricalLikelihood()), structure, X, y_one_hot
     )
 
     assert torch.allclose(loss_one_hot, loss_index)
@@ -333,10 +337,10 @@ def test_curvlinops_kron_dict_batch_soft_labels(Backend):
     batch = dict_data_collator(data)
     N = len(X)
 
-    loss, kron = Backend(DictLinear(linear()), "classification").kron(
+    loss, kron = Backend(DictLinear(linear()), CategoricalLikelihood()).kron(
         batch, batch["labels"], N
     )
-    loss_ref, kron_ref = Backend(linear(), "classification").kron(X, y, N)
+    loss_ref, kron_ref = Backend(linear(), CategoricalLikelihood()).kron(X, y, N)
 
     assert torch.allclose(loss, loss_ref)
     assert torch.allclose(kron.to_matrix(), kron_ref.to_matrix())
@@ -350,10 +354,10 @@ def test_laplace_fit_dict_loader_soft_labels(Backend):
 
     options = dict(subset_of_weights="all", hessian_structure="kron", backend=Backend)
 
-    la = Laplace(DictLinear(linear()), "classification", **options)
+    la = Laplace(DictLinear(linear()), CategoricalLikelihood(), **options)
     la.fit(loader)
 
-    la_ref = Laplace(linear(), "classification", **options)
+    la_ref = Laplace(linear(), CategoricalLikelihood(), **options)
     la_ref.fit(DataLoader(TensorDataset(X, y), batch_size=5))
 
     assert la.n_obs == la_ref.n_obs == 10
@@ -371,7 +375,7 @@ def test_last_layer_ef_matches_hand_computation(structure, soft):
 
     la = Laplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subset_of_weights="last_layer",
         hessian_structure=structure,
         backend=CurvlinopsEF,
@@ -401,7 +405,7 @@ def test_last_layer_ef_with_buffers_in_the_features(structure):
 
     la = Laplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subset_of_weights="last_layer",
         hessian_structure=structure,
         backend=CurvlinopsEF,
@@ -431,7 +435,7 @@ def test_lllaplace_and_subnet_soft_targets(subset, structure):
     def fit(targets: torch.Tensor) -> Any:
         la = Laplace(
             mlp(),
-            "classification",
+            CategoricalLikelihood(),
             subset_of_weights=subset,
             hessian_structure=structure,
             **kwargs,
@@ -468,7 +472,7 @@ def test_asdfghjkl_soft_targets():
     X, y = soft_data((8,))
     N = len(X)
 
-    ggn = AsdfghjklGGN(mlp(), "classification")
+    ggn = AsdfghjklGGN(mlp(), CategoricalLikelihood())
 
     # The GGN doesn't depend on the targets, the loss comes from the soft ones
     for structure in ["diag", "kron"]:
@@ -480,12 +484,12 @@ def test_asdfghjkl_soft_targets():
 
     # The empirical Fisher of the diagonal falls back to per-position gradients
     G = position_gradients(mlp(), X, y)
-    _, diag_ef = AsdfghjklEF(mlp(), "classification").diag(X, y)
+    _, diag_ef = AsdfghjklEF(mlp(), CategoricalLikelihood()).diag(X, y)
     assert torch.allclose(diag_ef, (G**2).sum(0), atol=1e-8, rtol=1e-6)
 
     # The other methods have no soft targets, and the error says where to go instead
     with pytest.raises(ValueError, match="CurvlinopsEF"):
-        AsdfghjklEF(mlp(), "classification").kron(X, y, N)
+        AsdfghjklEF(mlp(), CategoricalLikelihood()).kron(X, y, N)
 
     with pytest.raises(ValueError, match="CurvlinopsHessian"):
-        AsdfghjklHessian(mlp(), "classification").full(X, y)
+        AsdfghjklHessian(mlp(), CategoricalLikelihood()).full(X, y)

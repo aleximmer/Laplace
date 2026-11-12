@@ -8,7 +8,7 @@ from torch import nn
 from torch.func import functional_call, jacrev, vmap
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
+from laplace import CategoricalLikelihood, Laplace
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import GaussianLikelihood
 from laplace.marglik_training import marglik_training
@@ -61,7 +61,7 @@ def _likelihood(sigma) -> tuple[GaussianLikelihood | str, dict]:
     if torch.is_tensor(sigma):
         return GaussianLikelihood(sigma_noise=sigma), {}
 
-    return "regression", {"sigma_noise": sigma}
+    return GaussianLikelihood(), {"sigma_noise": sigma}
 
 
 def _normalizer(n: int, sigma: torch.Tensor) -> torch.Tensor:
@@ -110,7 +110,12 @@ def test_equal_vector_matches_scalar(model, data, structure, backend, temperatur
     s = 0.7
 
     scalar = _laplace(
-        model, "regression", structure, backend, sigma_noise=s, temperature=temperature
+        model,
+        GaussianLikelihood(),
+        structure,
+        backend,
+        sigma_noise=s,
+        temperature=temperature,
     )
     vector = _laplace(
         model,
@@ -166,7 +171,7 @@ def test_equal_vector_matches_scalar_for_subsets(model, data, subset, structure)
     if subset == "subnetwork":
         kwargs["subnetwork_indices"] = torch.arange(0, 24, 2)
 
-    scalar = Laplace(model, "regression", sigma_noise=s, **kwargs)
+    scalar = Laplace(model, GaussianLikelihood(), sigma_noise=s, **kwargs)
     vector = Laplace(
         model, GaussianLikelihood(sigma_noise=torch.full((2,), s)), **kwargs
     )
@@ -390,10 +395,10 @@ def test_loss_is_scaled_by_the_stds(model, data, structure):
 
 def test_constructor_redirects_a_vector_to_the_likelihood(model):
     with pytest.raises(ValueError, match="GaussianLikelihood"):
-        Laplace(model, "regression", sigma_noise=SIGMA)
+        Laplace(model, GaussianLikelihood(), sigma_noise=SIGMA)
 
     # One entry is a scalar
-    la = Laplace(model, "regression", sigma_noise=torch.tensor([0.5]))
+    la = Laplace(model, GaussianLikelihood(), sigma_noise=torch.tensor([0.5]))
     assert la.sigma_noise == 0.5
 
 
@@ -420,7 +425,7 @@ def test_noise_of_the_approximation_must_stay_one(model, data):
     la.log_marginal_likelihood(sigma_noise=torch.tensor(1.0))
 
     # Swapping in a likelihood with a vector checks the scalar noise too
-    scaled = _laplace(model, "regression", "full", sigma_noise=0.5)
+    scaled = _laplace(model, GaussianLikelihood(), "full", sigma_noise=0.5)
 
     with pytest.raises(ValueError, match="stay 1"):
         scaled.likelihood = lik
@@ -428,7 +433,7 @@ def test_noise_of_the_approximation_must_stay_one(model, data):
     assert scaled.likelihood.sigma_noise is None
 
     # A vector for an approximation without one is redirected to the likelihood
-    plain = _laplace(model, "regression", "full")
+    plain = _laplace(model, GaussianLikelihood(), "full")
 
     with pytest.raises(ValueError, match="GaussianLikelihood"):
         plain.sigma_noise = SIGMA
@@ -906,7 +911,7 @@ def test_noise_per_output_update_matches_the_predictive(model, data, structure):
 
 def test_noise_per_output_update_rejects_non_gaussian(model, data):
     _, _, loader = data
-    la = Laplace(model, "classification", hessian_structure="diag")
+    la = Laplace(model, CategoricalLikelihood(), hessian_structure="diag")
 
     with pytest.raises(ValueError, match="Gaussian"):
         noise_per_output_update(la, loader)

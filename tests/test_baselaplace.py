@@ -45,7 +45,6 @@ from laplace.utils import (
     RunningGaussianNLLMetric,
     RunningNLLMetric,
 )
-from laplace.utils.enums import Likelihood
 from laplace.utils.utils import validate
 from tests.utils import (
     AsdlEF,
@@ -58,6 +57,7 @@ from tests.utils import (
     bce_options,
     dict_data_collator,
     jacobians_naive,
+    lik_id,
     requires_asdl,
     toy_multilabel_dataset,
 )
@@ -80,7 +80,7 @@ def _bridge_from_moments(mean, covariance, link):
             return mean, covariance
 
     return BaseLaplace._glm_forward_call(
-        FixedMoments(), mean, "classification", link_approx=link
+        FixedMoments(), mean, CategoricalLikelihood(), link_approx=link
     )
 
 
@@ -574,12 +574,16 @@ def test_bridge_probabilities_with_zero_sum_logit_covariance(method, link):
     loader = DataLoader(TensorDataset(inputs, torch.tensor([0, 1, 0])), batch_size=3)
     if method == "diag":
         estimator = Laplace(
-            ContrastModel(), "classification", "all", "diag", backend=CurvlinopsGGN
+            ContrastModel(),
+            CategoricalLikelihood(),
+            "all",
+            "diag",
+            backend=CurvlinopsGGN,
         )
     else:
         estimator = Laplace(
             ContrastModel(),
-            "classification",
+            CategoricalLikelihood(),
             "all",
             "gp",
             backend=CurvlinopsGGN,
@@ -742,7 +746,7 @@ def reward_test_X():
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_laplace_init(laplace, model):
-    lap = laplace(model, "classification")
+    lap = laplace(model, CategoricalLikelihood())
     assert torch.allclose(lap.mean, lap.prior_mean)
     if laplace in [FullLaplace, DiagLaplace]:
         H = lap.H.clone()
@@ -760,7 +764,7 @@ def test_laplace_init(laplace, model):
 
 @pytest.mark.skip(reason="Does not work well with Github actions")
 def test_laplace_large_init(large_model):
-    FullLaplace(large_model, "classification")
+    FullLaplace(large_model, CategoricalLikelihood())
 
 
 @pytest.mark.parametrize("laplace", flavors)
@@ -773,66 +777,66 @@ def test_laplace_invalid_likelihood(laplace, model):
 def test_laplace_init_noise(laplace, model):
     # float
     sigma_noise = 1.2
-    laplace(model, likelihood="regression", sigma_noise=sigma_noise)
+    laplace(model, likelihood=GaussianLikelihood(), sigma_noise=sigma_noise)
     # torch.tensor 0-dim
     sigma_noise = torch.tensor(1.2)
-    laplace(model, likelihood="regression", sigma_noise=sigma_noise)
+    laplace(model, likelihood=GaussianLikelihood(), sigma_noise=sigma_noise)
     # torch.tensor 1-dim
     sigma_noise = torch.tensor(1.2).reshape(-1)
-    laplace(model, likelihood="regression", sigma_noise=sigma_noise)
+    laplace(model, likelihood=GaussianLikelihood(), sigma_noise=sigma_noise)
 
     # for classification should fail
     sigma_noise = 1.2
     with pytest.raises(ValueError):
-        laplace(model, likelihood="classification", sigma_noise=sigma_noise)
+        laplace(model, likelihood=CategoricalLikelihood(), sigma_noise=sigma_noise)
 
     # other than that should fail
     # higher dim
     sigma_noise = torch.tensor(1.2).reshape(1, 1)
     with pytest.raises(ValueError):
-        laplace(model, likelihood="regression", sigma_noise=sigma_noise)
+        laplace(model, likelihood=GaussianLikelihood(), sigma_noise=sigma_noise)
     # other datatype, only reals supported
     sigma_noise = "1.2"
     with pytest.raises(ValueError):
-        laplace(model, likelihood="regression", sigma_noise=sigma_noise)
+        laplace(model, likelihood=GaussianLikelihood(), sigma_noise=sigma_noise)
 
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_laplace_init_precision(laplace, model):
     # float
     precision = 10.6
-    laplace(model, likelihood="regression", prior_precision=precision)
+    laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
     # torch.tensor 0-dim
     precision = torch.tensor(10.6)
-    laplace(model, likelihood="regression", prior_precision=precision)
+    laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
     # torch.tensor 1-dim
     precision = torch.tensor(10.7).reshape(-1)
-    laplace(model, likelihood="regression", prior_precision=precision)
+    laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
     # torch.tensor 1-dim param-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_params)
     if laplace == KronLaplace:
         # Kron should not accept per parameter prior precision
         with pytest.raises(ValueError):
-            laplace(model, likelihood="regression", prior_precision=precision)
+            laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
     else:
-        laplace(model, likelihood="regression", prior_precision=precision)
+        laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
     # torch.tensor 1-dim layer-shape
     precision = torch.tensor(10.7).reshape(-1).repeat(model.n_layers)
-    laplace(model, likelihood="regression", prior_precision=precision)
+    laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
 
     # other than that should fail
     # higher dim
     precision = torch.tensor(10.6).reshape(1, 1)
     with pytest.raises(ValueError):
-        laplace(model, likelihood="regression", prior_precision=precision)
+        laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
     # unmatched dim
     precision = torch.tensor(10.6).reshape(-1).repeat(17)
     with pytest.raises(ValueError):
-        laplace(model, likelihood="regression", prior_precision=precision)
+        laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
     # other datatype, only reals supported
     precision = "1.5"
     with pytest.raises(ValueError):
-        laplace(model, likelihood="regression", prior_precision=precision)
+        laplace(model, likelihood=GaussianLikelihood(), prior_precision=precision)
 
 
 @pytest.mark.parametrize("laplace", flavors)
@@ -840,19 +844,22 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     mean = parameters_to_vector(model.parameters())
     P = len(mean)
     lap_scalar_mean = laplace(
-        model, "classification", prior_precision=1e-2, prior_mean=1.0
+        model, CategoricalLikelihood(), prior_precision=1e-2, prior_mean=1.0
     )
     assert torch.allclose(lap_scalar_mean.prior_mean, torch.tensor([1.0]))
     lap_tensor_mean = laplace(
-        model, "classification", prior_precision=1e-2, prior_mean=torch.ones(1)
+        model, CategoricalLikelihood(), prior_precision=1e-2, prior_mean=torch.ones(1)
     )
     assert torch.allclose(lap_tensor_mean.prior_mean, torch.tensor([1.0]))
     lap_tensor_scalar_mean = laplace(
-        model, "classification", prior_precision=1e-2, prior_mean=torch.ones(1)[0]
+        model,
+        CategoricalLikelihood(),
+        prior_precision=1e-2,
+        prior_mean=torch.ones(1)[0],
     )
     assert torch.allclose(lap_tensor_scalar_mean.prior_mean, torch.tensor(1.0))
     lap_tensor_full_mean = laplace(
-        model, "classification", prior_precision=1e-2, prior_mean=torch.ones(P)
+        model, CategoricalLikelihood(), prior_precision=1e-2, prior_mean=torch.ones(P)
     )
     assert torch.allclose(lap_tensor_full_mean.prior_mean, torch.ones(P))
 
@@ -875,31 +882,37 @@ def test_laplace_init_prior_mean_and_scatter(laplace, model, class_loader):
     # too many dims
     with pytest.raises(ValueError):
         prior_mean = torch.ones(P).unsqueeze(-1)
-        laplace(model, "classification", prior_precision=1e-2, prior_mean=prior_mean)
+        laplace(
+            model, CategoricalLikelihood(), prior_precision=1e-2, prior_mean=prior_mean
+        )
 
     # unmatched dim
     with pytest.raises(ValueError):
         prior_mean = torch.ones(P - 3)
-        laplace(model, "classification", prior_precision=1e-2, prior_mean=prior_mean)
+        laplace(
+            model, CategoricalLikelihood(), prior_precision=1e-2, prior_mean=prior_mean
+        )
 
     # invalid argument type
     with pytest.raises(ValueError):
-        laplace(model, "classification", prior_precision=1e-2, prior_mean="72")
+        laplace(model, CategoricalLikelihood(), prior_precision=1e-2, prior_mean="72")
 
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_laplace_init_temperature(laplace, model):
     # valid float
     T = 1.1
-    lap = laplace(model, likelihood="classification", temperature=T)
+    lap = laplace(model, likelihood=CategoricalLikelihood(), temperature=T)
     assert lap.temperature == T
 
 
 @pytest.mark.parametrize(
-    "laplace,lh", list(product(flavors, ["classification", "regression"]))
+    "laplace,lh",
+    list(product(flavors, [CategoricalLikelihood(), GaussianLikelihood()])),
+    ids=lik_id,
 )
 def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
-    if lh == "classification":
+    if isinstance(lh, CategoricalLikelihood):
         loader = class_loader
         sigma_noise = 1.0
     else:
@@ -916,7 +929,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     # Test log likelihood (Train)
     log_lik = lap.log_likelihood
     # compute true log lik
-    if lh == "classification":
+    if isinstance(lh, CategoricalLikelihood):
         log_lik_true = Categorical(logits=f).log_prob(y).sum()
         assert torch.allclose(log_lik, log_lik_true)
     else:
@@ -967,7 +980,7 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
 @pytest.mark.parametrize("laplace", flavors)
 def test_sample_moments(laplace, model, reg_loader):
     """Check sample mean and covariance against the posterior with 1M samples."""
-    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap = laplace(model, GaussianLikelihood(), sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
     theta = lap.mean
 
@@ -992,7 +1005,7 @@ def test_sample_moments(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", online_flavors)
 def test_overriding_fit(laplace, model, reg_loader):
-    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap = laplace(model, GaussianLikelihood(), sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
     if type(lap.posterior_precision) is KronDecomposed:
         P = lap.posterior_precision.to_matrix()
@@ -1013,7 +1026,7 @@ def test_overriding_fit(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", online_flavors)
 def test_online_fit(laplace, model, reg_loader):
-    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap = laplace(model, GaussianLikelihood(), sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
     if type(lap.H) is KronDecomposed:
         P = lap.H.to_matrix().clone()
@@ -1033,7 +1046,7 @@ def test_online_fit(laplace, model, reg_loader):
 
 
 def test_log_prob_full(model, class_loader):
-    lap = FullLaplace(model, "classification", prior_precision=0.7)
+    lap = FullLaplace(model, CategoricalLikelihood(), prior_precision=0.7)
     theta = torch.randn_like(parameters_to_vector(model.parameters()))
     # posterior without fitting is just prior
     posterior = Normal(loc=torch.zeros_like(theta), scale=sqrt(1 / 0.7))
@@ -1046,7 +1059,7 @@ def test_log_prob_full(model, class_loader):
 
 
 def test_log_prob_kron(model, class_loader):
-    lap = KronLaplace(model, "classification", prior_precision=0.24)
+    lap = KronLaplace(model, CategoricalLikelihood(), prior_precision=0.24)
     theta = torch.randn_like(parameters_to_vector(model.parameters()))
     posterior = Normal(loc=lap.mean, scale=sqrt(1 / 0.24))
     assert torch.allclose(lap.log_prob(theta), posterior.log_prob(theta).sum())
@@ -1059,7 +1072,7 @@ def test_log_prob_kron(model, class_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_regression_predictive(laplace, model, reg_loader):
-    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap = laplace(model, GaussianLikelihood(), sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
     X, y = reg_loader.dataset.tensors
     f = model(X)
@@ -1097,7 +1110,7 @@ def test_regression_predictive(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_classification_predictive(laplace, model, class_loader):
-    lap = laplace(model, "classification", prior_precision=0.7)
+    lap = laplace(model, CategoricalLikelihood(), prior_precision=0.7)
     lap.fit(class_loader)
     X, y = class_loader.dataset.tensors
     f = torch.softmax(model(X), dim=-1)
@@ -1138,7 +1151,7 @@ def test_classification_predictive(laplace, model, class_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_regression_predictive_samples(laplace, model, reg_loader):
-    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap = laplace(model, GaussianLikelihood(), sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
     X, y = reg_loader.dataset.tensors
     f = model(X)
@@ -1158,7 +1171,7 @@ def test_regression_predictive_samples(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_classification_predictive_samples(laplace, model, class_loader):
-    lap = laplace(model, "classification", prior_precision=0.7)
+    lap = laplace(model, CategoricalLikelihood(), prior_precision=0.7)
     lap.fit(class_loader)
     X, y = class_loader.dataset.tensors
     f = torch.softmax(model(X), dim=-1)
@@ -1180,7 +1193,7 @@ def test_classification_predictive_samples(laplace, model, class_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_functional_samples(laplace, model, reg_loader):
-    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap = laplace(model, GaussianLikelihood(), sigma_noise=0.3, prior_precision=0.7)
     lap.fit(reg_loader)
     X, y = reg_loader.dataset.tensors
     f = model(X)
@@ -1198,7 +1211,7 @@ def test_functional_samples(laplace, model, reg_loader):
     assert fsamples_reg_nn.shape == torch.Size([100, f.shape[0], f.shape[1]])
 
     # The samples should not be affected by the likelihood
-    lap.likelihood = "classification"
+    lap.likelihood = CategoricalLikelihood()
 
     fsamples_clf_glm = lap.functional_samples(
         X, pred_type="glm", n_samples=100, generator=generator.manual_seed(123)
@@ -1215,7 +1228,7 @@ def test_functional_samples(laplace, model, reg_loader):
 
 @pytest.mark.parametrize("laplace", [KronLaplace, DiagLaplace])
 def test_reward_modeling(laplace, reward_model, reward_loader, reward_test_X):
-    lap = laplace(reward_model, "reward_modeling")
+    lap = laplace(reward_model, BradleyTerryLikelihood())
     lap.fit(reward_loader)
     f = reward_model(reward_test_X)
 
@@ -1243,11 +1256,13 @@ def test_functional_reward_modeling_marglik(
     # While fitting, a reward model is a categorical model over each pair. So the GP
     # evidence equals that of classification with the pair logits as outputs.
     kwargs = {"n_subset": 10, "independent_outputs": independent_outputs}
-    reward = FunctionalLaplace(deepcopy(reward_model), "reward_modeling", **kwargs)
+    reward = FunctionalLaplace(
+        deepcopy(reward_model), BradleyTerryLikelihood(), **kwargs
+    )
     reward.fit(reward_loader)
 
     classification = FunctionalLaplace(
-        deepcopy(reward_model), "classification", **kwargs
+        deepcopy(reward_model), CategoricalLikelihood(), **kwargs
     )
     classification.fit(reward_loader)
 
@@ -1261,7 +1276,7 @@ def test_functional_reward_modeling_marglik(
 def test_reward_modeling_fitting_mc_gives_probabilities(
     laplace, diagonal_output, reward_model, reward_loader
 ):
-    lap = laplace(reward_model, "reward_modeling")
+    lap = laplace(reward_model, BradleyTerryLikelihood())
     lap.fit(reward_loader)
     X, _ = next(iter(reward_loader))
 
@@ -1299,7 +1314,7 @@ def test_asdl_different_numbers_of_rows_raises(backend):
     x, y = torch.randn(B, L, D), torch.randn(B, K)
 
     with pytest.raises(RuntimeError, match="Curvlinops"):
-        backend(model, "regression").full(x, y, N=B)
+        backend(model, GaussianLikelihood()).full(x, y, N=B)
 
 
 @pytest.mark.parametrize(
@@ -1324,8 +1339,8 @@ def test_asdl_pooled_outputs_match_curvlinops(asdl_backend, curvlinops_backend):
     data = {"input": torch.randn(B, L, D), "output": torch.randn(B, K)}
     kwargs = dict(dict_key_x="input", dict_key_y="output")
 
-    asdl = asdl_backend(model, "regression", **kwargs)
-    curvlinops = curvlinops_backend(model, "regression", **kwargs)
+    asdl = asdl_backend(model, GaussianLikelihood(), **kwargs)
+    curvlinops = curvlinops_backend(model, GaussianLikelihood(), **kwargs)
 
     loss_asdl, H_asdl = asdl.full(data, data["output"], N=B)
     loss_curvlinops, H_curvlinops = curvlinops.full(data, data["output"], N=B)
@@ -1341,10 +1356,10 @@ def test_asdl_pooled_outputs_match_curvlinops(asdl_backend, curvlinops_backend):
 
 def test_reward_modeling_full_asdl_ggn_matches_curvlinops(reward_model, reward_loader):
     # Pairs are fed as `2B` rows to the layers, but each pair is one observation
-    la_asdl = FullLaplace(reward_model, "reward_modeling", backend=AsdlGGN)
+    la_asdl = FullLaplace(reward_model, BradleyTerryLikelihood(), backend=AsdlGGN)
     la_asdl.fit(reward_loader)
     la_curvlinops = FullLaplace(
-        deepcopy(reward_model), "reward_modeling", backend=CurvlinopsGGN
+        deepcopy(reward_model), BradleyTerryLikelihood(), backend=CurvlinopsGGN
     )
     la_curvlinops.fit(reward_loader)
 
@@ -1361,9 +1376,9 @@ def test_multidim_glm_samples(laplace, diagonal_output, method):
 
     model_flat = nn.Linear(D, K)
     model_multidim = deepcopy(model_flat)
-    la_flat = laplace(model_flat, "regression", backend=CurvlinopsGGN)
+    la_flat = laplace(model_flat, GaussianLikelihood(), backend=CurvlinopsGGN)
     la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=N))
-    la_multidim = laplace(model_multidim, "regression", backend=CurvlinopsGGN)
+    la_multidim = laplace(model_multidim, GaussianLikelihood(), backend=CurvlinopsGGN)
     la_multidim.fit(DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=N))
 
     kwargs = dict(pred_type="glm", n_samples=n_samples, diagonal_output=diagonal_output)
@@ -1380,19 +1395,21 @@ def test_multidim_glm_samples(laplace, diagonal_output, method):
 
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN])
 def test_multidim_kron_asdl_raises(multidim_model, reg_loader_multidim, backend):
-    lap = KronLaplace(multidim_model, "regression", backend=backend)
+    lap = KronLaplace(multidim_model, GaussianLikelihood(), backend=backend)
     with pytest.raises(NotImplementedError, match="Curvlinops"):
         lap.fit(reg_loader_multidim)
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace])
 @pytest.mark.parametrize("backend", [BackPackGGN, BackPackEF])
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
+@pytest.mark.parametrize(
+    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
+)
 def test_multidim_backpack_raises(laplace, backend, likelihood):
     X = torch.randn(10, 6, 8)
     y = (
         torch.randn(10, 6, 2)
-        if likelihood == "regression"
+        if isinstance(likelihood, GaussianLikelihood)
         else torch.randint(2, (10, 6))
     )
     lap = laplace(nn.Linear(8, 2), likelihood, backend=backend)
@@ -1404,7 +1421,7 @@ def test_multidim_last_layer_glm_raises(reg_loader_multidim):
     model = nn.Sequential(nn.Linear(8, 5), nn.Tanh(), nn.Linear(5, 2))
     lap = Laplace(
         model,
-        "regression",
+        GaussianLikelihood(),
         subset_of_weights="last_layer",
         hessian_structure="full",
         backend=CurvlinopsGGN,
@@ -1454,10 +1471,12 @@ def test_multidim_classification_equivalent_to_flat(laplace, backend, model_type
             [0, 3, 8, *range(n_params - C, n_params)]
         )
 
-    la_flat = laplace(model_flat, "classification", backend=backend, **kwargs)
+    la_flat = laplace(model_flat, CategoricalLikelihood(), backend=backend, **kwargs)
     la_flat.fit(loader_flat)
 
-    la_multidim = laplace(model_multidim, "classification", backend=backend, **kwargs)
+    la_multidim = laplace(
+        model_multidim, CategoricalLikelihood(), backend=backend, **kwargs
+    )
     la_multidim.fit(loader_multidim)
 
     # Posterior
@@ -1501,10 +1520,10 @@ def test_multidim_classification_prior_precision_equivalent_to_flat(method):
     )
 
     model_flat = nn.Linear(D, C)
-    la_flat = DiagLaplace(model_flat, "classification", backend=CurvlinopsGGN)
+    la_flat = DiagLaplace(model_flat, CategoricalLikelihood(), backend=CurvlinopsGGN)
     la_flat.fit(loader_flat)
     la_multidim = DiagLaplace(
-        deepcopy(model_flat), "classification", backend=CurvlinopsGGN
+        deepcopy(model_flat), CategoricalLikelihood(), backend=CurvlinopsGGN
     )
     la_multidim.fit(loader_multidim)
 
@@ -1526,7 +1545,7 @@ def test_multidim_classification_prior_precision_equivalent_to_flat(method):
 def test_multidim_classification_wrong_target_shape_raises(laplace, y_shape):
     X = torch.randn(8, 3, 4)
     y = torch.randint(5, y_shape)
-    lap = laplace(nn.Linear(4, 5), "classification", backend=CurvlinopsGGN)
+    lap = laplace(nn.Linear(4, 5), CategoricalLikelihood(), backend=CurvlinopsGGN)
 
     with pytest.raises(ValueError, match="targets"):
         lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
@@ -1545,7 +1564,7 @@ def test_multidim_classification_misaligned_targets_raise(laplace, backend):
     if laplace in (FullSubnetLaplace, DiagSubnetLaplace):
         kwargs["subnetwork_indices"] = torch.LongTensor([0, 3, 30, 31, 32])
 
-    lap = laplace(nn.Linear(5, 6), "classification", backend=backend, **kwargs)
+    lap = laplace(nn.Linear(5, 6), CategoricalLikelihood(), backend=backend, **kwargs)
 
     with pytest.raises(ValueError, match="targets have shape"):
         lap.fit(DataLoader(TensorDataset(X, y), batch_size=2))
@@ -1555,7 +1574,7 @@ def test_multidim_classification_misaligned_targets_raise(laplace, backend):
 def test_multidim_classification_wrong_probability_shape_raises(y_shape):
     # Float targets with as many dims as the logits must end in the class dim
     X = torch.randn(8, 3, 4)
-    lap = DiagLaplace(nn.Linear(4, 5), "classification", backend=CurvlinopsGGN)
+    lap = DiagLaplace(nn.Linear(4, 5), CategoricalLikelihood(), backend=CurvlinopsGGN)
 
     with pytest.raises(ValueError, match="targets"):
         lap.fit(DataLoader(TensorDataset(X, torch.rand(*y_shape)), batch_size=4))
@@ -1577,7 +1596,7 @@ def test_fit_sequence_probability_targets(structure, backend):
 
     la = Laplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subset_of_weights="all",
         hessian_structure=structure,
         backend=backend,
@@ -1598,7 +1617,7 @@ def test_fit_sequence_probability_targets(structure, backend):
     # The GGN does not depend on the targets
     la_hard = Laplace(
         deepcopy(model),
-        "classification",
+        CategoricalLikelihood(),
         subset_of_weights="all",
         hessian_structure=structure,
         backend=backend,
@@ -1618,10 +1637,12 @@ def test_fit_sequence_lengths_vary_between_batches_with_probability_targets():
     y = torch.cat([y.reshape(-1, K) for _, y in batches])
     model = nn.Linear(D, K)
 
-    la = KronLaplace(model, "classification", backend=CurvlinopsGGN)
+    la = KronLaplace(model, CategoricalLikelihood(), backend=CurvlinopsGGN)
     la.fit(DataLoader(batches, batch_size=None))
 
-    la_flat = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_flat = KronLaplace(
+        deepcopy(model), CategoricalLikelihood(), backend=CurvlinopsGGN
+    )
     la_flat.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
 
     assert la.n_obs == 2 * 5 + 2 * 7
@@ -1635,7 +1656,7 @@ def test_fit_rejects_integer_one_hot(shape):
     D, K = 4, 3
     X = torch.randn(8, *shape, D)
     y = nn.functional.one_hot(torch.randint(K, (8, *shape)), K)
-    lap = DiagLaplace(nn.Linear(D, K), "classification", backend=CurvlinopsGGN)
+    lap = DiagLaplace(nn.Linear(D, K), CategoricalLikelihood(), backend=CurvlinopsGGN)
 
     with pytest.raises(ValueError, match=r"\.float\(\)"):
         lap.fit(DataLoader(TensorDataset(X, y), batch_size=4))
@@ -1648,7 +1669,7 @@ def test_gridsearch_soft_validation_targets(laplace):
     X_val, y_val = torch.randn(30, D), torch.randint(K, (30,))
     y_val_one_hot = nn.functional.one_hot(y_val, K).to(X.dtype)
 
-    la = laplace(nn.Linear(D, K), "classification", backend=CurvlinopsGGN)
+    la = laplace(nn.Linear(D, K), CategoricalLikelihood(), backend=CurvlinopsGGN)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=20))
 
     def tune(targets: torch.Tensor) -> torch.Tensor:
@@ -1678,10 +1699,12 @@ def test_multidim_classification_kron_online_equivalent_to_flat(backend):
     y = torch.cat([y1.reshape(-1), y2.reshape(-1)])
 
     model_flat = nn.Linear(D, C)
-    la_flat = KronLaplace(model_flat, "classification", backend=backend)
+    la_flat = KronLaplace(model_flat, CategoricalLikelihood(), backend=backend)
     la_flat.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
 
-    la_online = KronLaplace(deepcopy(model_flat), "classification", backend=backend)
+    la_online = KronLaplace(
+        deepcopy(model_flat), CategoricalLikelihood(), backend=backend
+    )
     la_online.fit(DataLoader(TensorDataset(X1, y1), batch_size=4))
     la_online.fit(DataLoader(TensorDataset(X2, y2), batch_size=2), override=False)
 
@@ -1697,9 +1720,9 @@ def test_probability_targets_count_observations(laplace):
     y_prob = nn.functional.one_hot(y, C).to(X.dtype)
 
     model = nn.Linear(D, C)
-    la_index = laplace(model, "classification", backend=CurvlinopsGGN)
+    la_index = laplace(model, CategoricalLikelihood(), backend=CurvlinopsGGN)
     la_index.fit(DataLoader(TensorDataset(X, y), batch_size=4))
-    la_prob = laplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_prob = laplace(deepcopy(model), CategoricalLikelihood(), backend=CurvlinopsGGN)
     la_prob.fit(DataLoader(TensorDataset(X, y_prob), batch_size=4))
 
     assert la_prob.n_obs == la_index.n_obs == N
@@ -1707,12 +1730,14 @@ def test_probability_targets_count_observations(laplace):
     assert torch.allclose(_dense(la_index.H), _dense(la_prob.H))
 
 
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_multidim_functional_laplace_raises(likelihood):
     X = torch.randn(8, 3, 4)
     y = (
         torch.randint(2, (8, 3))
-        if likelihood == "classification"
+        if isinstance(likelihood, CategoricalLikelihood)
         else torch.randn(8, 3, 2)
     )
     lap = FunctionalLaplace(nn.Linear(4, 2), likelihood, n_subset=4)
@@ -1746,11 +1771,14 @@ def test_multidim_subnetwork_equivalent_to_flat(laplace, backend):
     model_flat = nn.Linear(D, K)
     model_multidim = deepcopy(model_flat)
     la_flat = laplace(
-        model_flat, "regression", subnetwork_indices=indices, backend=backend
+        model_flat, GaussianLikelihood(), subnetwork_indices=indices, backend=backend
     )
     la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=N))
     la_multidim = laplace(
-        model_multidim, "regression", subnetwork_indices=indices, backend=backend
+        model_multidim,
+        GaussianLikelihood(),
+        subnetwork_indices=indices,
+        backend=backend,
     )
     la_multidim.fit(DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=N))
 
@@ -1778,9 +1806,9 @@ def test_multidim_variable_length_batches(laplace, backend):
     model_flat = nn.Linear(D, K)
     model_multidim = deepcopy(model_flat)
 
-    la_flat = laplace(model_flat, "regression", backend=backend)
+    la_flat = laplace(model_flat, GaussianLikelihood(), backend=backend)
     la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=len(X)))
-    la_multidim = laplace(model_multidim, "regression", backend=backend)
+    la_multidim = laplace(model_multidim, GaussianLikelihood(), backend=backend)
     la_multidim.fit(DataLoader(batches, batch_size=None))
 
     assert la_multidim.n_obs == la_flat.n_obs == len(X)
@@ -1804,9 +1832,9 @@ def test_multidim_classification_variable_length_batches(laplace, backend):
     model_flat = nn.Linear(D, C)
     model_multidim = deepcopy(model_flat)
 
-    la_flat = laplace(model_flat, "classification", backend=backend)
+    la_flat = laplace(model_flat, CategoricalLikelihood(), backend=backend)
     la_flat.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
-    la_multidim = laplace(model_multidim, "classification", backend=backend)
+    la_multidim = laplace(model_multidim, CategoricalLikelihood(), backend=backend)
     la_multidim.fit(DataLoader(batches, batch_size=None))
 
     assert la_multidim.n_obs == la_flat.n_obs == len(X)
@@ -1836,7 +1864,7 @@ def test_asdl_jacobians_token_ids(backend, seq_len):
     model = TokenModel()
     setattr(model, "output_size", K)
     ids = torch.randint(V, (B, seq_len))
-    interface = backend(model, "regression")
+    interface = backend(model, GaussianLikelihood())
 
     Js, f = interface.jacobians(ids)
     Js_ref, f_ref = interface.functorch_jacobians(ids)
@@ -1851,7 +1879,7 @@ def test_asdl_jacobians_stale_output_size(backend, reward_model, reward_test_X):
     # E.g. after pairwise fitting in reward modeling, `output_size` is 2 but
     # the model outputs 1 value per item at prediction time
     setattr(reward_model, "output_size", 2)
-    interface = backend(reward_model, "regression")
+    interface = backend(reward_model, GaussianLikelihood())
 
     Js, f = interface.jacobians(reward_test_X)
     Js_ref, f_ref = interface.functorch_jacobians(reward_test_X)
@@ -1872,7 +1900,7 @@ def test_reward_modeling_asdl_glm(
     # Pairwise fitting and single-item prediction have different output sizes
     lap = DiagLaplace(
         reward_model,
-        "reward_modeling",
+        BradleyTerryLikelihood(),
         backend=backend,
         enable_backprop=enable_backprop,
     )
@@ -1890,10 +1918,11 @@ def test_reward_modeling_asdl_glm(
 @pytest.mark.parametrize(
     "lik,custom_loader",
     [
-        ("classification", "custom_loader_clf"),
-        ("regression", "custom_loader_reg"),
-        ("reward_modeling", "custom_loader_clf"),
+        (CategoricalLikelihood(), "custom_loader_clf"),
+        (GaussianLikelihood(), "custom_loader_reg"),
+        (BradleyTerryLikelihood(), "custom_loader_clf"),
     ],
+    ids=lik_id,
 )
 def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
     custom_loader = request.getfixturevalue(custom_loader)
@@ -1925,7 +1954,7 @@ def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
     test_data = next(iter(custom_loader))
     f = custom_model(test_data)
 
-    if lik == "classification":
+    if isinstance(lik, CategoricalLikelihood):
         f_pred = lap(test_data, pred_type="glm")
         assert f_pred.shape == f.shape
         assert torch.allclose(
@@ -1959,7 +1988,7 @@ def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, "regression", enable_backprop=True, backend=backend)
+    lap = laplace(model, GaussianLikelihood(), enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type="glm")
 
@@ -1984,7 +2013,7 @@ def test_backprop_glm_joint(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, "regression", enable_backprop=True, backend=backend)
+    lap = laplace(model, GaussianLikelihood(), enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_cov = lap(X, pred_type="glm", joint=True)
 
@@ -2009,7 +2038,7 @@ def test_backprop_glm_mc(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, "regression", enable_backprop=True, backend=backend)
+    lap = laplace(model, GaussianLikelihood(), enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type="glm", link_approx="mc")
 
@@ -2031,7 +2060,7 @@ def test_backprop_nn(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
 
-    lap = laplace(model, "regression", enable_backprop=True, backend=backend)
+    lap = laplace(model, GaussianLikelihood(), enable_backprop=True, backend=backend)
     lap.fit(reg_loader)
     f_mu, f_var = lap(X, pred_type="nn", link_approx="mc", n_samples=10)
 
@@ -2051,7 +2080,7 @@ def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
     n_batch = X.shape[0]
     n_outputs = y.shape[-1]
 
-    lap = laplace(model, "regression")
+    lap = laplace(model, GaussianLikelihood())
     lap.fit(reg_loader)
 
     # Joint predictive ignores diagonal_output
@@ -2072,10 +2101,11 @@ def test_reg_glm_predictive_correct_behavior(laplace, model, reg_loader):
 @pytest.mark.parametrize(
     "likelihood,custom_loader",
     [
-        ("classification", "custom_loader_clf"),
-        ("regression", "custom_loader_reg"),
-        ("reward_modeling", "custom_loader_clf"),
+        (CategoricalLikelihood(), "custom_loader_clf"),
+        (GaussianLikelihood(), "custom_loader_reg"),
+        (BradleyTerryLikelihood(), "custom_loader_clf"),
     ],
+    ids=lik_id,
 )
 def test_dict_data_diagEF_curvlinops(custom_model, custom_loader, likelihood, request):
     custom_loader = request.getfixturevalue(custom_loader)
@@ -2094,7 +2124,7 @@ def test_dict_data_diagEF_curvlinops(custom_model, custom_loader, likelihood, re
     y = torch.cat(
         [b["test_label_key"].reshape(len(b["test_input_key"]), -1) for b in batches]
     )
-    y = y.squeeze(-1) if likelihood != "regression" else y
+    y = y.squeeze(-1) if not isinstance(likelihood, GaussianLikelihood) else y
     lap_tensor = DiagLaplace(custom_model, likelihood=likelihood, backend=CurvlinopsEF)
     lap_tensor.fit(DataLoader(TensorDataset(X, y), batch_size=3))
 
@@ -2103,11 +2133,13 @@ def test_dict_data_diagEF_curvlinops(custom_model, custom_loader, likelihood, re
 
 
 @pytest.mark.parametrize(
-    "likelihood", ["classification", "regression", "reward_modeling"]
+    "likelihood",
+    [CategoricalLikelihood(), GaussianLikelihood(), BradleyTerryLikelihood()],
+    ids=lik_id,
 )
 @pytest.mark.parametrize("prior_prec_type", ["scalar", "layerwise", "diag"])
 def test_gridsearch(model, likelihood, prior_prec_type, reg_loader, class_loader):
-    if likelihood == "regression":
+    if isinstance(likelihood, GaussianLikelihood):
         dataloader = reg_loader
     else:
         dataloader = class_loader
@@ -2135,9 +2167,9 @@ def test_gridsearch_log_prior_prec_base(
     model, reg_loader, monkeypatch, base, expected, laplace_class
 ):
     lap = (
-        FunctionalLaplace(model, "regression", n_subset=3)
+        FunctionalLaplace(model, GaussianLikelihood(), n_subset=3)
         if laplace_class is FunctionalLaplace
-        else DiagLaplace(model, "regression")
+        else DiagLaplace(model, GaussianLikelihood())
     )
     intervals = []
 
@@ -2164,7 +2196,7 @@ def test_gridsearch_log_prior_prec_base(
 
 
 def test_gridsearch_custom_base_end_to_end(model, reg_loader):
-    lap = DiagLaplace(model, "regression")
+    lap = DiagLaplace(model, GaussianLikelihood())
     lap.fit(reg_loader)
     lap.optimize_prior_precision(
         method="gridsearch",
@@ -2181,10 +2213,10 @@ def test_gridsearch_custom_base_end_to_end(model, reg_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, laplace):
-    lap = laplace(model_1d, likelihood="regression")
+    lap = laplace(model_1d, likelihood=GaussianLikelihood())
     lap.fit(reg_loader_1d)  # OK
 
-    lap2 = laplace(model_1d, likelihood="regression")
+    lap2 = laplace(model_1d, likelihood=GaussianLikelihood())
 
     with pytest.raises(ValueError):
         lap2.fit(reg_loader_1d_flat)
@@ -2203,7 +2235,10 @@ def test_functional_variance_multidim(
         pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet with GLM.")
 
     lap = laplace(
-        multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
+        multidim_model,
+        GaussianLikelihood(),
+        backend=backend,
+        enable_backprop=enable_backprop,
     )
     lap.fit(reg_loader_multidim)
 
@@ -2235,7 +2270,10 @@ def test_functional_variance_multidim_nn(
         pytest.skip("Kron with ASDL doesn't support multidim batch (tested below).")
 
     lap = laplace(
-        multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
+        multidim_model,
+        GaussianLikelihood(),
+        backend=backend,
+        enable_backprop=enable_backprop,
     )
     lap.fit(reg_loader_multidim)
 
@@ -2259,7 +2297,10 @@ def test_functional_covariance_multidim(
         pytest.skip("Kron/LowRankLaplace doesn't support multidim batch yet.")
 
     lap = laplace(
-        multidim_model, "regression", backend=backend, enable_backprop=enable_backprop
+        multidim_model,
+        GaussianLikelihood(),
+        backend=backend,
+        enable_backprop=enable_backprop,
     )
     lap.fit(reg_loader_multidim)
 
@@ -2298,10 +2339,10 @@ def test_multidim_equivalent_to_flat(laplace, backend, model_type):
 
     model_multidim = deepcopy(model_flat)
 
-    la_flat = laplace(model_flat, "regression", backend=backend)
+    la_flat = laplace(model_flat, GaussianLikelihood(), backend=backend)
     la_flat.fit(loader_flat)
 
-    la_multidim = laplace(model_multidim, "regression", backend=backend)
+    la_multidim = laplace(model_multidim, GaussianLikelihood(), backend=backend)
     la_multidim.fit(loader_multidim)
 
     # Posterior: `n_data` counts sequences, but the likelihood counts all "positions"
@@ -2345,7 +2386,9 @@ def test_multidim_equivalent_to_flat(laplace, backend, model_type):
     "backend", [AsdlEF, AsdlGGN, BackPackEF, BackPackGGN, CurvlinopsEF, CurvlinopsGGN]
 )
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_dtype(laplace, backend, dtype, likelihood):
     X = torch.randn((10, 3), dtype=dtype)
     Y = torch.randn((10, 3), dtype=dtype)
@@ -2384,7 +2427,7 @@ def test_dtype(laplace, backend, dtype, likelihood):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loader):
-    lap = laplace(model, "regression")
+    lap = laplace(model, GaussianLikelihood())
     lap.fit(reg_loader)
     x = reg_loader.dataset.tensors[0][:3]
 
@@ -2406,7 +2449,7 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_joint_functional_samples_seeded_deterministic(laplace, model, reg_loader):
-    lap = laplace(model, "regression")
+    lap = laplace(model, GaussianLikelihood())
     lap.fit(reg_loader)
     x = reg_loader.dataset.tensors[0][:3]
 
@@ -2422,7 +2465,7 @@ def test_joint_functional_samples_seeded_deterministic(laplace, model, reg_loade
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_joint_functional_samples_diagonal_output(laplace, model, reg_loader):
-    lap = laplace(model, "regression")
+    lap = laplace(model, GaussianLikelihood())
     lap.fit(reg_loader)
     x = reg_loader.dataset.tensors[0][:3]
     K = lap.n_outputs
@@ -2453,7 +2496,7 @@ def test_joint_functional_samples_diagonal_output(laplace, model, reg_loader):
 def test_joint_functional_samples_duplicate_inputs(
     laplace, model, reg_loader, enable_backprop
 ):
-    lap = laplace(model, "regression", enable_backprop=enable_backprop)
+    lap = laplace(model, GaussianLikelihood(), enable_backprop=enable_backprop)
     lap.fit(reg_loader)
     x = torch.randn(1, 3).repeat(3, 1)
 
@@ -2468,7 +2511,7 @@ def test_joint_functional_samples_backprop(laplace, model, reg_loader):
     if laplace == LowRankLaplace:
         pytest.skip("The asdfghjkl backend of LowRankLaplace detaches its Jacobians.")
 
-    lap = laplace(model, "regression", enable_backprop=True)
+    lap = laplace(model, GaussianLikelihood(), enable_backprop=True)
     lap.fit(reg_loader)
     x = reg_loader.dataset.tensors[0][:3].clone().requires_grad_()
 
@@ -2485,7 +2528,7 @@ def test_joint_functional_samples_backprop(laplace, model, reg_loader):
 def test_reward_modeling_predictive_samples_are_rewards(
     laplace, joint, reward_model, reward_loader, reward_test_X
 ):
-    lap = laplace(reward_model, "reward_modeling")
+    lap = laplace(reward_model, BradleyTerryLikelihood())
     lap.fit(reward_loader)
     x = reward_test_X[:3]
 
@@ -2503,7 +2546,7 @@ def test_reward_modeling_predictive_samples_are_rewards(
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_joint_predictive_samples_classification(laplace, model, class_loader):
-    lap = laplace(model, "classification")
+    lap = laplace(model, CategoricalLikelihood())
     lap.fit(class_loader)
     x = class_loader.dataset.tensors[0][:3]
 
@@ -2515,7 +2558,7 @@ def test_joint_predictive_samples_classification(laplace, model, class_loader):
 
 @pytest.mark.parametrize("laplace", flavors)
 def test_joint_nn_samples_ignore_joint(laplace, model, reg_loader):
-    lap = laplace(model, "regression")
+    lap = laplace(model, GaussianLikelihood())
     lap.fit(reg_loader)
     x = reg_loader.dataset.tensors[0][:3]
 
@@ -2545,9 +2588,9 @@ def test_joint_glm_samples_multidim(laplace):
 
     model_flat = nn.Linear(D, K)
     model_multidim = deepcopy(model_flat)
-    la_flat = laplace(model_flat, "regression", backend=CurvlinopsGGN)
+    la_flat = laplace(model_flat, GaussianLikelihood(), backend=CurvlinopsGGN)
     la_flat.fit(DataLoader(TensorDataset(X, Y), batch_size=N))
-    la_multidim = laplace(model_multidim, "regression", backend=CurvlinopsGGN)
+    la_multidim = laplace(model_multidim, GaussianLikelihood(), backend=CurvlinopsGGN)
     la_multidim.fit(DataLoader(TensorDataset(X_multidim, Y_multidim), batch_size=N))
 
     samples_flat = la_flat.functional_samples(
@@ -2564,121 +2607,32 @@ def test_joint_glm_samples_multidim(laplace):
     assert torch.allclose(samples_flat, samples_multidim)
 
 
-def _hessian_matrix(lap):
-    """Dense view of the fitted Hessian of any parametric flavor."""
-    if isinstance(lap, KronLaplace):
-        return lap.H.to_matrix()
-
-    if isinstance(lap, LowRankLaplace):
-        V, eigvals = lap.H
-        return V @ torch.diag(eigvals) @ V.T
-
-    return lap.H
-
-
-@pytest.mark.parametrize("laplace", flavors)
-@pytest.mark.parametrize(
-    "name, likelihood",
-    [
-        ("regression", GaussianLikelihood()),
-        ("classification", CategoricalLikelihood()),
-        ("reward_modeling", BradleyTerryLikelihood()),
-    ],
-)
-def test_likelihood_object_equivalence(
-    laplace,
-    name,
-    likelihood,
-    model,
-    reg_loader,
-    class_loader,
-    reward_model,
-    reward_loader,
-    reward_test_X,
-):
-    if name == "reward_modeling" and laplace == LowRankLaplace:
-        pytest.skip(
-            "The asdfghjkl backend of LowRankLaplace keeps the stale `output_size` of "
-            "the pairwise fit, so its GLM predictive fails for reward models."
-        )
-
-    if name == "reward_modeling":
-        net, loader, X = reward_model, reward_loader, reward_test_X
-    else:
-        net = model
-        loader = reg_loader if name == "regression" else class_loader
-        X = next(iter(loader))[0]
-
-    # LowRankLaplace finds its eigenpairs by power iteration from random vectors, so
-    # both fits start from the same RNG state
-    torch.manual_seed(0)
-    la_str = laplace(net, name)
-    la_str.fit(loader)
-
-    torch.manual_seed(0)
-    la_obj = laplace(deepcopy(net), likelihood)
-    la_obj.fit(loader)
-
-    assert torch.allclose(_hessian_matrix(la_str), _hessian_matrix(la_obj))
-    assert torch.allclose(la_str.log_likelihood, la_obj.log_likelihood)
-    assert torch.allclose(
-        la_str.log_marginal_likelihood(), la_obj.log_marginal_likelihood()
-    )
-
-    # The nn predictive draws from the global generator
-    for pred_type, kwargs in [("glm", {}), ("nn", {"n_samples": 10})]:
-        torch.manual_seed(7)
-        pred_str = la_str(X, pred_type=pred_type, link_approx="mc", **kwargs)
-        torch.manual_seed(7)
-        pred_obj = la_obj(X, pred_type=pred_type, link_approx="mc", **kwargs)
-
-        pred_str = pred_str if isinstance(pred_str, tuple) else (pred_str,)
-        pred_obj = pred_obj if isinstance(pred_obj, tuple) else (pred_obj,)
-        for p_str, p_obj in zip(pred_str, pred_obj):
-            assert torch.allclose(p_str, p_obj)
-
-    torch.manual_seed(7)
-    samples_str = la_str.predictive_samples(X, pred_type="nn", n_samples=10)
-    torch.manual_seed(7)
-    samples_obj = la_obj.predictive_samples(X, pred_type="nn", n_samples=10)
-    assert torch.allclose(samples_str, samples_obj)
-
-
-@pytest.mark.parametrize("likelihood", ["regression", Likelihood.REGRESSION])
-def test_likelihood_attr_backcompat(likelihood, model):
-    lap = DiagLaplace(model, likelihood)
-
-    assert isinstance(lap.likelihood, GaussianLikelihood)
-    assert lap.likelihood == "regression"
-    assert lap.likelihood == Likelihood.REGRESSION
-
-
 def test_sigma_noise_non_gaussian_object(model):
     with pytest.raises(ValueError, match="Sigma noise != 1"):
         DiagLaplace(model, CategoricalLikelihood(), sigma_noise=2)
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-def test_likelihood_assignment_from_str(laplace, model, class_loader):
+def test_likelihood_reassignment(laplace, model, class_loader):
     X, _ = next(iter(class_loader))
 
     lap = laplace(model, CategoricalLikelihood())
     lap.fit(class_loader)
     probs = lap(X, pred_type="glm", link_approx="probit")
 
-    lap.likelihood = "regression"
+    lap.likelihood = GaussianLikelihood()
     assert type(lap.likelihood) is GaussianLikelihood
     assert lap._backend is None
     assert type(lap.backend.likelihood) is GaussianLikelihood
 
-    lap.likelihood = "classification"
+    lap.likelihood = CategoricalLikelihood()
     assert type(lap.likelihood) is CategoricalLikelihood
 
     torch.testing.assert_close(lap(X, pred_type="glm", link_approx="probit"), probs)
 
 
 def test_likelihood_assignment_keeps_backend_with_same_fit_likelihood(model):
-    lap = DiagLaplace(model, "reward_modeling")
+    lap = DiagLaplace(model, BradleyTerryLikelihood())
     backend = lap.backend
 
     # Same object, so the fit likelihood does not change
@@ -2688,9 +2642,9 @@ def test_likelihood_assignment_keeps_backend_with_same_fit_likelihood(model):
 
 def test_likelihood_assignment_keeps_subnetwork(model, class_loader):
     indices = torch.tensor([0, 4, 11], dtype=torch.long)
-    lap = DiagSubnetLaplace(model, "regression", subnetwork_indices=indices)
+    lap = DiagSubnetLaplace(model, GaussianLikelihood(), subnetwork_indices=indices)
 
-    lap.likelihood = "classification"
+    lap.likelihood = CategoricalLikelihood()
     lap.fit(class_loader)
 
     assert torch.equal(lap.backend.subnetwork_indices, indices)
@@ -2699,7 +2653,7 @@ def test_likelihood_assignment_keeps_subnetwork(model, class_loader):
 
 def test_legacy_subnet_pickle_keeps_subnetwork(model, class_loader, reg_loader):
     indices = torch.tensor([0, 4, 11], dtype=torch.long)
-    lap = DiagSubnetLaplace(model, "regression", subnetwork_indices=indices)
+    lap = DiagSubnetLaplace(model, GaussianLikelihood(), subnetwork_indices=indices)
 
     # Pickles made before `_subnetwork_indices` kept the indices only on the backend
     state = dict(vars(lap))
@@ -2709,21 +2663,32 @@ def test_legacy_subnet_pickle_keeps_subnetwork(model, class_loader, reg_loader):
     legacy.__setstate__(state)
     restored = pickle.loads(pickle.dumps(legacy))
 
-    for la, likelihood in [(legacy, "classification"), (restored, "regression")]:
+    for la, likelihood in [
+        (legacy, CategoricalLikelihood()),
+        (restored, GaussianLikelihood()),
+    ]:
         # Reassigning drops the backend, unless the fit likelihood stays the same
         la.likelihood = likelihood
-        la.fit(class_loader if likelihood == "classification" else reg_loader)
+        la.fit(
+            class_loader
+            if isinstance(likelihood, CategoricalLikelihood)
+            else reg_loader
+        )
 
         assert torch.equal(la.backend.subnetwork_indices, indices)
         assert la.H.shape == (3,)
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_legacy_pickle_with_str_likelihood(
     laplace, likelihood, model, class_loader, reg_loader
 ):
-    loader = class_loader if likelihood == "classification" else reg_loader
+    loader = (
+        class_loader if isinstance(likelihood, CategoricalLikelihood) else reg_loader
+    )
     X, _ = next(iter(loader))
 
     lap = laplace(model, likelihood)
@@ -2732,13 +2697,22 @@ def test_legacy_pickle_with_str_likelihood(
 
     # Pickles made before likelihood objects stored plain strings, also in the
     # cached backend
+    legacy_name = (
+        "classification"
+        if isinstance(likelihood, CategoricalLikelihood)
+        else "regression"
+    )
     state = dict(vars(lap))
-    state["likelihood"] = str(state.pop("_likelihood"))
+    state["likelihood"] = legacy_name
+    del state["_likelihood"]
     backend = state["_backend"]
-    backend.__dict__["likelihood"] = str(backend.__dict__.pop("_likelihood"))
+    backend.__dict__["likelihood"] = legacy_name
+    del backend.__dict__["_likelihood"]
 
     legacy = laplace.__new__(laplace)
-    legacy.__setstate__(state)
+
+    with pytest.warns(DeprecationWarning):
+        legacy.__setstate__(state)
 
     assert type(legacy.likelihood) is type(lap.likelihood)
     assert type(legacy.backend.likelihood) is type(lap.likelihood)
@@ -2761,10 +2735,10 @@ def test_legacy_pickle_with_str_likelihood(
 
 
 def test_deepcopy_and_state_dict_keep_likelihood(model, class_loader):
-    lap = DiagLaplace(model, "classification")
+    lap = DiagLaplace(model, CategoricalLikelihood())
     lap.fit(class_loader)
 
-    assert lap.state_dict()["likelihood"] == "classification"
+    assert lap.state_dict()["likelihood"] == "categorical"
     assert "likelihood" not in vars(lap)
 
     lap2 = deepcopy(lap)
@@ -2784,11 +2758,11 @@ class TemperedCategorical(CategoricalLikelihood):
 
 def test_parameterized_builtin_subclass_keeps_classification_paths(model, class_loader):
     lik = TemperedCategorical(temperature=1.0)
-    assert lik.name == "classification"
+    assert lik.name == "categorical"
 
     la = DiagLaplace(model, lik)
     la.fit(class_loader)
-    ref = DiagLaplace(model, "classification")
+    ref = DiagLaplace(model, CategoricalLikelihood())
     ref.fit(class_loader)
 
     X, _ = next(iter(class_loader))
@@ -2812,7 +2786,7 @@ def test_custom_likelihood_end_to_end(laplace, model, reg_loader):
     # One observation per datum, from the targets of each batch
     assert la.n_obs == len(reg_loader.dataset)
 
-    ref = laplace(model, "regression")
+    ref = laplace(model, GaussianLikelihood())
     ref.fit(reg_loader)
 
     # The output Hessian is I / s^2 instead of I
@@ -2893,7 +2867,7 @@ def test_categorical_options_end_to_end(laplace, options):
         # is with the default options. Ignored positions contribute nothing, as if
         # they were dropped from the data.
         X, y = loader.dataset.tensors
-        ref = KronLaplace(model, "classification")
+        ref = KronLaplace(model, CategoricalLikelihood())
         ref.fit(_dropped_loader(X, y, lik.ignore_index))
         _assert_same_curvature(la, ref)
     else:
@@ -3089,13 +3063,13 @@ def test_kron_ignored_matches_dropped(backend, positions, batch_size):
     X, y = _ignored_data(positions)
     model = _position_model()
 
-    la = KronLaplace(model, "classification", backend=backend)
+    la = KronLaplace(model, CategoricalLikelihood(), backend=backend)
 
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*ignored positions")
         la.fit(DataLoader(TensorDataset(X, y), batch_size=batch_size or len(X)))
 
-    ref = KronLaplace(deepcopy(model), "classification", backend=backend)
+    ref = KronLaplace(deepcopy(model), CategoricalLikelihood(), backend=backend)
     ref.fit(_dropped_loader(X, y))
 
     assert la.n_obs == ref.n_obs == int((y != -100).sum())
@@ -3124,19 +3098,19 @@ def test_kron_ignored_conv_matches_linear():
 
     X, y = _ignored_data((3, 3))
 
-    la_conv = KronLaplace(conv, "classification", backend=CurvlinopsGGN)
+    la_conv = KronLaplace(conv, CategoricalLikelihood(), backend=CurvlinopsGGN)
     la_conv.fit(
         DataLoader(TensorDataset(X.movedim(-1, 1), y), batch_size=4),
     )
 
-    la_linear = KronLaplace(linear, "classification", backend=CurvlinopsGGN)
+    la_linear = KronLaplace(linear, CategoricalLikelihood(), backend=CurvlinopsGGN)
     la_linear.fit(DataLoader(TensorDataset(X, y), batch_size=4))
 
     assert la_conv.n_obs == la_linear.n_obs
     _assert_same_kron(la_conv, la_linear)
 
     # ... and the dropped pixels give the same factors
-    ref = KronLaplace(deepcopy(linear), "classification", backend=CurvlinopsGGN)
+    ref = KronLaplace(deepcopy(linear), CategoricalLikelihood(), backend=CurvlinopsGGN)
     ref.fit(_dropped_loader(X, y))
     _assert_same_kron(la_conv, ref)
 
@@ -3155,7 +3129,7 @@ def test_kron_ignored_downsampling_conv():
     y[::2, ::2] = -100
     y[1, 1:3] = -100
 
-    la = KronLaplace(model, "classification", backend=CurvlinopsGGN)
+    la = KronLaplace(model, CategoricalLikelihood(), backend=CurvlinopsGGN)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=3))
     assert la.n_obs == int((y != -100).sum())
 
@@ -3164,11 +3138,15 @@ def test_kron_ignored_downsampling_conv():
     y_void = torch.cat([y, torch.full((1, 4, 4), -100)])
     X_void = torch.cat([X, torch.randn(1, 3, 8, 8)])
 
-    la_void = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_void = KronLaplace(
+        deepcopy(model), CategoricalLikelihood(), backend=CurvlinopsGGN
+    )
     la_void.fit(DataLoader(TensorDataset(X_void, y_void), batch_size=7))
 
     assert la_void.n_obs == la.n_obs
-    la_all = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la_all = KronLaplace(
+        deepcopy(model), CategoricalLikelihood(), backend=CurvlinopsGGN
+    )
     la_all.fit(DataLoader(TensorDataset(X, y), batch_size=6))
     _assert_same_kron(la_void, la_all)
 
@@ -3179,13 +3157,13 @@ def test_kron_all_ignored_batch(backend, positions):
     y[:2] = -100
     model = _position_model()
 
-    la = KronLaplace(model, "classification", backend=backend)
+    la = KronLaplace(model, CategoricalLikelihood(), backend=backend)
 
     with warnings.catch_warnings():
         warnings.filterwarnings("error", message=".*ignored positions")
         la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
 
-    ref = KronLaplace(deepcopy(model), "classification", backend=backend)
+    ref = KronLaplace(deepcopy(model), CategoricalLikelihood(), backend=backend)
     ref.fit(DataLoader(TensorDataset(X[2:], y[2:]), batch_size=2))
 
     assert la.n_obs == ref.n_obs
@@ -3193,7 +3171,7 @@ def test_kron_all_ignored_batch(backend, positions):
     _assert_same_kron(la, ref)
 
     # Nothing is observed at all: no curvature, and no crash
-    empty = KronLaplace(deepcopy(model), "classification", backend=backend)
+    empty = KronLaplace(deepcopy(model), CategoricalLikelihood(), backend=backend)
     empty.fit(DataLoader(TensorDataset(X, torch.full_like(y, -100)), batch_size=2))
 
     assert empty.n_obs == 0
@@ -3218,10 +3196,10 @@ def test_kron_ignored_dict_inputs(backend):
     data = [{"input_ids": X[i], "labels": y[i]} for i in range(len(X))]
     loader = DataLoader(ListDataset(data), batch_size=4, collate_fn=dict_data_collator)
 
-    la = KronLaplace(_DictModel(net), "classification", backend=backend)
+    la = KronLaplace(_DictModel(net), CategoricalLikelihood(), backend=backend)
     la.fit(loader)
 
-    ref = KronLaplace(deepcopy(net), "classification", backend=backend)
+    ref = KronLaplace(deepcopy(net), CategoricalLikelihood(), backend=backend)
     ref.fit(_dropped_loader(X, y))
 
     assert la.n_obs == ref.n_obs
@@ -3236,7 +3214,7 @@ def test_kron_ignored_last_layer(backend, positions):
 
     la = Laplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         subset_of_weights="last_layer",
         hessian_structure="kron",
         backend=backend,
@@ -3245,7 +3223,7 @@ def test_kron_ignored_last_layer(backend, positions):
 
     ref = Laplace(
         deepcopy(model),
-        "classification",
+        CategoricalLikelihood(),
         subset_of_weights="last_layer",
         hessian_structure="kron",
         backend=backend,
@@ -3291,7 +3269,7 @@ def test_kron_ignored_in_range_index(backend, stochastic, positions):
     torch.manual_seed(1)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=len(X)))
 
-    ref = KronLaplace(deepcopy(model), "classification", **kwargs)
+    ref = KronLaplace(deepcopy(model), CategoricalLikelihood(), **kwargs)
     torch.manual_seed(1)
     ref.fit(_dropped_loader(X, y, ignore_index=1))
 
@@ -3313,7 +3291,7 @@ def test_kron_mc_custom_ignore_index_without_ignored_targets():
     la = KronLaplace(model, CategoricalLikelihood(ignore_index=2), **kwargs)
     la.fit(loader)
 
-    ref = KronLaplace(deepcopy(model), "classification", **kwargs)
+    ref = KronLaplace(deepcopy(model), CategoricalLikelihood(), **kwargs)
     ref.fit(loader)
 
     _assert_same_kron(la, ref)
@@ -3331,10 +3309,10 @@ def test_kron_ignored_matches_truncated(kfac_approx):
         backend=CurvlinopsGGN, asdl_fisher_kwargs={"kfac_approx": kfac_approx}
     )
 
-    la = KronLaplace(model, "classification", **kwargs)
+    la = KronLaplace(model, CategoricalLikelihood(), **kwargs)
     la.fit(DataLoader(TensorDataset(X, y_padded), batch_size=2))
 
-    ref = KronLaplace(deepcopy(model), "classification", **kwargs)
+    ref = KronLaplace(deepcopy(model), CategoricalLikelihood(), **kwargs)
     ref.fit(DataLoader(TensorDataset(X[:, :3], y[:, :3]), batch_size=2))
 
     assert la.n_obs == ref.n_obs
@@ -3347,8 +3325,8 @@ def test_kron_ignored_online_and_checkpoint():
     padded = DataLoader(TensorDataset(X, y), batch_size=3)
     dropped = _dropped_loader(X, y)
 
-    la = KronLaplace(model, "classification", backend=CurvlinopsGGN)
-    ref = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    la = KronLaplace(model, CategoricalLikelihood(), backend=CurvlinopsGGN)
+    ref = KronLaplace(deepcopy(model), CategoricalLikelihood(), backend=CurvlinopsGGN)
 
     la.fit(padded)
     la.fit(padded, override=False)
@@ -3359,7 +3337,9 @@ def test_kron_ignored_online_and_checkpoint():
     _assert_same_kron(la, ref)
 
     # A checkpoint keeps what later online updates need
-    restored = KronLaplace(deepcopy(model), "classification", backend=CurvlinopsGGN)
+    restored = KronLaplace(
+        deepcopy(model), CategoricalLikelihood(), backend=CurvlinopsGGN
+    )
     restored.load_state_dict(la.state_dict())
     restored.fit(padded, override=False)
 
@@ -3383,7 +3363,7 @@ def test_custom_likelihood_counts_observations(model):
 def test_glm_mc_predictive_is_reproducible(model, class_loader):
     X, _ = class_loader.dataset.tensors
 
-    la = DiagLaplace(model, "classification")
+    la = DiagLaplace(model, CategoricalLikelihood())
     la.fit(class_loader)
 
     def predict(seed: int | None) -> torch.Tensor:
@@ -3434,12 +3414,14 @@ def test_gridsearch_default_metric_uses_ignore_index(model, class_loader):
     assert torch.isfinite(la.prior_precision).all()
 
 
-@pytest.mark.parametrize("likelihood", ["classification", "bernoulli"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), BernoulliLikelihood()], ids=str
+)
 def test_validate_resets_metric(model, class_loader, likelihood):
     X, y = class_loader.dataset.tensors
     make_metric = RunningNLLMetric
 
-    if likelihood == "bernoulli":
+    if isinstance(likelihood, BernoulliLikelihood):
         y = nn.functional.one_hot(y, 2).float()
         make_metric = RunningBernoulliNLLMetric
 
@@ -3476,7 +3458,7 @@ class _LogVarianceDistance(torchmetrics.Metric):
 
 
 def test_gridsearch_scores_each_prior_on_its_own(model, reg_loader):
-    la = DiagLaplace(model, "regression")
+    la = DiagLaplace(model, GaussianLikelihood())
     la.fit(reg_loader)
 
     # The metric is smallest at the prior precision 1, in the middle of the grid
@@ -3498,7 +3480,7 @@ def test_gridsearch_scores_each_prior_on_its_own(model, reg_loader):
 
 def test_gridsearch_regression_default_is_predictive_nll(model, reg_loader):
     X, y = reg_loader.dataset.tensors
-    la = DiagLaplace(model, "regression", sigma_noise=0.5)
+    la = DiagLaplace(model, GaussianLikelihood(), sigma_noise=0.5)
     la.fit(reg_loader)
 
     grid = torch.logspace(-4, 4, 9)
@@ -3547,7 +3529,7 @@ def test_asdfghjkl_kron_rejects_ignored_sequence_positions():
     y = torch.randint(3, (6, 5))
     y[:, 3:] = -100
 
-    la = KronLaplace(_position_model(), "classification", backend=AsdfghjklGGN)
+    la = KronLaplace(_position_model(), CategoricalLikelihood(), backend=AsdfghjklGGN)
 
     with pytest.raises(NotImplementedError, match="sequences"):
         la.fit(DataLoader(TensorDataset(X, y), batch_size=2))
@@ -3571,10 +3553,10 @@ def test_kron_reward_modeling_ignored_matches_dropped():
     observed = y != -100
     model = _PairRewards()
 
-    la = KronLaplace(model, "reward_modeling")
+    la = KronLaplace(model, BradleyTerryLikelihood())
     la.fit(DataLoader(TensorDataset(X, y), batch_size=12))
 
-    ref = KronLaplace(deepcopy(model), "reward_modeling")
+    ref = KronLaplace(deepcopy(model), BradleyTerryLikelihood())
     ref.fit(DataLoader(TensorDataset(X[observed], y[observed]), batch_size=8))
 
     assert la.n_obs == ref.n_obs == 8
@@ -3656,7 +3638,7 @@ def test_bernoulli_kron_end_to_end(positions, soft):
     loader = _bernoulli_loader(positions, soft)
     model = nn.Linear(4, 3)
 
-    la = KronLaplace(model, "bernoulli")
+    la = KronLaplace(model, BernoulliLikelihood())
     la.fit(loader)
 
     X, y = loader.dataset.tensors
@@ -3712,7 +3694,7 @@ def test_bernoulli_glm_predictive(laplace, positions):
     loader = _bernoulli_loader(positions)
     X = loader.dataset.tensors[0]
 
-    la = laplace(_bernoulli_model(), "bernoulli", prior_precision=2.0)
+    la = laplace(_bernoulli_model(), BernoulliLikelihood(), prior_precision=2.0)
     la.fit(loader)
 
     f_mu, f_var = la._glm_predictive_distribution(X)
@@ -3756,7 +3738,7 @@ def test_bernoulli_rejects_the_laplace_bridge(link_approx, fitting):
     loader = _bernoulli_loader()
     X = loader.dataset.tensors[0]
 
-    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la = DiagLaplace(_bernoulli_model(), BernoulliLikelihood())
     la.fit(loader)
 
     with pytest.raises(ValueError, match="softmax link only"):
@@ -3768,7 +3750,7 @@ def test_bernoulli_nn_predictive_and_samples(positions):
     loader = _bernoulli_loader(positions)
     X = loader.dataset.tensors[0]
 
-    la = DiagLaplace(_bernoulli_model(), "bernoulli", prior_precision=2.0)
+    la = DiagLaplace(_bernoulli_model(), BernoulliLikelihood(), prior_precision=2.0)
     la.fit(loader)
 
     pred = la(
@@ -3799,7 +3781,7 @@ def test_bernoulli_gridsearch_uses_the_bernoulli_nll(mocker):
     loader = _bernoulli_loader(soft=True)
     X, y = loader.dataset.tensors
 
-    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la = DiagLaplace(_bernoulli_model(), BernoulliLikelihood())
     la.fit(loader)
 
     # The NLL per datum, summed over its outputs, for each value of the grid
@@ -3824,7 +3806,7 @@ def test_bernoulli_gridsearch_uses_the_bernoulli_nll(mocker):
 def test_bernoulli_gridsearch_with_sequences():
     loader = _bernoulli_loader((2,))
 
-    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la = DiagLaplace(_bernoulli_model(), BernoulliLikelihood())
     la.fit(loader)
     la.optimize_prior_precision(method="gridsearch", val_loader=loader, grid_size=3)
 
@@ -3834,7 +3816,7 @@ def test_bernoulli_gridsearch_with_sequences():
 def test_bernoulli_marglik_tuning():
     loader = _bernoulli_loader()
 
-    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la = DiagLaplace(_bernoulli_model(), BernoulliLikelihood())
     la.fit(loader)
     before = la.prior_precision.clone()
 
@@ -3849,7 +3831,7 @@ def test_bernoulli_marglik_tuning():
 
 def test_bernoulli_does_not_warn_about_the_default_link():
     loader = _bernoulli_loader()
-    la = DiagLaplace(_bernoulli_model(), "bernoulli")
+    la = DiagLaplace(_bernoulli_model(), BernoulliLikelihood())
     la.fit(loader)
 
     with warnings.catch_warnings():
@@ -3865,7 +3847,9 @@ def test_bernoulli_lowrank_raises():
         pytest.skip("The old asdfghjkl is not installed")
 
     with pytest.raises(ValueError, match="does not support the likelihood"):
-        LowRankLaplace(_bernoulli_model(), "bernoulli").fit(_bernoulli_loader())
+        LowRankLaplace(_bernoulli_model(), BernoulliLikelihood()).fit(
+            _bernoulli_loader()
+        )
 
 
 @pytest.mark.parametrize("laplace", [FullLaplace, DiagLaplace, KronLaplace])
@@ -3875,7 +3859,7 @@ def test_bernoulli_fit_rejects_bad_targets(laplace):
 
     # Class indices, as for the cross-entropy, and a single label per datum
     for bad in (y.long(), y[:, 0], y[:, :2]):
-        la = laplace(_bernoulli_model(), "bernoulli")
+        la = laplace(_bernoulli_model(), BernoulliLikelihood())
 
         with pytest.raises(ValueError, match="expects"):
             la.fit(DataLoader(TensorDataset(X, bad), batch_size=5))
@@ -3886,7 +3870,7 @@ def test_marglik_hyperparameter_gradients_match_finite_differences(laplace):
     torch.manual_seed(0)
     X, y = torch.randn(30, 3), torch.randn(30, 2)
     model = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))
-    la = laplace(model, "regression")
+    la = laplace(model, GaussianLikelihood())
     la.fit(DataLoader(TensorDataset(X, y), batch_size=10))
 
     log_prior_prec = torch.tensor(0.3, requires_grad=True)
@@ -3937,7 +3921,7 @@ def test_kron_reduce_ignored_input_factor_is_mean_over_examples(batch_size):
 
     la = KronLaplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         backend=CurvlinopsGGN,
         asdl_fisher_kwargs={"kfac_approx": "reduce"},
     )
@@ -3956,7 +3940,7 @@ def test_kron_old_checkpoint_without_observations_has_no_examples():
 
     la = KronLaplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         backend=CurvlinopsGGN,
         asdl_fisher_kwargs={"kfac_approx": "reduce"},
     )
@@ -3967,7 +3951,7 @@ def test_kron_old_checkpoint_without_observations_has_no_examples():
 
     restored = KronLaplace(
         deepcopy(model),
-        "classification",
+        CategoricalLikelihood(),
         backend=CurvlinopsGGN,
         asdl_fisher_kwargs={"kfac_approx": "reduce"},
     )
@@ -3984,7 +3968,7 @@ def test_kron_reduce_varying_length_input_factor_is_mean_over_examples():
 
     la = KronLaplace(
         model,
-        "classification",
+        CategoricalLikelihood(),
         backend=CurvlinopsGGN,
         asdl_fisher_kwargs={"kfac_approx": "reduce"},
     )
@@ -3996,7 +3980,7 @@ def test_kron_reduce_varying_length_input_factor_is_mean_over_examples():
     # The same with one batch per example, and after a checkpoint and online update
     per_example = KronLaplace(
         deepcopy(model),
-        "classification",
+        CategoricalLikelihood(),
         backend=CurvlinopsGGN,
         asdl_fisher_kwargs={"kfac_approx": "reduce"},
     )
@@ -4004,7 +3988,7 @@ def test_kron_reduce_varying_length_input_factor_is_mean_over_examples():
 
     restored = KronLaplace(
         deepcopy(model),
-        "classification",
+        CategoricalLikelihood(),
         backend=CurvlinopsGGN,
         asdl_fisher_kwargs={"kfac_approx": "reduce"},
     )
@@ -4019,7 +4003,7 @@ def test_kron_reduce_rejects_backends_without_it(backend):
     X, y = torch.randn(8, 4), torch.randint(3, (8,))
     la = KronLaplace(
         _position_model(),
-        "classification",
+        CategoricalLikelihood(),
         backend=backend,
         asdl_fisher_kwargs={"kfac_approx": "reduce"},
     )
@@ -4037,7 +4021,7 @@ def test_legacy_kron_pickle_resumes_online_fit(kfac_approx):
         backend=CurvlinopsGGN, asdl_fisher_kwargs={"kfac_approx": kfac_approx}
     )
 
-    la = KronLaplace(_position_model(), "classification", **kwargs)
+    la = KronLaplace(_position_model(), CategoricalLikelihood(), **kwargs)
     la.fit(loader)
 
     # Pickles made before `n_obs_examples` don't have it
@@ -4058,7 +4042,7 @@ def test_indefinite_posterior_precision_raises():
     # One data point and no prior leave the GGN of a linear layer singular
     model = nn.Linear(3, 2)
     X, y = torch.randn(1, 3), torch.randn(1, 2)
-    la = FullLaplace(model, "regression", prior_precision=0.0)
+    la = FullLaplace(model, GaussianLikelihood(), prior_precision=0.0)
     la.fit(DataLoader(TensorDataset(X, y), batch_size=1))
 
     with pytest.raises(torch.linalg.LinAlgError, match="isn't positive definite"):
@@ -4066,13 +4050,15 @@ def test_indefinite_posterior_precision_raises():
 
 
 @pytest.mark.parametrize("subset_of_weights", ["all", "last_layer"])
-@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+@pytest.mark.parametrize(
+    "likelihood", [CategoricalLikelihood(), GaussianLikelihood()], ids=lik_id
+)
 def test_nn_predictive_uses_generator(subset_of_weights, likelihood):
     torch.manual_seed(0)
     X = torch.randn(20, 3)
     y = (
         torch.randint(2, (20,))
-        if likelihood == "classification"
+        if isinstance(likelihood, CategoricalLikelihood)
         else torch.randn(20, 2)
     )
     model = nn.Sequential(nn.Linear(3, 5), nn.Tanh(), nn.Linear(5, 2))

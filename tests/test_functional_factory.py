@@ -1,7 +1,5 @@
 """Factory and cross-estimator function-space contracts."""
 
-from copy import deepcopy
-
 import pytest
 import torch
 from torch.utils.data import (
@@ -13,8 +11,6 @@ from laplace import ELLA, FunctionalLaplace, Laplace, VaLLA
 from laplace.likelihoods import (
     BernoulliLikelihood,
     CategoricalLikelihood,
-    GaussianLikelihood,
-    Likelihood,
 )
 
 
@@ -27,7 +23,7 @@ def data():
     return (x, DataLoader(TensorDataset(x, y), batch_size=2), model)
 
 
-def make_ella(model, likelihood="classification", **kwargs):
+def make_ella(model, likelihood=CategoricalLikelihood(), **kwargs):
     options = {"subsample_size": 2, "n_eigenvalues": 1}
     options.update(kwargs)
     return Laplace(
@@ -40,7 +36,7 @@ def make_ella(model, likelihood="classification", **kwargs):
     )
 
 
-def make_valla(model, likelihood="classification", **kwargs):
+def make_valla(model, likelihood=CategoricalLikelihood(), **kwargs):
     return Laplace(
         model,
         likelihood,
@@ -59,22 +55,33 @@ def test_factory_and_unsupported_combinations(data):
     assert isinstance(make_ella(model), ELLA)
     assert isinstance(make_valla(model, inducing_locations=x[:2]), VaLLA)
     assert isinstance(
-        Laplace(model, "classification", "all", "gp", n_subset=2), FunctionalLaplace
+        Laplace(model, CategoricalLikelihood(), "all", "gp", n_subset=2),
+        FunctionalLaplace,
     )
     with pytest.raises(ValueError, match="requires hessian_structure"):
         Laplace(
-            model, "classification", "all", "diag", functional_approximation="nystrom"
+            model,
+            CategoricalLikelihood(),
+            "all",
+            "diag",
+            functional_approximation="nystrom",
         )
     with pytest.raises(ValueError, match="subset_of_weights='all'"):
         Laplace(
             model,
-            "classification",
+            CategoricalLikelihood(),
             "last_layer",
             "gp",
             functional_approximation="variational",
         )
     with pytest.raises(ValueError, match="functional_approximation"):
-        Laplace(model, "classification", "all", "gp", functional_approximation="other")
+        Laplace(
+            model,
+            CategoricalLikelihood(),
+            "all",
+            "gp",
+            functional_approximation="other",
+        )
 
 
 def test_functional_integer_options_and_learning_rate_validate_early(data):
@@ -92,7 +99,7 @@ def test_functional_integer_options_and_learning_rate_validate_early(data):
 
 def test_predictive_alias_preserves_argument_order_for_weight_space(data):
     x, loader, model = data
-    estimator = Laplace(model, "classification", "all", "diag")
+    estimator = Laplace(model, CategoricalLikelihood(), "all", "diag")
     estimator.fit(loader)
     torch.testing.assert_close(
         estimator.predictive(x[:2], "glm", "probit", 10),
@@ -100,38 +107,10 @@ def test_predictive_alias_preserves_argument_order_for_weight_space(data):
     )
 
 
-@pytest.mark.parametrize("likelihood", ["regression", "classification"])
-def test_functional_factory_likelihood_object_equivalence(data, likelihood):
-    x, loader, model = data
-    if likelihood == "regression":
-        model = torch.nn.Sequential(torch.nn.Linear(2, 1))
-        loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
-        as_object = GaussianLikelihood()
-    else:
-        as_object = CategoricalLikelihood()
-
-    by_name = make_ella(deepcopy(model), likelihood)
-    by_object = make_ella(deepcopy(model), as_object)
-
-    assert type(by_name) is type(by_object)
-    assert by_name.likelihood == by_object.likelihood
-    assert isinstance(by_object.likelihood, Likelihood)
-
-    by_name.fit(loader)
-    by_object.fit(loader)
-
-    torch.testing.assert_close(by_name(x), by_object(x))
-
-
 @pytest.mark.parametrize(
     "likelihood",
-    [
-        "bernoulli",
-        Likelihood.BERNOULLI,
-        BernoulliLikelihood(),
-        torch.nn.BCEWithLogitsLoss(),
-    ],
-    ids=["name", "member", "object", "criterion"],
+    [BernoulliLikelihood(), torch.nn.BCEWithLogitsLoss()],
+    ids=["object", "criterion"],
 )
 @pytest.mark.parametrize("subset_of_weights", ["all", "last_layer"])
 def test_function_space_methods_accept_bernoulli(data, likelihood, subset_of_weights):

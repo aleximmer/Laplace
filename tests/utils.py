@@ -434,3 +434,8 @@ class PoissonLog(Likelihood):
 
     def distribution(self, f: torch.Tensor) -> torch.distributions.Distribution:
         return torch.distributions.Poisson(rate=f.exp())
+
+
+def lik_id(value: object) -> str | None:
+    """Return the likelihood name as the test id, or `None` for other values."""
+    return value.name if isinstance(value, Likelihood) else None

@@ -17,7 +17,13 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
+from laplace import (
+    BernoulliLikelihood,
+    CategoricalLikelihood,
+    GaussianLikelihood,
+    Laplace,
+    Likelihood,
+)
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(0)]
 
@@ -80,11 +86,11 @@ def _model(n_out: int = N_OUT, dict_inputs: bool = False) -> nn.Module:
     return DictModel(net) if dict_inputs else net
 
 
-def _targets(likelihood: str, n_out: int) -> torch.Tensor:
-    if likelihood == "classification":
+def _targets(likelihood: Likelihood, n_out: int) -> torch.Tensor:
+    if isinstance(likelihood, CategoricalLikelihood):
         return torch.randint(n_out, (N_DATA,))
 
-    if likelihood == "bernoulli":
+    if isinstance(likelihood, BernoulliLikelihood):
         return (torch.rand(N_DATA, n_out) > 0.5).to(torch.get_default_dtype())
 
     return torch.randn(N_DATA, n_out)
@@ -94,7 +100,7 @@ def _data(
     n_out: int = N_OUT,
     batch_size: int = 5,
     dict_inputs: bool = False,
-    likelihood: str = "regression",
+    likelihood: Likelihood = GaussianLikelihood(),
     shuffle: bool = False,
 ) -> tuple[torch.Tensor | dict, DataLoader]:
     """Test inputs and a training loader. The default batch size leaves a partial
@@ -126,7 +132,7 @@ def _build(
     method: str,
     model: nn.Module,
     loader: DataLoader,
-    likelihood: str = "regression",
+    likelihood: Likelihood = GaussianLikelihood(),
     **hyper,
 ):
     if method == "valla":
@@ -153,7 +159,7 @@ def _fitted(
     n_out: int = N_OUT,
     batch_size: int = 5,
     dict_inputs: bool = False,
-    likelihood: str = "regression",
+    likelihood: Likelihood = GaussianLikelihood(),
     shuffle: bool = False,
     **hyper,
 ):

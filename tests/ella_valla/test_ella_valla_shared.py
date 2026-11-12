@@ -15,6 +15,7 @@ from torch.utils.data import (
     TensorDataset,
 )
 
+from laplace import BradleyTerryLikelihood, GaussianLikelihood
 from laplace.curvature import CurvlinopsGGN
 from tests.ella_valla.helpers import (
     RewardModel,
@@ -50,8 +51,8 @@ def test_functional_hyperparameters_must_be_finite(method, option, value, data):
     x, _, _ = data
     model = torch.nn.Linear(2, 1)
     with pytest.raises(ValueError, match=option):
-        make_estimator(method, model, "regression", x=x, **{option: value})
-    estimator = make_estimator(method, model, "regression", x=x)
+        make_estimator(method, model, GaussianLikelihood(), x=x, **{option: value})
+    estimator = make_estimator(method, model, GaussianLikelihood(), x=x)
     with pytest.raises(ValueError, match=option):
         setattr(estimator, option, value)
 
@@ -65,8 +66,10 @@ def test_functional_hyperparameters_remain_finite_in_model_dtype(method, option)
     }
     overflow = torch.tensor(1e50, dtype=torch.float64)
     with pytest.raises(ValueError, match=option):
-        make_estimator(method, model, "regression", **options, **{option: overflow})
-    estimator = make_estimator(method, model, "regression", **options)
+        make_estimator(
+            method, model, GaussianLikelihood(), **options, **{option: overflow}
+        )
+    estimator = make_estimator(method, model, GaussianLikelihood(), **options)
     with pytest.raises(ValueError, match=option):
         setattr(estimator, option, overflow)
 
@@ -90,7 +93,7 @@ def test_checkpoint_rejects_different_mapping_key(method):
     estimator = make_estimator(
         method,
         model,
-        "regression",
+        GaussianLikelihood(),
         valla={"inducing_locations": {"features": inputs[:2].clone()}},
         **options,
     )
@@ -98,7 +101,7 @@ def test_checkpoint_rejects_different_mapping_key(method):
     restored = make_estimator(
         method,
         original,
-        "regression",
+        GaussianLikelihood(),
         valla={"inducing_locations": "random", "num_inducing": 2},
     )
     with pytest.raises(ValueError, match="dict_key_x"):
@@ -259,7 +262,7 @@ def test_mapping_backend_limit(method):
     estimator = make_estimator(
         method,
         RewardModel(),
-        "reward_modeling",
+        BradleyTerryLikelihood(),
         valla={"inducing_locations": {"input_ids": pairs[:, 0][:2].clone()}},
         backend=BackPackGGN,
     )
@@ -277,7 +280,7 @@ def test_mapping_reward_asdl_backend(method):
     estimator = make_estimator(
         method,
         RewardModel(),
-        "reward_modeling",
+        BradleyTerryLikelihood(),
         valla={"inducing_locations": {"input_ids": pairs[:, 0][:2].clone()}},
         backend=AsdlGGN,
     )
@@ -296,7 +299,7 @@ def test_rank_limited_joint_sampling_tolerates_float32_roundoff(method):
     estimator = make_estimator(
         method,
         model,
-        "regression",
+        GaussianLikelihood(),
         ella={"subsample_size": 2, "n_eigenvalues": 1},
         valla={"inducing_locations": train[:1].clone()},
     )
@@ -313,7 +316,9 @@ def test_regression_joint_sampling_and_serialization(method, data):
     restored_model = deepcopy(regression_model)
     loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
     options = {"sigma_noise": 0.5, "temperature": 2.0}
-    estimator = make_estimator(method, regression_model, "regression", x=x, **options)
+    estimator = make_estimator(
+        method, regression_model, GaussianLikelihood(), x=x, **options
+    )
     fit_estimator(method, estimator, loader, valla={"iterations": 2, "lr": 0.001})
     mean, covariance = estimator(x[:2])
     joint_mean, joint_covariance = estimator(x[:2], joint=True)
@@ -324,7 +329,9 @@ def test_regression_joint_sampling_and_serialization(method, data):
     torch.testing.assert_close(joint_covariance.diag(), covariance[:, 0, 0])
     assert estimator.functional_samples(x[:2], n_samples=3).shape == (3, 2, 1)
     load_options = {"sigma_noise": 0.5}
-    restored = make_estimator(method, restored_model, "regression", x=x, **load_options)
+    restored = make_estimator(
+        method, restored_model, GaussianLikelihood(), x=x, **load_options
+    )
     restored.load_state_dict(state_dict=estimator.state_dict())
     assert restored.temperature == 2.0
     loaded_mean, loaded_covariance = restored(x[:2])
@@ -342,7 +349,7 @@ def test_reward_modeling_recognizes_backpack_subclasses(method):
     estimator = make_estimator(
         method,
         RewardModel(),
-        "reward_modeling",
+        BradleyTerryLikelihood(),
         valla={"inducing_locations": pairs[:, 0][:2].clone()},
         backend=AlternateGGN,
     )
@@ -357,7 +364,7 @@ def test_tensor_reward_backpack_backend(method):
     estimator = make_estimator(
         method,
         RewardModel(),
-        "reward_modeling",
+        BradleyTerryLikelihood(),
         valla={"inducing_locations": pairs[:, 0][:2].clone()},
         backend=BackPackGGN,
     )
