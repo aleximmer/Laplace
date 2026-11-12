@@ -21,7 +21,7 @@ jobs:
         include:
           # ASDL and BackPACK, as `--extra all` installs them
           - name: all
-          # LowRankLaplace needs the old asdfghjkl, which replaces ASDL
+          # Adds the old asdfghjkl, which LowRankLaplace and Asdfghjkl* need
           - name: old-asdfghjkl
             old_asdfghjkl: true
     steps:

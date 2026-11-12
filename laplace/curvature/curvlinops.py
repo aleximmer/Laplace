@@ -28,10 +28,11 @@ from laplace.curvature.curvature import (
 from laplace.likelihoods import (
     BernoulliLikelihood,
     HeteroscedasticGaussianLikelihood,
+    Likelihood,
     _is_heteroscedastic,
     _noise_per_output,
 )
-from laplace.utils import Kron, Likelihood
+from laplace.utils import Kron
 from laplace.utils.heteroscedastic_utils import WhitenHeteroscedastic
 
 _FullLinearOperator: TypeAlias = (

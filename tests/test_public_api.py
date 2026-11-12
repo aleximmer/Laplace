@@ -149,12 +149,13 @@ def test_dropped_utils_names_warn(name):
         assert getattr(laplace.utils, name) is not None
 
 
-def test_dropped_utils_enum_points_to_laplace():
+@pytest.mark.parametrize("name", ["PredType", "Likelihood"])
+def test_dropped_utils_enum_points_to_laplace(name):
     import laplace
     import laplace.utils
 
     with pytest.deprecated_call(match="from `laplace`"):
-        assert laplace.utils.PredType is laplace.PredType
+        assert getattr(laplace.utils, name) is getattr(laplace, name)
 
 
 def test_asdl_hessian_lazy_import():
@@ -284,7 +285,7 @@ def fitted(request):
 def test_public_members_exist(fitted):
     method, la = fitted
 
-    missing = (PUBLIC_COMMON | PUBLIC_EXTRA.get(method, set())) - _public_names(la)
+    missing = (PUBLIC_COMMON | PUBLIC_EXTRA[method]) - _public_names(la)
 
     assert missing == set()
 
@@ -296,7 +297,6 @@ def test_no_unclassified_members(fitted):
     assert _public_names(la) - allowed == set()
 
 
-# Public members of likelihoods and subnet masks, so the docs can't hide them
 def test_docs_filter_matches_internal():
     config = (Path(__file__).parents[1] / "mkdocs.yml").read_text()
     names = re.search(r'"!\^\((.*)\)\$"', config).group(1).split("|")

@@ -35,8 +35,8 @@ from laplace.curvature.curvature import (
     _TARGET_FREE_OPTIONS,
     _observed_mask,
 )
-from laplace.likelihoods import _flatten_categorical_targets
-from laplace.utils import Kron, Likelihood
+from laplace.likelihoods import Likelihood, _flatten_categorical_targets
+from laplace.utils import Kron
 
 
 class BackPackInterface(CurvatureInterface):

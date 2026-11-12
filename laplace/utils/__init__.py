@@ -37,9 +37,11 @@ __all__ = [
 ]
 
 # Names exported here before 0.6, mapped to the module that defines them. They
-# still resolve, with a `DeprecationWarning`. The enums are public in `laplace`;
-# the rest are internal.
+# still resolve, with a `DeprecationWarning`. The enums and `Likelihood` are public
+# in `laplace`; the rest are internal.
 _DEPRECATED = {
+    # `laplace.likelihoods` imports this package, so it can only be imported lazily
+    "Likelihood": "laplace.likelihoods",
     **dict.fromkeys(
         [
             "FunctionalApproximation",
@@ -106,16 +108,11 @@ _DEPRECATED = {
 
 
 def __getattr__(name: str) -> object:
-    """Resolve `Likelihood` lazily (see `laplace.utils.enums`) and the deprecated names."""
-    if name == "Likelihood":
-        from laplace.likelihoods import Likelihood
-
-        return Likelihood
-
+    """Resolve the deprecated names, with a `DeprecationWarning`."""
     if name in _DEPRECATED:
         module = _DEPRECATED[name]
 
-        if module == "laplace.utils.enums":
+        if module in ("laplace.utils.enums", "laplace.likelihoods"):
             hint = "Import it from `laplace` instead."
         else:
             hint = "It is internal and may change without notice."

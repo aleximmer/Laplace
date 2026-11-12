@@ -717,7 +717,7 @@ class HeteroscedasticGaussianLikelihood(Likelihood):
     $$
 
     The variance has the shape of the mean, or it is shared by the outputs of a
-    datum, see `laplace.utils.heteroscedastic_utils.join_mean_variance`. The
+    datum. The
     targets have the shape of the mean, and every entry of the targets but the last
     dim is an observation. The options `eps` and `full` are those of
     `nn.GaussianNLLLoss`: the variance is clamped at `eps` from below, and `full`

@@ -180,7 +180,7 @@ class BaseLaplace:
         determines the log likelihood Hessian approximation. A likelihood object, its
         name, or a torch criterion, which becomes the matching likelihood object with
         the same options, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood]. It is stored in
+        [`get_likelihood`][laplace.get_likelihood]. It is stored in
         `self.likelihood`.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
@@ -190,7 +190,7 @@ class BaseLaplace:
         and `VaLLA`.
     sigma_noise : torch.Tensor or float, default=1
         scalar observation noise std for regression; must be 1 for classification. For a
-        known std per output, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
+        known std per output, see [`GaussianLikelihood`][laplace.GaussianLikelihood].
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case
@@ -851,7 +851,7 @@ class BaseLaplace:
     def sigma_noise(self) -> torch.Tensor:
         """Scalar observation noise std \\(\\sigma\\) for regression, 0-dim. It stays 1
         if the likelihood has a noise std per output, see
-        [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood]."""
+        [`GaussianLikelihood`][laplace.GaussianLikelihood]."""
         return self._sigma_noise
 
     @sigma_noise.setter
@@ -2507,7 +2507,7 @@ class KronLaplace(ParametricLaplace):
     Mathematically, we have for each parameter group, e.g., torch.nn.Module,
     that \\P\\approx Q \\otimes H\\.
     See `BaseLaplace` for the full interface and see
-    `laplace.utils.matrix.Kron` and `laplace.utils.matrix.KronDecomposed` for the structure of
+    `laplace.utils.Kron` and `laplace.utils.KronDecomposed` for the structure of
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
@@ -2683,7 +2683,7 @@ class KronLaplace(ParametricLaplace):
 
         Returns
         -------
-        precision : `laplace.utils.matrix.KronDecomposed`
+        precision : `laplace.utils.KronDecomposed`
         """
         self._check_H_init()
         return self.H * self._H_factor + self.prior_precision
@@ -3599,7 +3599,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
     likelihood : Likelihood or str or torch.nn.Module
         determines the log likelihood Hessian approximation. A likelihood object, its
         name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        [`get_likelihood`][laplace.get_likelihood]. Raises a
         `ValueError` for the likelihoods that this method doesn't support.
         In the case of 'reward_modeling', it fits Laplace using the classification likelihood,
         then does prediction as in regression likelihood. The model needs to be defined accordingly:
@@ -3609,7 +3609,7 @@ class FunctionalLaplace(BaseFunctionalLaplace):
         and `VaLLA`.
     sigma_noise : torch.Tensor or float, default=1
         scalar observation noise std for regression; must be 1 for classification. For a
-        known std per output, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
+        known std per output, see [`GaussianLikelihood`][laplace.GaussianLikelihood].
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case
@@ -4770,7 +4770,7 @@ class ELLA(BaseFunctionalLaplace):
         Pretrained network to linearize.
     likelihood : Likelihood or str or torch.nn.Module
         A likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        [`get_likelihood`][laplace.get_likelihood]. Raises a
         `ValueError` for the likelihoods that this method doesn't support.
     subsample_size : int
         Number of training inputs used to construct the Nyström basis.
@@ -5778,7 +5778,7 @@ class VaLLA(BaseFunctionalLaplace):
         Pretrained network to linearize.
     likelihood : Likelihood or str or torch.nn.Module
         A likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Raises a
+        [`get_likelihood`][laplace.get_likelihood]. Raises a
         `ValueError` for the likelihoods that this method doesn't support.
     inducing_locations : torch.Tensor, MutableMapping, or str
         Initial inputs, or ``"random"`` or ``"kmeans"`` to select them from

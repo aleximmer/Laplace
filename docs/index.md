@@ -247,7 +247,7 @@ for each output. If you know them, set the vector on the likelihood, before `fit
 ```python
 import torch
 from laplace import Laplace
-from laplace.likelihoods import GaussianLikelihood
+from laplace import GaussianLikelihood
 
 likelihood = GaussianLikelihood(sigma_noise=torch.tensor([0.05, 0.4]))
 la = Laplace(model, likelihood, hessian_structure="kron")

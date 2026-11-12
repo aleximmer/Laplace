@@ -57,14 +57,14 @@ class LLLaplace(ParametricLaplace):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.FeatureExtractor`
     likelihood : Likelihood or str or torch.nn.Module
         determines the log likelihood Hessian approximation. A likelihood object, its
         name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood].
+        [`get_likelihood`][laplace.get_likelihood].
     sigma_noise : torch.Tensor or float, default=1
         scalar observation noise std for regression; must be 1 for classification. For a
-        known std per output, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
+        known std per output, see [`GaussianLikelihood`][laplace.GaussianLikelihood].
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case
@@ -438,7 +438,7 @@ class KronLLLaplace(LLLaplace, KronLaplace):
     Mathematically, we have for the last parameter group, i.e., torch.nn.Linear,
     that \\P\\approx Q \\otimes H\\.
     See `KronLaplace`, `LLLaplace`, and `BaseLaplace` for the full interface and see
-    `laplace.utils.matrix.Kron` and `laplace.utils.matrix.KronDecomposed` for the structure of
+    `laplace.utils.Kron` and `laplace.utils.KronDecomposed` for the structure of
     the Kronecker factors. `Kron` is used to aggregate factors by summing up and
     `KronDecomposed` is used to add the prior, a Hessian factor (e.g. temperature),
     and computing posterior covariances, marginal likelihood, etc.
