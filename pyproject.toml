@@ -53,9 +53,11 @@ backpack = ["backpack-for-pytorch"]
 all = ["laplace-torch[asdl,backpack]"]
 dev = [
   "coveralls",
+  "dill",
   "pytest",
   "pytest-cov",
   "pytest-mock",
+  "pytest-xdist",
   "ruff==0.17.2",
   "scipy",
   "tensordict",
@@ -84,6 +86,24 @@ markers = [
   "cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU",
   "default_dtype(dtype): torch default dtype for the test (float32 if unmarked)",
   "seed(n): torch RNG seed for the test (0 if unmarked)",
+]
+# The last matching entry wins. Warnings raised from `laplace` fail the test, so a
+# test that expects one must say so with `pytest.warns` or its own marker.
+filterwarnings = [
+  "error:::laplace",
+
+  # Raised by the library in normal use; the caller can't avoid them. Remove these
+  # once the library stops emitting them (#378).
+  "ignore:Full backward hook is firing when gradients are computed:UserWarning",
+  "ignore:By default `link_approx` is `probit`:UserWarning",
+  "ignore:The prior precision has changed since fit:UserWarning",
+  'ignore:Using backward\(\) with create_graph=True:UserWarning',
+
+  # Third-party noise.
+  "ignore:`torch.jit.script` is deprecated:FutureWarning",
+  "ignore:There is a performance drop because we have not yet implemented the batching rule:UserWarning",
+  "ignore:Extension saving to grad_batch does not have an extension for Module:UserWarning",
+  "ignore:Using a non-full backward hook when the forward contains multiple autograd Nodes:FutureWarning",
 ]
 
 [tool.ruff.lint]

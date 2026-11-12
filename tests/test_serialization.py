@@ -128,7 +128,10 @@ def test_serialize(laplace, model, reg_loader):
 def test_serialize_functional(laplace, model, reg_loader):
     la = laplace(model, "regression", n_subset=10)
     la.fit(reg_loader)
-    la.optimize_prior_precision()
+
+    with pytest.warns(UserWarning, match="Use of method=.marglik."):
+        la.optimize_prior_precision()
+
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
@@ -184,7 +187,10 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
 def test_serialize_no_pickle_functional(laplace, model, reg_loader):
     la = laplace(model, "regression", n_subset=10)
     la.fit(reg_loader)
-    la.optimize_prior_precision()
+
+    with pytest.warns(UserWarning, match="Use of method=.marglik."):
+        la.optimize_prior_precision()
+
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
     state_dict = torch.load("state_dict.bin", weights_only=False)
@@ -303,7 +309,22 @@ def test_serialize_fail_llla_different_last_layer_name(
     "map_location",
     ["cuda", "cpu"] if torch.cuda.is_available() else ["cpu"],
 )
-@pytest.mark.parametrize("laplace", flavors + flavors_subnet)
+@pytest.mark.parametrize(
+    "laplace",
+    [
+        pytest.param(
+            la,
+            marks=pytest.mark.xfail(
+                raises=NotImplementedError,
+                strict=True,
+                reason="dill can't pickle the functorch tensor a fitted FullLLLaplace keeps (#379)",
+            ),
+        )
+        if la is FullLLLaplace
+        else la
+        for la in flavors + flavors_subnet
+    ],
+)
 def test_map_location(
     laplace, model, reg_loader, tmp_path, map_location, model_device_str
 ):

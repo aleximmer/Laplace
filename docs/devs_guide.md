@@ -64,6 +64,14 @@ python examples/regression_example.py
 pytest tests/test_lllaplace.py
 ```
 
+Or use `make test`, which runs the full suite in parallel without the public API and CUDA tests.
+It pulls in the test dependencies with `uv run --no-sync --with ...`, so it also works when
+`--extra dev` doesn't resolve locally. Pass `TESTS`, `ARGS` or `MARKS` to narrow it down:
+
+```bash
+make test TESTS=tests/test_lllaplace.py ARGS="-k sample"
+```
+
 ## Contributing
 
 Pull requests are very welcome. Please follow these guidelines:

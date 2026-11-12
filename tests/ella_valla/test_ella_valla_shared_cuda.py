@@ -1,4 +1,4 @@
-"""CUDA contracts for ELLA on supported curvature backends."""
+"""CUDA contracts for ELLA and VaLLA on supported curvature backends."""
 
 from copy import deepcopy
 
@@ -6,8 +6,8 @@ import pytest
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
 from laplace.curvature import CurvlinopsGGN
+from tests.ella_valla.helpers import fit_estimator, make_estimator
 from tests.utils import AsdlGGN, BackPackGGN
 
 pytestmark = [
@@ -27,7 +27,9 @@ def cuda_device(request):
 
 @pytest.mark.parametrize("backend", [CurvlinopsGGN, AsdlGGN, BackPackGGN])
 @pytest.mark.parametrize("likelihood", ["classification", "regression"])
-def test_cuda_fit_moments_sampling_and_gradients(cuda_device, backend, likelihood):
+def test_cuda_fit_moments_sampling_and_gradients(
+    method, cuda_device, backend, likelihood
+):
     torch.manual_seed(21)
     inputs = torch.tensor(
         [[0.2, 0.4], [1.0, -0.3], [-0.5, 0.7], [0.8, 0.9], [-0.4, -0.6], [0.3, -0.2]]
@@ -40,18 +42,19 @@ def test_cuda_fit_moments_sampling_and_gradients(cuda_device, backend, likelihoo
     loader = DataLoader(TensorDataset(inputs, targets), batch_size=3)
     model = torch.nn.Linear(2, 2).to(cuda_device)
     weights = [parameter.detach().clone() for parameter in model.parameters()]
-    options = {"subsample_size": 3, "n_eigenvalues": 1}
-    estimator = Laplace(
+    estimator = make_estimator(
+        method,
         model,
         likelihood,
-        subset_of_weights="all",
-        hessian_structure="gp",
-        functional_approximation="nystrom",
+        ella={"subsample_size": 3, "n_eigenvalues": 1},
+        valla={"inducing_locations": inputs[:2].clone()},
         backend=backend,
         enable_backprop=True,
-        **options,
     )
-    assert estimator.fit(loader) is None
+    assert (
+        fit_estimator(method, estimator, loader, valla={"iterations": 2, "lr": 0.001})
+        is None
+    )
     for parameter, original in zip(model.parameters(), weights):
         torch.testing.assert_close(parameter, original)
     query = inputs[:2].to(cuda_device).requires_grad_()
@@ -101,7 +104,7 @@ def test_cuda_fit_moments_sampling_and_gradients(cuda_device, backend, likelihoo
 
 
 @pytest.mark.parametrize("backend", [CurvlinopsGGN, AsdlGGN])
-def test_cuda_reward_mapping_and_checkpoint(cuda_device, backend):
+def test_cuda_reward_mapping_and_checkpoint(method, cuda_device, backend):
 
     class RewardModel(torch.nn.Module):
         def __init__(self):
@@ -123,17 +126,13 @@ def test_cuda_reward_mapping_and_checkpoint(cuda_device, backend):
     loader = DataLoader(dataset, batch_size=2)
     model = RewardModel().to(cuda_device)
     original_model = deepcopy(model)
-    options = {"subsample_size": 2, "n_eigenvalues": 1}
-    estimator = Laplace(
-        model,
-        "reward_modeling",
-        subset_of_weights="all",
-        hessian_structure="gp",
-        functional_approximation="nystrom",
-        backend=backend,
-        **options,
+    valla_options = {"inducing_locations": "random", "num_inducing": 2}
+    estimator = make_estimator(
+        method, model, "reward_modeling", valla=valla_options, backend=backend
     )
-    estimator.fit(loader)
+    fit_estimator(method, estimator, loader)
+    if method == "valla":
+        assert len(estimator.inducing_locations["source"]) == 2
     pair_query = {"input_ids": pairs[:2].to(cuda_device)}
     single_query = {"input_ids": pairs[:2, 0].to(cuda_device)}
     preference = estimator(pair_query, fitting=True)
@@ -147,14 +146,8 @@ def test_cuda_reward_mapping_and_checkpoint(cuda_device, backend):
         atol=1e-05,
         rtol=1e-05,
     )
-    restored = Laplace(
-        original_model,
-        "reward_modeling",
-        subset_of_weights="all",
-        hessian_structure="gp",
-        functional_approximation="nystrom",
-        backend=backend,
-        **options,
+    restored = make_estimator(
+        method, original_model, "reward_modeling", valla=valla_options, backend=backend
     )
     restored.load_state_dict(estimator.state_dict())
     restored_mean, restored_covariance = restored.predictive_moments(single_query)

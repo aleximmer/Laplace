@@ -8,7 +8,6 @@ from torch import nn
 from torch.distributions import Categorical, Normal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
-from torchvision.models import wide_resnet50_2
 
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import (
@@ -42,13 +41,6 @@ flavors = [FullLLLaplace, KronLLLaplace, DiagLLLaplace]
 
 
 @pytest.fixture
-def model():
-    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    setattr(model, "output_size", 2)
-    return model
-
-
-@pytest.fixture
 def model_no_output_bias():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2, bias=False))
     setattr(model, "output_size", 2)
@@ -71,26 +63,6 @@ def model_with_reduction():
             return self.fc2(x)
 
     return Model()
-
-
-@pytest.fixture
-def large_model():
-    model = wide_resnet50_2()
-    return model
-
-
-@pytest.fixture
-def class_loader():
-    X = torch.randn(10, 3)
-    y = torch.randint(2, (10,))
-    return DataLoader(TensorDataset(X, y), batch_size=3)
-
-
-@pytest.fixture
-def reg_loader():
-    X = torch.randn(10, 3)
-    y = torch.randn(10, 2)
-    return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
 @pytest.fixture
@@ -372,7 +344,7 @@ def test_laplace_init_temperature(laplace, model):
 
 
 @pytest.mark.parametrize(
-    "laplace,lh", product(flavors, ["classification", "regression"])
+    "laplace,lh", list(product(flavors, ["classification", "regression"]))
 )
 @pytest.mark.parametrize("multidim", [False, True])
 @pytest.mark.parametrize("reduction", [f.value for f in FeatureReduction] + [None])
@@ -470,7 +442,23 @@ def test_laplace_functionality(
     comp_f_var = lap.functional_variance(comp_Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
 
-    # test sampling
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_sample_moments(laplace, model, reg_loader):
+    """Check sample mean and covariance against the posterior with 1M samples."""
+    lap = laplace(
+        model, "regression", sigma_noise=0.3, prior_precision=0.7, last_layer_name="1"
+    )
+    lap.fit(reg_loader)
+    theta = lap.mean
+
+    if laplace == FullLLLaplace:
+        Sigma = lap.posterior_covariance
+    elif laplace == KronLLLaplace:
+        Sigma = lap.posterior_precision.to_matrix(exponent=-1)
+    elif laplace == DiagLLLaplace:
+        Sigma = torch.diag(lap.posterior_variance)
+
     torch.manual_seed(61)
     samples = lap.sample(n_samples=1)
     assert samples.shape == torch.Size([1, len(theta)])
@@ -610,7 +598,7 @@ def test_classification_nn_functional_samples(laplace, model, class_loader):
 
 
 @pytest.mark.parametrize(
-    "laplace,likelihood", product(flavors, ["regression", "classification"])
+    "laplace,likelihood", list(product(flavors, ["regression", "classification"]))
 )
 def test_nn_model_kwargs(laplace, likelihood, reg_loader, class_loader):
     loader = reg_loader if likelihood == "regression" else class_loader
@@ -647,7 +635,7 @@ class DictScaledModel(ScaledModel):
 
 
 @pytest.mark.parametrize(
-    "laplace,likelihood", product(flavors, ["regression", "classification"])
+    "laplace,likelihood", list(product(flavors, ["regression", "classification"]))
 )
 def test_nn_dict_inputs(laplace, likelihood):
     X = torch.randn(10, 3)

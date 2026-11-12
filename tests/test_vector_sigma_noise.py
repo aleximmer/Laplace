@@ -477,6 +477,9 @@ def _functional(model, sigma, independent_outputs, **kwargs):
     )
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Using FunctionalLaplace with the diagonal approximation"
+)
 @pytest.mark.parametrize("independent_outputs", [True, False])
 @pytest.mark.parametrize("temperature", [1.0, 2.0])
 def test_functional_matches_bruteforce(independent_outputs, temperature):
@@ -548,6 +551,9 @@ def test_functional_predictive_matches_bruteforce(temperature):
     assert torch.allclose(f_cov, expected)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Using FunctionalLaplace with the diagonal approximation"
+)
 @pytest.mark.parametrize("independent_outputs", [True, False])
 def test_functional_equal_vector_matches_scalar(independent_outputs):
     model, X, _, loader = _fs_problem()

@@ -3,7 +3,6 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import EFInterface, GGNInterface
 from laplace.likelihoods import BernoulliLikelihood
 from tests.utils import (
     BackPackEF,
@@ -12,22 +11,10 @@ from tests.utils import (
     bce_data,
     bce_model,
     bce_options,
-    check_bernoulli_falls_back_to_torch_func,
     requires_backpack,
 )
 
 pytestmark = requires_backpack
-
-
-@pytest.fixture
-def model():
-    torch.manual_seed(711)
-    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 2))
-    setattr(model, "output_size", 2)
-    model_params = list(model.parameters())
-    setattr(model, "n_layers", len(model_params))  # number of parameter groups
-    setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
 
 
 @pytest.fixture
@@ -39,22 +26,6 @@ def model_singleoutput():
     setattr(model, "n_layers", len(model_params))  # number of parameter groups
     setattr(model, "n_params", len(parameters_to_vector(model_params)))
     return model
-
-
-@pytest.fixture
-def class_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3)
-    y = torch.randint(2, (10,))
-    return X, y
-
-
-@pytest.fixture
-def reg_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3)
-    y = torch.randn(10, 2)
-    return X, y
 
 
 def test_full_ggn_backpack_reg_integration(reg_Xy, model):
@@ -258,28 +229,6 @@ def test_kron_normalization_class(class_Xy, model):
     assert torch.allclose(loss_true, loss_test)
 
 
-@pytest.mark.parametrize("structure", ["diag", "full"])
-def test_custom_likelihood_honoured_by_ggn(class_Xy, model, structure):
-    # The custom `output_hessian` is used through the torch.func fallback
-    X, y = class_Xy
-
-    _, H = getattr(BackPackGGN(model, "classification"), structure)(X, y)
-    _, H_doubled = getattr(BackPackGGN(model, DoubledCategorical()), structure)(X, y)
-
-    assert torch.allclose(H_doubled, 2 * H)
-
-
-@pytest.mark.parametrize("structure", ["diag", "full"])
-def test_custom_likelihood_ef_equals_builtin(class_Xy, model, structure):
-    # The EF depends only on the loss, which `DoubledCategorical` keeps
-    X, y = class_Xy
-
-    _, H = getattr(BackPackEF(model, "classification"), structure)(X, y)
-    _, H_doubled = getattr(BackPackEF(model, DoubledCategorical()), structure)(X, y)
-
-    assert torch.allclose(H_doubled, H)
-
-
 def test_custom_likelihood_rejected_by_kron(class_Xy, model):
     X, y = class_Xy
     backend = BackPackGGN(model, DoubledCategorical())
@@ -291,26 +240,6 @@ def test_custom_likelihood_rejected_by_kron(class_Xy, model):
 # Bernoulli likelihood. BackPACK has no sigmoid loss with options, so the GGN and EF
 # backends fall back to the torch.func code for `diag` and `full`, and `kron` raises.
 _BCE = bce_options()
-
-
-@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
-@pytest.mark.parametrize("soft", [False, True])
-@pytest.mark.parametrize("batch_shape", [(8,)])
-@pytest.mark.parametrize(
-    "Backend,Reference,structure",
-    [
-        (BackPackGGN, GGNInterface, "diag"),
-        (BackPackGGN, GGNInterface, "full"),
-        (BackPackEF, EFInterface, "diag"),
-        (BackPackEF, EFInterface, "full"),
-    ],
-)
-def test_bernoulli_falls_back_to_torch_func(
-    Backend, Reference, structure, batch_shape, soft, opts
-):
-    check_bernoulli_falls_back_to_torch_func(
-        Backend, Reference, structure, batch_shape, soft, opts
-    )
 
 
 def test_bernoulli_does_not_extend_the_loss():

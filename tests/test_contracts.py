@@ -234,6 +234,8 @@ refresh_methods = pytest.mark.parametrize(
 )
 
 
+# Functional Laplace warns when the prior precision changes after `fit`.
+@pytest.mark.filterwarnings("ignore:The prior precision has changed since fit")
 @refresh_methods
 @pytest.mark.parametrize("name, value", HYPERPARAMETERS)
 def test_hyperparameter_change_after_fit_matches_refit(method, name, value):
@@ -254,6 +256,7 @@ def test_hyperparameter_change_after_fit_matches_refit(method, name, value):
         )
 
 
+@pytest.mark.filterwarnings("ignore:The prior precision has changed since fit")
 @all_methods
 def test_state_dict_round_trip(method):
     _skip_lowrank_without_asdfghjkl(method)

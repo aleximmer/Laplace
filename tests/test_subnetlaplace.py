@@ -7,7 +7,6 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
-from torchvision.models import wide_resnet50_2
 
 from laplace import DiagSubnetLaplace, FullSubnetLaplace, Laplace, SubnetLaplace
 from laplace.baselaplace import DiagLaplace
@@ -67,34 +66,6 @@ backends = [
     EFInterface,
     CurvatureInterface,
 ]
-
-
-@pytest.fixture
-def model():
-    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    model_params = list(model.parameters())
-    setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
-
-
-@pytest.fixture
-def large_model():
-    model = wide_resnet50_2()
-    return model
-
-
-@pytest.fixture
-def class_loader():
-    X = torch.randn(10, 3)
-    y = torch.randint(2, (10,))
-    return DataLoader(TensorDataset(X, y), batch_size=3)
-
-
-@pytest.fixture
-def reg_loader():
-    X = torch.randn(10, 3)
-    y = torch.randn(10, 2)
-    return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
 @requires_asdl
@@ -256,7 +227,7 @@ def test_subnet_laplace_backend_init(model, likelihood, hessian_structure, backe
 
 
 @pytest.mark.parametrize(
-    "likelihood,hessian_structure", product(likelihoods, hessian_structures)
+    "likelihood,hessian_structure", list(product(likelihoods, hessian_structures))
 )
 def test_subnet_laplace_large_init(large_model, likelihood, hessian_structure):
     # use random subnet mask for this test
@@ -284,7 +255,7 @@ def test_subnet_laplace_large_init(large_model, likelihood, hessian_structure):
 
 
 @pytest.mark.parametrize(
-    "likelihood,hessian_structure", product(likelihoods, hessian_structures)
+    "likelihood,hessian_structure", list(product(likelihoods, hessian_structures))
 )
 def test_custom_subnetwork_indices(
     model, likelihood, class_loader, reg_loader, hessian_structure
@@ -477,7 +448,7 @@ def test_custom_subnetwork_indices(
 
 @pytest.mark.parametrize(
     "subnetwork_mask,likelihood,hessian_structure",
-    product(score_based_subnet_masks, likelihoods, hessian_structures),
+    list(product(score_based_subnet_masks, likelihoods, hessian_structures)),
 )
 def test_score_based_subnet_masks(
     model, likelihood, subnetwork_mask, class_loader, reg_loader, hessian_structure
@@ -556,7 +527,7 @@ def test_score_based_subnet_masks(
 
 @pytest.mark.parametrize(
     "subnetwork_mask,likelihood,hessian_structure",
-    product(layer_subnet_masks, likelihoods, hessian_structures),
+    list(product(layer_subnet_masks, likelihoods, hessian_structures)),
 )
 def test_layer_subnet_masks(
     model, likelihood, subnetwork_mask, class_loader, reg_loader, hessian_structure
@@ -758,7 +729,7 @@ def test_layer_subnet_masks(
 
 
 @pytest.mark.parametrize(
-    "likelihood,hessian_structure", product(likelihoods, hessian_structures)
+    "likelihood,hessian_structure", list(product(likelihoods, hessian_structures))
 )
 def test_full_subnet_mask(
     model, likelihood, class_loader, reg_loader, hessian_structure
@@ -801,7 +772,8 @@ def test_full_subnet_mask(
 
 
 @pytest.mark.parametrize(
-    "subnetwork_mask,hessian_structure", product(all_subnet_masks, hessian_structures)
+    "subnetwork_mask,hessian_structure",
+    list(product(all_subnet_masks, hessian_structures)),
 )
 def test_regression_predictive(model, reg_loader, subnetwork_mask, hessian_structure):
     subnetmask_kwargs = dict(model=model)
@@ -850,7 +822,8 @@ def test_regression_predictive(model, reg_loader, subnetwork_mask, hessian_struc
 
 
 @pytest.mark.parametrize(
-    "subnetwork_mask,hessian_structure", product(all_subnet_masks, hessian_structures)
+    "subnetwork_mask,hessian_structure",
+    list(product(all_subnet_masks, hessian_structures)),
 )
 def test_classification_predictive(
     model, class_loader, subnetwork_mask, hessian_structure
@@ -919,7 +892,7 @@ def test_classification_predictive(
 
 @pytest.mark.parametrize(
     "subnetwork_mask,likelihood,hessian_structure",
-    product(all_subnet_masks, likelihoods, hessian_structures),
+    list(product(all_subnet_masks, likelihoods, hessian_structures)),
 )
 def test_subnet_marginal_likelihood(
     model, subnetwork_mask, likelihood, hessian_structure, class_loader, reg_loader
@@ -954,7 +927,7 @@ def test_subnet_marginal_likelihood(
 
 
 @pytest.mark.parametrize(
-    "likelihood,hessian_structure", product(likelihoods, hessian_structures)
+    "likelihood,hessian_structure", list(product(likelihoods, hessian_structures))
 )
 def test_sample(model, likelihood, hessian_structure, class_loader, reg_loader):
     loader = class_loader if likelihood == "classification" else reg_loader

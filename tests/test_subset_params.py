@@ -62,7 +62,7 @@ def reg_loader():
 
 
 @pytest.mark.parametrize(
-    "laplace,lh", product(flavors, ["classification", "regression"])
+    "laplace,lh", list(product(flavors, ["classification", "regression"]))
 )
 @pytest.mark.parametrize(
     "backend",
@@ -77,7 +77,7 @@ def test_compatible_backend(laplace, lh, backend, model):
 @requires_backpack
 @pytest.mark.asdfghjkl
 @pytest.mark.parametrize(
-    "laplace,lh", product(flavors, ["classification", "regression"])
+    "laplace,lh", list(product(flavors, ["classification", "regression"]))
 )
 def test_incompatible_backend(laplace, lh, model):
     with pytest.raises(ValueError):

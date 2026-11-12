@@ -1,11 +1,68 @@
+from collections import OrderedDict
 from collections.abc import Iterator
 from typing import Any
 
 import pytest
 import torch
+from torch import nn
+from torch.nn.utils import parameters_to_vector
+from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import LowRankLaplace
 from laplace.curvature.asdfghjkl import AsdfghjklInterface
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Run torch single-threaded for every test, however they were selected.
+
+    The test tensors are tiny, and one thread per xdist worker keeps the
+    workers from oversubscribing the cores.
+    """
+    torch.set_num_threads(1)
+
+
+@pytest.fixture
+def large_model() -> nn.Module:
+    """Return an MLP with about 1M parameters whose last layer is named `fc`.
+
+    The large-init tests check that the Hessian is sized by the subnetwork or
+    last layer, not the whole network. A full `n x n` Hessian here would need
+    about 4 TB, so a mistake fails at once.
+    """
+    return nn.Sequential(
+        OrderedDict(hidden=nn.Linear(1000, 1000), act=nn.ReLU(), fc=nn.Linear(1000, 10))
+    )
+
+
+@pytest.fixture
+def model() -> nn.Module:
+    """Return a two-layer MLP (3 -> 20 -> 2) with `output_size`, `n_layers` and `n_params` set."""
+    model = nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
+    model_params = list(model.parameters())
+
+    setattr(model, "output_size", 2)
+    setattr(model, "n_layers", len(model_params))  # number of parameter groups
+    setattr(model, "n_params", len(parameters_to_vector(model_params)))
+
+    return model
+
+
+@pytest.fixture
+def class_loader() -> DataLoader:
+    """Return a loader of 10 random 3-d inputs with binary class labels."""
+    X = torch.randn(10, 3)
+    y = torch.randint(2, (10,))
+
+    return DataLoader(TensorDataset(X, y), batch_size=3)
+
+
+@pytest.fixture
+def reg_loader() -> DataLoader:
+    """Return a loader of 10 random 3-d inputs with 2-d regression targets."""
+    X = torch.randn(10, 3)
+    y = torch.randn(10, 2)
+
+    return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
 @pytest.fixture(autouse=True)
@@ -91,17 +148,26 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     Tests that use `LowRankLaplace` or an asdfghjkl backend get the
     `asdfghjkl` marker. Tests that use a backend whose package isn't
     installed are skipped.
+
+    Tests with the `asdfghjkl` marker, set here or by hand, also ignore the
+    power-iteration warning: the toy models in the tests rarely let it
+    converge. `pytest.warns` still catches it where a test checks for it.
     """
     for item in items:
         callspec = getattr(item, "callspec", None)
+        params = callspec.params.values() if callspec else []
 
-        if callspec is None:
-            continue
-
-        if any(map(_uses_old_asdfghjkl, callspec.params.values())):
+        if any(map(_uses_old_asdfghjkl, params)):
             item.add_marker(pytest.mark.asdfghjkl)
 
-        missing = set().union(*map(_missing_packages, callspec.params.values()))
+        if item.get_closest_marker("asdfghjkl"):
+            item.add_marker(
+                pytest.mark.filterwarnings(
+                    "ignore:asdfghjkl's power iteration didn't converge"
+                )
+            )
+
+        missing = set().union(*map(_missing_packages, params))
 
         if missing:
             item.add_marker(

@@ -17,8 +17,6 @@ from laplace.likelihoods import (
     Likelihood,
 )
 
-torch.set_num_threads(1)
-
 
 @pytest.fixture
 def data():

@@ -2,12 +2,12 @@ import warnings
 from collections import UserDict
 from collections.abc import MutableMapping
 from copy import deepcopy
+from importlib.util import find_spec
 
 import numpy as np
 import pytest
 import torch
 from torch import nn
-from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import (
     CurvatureInterface,
@@ -25,68 +25,19 @@ from laplace.likelihoods import (
     GaussianLikelihood,
 )
 from tests.utils import (
+    BCE_BATCH_SHAPES,
     AsdlEF,
     AsdlGGN,
     AsdlHessian,
     BackPackEF,
     BackPackGGN,
+    DoubledCategorical,
     ScaledGaussian,
+    bce_options,
+    check_bernoulli_falls_back_to_torch_func,
     loss_hessian,
     requires_backpack,
 )
-
-
-@pytest.fixture
-def model():
-    torch.manual_seed(711)
-    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 2))
-    setattr(model, "output_size", 2)
-    model_params = list(model.parameters())
-    setattr(model, "n_layers", len(model_params))  # number of parameter groups
-    setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
-
-
-@pytest.fixture
-def class_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3)
-    y = torch.randint(2, (10,))
-    return X, y
-
-
-@pytest.fixture
-def reg_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3)
-    y = torch.randn(10, 2)
-    return X, y
-
-
-@pytest.fixture
-def complex_model():
-    torch.manual_seed(711)
-    model = torch.nn.Sequential(
-        nn.Conv2d(3, 4, 2, 2),
-        nn.Flatten(),
-        nn.Tanh(),
-        nn.Linear(16, 20),
-        nn.Tanh(),
-        nn.Linear(20, 2),
-    )
-    setattr(model, "output_size", 2)
-    model_params = list(model.parameters())
-    setattr(model, "n_layers", len(model_params))  # number of parameter groups
-    setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
-
-
-@pytest.fixture
-def complex_class_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3, 5, 5)
-    y = torch.randint(2, (10,))
-    return X, y
 
 
 def test_batchgrad_cls(class_Xy, model):
@@ -1090,3 +1041,90 @@ def test_backpack_after_asdl_raises(model, reg_Xy, asdl):
     fresh = nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 2))
     fresh.load_state_dict(model.state_dict())
     BackPackGGN(fresh, "regression").diag(X, y)
+
+
+requires_old_asdfghjkl = pytest.mark.skipif(
+    find_spec("asdfghjkl") is None, reason="asdfghjkl not installed"
+)
+
+# The old asdfghjkl backends need their package, which the stand-ins in
+# `tests/utils.py` don't cover. `tests/conftest.py` marks these `asdfghjkl`.
+_KRON_NORMALIZATION_BACKENDS = [
+    (CurvlinopsGGN, "classification"),
+    (AsdlGGN, "classification"),
+    (AsdlGGN, "regression"),
+    pytest.param(AsdfghjklGGN, "classification", marks=requires_old_asdfghjkl),
+    (CurvlinopsEF, "classification"),
+    (AsdlEF, "classification"),
+    pytest.param(AsdfghjklEF, "classification", marks=requires_old_asdfghjkl),
+]
+
+
+@pytest.mark.parametrize("Backend,likelihood", _KRON_NORMALIZATION_BACKENDS)
+def test_kron_normalization(Backend, likelihood, class_Xy, reg_Xy, model):
+    X, y = class_Xy if likelihood == "classification" else reg_Xy
+    xi, yi = X[:1], y[:1]
+    kwargs = {"stochastic": False} if issubclass(Backend, GGNInterface) else {}
+    backend = Backend(model, likelihood, **kwargs)
+    loss, kron = backend.kron(xi, yi, N=1)
+    kron_true = 7 * kron
+    loss_true = 7 * loss
+    X = torch.repeat_interleave(xi, 7, 0)
+    y = torch.repeat_interleave(yi, 7, 0)
+    loss_test, kron_test = backend.kron(X, y, N=7)
+    assert torch.allclose(kron_true.diag(), kron_test.diag())
+    assert torch.allclose(loss_true, loss_test)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+@pytest.mark.parametrize("Backend", [BackPackGGN, AsdlGGN])
+def test_custom_likelihood_honoured_by_ggn(Backend, class_Xy, model, structure):
+    # The custom `output_hessian` is used through the torch.func fallback
+    X, y = class_Xy
+
+    _, H = getattr(Backend(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(Backend(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, 2 * H)
+
+
+@pytest.mark.parametrize("structure", ["diag", "full"])
+@pytest.mark.parametrize("Backend", [BackPackEF, AsdlEF, CurvlinopsEF])
+def test_custom_likelihood_ef_equals_builtin(Backend, class_Xy, model, structure):
+    # The EF depends only on the loss, which `DoubledCategorical` keeps
+    X, y = class_Xy
+
+    _, H = getattr(Backend(model, "classification"), structure)(X, y)
+    _, H_doubled = getattr(Backend(model, DoubledCategorical()), structure)(X, y)
+
+    assert torch.allclose(H_doubled, H)
+
+
+# Bernoulli likelihood. BackPACK and ASDL have no sigmoid loss with options, so their
+# GGN and EF backends fall back to the torch.func code for `diag` and `full`.
+_BCE = bce_options()
+
+
+@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
+@pytest.mark.parametrize("soft", [False, True])
+@pytest.mark.parametrize(
+    "Backend,Reference,structure,batch_shape",
+    [
+        (Backend, Reference, structure, batch_shape)
+        # BackPACK only handles flat batches here.
+        for Backend, Reference, batch_shapes in [
+            (BackPackGGN, GGNInterface, [(8,)]),
+            (BackPackEF, EFInterface, [(8,)]),
+            (AsdlGGN, GGNInterface, BCE_BATCH_SHAPES),
+            (AsdlEF, EFInterface, BCE_BATCH_SHAPES),
+        ]
+        for structure in ["diag", "full"]
+        for batch_shape in batch_shapes
+    ],
+)
+def test_bernoulli_falls_back_to_torch_func(
+    Backend, Reference, structure, batch_shape, soft, opts
+):
+    check_bernoulli_falls_back_to_torch_func(
+        Backend, Reference, structure, batch_shape, soft, opts
+    )
