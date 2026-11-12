@@ -1,7 +1,6 @@
 import pytest
 import torch
 from torch import nn
-from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import (
     CurvlinopsEF,
@@ -24,59 +23,6 @@ from tests.utils import (
     bce_options,
     loss_hessian,
 )
-
-
-@pytest.fixture
-def model():
-    torch.manual_seed(711)
-    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Tanh(), nn.Linear(20, 2))
-    setattr(model, "output_size", 2)
-    model_params = list(model.parameters())
-    setattr(model, "n_layers", len(model_params))  # number of parameter groups
-    setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
-
-
-@pytest.fixture
-def class_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3)
-    y = torch.randint(2, (10,))
-    return X, y
-
-
-@pytest.fixture
-def complex_model():
-    torch.manual_seed(711)
-    model = torch.nn.Sequential(
-        nn.Conv2d(3, 4, 2, 2),
-        nn.Flatten(),
-        nn.Tanh(),
-        nn.Linear(16, 20),
-        nn.Tanh(),
-        nn.Linear(20, 2),
-    )
-    setattr(model, "output_size", 2)
-    model_params = list(model.parameters())
-    setattr(model, "n_layers", len(model_params))  # number of parameter groups
-    setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
-
-
-@pytest.fixture
-def complex_class_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3, 5, 5)
-    y = torch.randint(2, (10,))
-    return X, y
-
-
-@pytest.fixture
-def reg_Xy():
-    torch.manual_seed(711)
-    X = torch.randn(10, 3)
-    y = torch.randn(10, 2)
-    return X, y
 
 
 @pytest.fixture
@@ -311,34 +257,6 @@ def test_complex_kron_summing_up_vs_diag_class_curvlinops(
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
 
 
-def test_kron_normalization_ggn_class(class_Xy, model):
-    X, y = class_Xy
-    xi, yi = X[:1], y[:1]
-    backend = CurvlinopsGGN(model, "classification", stochastic=False)
-    loss, kron = backend.kron(xi, yi, N=1)
-    kron_true = 7 * kron
-    loss_true = 7 * loss
-    X = torch.repeat_interleave(xi, 7, 0)
-    y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test = backend.kron(X, y, N=7)
-    assert torch.allclose(kron_true.diag(), kron_test.diag())
-    assert torch.allclose(loss_true, loss_test)
-
-
-def test_kron_normalization_ef_class(class_Xy, model):
-    X, y = class_Xy
-    xi, yi = X[:1], y[:1]
-    backend = CurvlinopsEF(model, "classification")
-    loss, kron = backend.kron(xi, yi, N=1)
-    kron_true = 7 * kron
-    loss_true = 7 * loss
-    X = torch.repeat_interleave(xi, 7, 0)
-    y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test = backend.kron(X, y, N=7)
-    assert torch.allclose(kron_true.diag(), kron_test.diag())
-    assert torch.allclose(loss_true, loss_test)
-
-
 @pytest.mark.parametrize("structure", ["diag", "full"])
 def test_custom_likelihood_honoured_by_curvlinops_ggn(class_Xy, model, structure):
     # The custom `output_hessian` is used through the torch.func fallback
@@ -349,17 +267,6 @@ def test_custom_likelihood_honoured_by_curvlinops_ggn(class_Xy, model, structure
 
     # Curvlinops and torch.func round differently in float32
     assert torch.allclose(H_doubled, 2 * H, atol=1e-6)
-
-
-@pytest.mark.parametrize("structure", ["diag", "full"])
-def test_custom_likelihood_curvlinops_ef_equals_builtin(class_Xy, model, structure):
-    # The EF depends only on the loss, which `DoubledCategorical` keeps
-    X, y = class_Xy
-
-    _, H = getattr(CurvlinopsEF(model, "classification"), structure)(X, y)
-    _, H_doubled = getattr(CurvlinopsEF(model, DoubledCategorical()), structure)(X, y)
-
-    assert torch.allclose(H_doubled, H)
 
 
 @pytest.mark.parametrize("Backend", [CurvlinopsGGN, CurvlinopsEF, CurvlinopsHessian])

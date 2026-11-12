@@ -78,21 +78,32 @@ def test_fit_without_optional_backends(blocked):
     "module,name,extra",
     [("asdl", "AsdlGGN", "asdl"), ("backpack", "BackPackGGN", "backpack")],
 )
-@pytest.mark.parametrize(
-    "statement",
-    ["from laplace.curvature import {name}", "import laplace.curvature.{module}"],
-)
-def test_missing_backend_raises_install_hint(module, name, extra, statement):
+def test_missing_backend_raises_install_hint(module, name, extra):
+    """Check both import statements in one subprocess; each prints a marker line."""
+    statements = [
+        f"from laplace.curvature import {name}",
+        f"import laplace.curvature.{module}",
+    ]
     code = f"""
-    try:
-        {statement.format(name=name, module=module)}
-    except ImportError as e:
-        print(e)
+    for statement in {statements!r}:
+        try:
+            exec(statement)
+        except ImportError as e:
+            print("HINT", statement, "|", e)
+        else:
+            print("NOHINT", statement)
     """
     res = _run_without([module], code)
 
     assert res.returncode == 0, res.stderr
-    assert f'pip install "laplace-torch[{extra}]"' in res.stdout
+
+    lines = res.stdout.splitlines()
+
+    for statement in statements:
+        hint = next((ln for ln in lines if ln.startswith(f"HINT {statement} |")), None)
+
+        assert hint is not None, f"{statement!r} raised no ImportError:\n{res.stdout}"
+        assert f'pip install "laplace-torch[{extra}]"' in hint, hint
 
 
 @pytest.mark.skipif(

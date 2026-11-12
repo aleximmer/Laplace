@@ -38,9 +38,11 @@ pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(711)]
 
 @pytest.mark.parametrize(
     "laplace,independent_outputs",
-    product(
-        [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
-        [True, False],
+    list(
+        product(
+            [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
+            [True, False],
+        )
     ),
 )
 def test_gp_equivalence_regression(laplace, independent_outputs):
@@ -109,10 +111,12 @@ def test_gp_equivalence_regression_multivariate(
 
 @pytest.mark.parametrize(
     "laplace,independent_outputs,gp_backend",
-    product(
-        [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
-        [True, False],
-        [BackPackGGN, AsdlGGN, CurvlinopsGGN],
+    list(
+        product(
+            [(FullLaplace, FunctionalLaplace), (FullLLLaplace, FunctionalLLLaplace)],
+            [True, False],
+            [BackPackGGN, AsdlGGN, CurvlinopsGGN],
+        )
     ),
 )
 def test_gp_equivalence_classification(laplace, independent_outputs, gp_backend, c=2):
@@ -193,6 +197,9 @@ class _DictInputModel(torch.nn.Module):
         return self.linear(data["input_ids"])
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Using FunctionalLaplace with the diagonal approximation"
+)
 @pytest.mark.parametrize("independent_outputs", [False, True])
 def test_dict_inputs_match_tensor_inputs(independent_outputs):
     torch.manual_seed(711)

@@ -18,7 +18,6 @@ from torch.distributions import Categorical, Normal
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.nn.utils import parameters_to_vector
 from torch.utils.data import DataLoader, TensorDataset
-from torchvision.models import wide_resnet50_2
 
 from laplace import (
     DiagLaplace,
@@ -596,28 +595,12 @@ def test_bridge_probabilities_with_zero_sum_logit_covariance(method, link):
 
 
 @pytest.fixture
-def model():
-    model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-    setattr(model, "output_size", 2)
-    model_params = list(model.parameters())
-    setattr(model, "n_layers", len(model_params))  # number of parameter groups
-    setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
-
-
-@pytest.fixture
 def model_1d():
     model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 1))
     setattr(model, "output_size", 1)
     model_params = list(model.parameters())
     setattr(model, "n_layers", len(model_params))  # number of parameter groups
     setattr(model, "n_params", len(parameters_to_vector(model_params)))
-    return model
-
-
-@pytest.fixture
-def large_model():
-    model = wide_resnet50_2()
     return model
 
 
@@ -695,20 +678,6 @@ def multidim_model():
                 p.requires_grad = False
 
     return model
-
-
-@pytest.fixture
-def class_loader():
-    X = torch.randn(10, 3)
-    y = torch.randint(2, (10,))
-    return DataLoader(TensorDataset(X, y), batch_size=3)
-
-
-@pytest.fixture
-def reg_loader():
-    X = torch.randn(10, 3)
-    y = torch.randn(10, 2)
-    return DataLoader(TensorDataset(X, y), batch_size=3)
 
 
 @pytest.fixture
@@ -927,7 +896,7 @@ def test_laplace_init_temperature(laplace, model):
 
 
 @pytest.mark.parametrize(
-    "laplace,lh", product(flavors, ["classification", "regression"])
+    "laplace,lh", list(product(flavors, ["classification", "regression"]))
 )
 def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     if lh == "classification":
@@ -994,7 +963,24 @@ def test_laplace_functionality(laplace, lh, model, reg_loader, class_loader):
     comp_f_var = lap.functional_variance(Js)
     assert torch.allclose(true_f_var, comp_f_var, rtol=1e-4)
 
-    # test sampling
+
+@pytest.mark.parametrize("laplace", flavors)
+def test_sample_moments(laplace, model, reg_loader):
+    """Check sample mean and covariance against the posterior with 1M samples."""
+    lap = laplace(model, "regression", sigma_noise=0.3, prior_precision=0.7)
+    lap.fit(reg_loader)
+    theta = lap.mean
+
+    if laplace == FullLaplace:
+        Sigma = lap.posterior_covariance
+    elif laplace == KronLaplace:
+        Sigma = lap.posterior_precision.to_matrix(exponent=-1)
+    elif laplace == LowRankLaplace:
+        (U, eigval), p0 = lap.posterior_precision
+        Sigma = (U @ torch.diag(eigval) @ U.T + p0.diag()).inverse()
+    elif laplace == DiagLaplace:
+        Sigma = torch.diag(lap.posterior_variance)
+
     torch.manual_seed(61)
     samples = lap.sample(n_samples=1)
     assert samples.shape == torch.Size([1, len(theta)])
@@ -1522,11 +1508,15 @@ def test_multidim_classification_prior_precision_equivalent_to_flat(method):
     )
     la_multidim.fit(loader_multidim)
 
-    kwargs = {"method": method}
+    # `marglik` ignores (and warns about) a validation loader.
     if method == "gridsearch":
-        kwargs["n_steps"] = 10
-    la_flat.optimize_prior_precision(val_loader=loader_flat, **kwargs)
-    la_multidim.optimize_prior_precision(val_loader=loader_multidim, **kwargs)
+        flat_kwargs = {"val_loader": loader_flat, "n_steps": 10}
+        multidim_kwargs = {"val_loader": loader_multidim, "n_steps": 10}
+    else:
+        flat_kwargs = multidim_kwargs = {}
+
+    la_flat.optimize_prior_precision(method=method, **flat_kwargs)
+    la_multidim.optimize_prior_precision(method=method, **multidim_kwargs)
 
     assert torch.allclose(la_flat.prior_precision, la_multidim.prior_precision)
 

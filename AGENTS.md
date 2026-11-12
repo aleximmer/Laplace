@@ -42,14 +42,15 @@ Optional `asdfghjkl` backend: `pip install git+https://git@github.com/wiseodd/as
 
 ```bash
 make ruff                        # ruff check --fix, then ruff format (order matters)
-uv run pytest tests/test_x.py -k "..."   # targeted tests
+make test                        # full suite in parallel, without public_api and cuda tests
+make test TESTS=tests/test_x.py ARGS="-k ..."   # targeted tests
 uv run mkdocs build --strict     # docs, as checked in CI
 ```
 
-- Full suite takes ~5 min; prefer targeted tests (`-k`, single files) for the touched area.
-- If `--extra dev` fails to resolve locally (`tensordict` wheel), use
-  `uv run --with pytest --with scipy --with pytest-mock pytest ...`.
-- Tests marked `cuda` (e.g. `tests/test_*_cuda.py`) need an NVIDIA GPU; skip with `-m "not cuda"`.
+- Prefer targeted tests (`-k`, single files) for the touched area. `make test` adds the test tools
+  with `uv run --no-sync --with ...`, so it works without `--extra dev` (whose `tensordict` wheel
+  may not resolve) and leaves the CPU-only torch alone. `MARKS=...` overrides the marker filter.
+- Tests marked `cuda` (files named `test_*_cuda.py`) need an NVIDIA GPU; skip with `-m "not cuda"`.
 - Tests that use the old asdfghjkl backend carry the `asdfghjkl` marker. It is added automatically
   for `LowRankLaplace` and `Asdfghjkl*` test parameters; add it by hand if a test builds them in its
   body. CI's old-asdfghjkl job runs only `-m asdfghjkl`, so an unmarked test never runs there.

@@ -128,7 +128,10 @@ def test_serialize(laplace, model, reg_loader):
 def test_serialize_functional(laplace, model, reg_loader):
     la = laplace(model, "regression", n_subset=10)
     la.fit(reg_loader)
-    la.optimize_prior_precision()
+
+    with pytest.warns(UserWarning, match="Use of method=.marglik."):
+        la.optimize_prior_precision()
+
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
 
@@ -184,7 +187,10 @@ def test_serialize_no_pickle(laplace, model, reg_loader):
 def test_serialize_no_pickle_functional(laplace, model, reg_loader):
     la = laplace(model, "regression", n_subset=10)
     la.fit(reg_loader)
-    la.optimize_prior_precision()
+
+    with pytest.warns(UserWarning, match="Use of method=.marglik."):
+        la.optimize_prior_precision()
+
     la.sigma_noise = 1231
     torch.save(la.state_dict(), "state_dict.bin")
     state_dict = torch.load("state_dict.bin", weights_only=False)

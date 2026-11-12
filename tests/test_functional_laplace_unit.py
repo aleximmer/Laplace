@@ -381,6 +381,9 @@ def test_functional_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat):
         la2.fit(reg_loader_1d_flat)
 
 
+@pytest.mark.filterwarnings(
+    "ignore:Using FunctionalLaplace with the diagonal approximation"
+)
 @pytest.mark.parametrize("laplace", [FunctionalLaplace, FunctionalLLLaplace])
 @pytest.mark.parametrize("backend", [AsdlGGN, BackPackGGN, CurvlinopsGGN])
 @pytest.mark.parametrize("dtype", [torch.half, torch.float, torch.double])

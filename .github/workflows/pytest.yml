@@ -49,7 +49,7 @@ jobs:
         if: matrix.minimal
         run: uv pip uninstall backpack-for-pytorch
       - name: Test with pytest
-        run: .venv/bin/python -m pytest tests ${{ matrix.pytest_args }}
+        run: .venv/bin/python -m pytest tests -n auto ${{ matrix.pytest_args }}
 
   docs:
     name: build docs

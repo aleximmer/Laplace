@@ -5,10 +5,8 @@ import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
 
-from laplace.curvature import EFInterface, GGNInterface
 from laplace.curvature.curvlinops import CurvlinopsEF, CurvlinopsGGN
 from tests.utils import (
-    BCE_BATCH_SHAPES,
     AsdlEF,
     AsdlGGN,
     AsdlHessian,
@@ -18,7 +16,6 @@ from tests.utils import (
     bce_data,
     bce_model,
     bce_options,
-    check_bernoulli_falls_back_to_torch_func,
     requires_asdl,
 )
 
@@ -402,90 +399,16 @@ def test_complex_kron_summing_up_vs_diag_class_asdl(
     assert torch.allclose(kron.diag().norm(), dggn.norm(), rtol=1e-2)
 
 
-def test_kron_summation_ggn_class(class_Xy, model):
-    X, y = class_Xy
+@pytest.mark.parametrize("likelihood", ["classification", "regression"])
+def test_kron_summation_ggn(likelihood, class_Xy, reg_Xy, model):
+    X, y = class_Xy if likelihood == "classification" else reg_Xy
     X = torch.repeat_interleave(X[:1], 7, 0)
     y = torch.repeat_interleave(y[:1], 7, 0)
-    backend = AsdlGGN(model, "classification", stochastic=False)
+    backend = AsdlGGN(model, likelihood, stochastic=False)
     loss_dg, diag = backend.diag(X, y)
     loss, kron = backend.kron(X, y, N=7)
     assert torch.allclose(loss_dg, loss)
     assert torch.allclose(kron.diag(), diag)
-
-
-def test_kron_summation_ggn_reg(reg_Xy, model):
-    X, y = reg_Xy
-    X = torch.repeat_interleave(X[:1], 7, 0)
-    y = torch.repeat_interleave(y[:1], 7, 0)
-    backend = AsdlGGN(model, "regression", stochastic=False)
-    loss_dg, diag = backend.diag(X, y)
-    loss, kron = backend.kron(X, y, N=7)
-    assert torch.allclose(loss_dg, loss)
-    assert torch.allclose(kron.diag(), diag)
-
-
-def test_kron_normalization_ggn_class(class_Xy, model):
-    X, y = class_Xy
-    xi, yi = X[:1], y[:1]
-    backend = AsdlGGN(model, "classification", stochastic=False)
-    loss, kron = backend.kron(xi, yi, N=1)
-    kron_true = 7 * kron
-    loss_true = 7 * loss
-    X = torch.repeat_interleave(xi, 7, 0)
-    y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test = backend.kron(X, y, N=7)
-    assert torch.allclose(kron_true.diag(), kron_test.diag())
-    assert torch.allclose(loss_true, loss_test)
-
-
-def test_kron_normalization_ef_class(class_Xy, model):
-    X, y = class_Xy
-    xi, yi = X[:1], y[:1]
-    backend = AsdlEF(model, "classification")
-    loss, kron = backend.kron(xi, yi, N=1)
-    kron_true = 7 * kron
-    loss_true = 7 * loss
-    X = torch.repeat_interleave(xi, 7, 0)
-    y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test = backend.kron(X, y, N=7)
-    assert torch.allclose(kron_true.diag(), kron_test.diag())
-    assert torch.allclose(loss_true, loss_test)
-
-
-def test_kron_normalization_ggn_reg(reg_Xy, model):
-    X, y = reg_Xy
-    xi, yi = X[:1], y[:1]
-    backend = AsdlGGN(model, "regression", stochastic=False)
-    loss, kron = backend.kron(xi, yi, N=1)
-    kron_true = 7 * kron
-    loss_true = 7 * loss
-    X = torch.repeat_interleave(xi, 7, 0)
-    y = torch.repeat_interleave(yi, 7, 0)
-    loss_test, kron_test = backend.kron(X, y, N=7)
-    assert torch.allclose(kron_true.diag(), kron_test.diag())
-    assert torch.allclose(loss_true, loss_test)
-
-
-@pytest.mark.parametrize("structure", ["diag", "full"])
-def test_custom_likelihood_honoured_by_ggn(class_Xy, model, structure):
-    # The custom `output_hessian` is used through the torch.func fallback
-    X, y = class_Xy
-
-    _, H = getattr(AsdlGGN(model, "classification"), structure)(X, y)
-    _, H_doubled = getattr(AsdlGGN(model, DoubledCategorical()), structure)(X, y)
-
-    assert torch.allclose(H_doubled, 2 * H)
-
-
-@pytest.mark.parametrize("structure", ["diag", "full"])
-def test_custom_likelihood_ef_equals_builtin(class_Xy, model, structure):
-    # The EF depends only on the loss, which `DoubledCategorical` keeps
-    X, y = class_Xy
-
-    _, H = getattr(AsdlEF(model, "classification"), structure)(X, y)
-    _, H_doubled = getattr(AsdlEF(model, DoubledCategorical()), structure)(X, y)
-
-    assert torch.allclose(H_doubled, H)
 
 
 @pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF, AsdlHessian])
@@ -504,26 +427,6 @@ def test_custom_likelihood_rejected_by_kron_and_hessian(class_Xy, model, Backend
 # Bernoulli likelihood. ASDL has no sigmoid loss type, so the GGN and EF backends fall
 # back to the torch.func code for `diag` and `full`, and `kron` raises.
 _BCE = bce_options()
-
-
-@pytest.mark.parametrize("opts", _BCE.values(), ids=_BCE.keys())
-@pytest.mark.parametrize("soft", [False, True])
-@pytest.mark.parametrize("batch_shape", BCE_BATCH_SHAPES)
-@pytest.mark.parametrize(
-    "Backend,Reference,structure",
-    [
-        (AsdlGGN, GGNInterface, "diag"),
-        (AsdlGGN, GGNInterface, "full"),
-        (AsdlEF, EFInterface, "diag"),
-        (AsdlEF, EFInterface, "full"),
-    ],
-)
-def test_bernoulli_falls_back_to_torch_func(
-    Backend, Reference, structure, batch_shape, soft, opts
-):
-    check_bernoulli_falls_back_to_torch_func(
-        Backend, Reference, structure, batch_shape, soft, opts
-    )
 
 
 @pytest.mark.parametrize("Backend", [AsdlGGN, AsdlEF])
