@@ -49,18 +49,18 @@ class SubnetLaplace(ParametricLaplace):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.FeatureExtractor`
     likelihood : Likelihood or str or torch.nn.Module
         determines the log likelihood Hessian approximation. A likelihood object, its
         name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood].
+        [`get_likelihood`][laplace.get_likelihood].
     subnetwork_indices : torch.LongTensor
         indices of the vectorized model parameters
         (i.e. `torch.nn.utils.parameters_to_vector(model.parameters())`)
         that define the subnetwork to apply the Laplace approximation over
     sigma_noise : torch.Tensor or float, default=1
         scalar observation noise std for regression; must be 1 for classification. For a
-        known std per output, see [`GaussianLikelihood`][laplace.likelihoods.GaussianLikelihood].
+        known std per output, see [`GaussianLikelihood`][laplace.GaussianLikelihood].
     prior_precision : torch.Tensor or float, default=1
         prior precision of a Gaussian prior (= weight decay);
         can be scalar, per-layer, or diagonal in the most general case

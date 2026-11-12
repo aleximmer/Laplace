@@ -20,7 +20,8 @@ from laplace import (
     marglik_training,
 )
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN, CurvlinopsHessian
-from laplace.utils import RunningGaussianNLLMetric, join_mean_variance
+from laplace.utils import RunningGaussianNLLMetric
+from laplace.utils.heteroscedastic_utils import join_mean_variance
 from tests.utils import AsdlEF, AsdlGGN, BackPackEF, BackPackGGN
 
 pytestmark = pytest.mark.default_dtype(torch.float64)

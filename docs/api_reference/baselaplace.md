@@ -1,4 +1,3 @@
-::: laplace.baselaplace
-    options:
-        members:
-            - BaseLaplace
+# Base Laplace
+
+::: laplace.BaseLaplace

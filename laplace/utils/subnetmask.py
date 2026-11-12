@@ -230,7 +230,7 @@ class LargestVarianceDiagLaplaceSubnetMask(ScoreBasedSubnetMask):
     model : torch.nn.Module
     n_params_subnet : int
         number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
-    diag_laplace_model : `laplace.baselaplace.DiagLaplace`
+    diag_laplace_model : `laplace.DiagLaplace`
         diagonal Laplace model to use for variance estimation
     """
 
@@ -262,7 +262,7 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
     likelihood : Likelihood or str or torch.nn.Module
         a likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood].
+        [`get_likelihood`][laplace.get_likelihood].
     swag_n_snapshots : int
         number of model snapshots to collect for SWAG
     swag_snapshot_freq : int

@@ -54,7 +54,7 @@ def make_valla(model, likelihood="classification", **kwargs):
 
 
 def test_factory_and_unsupported_combinations(data):
-    from laplace.utils import FunctionalApproximation
+    from laplace import FunctionalApproximation
 
     assert FunctionalApproximation.NYSTROM.value == "nystrom"
     x, loader, model = data

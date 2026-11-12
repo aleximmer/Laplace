@@ -1,37 +1,16 @@
+# Utilities
+
 ::: laplace.utils
     options:
-        members: 
-            - "get_nll"
-            - "validate"
-            - "parameters_per_layer"
-            - "invsqrt_precision"
-            - "kron"
-            - "diagonal_add_scalar"
-            - "symeig"
-            - "hyperparameters_equal"
-            - "block_diag"
-            - "normal_samples"
-            - "batch_size"
-            - "concatenate_rows"
-            - "draw_gaussian"
-            - "preserve_model_gradients"
-            - "regression_targets"
-            - "same_configuration"
-            - "select_rows"
-            - "split_batch"
-            - "subset_loader"
-            - "to_device"
-            - "training_indices"
-            - "SoDSampler"
-            - "_is_batchnorm"
-            - "_is_valid_scalar"
-            - "expand_prior_precision"
-            - "fix_prior_prec_structure"
-            - "noise_per_output_update"
+        # Its own filters, since subnet masks expose `n_params_subnet`, which the
+        # global ones hide
+        filters:
+            - "!^_[^_]"
+            - "!^(damping|enable_backprop)$"
+        members:
             - "FeatureExtractor"
             - "Kron"
             - "KronDecomposed"
-            - "fit_diagonal_swag_var"
             - "SubnetMask"
             - "RandomSubnetMask"
             - "LargestMagnitudeSubnetMask"
@@ -43,10 +22,3 @@
             - "RunningNLLMetric"
             - "RunningBernoulliNLLMetric"
             - "RunningGaussianNLLMetric"
-            - "join_mean_variance"
-            - "as_joined_outputs"
-            - "join_outputs_hook"
-            - "joined_outputs"
-            - "joins_outputs"
-            - "WhitenHeteroscedastic"
-            - "HeteroscedasticGaussianNLLLoss"

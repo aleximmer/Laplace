@@ -30,7 +30,7 @@ def Laplace(
     likelihood : Likelihood or str or torch.nn.Module
         Likelihood used for fitting: a likelihood object, its name, or a torch
         criterion whose options carry over, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood]. Reward
+        [`get_likelihood`][laplace.get_likelihood]. Reward
         modeling requires an estimator that supports pairwise preferences, such as
         ELLA or VaLLA.
     subset_of_weights : SubsetOfWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER

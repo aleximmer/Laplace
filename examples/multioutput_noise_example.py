@@ -21,8 +21,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from laplace import Laplace
-from laplace.likelihoods import GaussianLikelihood
+from laplace import GaussianLikelihood, Laplace
 
 torch.manual_seed(711)
 
@@ -132,7 +131,7 @@ print(
 # in its likelihood and `sigma_noise=1`. The likelihood you pass is not changed.
 
 # %%
-from laplace.marglik_training import marglik_training
+from laplace import marglik_training
 
 torch.manual_seed(711)
 learn_model = nn.Sequential(nn.Linear(1, 32), nn.Tanh(), nn.Linear(32, 2))

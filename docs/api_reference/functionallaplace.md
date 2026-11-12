@@ -1,5 +1,5 @@
-::: laplace.baselaplace
-    options:
-        members:
-            - BaseFunctionalLaplace
-            - FunctionalLaplace
+# Functional Laplace
+
+::: laplace.BaseFunctionalLaplace
+
+::: laplace.FunctionalLaplace

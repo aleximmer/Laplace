@@ -12,7 +12,7 @@ from laplace import Laplace
 from laplace.curvature import CurvlinopsEF, CurvlinopsGGN
 from laplace.likelihoods import GaussianLikelihood
 from laplace.marglik_training import marglik_training
-from laplace.utils import noise_per_output_update
+from laplace.utils.utils import noise_per_output_update
 from tests.utils import AsdlGGN, BackPackGGN
 
 pytestmark = [pytest.mark.default_dtype(torch.float64), pytest.mark.seed(123)]

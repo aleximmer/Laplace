@@ -27,8 +27,9 @@ from torch.utils.data import DataLoader
 from laplace.curvature import CurvatureInterface, EFInterface, GGNInterface
 from laplace.curvature.curvature import _is_probability_target, _observed_mask
 from laplace.likelihoods import get_likelihood
-from laplace.utils import Kron, _is_batchnorm
+from laplace.utils import Kron
 from laplace.utils.enums import Likelihood
+from laplace.utils.utils import _is_batchnorm
 
 EPS = 1e-6
 

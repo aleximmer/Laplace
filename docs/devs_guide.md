@@ -183,7 +183,7 @@ For `hessian_structure="gp"`, the factory also accepts
 `functional_approximation="sod" | "nystrom" | "variational"`. The latter two
 select [`ELLA`](api_reference/ella.md) and [`VaLLA`](api_reference/valla.md), respectively. These and
 `FunctionalLaplace` share
-[`BaseFunctionalLaplace`](api_reference/functionallaplace.md#laplace.baselaplace.BaseFunctionalLaplace)
+[`BaseFunctionalLaplace`](api_reference/functionallaplace.md#laplace.BaseFunctionalLaplace)
 prediction and sampling methods, while each estimator
 implements its own fitting and posterior covariance. New function-space methods
 should implement `_glm_predictive_distribution`, `fit`, and method-specific
@@ -198,19 +198,49 @@ These moments exclude observation noise. Implement `_refresh_posterior` if
 changing hyperparameters invalidates cached posterior factors.
 
 Reusable function-space helpers live in `laplace/utils/functional_utils.py`
-and are exported through `laplace.utils`. See the
-[utilities API reference](api_reference/utils.md) for sampling, batch handling,
-target shaping, and device conversion. Helpers prefixed with an underscore
-support specific estimator internals and are not part of the public API.
+and are internal. Import them from `laplace.utils.functional_utils` in library
+code. They are not part of the public API, so they can change without warning.
 
 Additionally, the package provides utilities for
 decomposing a neural network into feature extractor and last layer for `LLLaplace` subclasses ([`laplace.utils.feature_extractor`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/feature_extractor.py))
 and
 effectively dealing with Kronecker factors ([`laplace.utils.matrix`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/matrix.py)).
 
-Finally, the package implements several options to select/specify a subnetwork for `SubnetLaplace` (as subclasses of [`laplace.utils.subnetmask.SubnetMask`](https://github.com/AlexImmer/Laplace/blob/main/laplace/utils/subnetmask.py)).
-Automatic subnetwork selection strategies include: uniformly at random (`laplace.utils.subnetmask.RandomSubnetMask`), by largest parameter magnitudes (`LargestMagnitudeSubnetMask`), and by largest marginal parameter variances (`LargestVarianceDiagLaplaceSubnetMask` and `LargestVarianceSWAGSubnetMask`).
+Finally, the package implements several options to select/specify a subnetwork for `SubnetLaplace` (as subclasses of [`laplace.utils.SubnetMask`](api_reference/utils.md#laplace.utils.SubnetMask)).
+Automatic subnetwork selection strategies include: uniformly at random (`laplace.utils.RandomSubnetMask`), by largest parameter magnitudes (`LargestMagnitudeSubnetMask`), and by largest marginal parameter variances (`LargestVarianceDiagLaplaceSubnetMask` and `LargestVarianceSWAGSubnetMask`).
 In addition to that, subnetworks can also be specified manually, by listing the names of either the model parameters (`ParamNameSubnetMask`) or modules (`ModuleNameSubnetMask`) to perform Laplace inference over.
+
+## Public API
+
+The public API is the `__all__` of `laplace`, `laplace.curvature` and `laplace.utils`,
+plus the members listed in `PUBLIC_COMMON` and `PUBLIC_EXTRA` in
+`tests/test_public_api.py`. Everything else is internal, underscore or not. Each
+public name has one import path. Laplace classes, likelihoods, enums and
+`marglik_training` come from `laplace`; curvature backends from `laplace.curvature`;
+subnet masks, metrics, `FeatureExtractor`, `Kron` and `KronDecomposed` from
+`laplace.utils`. Submodules such as `laplace.baselaplace` are not public paths.
+
+New public names can be added at any time. To remove or rename one, keep the old
+name working with a `DeprecationWarning` for at least one release. Internal names
+can change without that. The `INTERNAL` set in `tests/test_public_api.py` lists the
+internal members that have no underscore yet; rename one to `_name` and drop it from
+the set. The API reference hides these names through the `filters` regex in
+`mkdocs.yml`, so drop it there too. A test checks that the two lists agree.
+
+`tests/test_public_api.py` fails when a fitted instance has a member that is in none
+of the lists, or when a snapshotted signature loses or renames a parameter. These
+tests carry the `public_api` marker and run in their own CI workflow,
+`test-public-api`. To add a public name:
+
+1. Add it to the `__all__` of its package and to `EXPECTED_EXPORTS`, or, for a method
+   or attribute, to `PUBLIC_COMMON` or `PUBLIC_EXTRA`.
+2. For a callable, run `uv run python -m tests.public_api_snapshot` to add its
+   signature to the snapshot. Existing entries are left as they are. Some additions
+   still fail the check, for example a new parameter on a function that takes
+   `**kwargs`, since a caller's `x=...` used to go to `kwargs`. If no caller can
+   break, edit that entry in `tests/public_api_signatures.json` by hand.
+3. Document it under `docs/api_reference/` with its public import path, for example
+   `::: laplace.FullLaplace`.
 
 ## Extendability
 

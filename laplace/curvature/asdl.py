@@ -39,7 +39,9 @@ from laplace.curvature.curvature import (
     _observed_input_factors,
     _observed_mask,
 )
-from laplace.utils import Kron, Likelihood, _is_batchnorm
+from laplace.likelihoods import Likelihood
+from laplace.utils import Kron
+from laplace.utils.utils import _is_batchnorm
 
 EPS = 1e-6
 

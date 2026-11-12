@@ -80,6 +80,7 @@ docs = [
 testpaths = "tests"
 markers = [
   "asdfghjkl: uses the old asdfghjkl backend (LowRankLaplace, Asdfghjkl*); the only tests the old-asdfghjkl CI job runs",
+  "public_api: public API contract; run by the test-public-api CI workflow only",
   "cuda: requires CUDA-enabled PyTorch and an NVIDIA GPU",
   "default_dtype(dtype): torch default dtype for the test (float32 if unmarked)",
   "seed(n): torch RNG seed for the test (0 if unmarked)",

@@ -1,6 +1,6 @@
 """Helpers for networks that predict a mean and a variance, as trained with
 `nn.GaussianNLLLoss`, see
-[`HeteroscedasticGaussianLikelihood`][laplace.likelihoods.HeteroscedasticGaussianLikelihood].
+[`HeteroscedasticGaussianLikelihood`][laplace.HeteroscedasticGaussianLikelihood].
 
 The library computes Jacobians and curvatures of one output tensor, so the pair
 `(mean, var)` of such a network is joined into one tensor `(batch, ..., 2 * K)`, the

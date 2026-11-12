@@ -1,3 +1,3 @@
 # ELLA
 
-::: laplace.baselaplace.ELLA
+::: laplace.ELLA

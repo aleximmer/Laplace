@@ -26,8 +26,14 @@ import torch
 import torch.utils.data as data_utils
 from torch import nn, optim
 
-from laplace import BaseLaplace, Laplace
-from laplace.utils.enums import HessianStructure, Likelihood, PredType, SubsetOfWeights
+from laplace import (
+    BaseLaplace,
+    HessianStructure,
+    Laplace,
+    Likelihood,
+    PredType,
+    SubsetOfWeights,
+)
 
 # %% [markdown]
 # ## Setup: a calibration problem

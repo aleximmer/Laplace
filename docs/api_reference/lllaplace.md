@@ -1,7 +1,11 @@
-::: laplace.lllaplace
-    options:
-        members:
-            - LLLaplace
-            - DiagLLLaplace
-            - KronLLLaplace
-            - FullLLLaplace
+# Last-Layer Laplace
+
+::: laplace.LLLaplace
+
+::: laplace.DiagLLLaplace
+
+::: laplace.KronLLLaplace
+
+::: laplace.FullLLLaplace
+
+::: laplace.FunctionalLLLaplace

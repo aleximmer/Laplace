@@ -231,11 +231,11 @@ class CurvatureInterface:
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.FeatureExtractor`
         torch model (neural network)
     likelihood : Likelihood or str or torch.nn.Module
         a likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood]. A composite
+        [`get_likelihood`][laplace.get_likelihood]. A composite
         likelihood like reward modeling is not supported, pass its
         `fit_likelihood` instead.
     last_layer : bool, default=False
@@ -858,7 +858,7 @@ class CurvatureInterface:
         Returns
         -------
         loss : torch.Tensor
-        H : `laplace.utils.matrix.Kron`
+        H : `laplace.utils.Kron`
             Kronecker factored Hessian approximation.
         """
         raise self._unavailable_error("kron")
@@ -897,11 +897,11 @@ class GGNInterface(CurvatureInterface):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.FeatureExtractor`
         torch model (neural network)
     likelihood : Likelihood or str or torch.nn.Module
         a likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood].
+        [`get_likelihood`][laplace.get_likelihood].
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
@@ -1105,11 +1105,11 @@ class EFInterface(CurvatureInterface):
 
     Parameters
     ----------
-    model : torch.nn.Module or `laplace.utils.feature_extractor.FeatureExtractor`
+    model : torch.nn.Module or `laplace.utils.FeatureExtractor`
         torch model (neural network)
     likelihood : Likelihood or str or torch.nn.Module
         a likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.likelihoods.get_likelihood].
+        [`get_likelihood`][laplace.get_likelihood].
     last_layer : bool, default=False
         only consider curvature of last layer
     subnetwork_indices : torch.Tensor, default=None
