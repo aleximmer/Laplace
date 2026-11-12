@@ -1964,134 +1964,1118 @@
    "has_default": true
   }
  ],
- "curvature.AsdfghjklInterface.__init__": [
+ "BaseLaplace.fit": [
   {
-   "name": "model",
+   "name": "train_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "BaseLaplace.functional_samples": [
+  {
+   "name": "x",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": false
   },
   {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "last_layer",
+   "name": "pred_type",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "subnetwork_indices",
+   "name": "n_samples",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "dict_key_x",
+   "name": "diagonal_output",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "dict_key_y",
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   }
  ],
- "curvature.AsdfghjklGGN.__init__": [
+ "BaseLaplace.log_marginal_likelihood": [
   {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "last_layer",
+   "name": "prior_precision",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "subnetwork_indices",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "stochastic",
+   "name": "sigma_noise",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   }
  ],
- "curvature.AsdfghjklEF.__init__": [
+ "BaseLaplace.optimize_prior_precision": [
   {
-   "name": "model",
+   "name": "pred_type",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": false
   },
   {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "last_layer",
+   "name": "method",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "dict_key_x",
+   "name": "n_steps",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "dict_key_y",
+   "name": "lr",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "init_prior_prec",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_structure",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "val_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "loss",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_min",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_max",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "grid_size",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "verbose",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_base",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   }
  ],
- "curvature.AsdfghjklHessian.__init__": [
+ "BaseLaplace.predictive": [
   {
-   "name": "model",
+   "name": "x",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": false
   },
   {
-   "name": "likelihood",
+   "name": "pred_type",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": false
   },
   {
-   "name": "last_layer",
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "BaseLaplace.sample": [
+  {
+   "name": "n_samples",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "low_rank",
+   "name": "generator",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   }
  ],
+ "BaseFunctionalLaplace.fit": [
+  {
+   "name": "train_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "BaseFunctionalLaplace.functional_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "BaseFunctionalLaplace.log_marginal_likelihood": [
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "BaseFunctionalLaplace.optimize_prior_precision": [
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "method",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_steps",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "lr",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "init_prior_prec",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_structure",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "val_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "loss",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_min",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_max",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "grid_size",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "verbose",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_base",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "BaseFunctionalLaplace.predictive": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "BaseFunctionalLaplace.predictive_moments": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "joint",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
+  }
+ ],
+ "BaseFunctionalLaplace.predictive_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "fitting",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "BaseFunctionalLaplace.sample": [
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.fit": [
+  {
+   "name": "train_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "override",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.functional_covariance": [
+  {
+   "name": "Js",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "ParametricLaplace.functional_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.functional_variance": [
+  {
+   "name": "Js",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "ParametricLaplace.load_state_dict": [
+  {
+   "name": "state_dict",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "ParametricLaplace.log_marginal_likelihood": [
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.log_prob": [
+  {
+   "name": "value",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "normalized",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.optimize_prior_precision": [
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "method",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_steps",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "lr",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "init_prior_prec",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_structure",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "val_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "loss",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_min",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_max",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "grid_size",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "verbose",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_base",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.predictive": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "ParametricLaplace.predictive_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.sample": [
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.state_dict": [],
+ "LLLaplace.fit": [
+  {
+   "name": "train_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "override",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.functional_covariance": [
+  {
+   "name": "Js",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "LLLaplace.functional_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.functional_variance": [
+  {
+   "name": "Js",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "LLLaplace.load_state_dict": [
+  {
+   "name": "state_dict",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "LLLaplace.log_marginal_likelihood": [
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.log_prob": [
+  {
+   "name": "value",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "normalized",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.optimize_prior_precision": [
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "method",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_steps",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "lr",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "init_prior_prec",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_structure",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "val_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "loss",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_min",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_max",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "grid_size",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "verbose",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_base",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.predictive": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "LLLaplace.predictive_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.sample": [
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.state_dict": [],
+ "SubnetLaplace.fit": [
+  {
+   "name": "train_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "override",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.functional_covariance": [
+  {
+   "name": "Js",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "SubnetLaplace.functional_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.functional_variance": [
+  {
+   "name": "Js",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "SubnetLaplace.load_state_dict": [
+  {
+   "name": "state_dict",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "SubnetLaplace.log_marginal_likelihood": [
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.log_prob": [
+  {
+   "name": "value",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "normalized",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.optimize_prior_precision": [
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "method",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_steps",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "lr",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "init_prior_prec",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_structure",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "val_loader",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "loss",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_min",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_max",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "grid_size",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "verbose",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "progress_bar",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "log_prior_prec_base",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.predictive": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "link_approx",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "SubnetLaplace.predictive_samples": [
+  {
+   "name": "x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "pred_type",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "diagonal_output",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "joint",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.sample": [
+  {
+   "name": "n_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "generator",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.state_dict": [],
  "FullLaplace.fit": [
   {
    "name": "train_loader",
@@ -5228,6 +6212,134 @@
   }
  ],
  "VaLLA.state_dict": [],
+ "curvature.AsdfghjklInterface.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdfghjklGGN.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "stochastic",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdfghjklEF.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdfghjklHessian.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "low_rank",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
  "curvature.AsdlInterface.__init__": [
   {
    "name": "model",

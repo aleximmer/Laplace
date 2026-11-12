@@ -235,7 +235,10 @@ tests carry the `public_api` marker and run in their own CI workflow,
 1. Add it to the `__all__` of its package and to `EXPECTED_EXPORTS`, or, for a method
    or attribute, to `PUBLIC_COMMON` or `PUBLIC_EXTRA`.
 2. For a callable, run `uv run python -m tests.public_api_snapshot` to add its
-   signature to the snapshot. Existing entries are left as they are.
+   signature to the snapshot. Existing entries are left as they are. Some additions
+   still fail the check, for example a new parameter on a function that takes
+   `**kwargs`, since a caller's `x=...` used to go to `kwargs`. If no caller can
+   break, edit that entry in `tests/public_api_signatures.json` by hand.
 3. Document it under `docs/api_reference/` with its public import path, for example
    `::: laplace.FullLaplace`.
 

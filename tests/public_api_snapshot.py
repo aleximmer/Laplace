@@ -17,6 +17,11 @@ import laplace.utils
 SNAPSHOT_PATH = Path(__file__).parent / "public_api_signatures.json"
 
 CLASSES = [
+    "BaseLaplace",
+    "BaseFunctionalLaplace",
+    "ParametricLaplace",
+    "LLLaplace",
+    "SubnetLaplace",
     "FullLaplace",
     "KronLaplace",
     "DiagLaplace",

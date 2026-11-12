@@ -205,8 +205,8 @@ PUBLIC_EXTRA = {
     "kron": _PARAMETRIC,
     "lowrank": _PARAMETRIC,
     "ll_kron": _PARAMETRIC,
-    "functional": _FUNCTIONAL,
-    "ll_functional": _FUNCTIONAL,
+    "functional": _FUNCTIONAL | {"mean"},
+    "ll_functional": _FUNCTIONAL | {"mean"},
     "ella": _FUNCTIONAL | {"optimize_hyperparameters"},
     "valla": _FUNCTIONAL,
 }
@@ -290,21 +290,18 @@ def test_public_members_exist(fitted):
 
 
 def test_no_unclassified_members(fitted):
-    _, la = fitted
-    allowed = PUBLIC_COMMON | set().union(*PUBLIC_EXTRA.values()) | INTERNAL
+    method, la = fitted
+    allowed = PUBLIC_COMMON | PUBLIC_EXTRA[method] | INTERNAL
 
     assert _public_names(la) - allowed == set()
 
 
 # Public members of likelihoods and subnet masks, so the docs can't hide them
-_DOCS_SHOWN = {"loss", "n_params_subnet"}
-
-
 def test_docs_filter_matches_internal():
     config = (Path(__file__).parents[1] / "mkdocs.yml").read_text()
     names = re.search(r'"!\^\((.*)\)\$"', config).group(1).split("|")
 
-    assert set(names) == INTERNAL - _DOCS_SHOWN
+    assert set(names) == INTERNAL
 
 
 def test_public_and_internal_disjoint():
@@ -366,12 +363,18 @@ def _breaking_changes(old: list[dict], new: inspect.Signature) -> list[str]:
             problems.append(f"`{p['name']}` lost its default")
 
     old_names = {p["name"] for p in old}
+    has_var_keyword = any(p["kind"] == "VAR_KEYWORD" for p in old)
 
     for q in new_params:
-        is_var = q.kind.name.startswith("VAR_")
+        if q.name in old_names or q.kind.name.startswith("VAR_"):
+            continue
 
-        if q.name not in old_names and not is_var and q.default is q.empty:
+        if q.default is q.empty:
             problems.append(f"new parameter `{q.name}` has no default")
+
+        # It takes the keyword argument `**kwargs` used to get
+        if has_var_keyword and q.kind.name != "POSITIONAL_ONLY":
+            problems.append(f"new parameter `{q.name}` before `**kwargs`")
 
     return problems
 
@@ -421,6 +424,13 @@ def test_positional_before_args_flagged():
 
     assert _breaking_changes(old, _sig("def f(x=0, *args): ...")) != []
     assert _breaking_changes(old, _sig("def f(*args, x=0): ...")) == []
+
+
+def test_new_parameter_with_kwargs_flagged():
+    old = [{"name": "kwargs", "kind": "VAR_KEYWORD", "has_default": False}]
+
+    assert _breaking_changes(old, _sig("def f(x=0, **kwargs): ...")) != []
+    assert _breaking_changes(old, _sig("def f(x=0, /, **kwargs): ...")) == []
 
 
 def test_keyword_only_to_args_flagged():
