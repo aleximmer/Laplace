@@ -6,7 +6,6 @@ import warnings
 import pytest
 import torch
 from torch import nn
-from torch.utils.data import DataLoader, TensorDataset
 
 from laplace import (
     BradleyTerryLikelihood,
@@ -137,19 +136,14 @@ def test_string_comparison_and_value_warn(name, cls, new_name):
         assert lik.value == new_name
 
 
-def test_old_checkpoint_name_loads():
-    torch.manual_seed(0)
-    model = nn.Linear(2, 3)
-    data = TensorDataset(torch.randn(8, 2), torch.randint(3, (8,)))
-    loader = DataLoader(data, batch_size=4)
-
+def test_old_checkpoint_name_loads(model, class_loader):
     la = Laplace(
         model,
         CategoricalLikelihood(),
         subset_of_weights="all",
         hessian_structure="diag",
     )
-    la.fit(loader)
+    la.fit(class_loader)
 
     state = la.state_dict()
     assert state["likelihood"] == "categorical"

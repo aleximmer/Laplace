@@ -10,6 +10,7 @@ import sys
 import warnings
 from abc import ABCMeta, abstractmethod
 from collections.abc import Iterator
+from functools import cache
 from math import log, pi, sqrt
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -26,16 +27,8 @@ _LEGACY_NAMES = {
     "reward_modeling": "bradley_terry",
 }
 
-# Members of the old `Likelihood` enum, key to value
-_ENUM_VALUES = {
-    "REGRESSION": "regression",
-    "CLASSIFICATION": "classification",
-    "REWARD_MODELING": "reward_modeling",
-    "BERNOULLI": "bernoulli",
-}
-
-# The shared instances behind the deprecated `Likelihood.REGRESSION` and friends
-_enum_singletons: dict[str, Likelihood] = {}
+# Keys of the old `Likelihood` enum, whose values were the keys in lowercase
+_ENUM_KEYS = ("REGRESSION", "CLASSIFICATION", "REWARD_MODELING", "BERNOULLI")
 
 
 def _warn_deprecated(message: str) -> None:
@@ -65,13 +58,10 @@ def _canonical_name(name: str) -> str:
     return _LEGACY_NAMES.get(name, name)
 
 
+@cache
 def _enum_members() -> dict[str, Likelihood]:
-    """The shared instances for the old enum keys, built on first use."""
-    if not _enum_singletons:
-        for key, value in _ENUM_VALUES.items():
-            _enum_singletons[key] = _CLASSES_BY_NAME[_canonical_name(value)]()
-
-    return _enum_singletons
+    """The shared instances behind the old enum keys, built on first use."""
+    return {key: _CLASSES_BY_NAME[_canonical_name(key.lower())]() for key in _ENUM_KEYS}
 
 
 class _LikelihoodMeta(ABCMeta):
@@ -83,7 +73,7 @@ class _LikelihoodMeta(ABCMeta):
 
     def __getattr__(cls, key: str) -> Likelihood:
         # Only called when normal lookup fails, so it serves the members lazily
-        if key in _ENUM_VALUES and vars(cls).get("_is_base", False):
+        if key in _ENUM_KEYS and vars(cls).get("_is_base", False):
             _warn_enum_api(f"`Likelihood.{key}`")
 
             return _enum_members()[key]
@@ -100,11 +90,10 @@ class _LikelihoodMeta(ABCMeta):
             if isinstance(value, str):
                 value = _name_of(value)
 
-                for key, old_value in _ENUM_VALUES.items():
-                    if value == old_value:
-                        return _enum_members()[key]
+                if not value.islower() or value.upper() not in _ENUM_KEYS:
+                    raise ValueError(f"{value!r} is not a valid Likelihood")
 
-                raise ValueError(f"{value!r} is not a valid Likelihood")
+                return _enum_members()[value.upper()]
 
             likelihood = get_likelihood(value)
 
@@ -128,7 +117,7 @@ class _LikelihoodMeta(ABCMeta):
         cls._require_base()
         _warn_enum_api("`Likelihood[key]`")
 
-        if key not in _ENUM_VALUES:
+        if key not in _ENUM_KEYS:
             raise KeyError(key)
 
         return _enum_members()[key]
@@ -143,7 +132,7 @@ class _LikelihoodMeta(ABCMeta):
         cls._require_base()
         _warn_enum_api("`len(Likelihood)`")
 
-        return len(_ENUM_VALUES)
+        return len(_ENUM_KEYS)
 
     def __contains__(cls, item: object) -> bool:
         cls._require_base()
@@ -151,7 +140,7 @@ class _LikelihoodMeta(ABCMeta):
 
         if isinstance(item, str):
             return _canonical_name(_name_of(item)) in {
-                m.name for m in _enum_members().values()
+                _canonical_name(key.lower()) for key in _ENUM_KEYS
             }
 
         return any(item == member for member in _enum_members().values())
@@ -1644,7 +1633,7 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
         name = _name_of(likelihood)
 
         if name in _LEGACY_NAMES:
-            cls = _CLASSES_BY_NAME[_LEGACY_NAMES[name]]
+            cls = _CLASSES_BY_NAME[_canonical_name(name)]
             _warn_deprecated(
                 f'"{name}" is deprecated and will be removed in 0.9. Pass '
                 f"{cls.__name__}() instead."

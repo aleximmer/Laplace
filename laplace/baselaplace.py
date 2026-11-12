@@ -95,8 +95,8 @@ __all__ = [
     "LowRankLaplace",
 ]
 
-# Names of the built-in likelihoods, which the library has code paths for. Not all
-# methods support all of them, see `_FUNCTIONAL_NAMES`.
+# Names of the built-in likelihoods that every method has code paths for. The
+# heteroscedastic Gaussian is handled on its own.
 _BUILTIN_NAMES = frozenset(
     (
         GaussianLikelihood.name,
@@ -106,15 +106,6 @@ _BUILTIN_NAMES = frozenset(
     )
 )
 
-# Names that the function-space methods support
-_FUNCTIONAL_NAMES = frozenset(
-    (
-        GaussianLikelihood.name,
-        CategoricalLikelihood.name,
-        BradleyTerryLikelihood.name,
-        BernoulliLikelihood.name,
-    )
-)
 
 # Names whose GLM predictive uses the categorical link approximations
 _CATEGORICAL_NAMES = frozenset(
@@ -3119,10 +3110,10 @@ class BaseFunctionalLaplace(BaseLaplace):
         """
         likelihood = get_likelihood(likelihood)
 
-        if likelihood.name not in _FUNCTIONAL_NAMES:
+        if likelihood.name not in _BUILTIN_NAMES:
             raise ValueError(
                 "FunctionalLaplace, ELLA, and VaLLA support only the likelihoods "
-                f"named {sorted(_FUNCTIONAL_NAMES)}, not {likelihood.name!r}. Use a "
+                f"named {sorted(_BUILTIN_NAMES)}, not {likelihood.name!r}. Use a "
                 "parametric Laplace with the `diag` or `full` structure instead."
             )
 
