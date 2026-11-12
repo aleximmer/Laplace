@@ -1,16 +1,4 @@
 import pytest
-
-pytestmark = [
-    pytest.mark.asdfghjkl,
-    pytest.mark.skipif(
-        pytest.importorskip(
-            "asdfghjkl", reason="The old asdfghjkl dependency is not installed"
-        )
-        is None,
-        reason="The old asdfghjkl dependency is not installed",
-    ),
-]
-
 import torch
 from asdfghjkl.operations import Bias, Scale
 from torch import nn
@@ -18,6 +6,10 @@ from torch.nn.utils import parameters_to_vector
 
 from laplace.curvature import AsdfghjklEF, AsdfghjklGGN
 from tests.utils import BackPackEF, BackPackGGN
+
+# `tests/curv_backends/conftest.py` leaves this module out of collection when the
+# old asdfghjkl isn't installed, since it imports the package directly.
+pytestmark = pytest.mark.asdfghjkl
 
 
 @pytest.fixture

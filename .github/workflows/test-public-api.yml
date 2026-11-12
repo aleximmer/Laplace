@@ -40,4 +40,4 @@ jobs:
         if: matrix.old_asdfghjkl
         run: uv pip install git+https://github.com/wiseodd/asdl@9c7640f8a870e82d5b439e6da59d753b207003b0
       - name: Test the public API
-        run: .venv/bin/python -m pytest tests -m public_api -v
+        run: make test-public-api PYTHON=.venv/bin/python

@@ -18,20 +18,20 @@ jobs:
           - name: default
             python: "3.11"
             extras: "--extra all"
-            pytest_args: '-m "not public_api"'
+            target: test
           - name: old-asdfghjkl
             python: "3.11"
             extras: "--extra all"
             old_asdfghjkl: true
             # The other jobs already run the rest of the suite.
-            pytest_args: '-m "asdfghjkl and not public_api"'
+            target: test-asdfghjkl
           # No ASDL or BackPACK. Curvlinops 3.0.1 still pulls in BackPACK,
           # so it is uninstalled after the install step.
           - name: minimal
             python: "3.11"
             extras: ""
             minimal: true
-            pytest_args: '-m "not public_api"'
+            target: test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -49,7 +49,7 @@ jobs:
         if: matrix.minimal
         run: uv pip uninstall backpack-for-pytorch
       - name: Test with pytest
-        run: .venv/bin/python -m pytest tests -n auto ${{ matrix.pytest_args }}
+        run: make ${{ matrix.target }} PYTHON=.venv/bin/python
 
   docs:
     name: build docs

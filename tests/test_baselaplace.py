@@ -1863,6 +1863,9 @@ def test_asdl_jacobians_stale_output_size(backend, reward_model, reward_test_X):
 
 @pytest.mark.parametrize("backend", [AsdlGGN, AsdlEF])
 @pytest.mark.parametrize("enable_backprop", [True, False])
+@pytest.mark.filterwarnings(
+    "ignore:ASDL backend is used which does not support backprop"
+)
 def test_reward_modeling_asdl_glm(
     backend, enable_backprop, reward_model, reward_loader, reward_test_X
 ):
@@ -1949,6 +1952,9 @@ def test_dict_data(laplace, backend, lik, custom_loader, custom_model, request):
 @pytest.mark.parametrize(
     "backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
 )
+@pytest.mark.filterwarnings(
+    "ignore:ASDL backend is used which does not support backprop"
+)
 def test_backprop_glm(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -1971,6 +1977,9 @@ def test_backprop_glm(laplace, model, reg_loader, backend):
 @pytest.mark.parametrize(
     "backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
 )
+@pytest.mark.filterwarnings(
+    "ignore:ASDL backend is used which does not support backprop"
+)
 def test_backprop_glm_joint(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
     X.requires_grad = True
@@ -1992,6 +2001,9 @@ def test_backprop_glm_joint(laplace, model, reg_loader, backend):
 @pytest.mark.parametrize("laplace", [FullLaplace, KronLaplace, DiagLaplace])
 @pytest.mark.parametrize(
     "backend", [BackPackGGN, CurvlinopsGGN, CurvlinopsEF, AsdlGGN, AsdlEF]
+)
+@pytest.mark.filterwarnings(
+    "ignore:ASDL backend is used which does not support backprop"
 )
 def test_backprop_glm_mc(laplace, model, reg_loader, backend):
     X, y = reg_loader.dataset.tensors
@@ -2181,6 +2193,9 @@ def test_parametric_fit_y_shape(model_1d, reg_loader_1d, reg_loader_1d_flat, lap
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
 @pytest.mark.parametrize("enable_backprop", [True, False])
+@pytest.mark.filterwarnings(
+    "ignore:ASDL backend is used which does not support backprop"
+)
 def test_functional_variance_multidim(
     multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
 ):
@@ -2234,6 +2249,9 @@ def test_functional_variance_multidim_nn(
 @pytest.mark.parametrize("laplace", flavors)
 @pytest.mark.parametrize("backend", [AsdlEF, AsdlGGN, CurvlinopsEF, CurvlinopsGGN])
 @pytest.mark.parametrize("enable_backprop", [True, False])
+@pytest.mark.filterwarnings(
+    "ignore:ASDL backend is used which does not support backprop"
+)
 def test_functional_covariance_multidim(
     multidim_model, reg_loader_multidim, laplace, backend, enable_backprop
 ):

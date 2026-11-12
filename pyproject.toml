@@ -53,6 +53,7 @@ backpack = ["backpack-for-pytorch"]
 all = ["laplace-torch[asdl,backpack]"]
 dev = [
   "coveralls",
+  "dill",
   "pytest",
   "pytest-cov",
   "pytest-mock",
@@ -92,7 +93,7 @@ filterwarnings = [
   "error:::laplace",
 
   # Raised by the library in normal use; the caller can't avoid them. Remove these
-  # once the library stops emitting them.
+  # once the library stops emitting them (#378).
   "ignore:Full backward hook is firing when gradients are computed:UserWarning",
   "ignore:By default `link_approx` is `probit`:UserWarning",
   "ignore:The prior precision has changed since fit:UserWarning",
@@ -102,6 +103,7 @@ filterwarnings = [
   "ignore:`torch.jit.script` is deprecated:FutureWarning",
   "ignore:There is a performance drop because we have not yet implemented the batching rule:UserWarning",
   "ignore:Extension saving to grad_batch does not have an extension for Module:UserWarning",
+  "ignore:Using a non-full backward hook when the forward contains multiple autograd Nodes:FutureWarning",
 ]
 
 [tool.ruff.lint]

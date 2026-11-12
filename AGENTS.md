@@ -53,9 +53,10 @@ uv run mkdocs build --strict     # docs, as checked in CI
 - Tests marked `cuda` (files named `test_*_cuda.py`) need an NVIDIA GPU; skip with `-m "not cuda"`.
 - Tests that use the old asdfghjkl backend carry the `asdfghjkl` marker. It is added automatically
   for `LowRankLaplace` and `Asdfghjkl*` test parameters; add it by hand if a test builds them in its
-  body. CI's old-asdfghjkl job runs only `-m asdfghjkl`, so an unmarked test never runs there.
+  body. CI's old-asdfghjkl job runs only `-m asdfghjkl` (locally: `make test-asdfghjkl`), and the
+  other jobs and `make test` deselect them, so an unmarked test never runs with the old backend.
 - `tests/test_public_api.py` carries the `public_api` marker. Only the `test-public-api` workflow
-  runs it; `pytest.yml` deselects it.
+  runs it (locally: `make test-public-api`); `pytest.yml` deselects it.
 
 ## Conventions
 

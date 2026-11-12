@@ -309,7 +309,22 @@ def test_serialize_fail_llla_different_last_layer_name(
     "map_location",
     ["cuda", "cpu"] if torch.cuda.is_available() else ["cpu"],
 )
-@pytest.mark.parametrize("laplace", flavors + flavors_subnet)
+@pytest.mark.parametrize(
+    "laplace",
+    [
+        pytest.param(
+            la,
+            marks=pytest.mark.xfail(
+                raises=NotImplementedError,
+                strict=True,
+                reason="dill can't pickle the functorch tensor a fitted FullLLLaplace keeps (#379)",
+            ),
+        )
+        if la is FullLLLaplace
+        else la
+        for la in flavors + flavors_subnet
+    ],
+)
 def test_map_location(
     laplace, model, reg_loader, tmp_path, map_location, model_device_str
 ):

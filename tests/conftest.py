@@ -148,17 +148,26 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     Tests that use `LowRankLaplace` or an asdfghjkl backend get the
     `asdfghjkl` marker. Tests that use a backend whose package isn't
     installed are skipped.
+
+    Tests with the `asdfghjkl` marker, set here or by hand, also ignore the
+    power-iteration warning: the toy models in the tests rarely let it
+    converge. `pytest.warns` still catches it where a test checks for it.
     """
     for item in items:
         callspec = getattr(item, "callspec", None)
+        params = callspec.params.values() if callspec else []
 
-        if callspec is None:
-            continue
-
-        if any(map(_uses_old_asdfghjkl, callspec.params.values())):
+        if any(map(_uses_old_asdfghjkl, params)):
             item.add_marker(pytest.mark.asdfghjkl)
 
-        missing = set().union(*map(_missing_packages, callspec.params.values()))
+        if item.get_closest_marker("asdfghjkl"):
+            item.add_marker(
+                pytest.mark.filterwarnings(
+                    "ignore:asdfghjkl's power iteration didn't converge"
+                )
+            )
+
+        missing = set().union(*map(_missing_packages, params))
 
         if missing:
             item.add_marker(

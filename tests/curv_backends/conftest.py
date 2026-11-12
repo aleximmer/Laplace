@@ -4,10 +4,16 @@ They are seeded with 711 and use a `Tanh` network, so `model` here differs from
 the one in `tests/conftest.py` and overrides it for this directory.
 """
 
+from importlib.util import find_spec
+
 import pytest
 import torch
 from torch import nn
 from torch.nn.utils import parameters_to_vector
+
+# This module imports the old asdfghjkl at import time, so `-m "not asdfghjkl"` can't
+# deselect it. Without the package, leave it out of collection.
+collect_ignore = [] if find_spec("asdfghjkl") else ["test_curv_backends_asdfghjkl.py"]
 
 
 def _with_attrs(model: nn.Module) -> nn.Module:
