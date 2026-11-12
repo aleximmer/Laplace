@@ -1,4 +1,163 @@
 {
+ "ELLA.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "subsample_size",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_eigenvalues",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "seed",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "VaLLA.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "inducing_locations",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "num_inducing",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "inducing_classes",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "seed",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "alpha",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "mc_softmax_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
  "Laplace": [
   {
    "name": "model",
@@ -34,6 +193,1068 @@
    "name": "kwargs",
    "kind": "VAR_KEYWORD",
    "has_default": false
+  }
+ ],
+ "BaseLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "BaseFunctionalLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "ParametricLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "FullLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "KronLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "damping",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "DiagLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "FunctionalLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_subset",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "independent_outputs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "seed",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LowRankLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "LLLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "feature_reduction",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "last_layer_name",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "FullLLLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "feature_reduction",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "last_layer_name",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "KronLLLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "feature_reduction",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "last_layer_name",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "damping",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "DiagLLLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "feature_reduction",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "last_layer_name",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "FunctionalLLLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_subset",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "feature_reduction",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "last_layer_name",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "independent_outputs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "seed",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "SubnetLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
+  }
+ ],
+ "FullSubnetLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
+  }
+ ],
+ "DiagSubnetLaplace.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "sigma_noise",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_precision",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "prior_mean",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "temperature",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "backend_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "asdl_fisher_kwargs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
   }
  ],
  "marglik_training": [
@@ -153,6 +1374,67 @@
    "has_default": true
   }
  ],
+ "Likelihood.__init__": [
+  {
+   "name": "args",
+   "kind": "VAR_POSITIONAL",
+   "has_default": false
+  },
+  {
+   "name": "kwargs",
+   "kind": "VAR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "GaussianLikelihood.__init__": [
+  {
+   "name": "sigma_noise",
+   "kind": "KEYWORD_ONLY",
+   "has_default": true
+  }
+ ],
+ "CategoricalLikelihood.__init__": [
+  {
+   "name": "weight",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "ignore_index",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "label_smoothing",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "BernoulliLikelihood.__init__": [
+  {
+   "name": "weight",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "pos_weight",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "BradleyTerryLikelihood.__init__": [],
+ "HeteroscedasticGaussianLikelihood.__init__": [
+  {
+   "name": "eps",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "full",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
  "get_likelihood": [
   {
    "name": "likelihood",
@@ -160,7 +1442,189 @@
    "has_default": false
   }
  ],
- "FullLaplace.__init__": [
+ "utils.FeatureExtractor.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer_name",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "enable_backprop",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "feature_reduction",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "utils.Kron.__init__": [
+  {
+   "name": "kfacs",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "utils.KronDecomposed.__init__": [
+  {
+   "name": "eigenvectors",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "eigenvalues",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "deltas",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "damping",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "utils.SubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "utils.RandomSubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_params_subnet",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "utils.LargestMagnitudeSubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_params_subnet",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "utils.LargestVarianceDiagLaplaceSubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_params_subnet",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "diag_laplace_model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "utils.LargestVarianceSWAGSubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "n_params_subnet",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "swag_n_snapshots",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "swag_snapshot_freq",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "swag_lr",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "utils.ParamNameSubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "parameter_names",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "utils.ModuleNameSubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "module_names",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  }
+ ],
+ "utils.LastLayerSubnetMask.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer_name",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "utils.RunningNLLMetric.__init__": [
+  {
+   "name": "ignore_index",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "utils.RunningBernoulliNLLMetric.__init__": [],
+ "utils.RunningGaussianNLLMetric.__init__": [
+  {
+   "name": "noise_variance",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.CurvatureInterface.__init__": [
   {
    "name": "model",
    "kind": "POSITIONAL_OR_KEYWORD",
@@ -172,27 +1636,44 @@
    "has_default": false
   },
   {
-   "name": "sigma_noise",
+   "name": "last_layer",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "prior_precision",
+   "name": "subnetwork_indices",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "prior_mean",
+   "name": "dict_key_x",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "temperature",
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.GGNInterface.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "enable_backprop",
+   "name": "subnetwork_indices",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
@@ -207,12 +1688,406 @@
    "has_default": true
   },
   {
-   "name": "backend",
+   "name": "stochastic",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   },
   {
-   "name": "backend_kwargs",
+   "name": "num_samples",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.EFInterface.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.CurvlinopsInterface.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.CurvlinopsGGN.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "stochastic",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.CurvlinopsEF.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.CurvlinopsHessian.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.BackPackInterface.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.BackPackGGN.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "stochastic",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.BackPackEF.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdfghjklInterface.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdfghjklGGN.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "stochastic",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdfghjklEF.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdfghjklHessian.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "low_rank",
    "kind": "POSITIONAL_OR_KEYWORD",
    "has_default": true
   }
@@ -460,73 +2335,6 @@
   }
  ],
  "FullLaplace.state_dict": [],
- "KronLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "damping",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "asdl_fisher_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "KronLaplace.fit": [
   {
    "name": "train_loader",
@@ -770,68 +2578,6 @@
   }
  ],
  "KronLaplace.state_dict": [],
- "DiagLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "asdl_fisher_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "DiagLaplace.fit": [
   {
    "name": "train_loader",
@@ -1075,63 +2821,6 @@
   }
  ],
  "DiagLaplace.state_dict": [],
- "LowRankLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "LowRankLaplace.fit": [
   {
    "name": "train_loader",
@@ -1375,78 +3064,6 @@
   }
  ],
  "LowRankLaplace.state_dict": [],
- "FunctionalLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "n_subset",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "independent_outputs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "seed",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "FunctionalLaplace.fit": [
   {
    "name": "train_loader",
@@ -1690,78 +3307,6 @@
   }
  ],
  "FunctionalLaplace.state_dict": [],
- "FullLLLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "feature_reduction",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "last_layer_name",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "asdl_fisher_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "FullLLLaplace.fit": [
   {
    "name": "train_loader",
@@ -2005,83 +3550,6 @@
   }
  ],
  "FullLLLaplace.state_dict": [],
- "KronLLLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "feature_reduction",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "last_layer_name",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "damping",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "asdl_fisher_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "KronLLLaplace.fit": [
   {
    "name": "train_loader",
@@ -2325,78 +3793,6 @@
   }
  ],
  "KronLLLaplace.state_dict": [],
- "DiagLLLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "feature_reduction",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "last_layer_name",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "asdl_fisher_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "DiagLLLaplace.fit": [
   {
    "name": "train_loader",
@@ -2640,88 +4036,6 @@
   }
  ],
  "DiagLLLaplace.state_dict": [],
- "FunctionalLLLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "n_subset",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "feature_reduction",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "last_layer_name",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "independent_outputs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "seed",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "FunctionalLLLaplace.fit": [
   {
    "name": "train_loader",
@@ -2965,68 +4279,6 @@
   }
  ],
  "FunctionalLLLaplace.state_dict": [],
- "FullSubnetLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "subnetwork_indices",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "asdl_fisher_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "KEYWORD_ONLY",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "KEYWORD_ONLY",
-   "has_default": true
-  }
- ],
  "FullSubnetLaplace.fit": [
   {
    "name": "train_loader",
@@ -3270,68 +4522,6 @@
   }
  ],
  "FullSubnetLaplace.state_dict": [],
- "DiagSubnetLaplace.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "subnetwork_indices",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "asdl_fisher_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "KEYWORD_ONLY",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "KEYWORD_ONLY",
-   "has_default": true
-  }
- ],
  "DiagSubnetLaplace.fit": [
   {
    "name": "train_loader",
@@ -3575,78 +4765,6 @@
   }
  ],
  "DiagSubnetLaplace.state_dict": [],
- "ELLA.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "subsample_size",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "n_eigenvalues",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "seed",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "ELLA.fit": [
   {
    "name": "train_loader",
@@ -3912,93 +5030,6 @@
   }
  ],
  "ELLA.state_dict": [],
- "VaLLA.__init__": [
-  {
-   "name": "model",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "likelihood",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "inducing_locations",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": false
-  },
-  {
-   "name": "num_inducing",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "inducing_classes",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "sigma_noise",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_precision",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "prior_mean",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "temperature",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "enable_backprop",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_x",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "dict_key_y",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "backend_kwargs",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "seed",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "alpha",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  },
-  {
-   "name": "mc_softmax_samples",
-   "kind": "POSITIONAL_OR_KEYWORD",
-   "has_default": true
-  }
- ],
  "VaLLA.fit": [
   {
    "name": "train_loader",
@@ -4196,5 +5227,128 @@
    "has_default": true
   }
  ],
- "VaLLA.state_dict": []
+ "VaLLA.state_dict": [],
+ "curvature.AsdlInterface.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdlGGN.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "subnetwork_indices",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "stochastic",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdlEF.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ],
+ "curvature.AsdlHessian.__init__": [
+  {
+   "name": "model",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "likelihood",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": false
+  },
+  {
+   "name": "last_layer",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_x",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  },
+  {
+   "name": "dict_key_y",
+   "kind": "POSITIONAL_OR_KEYWORD",
+   "has_default": true
+  }
+ ]
 }

@@ -316,6 +316,7 @@ def test_public_and_internal_disjoint():
 SNAPSHOT = json.loads(SNAPSHOT_PATH.read_text())
 
 _POSITIONAL = ("POSITIONAL_ONLY", "POSITIONAL_OR_KEYWORD")
+_BY_KEYWORD = ("POSITIONAL_OR_KEYWORD", "KEYWORD_ONLY")
 
 
 def _breaking_changes(old: list[dict], new: inspect.Signature) -> list[str]:
@@ -358,8 +359,8 @@ def _breaking_changes(old: list[dict], new: inspect.Signature) -> list[str]:
         if p["kind"] == "POSITIONAL_OR_KEYWORD" and q.kind.name != p["kind"]:
             problems.append(f"`{p['name']}` is now {q.kind.name}")
 
-        if p["kind"] == "KEYWORD_ONLY" and q.kind.name == "POSITIONAL_ONLY":
-            problems.append(f"`{p['name']}` is now POSITIONAL_ONLY")
+        if p["kind"] == "KEYWORD_ONLY" and q.kind.name not in _BY_KEYWORD:
+            problems.append(f"`{p['name']}` is now {q.kind.name}")
 
         if p["has_default"] and q.default is inspect.Parameter.empty:
             problems.append(f"`{p['name']}` lost its default")
@@ -422,6 +423,13 @@ def test_positional_before_args_flagged():
     assert _breaking_changes(old, _sig("def f(*args, x=0): ...")) == []
 
 
+def test_keyword_only_to_args_flagged():
+    old = [{"name": "x", "kind": "KEYWORD_ONLY", "has_default": False}]
+
+    assert _breaking_changes(old, _sig("def f(*x): ...")) != []
+    assert _breaking_changes(old, _sig("def f(x): ...")) == []
+
+
 def test_removed_kwargs_flagged():
     old = [{"name": "kw", "kind": "VAR_KEYWORD", "has_default": False}]
 
@@ -430,6 +438,12 @@ def test_removed_kwargs_flagged():
 
 @pytest.mark.parametrize("qualname", SNAPSHOT)
 def test_signatures_compatible(qualname):
+    module, _, rest = qualname.partition(".")
+
+    # Optional backends are exported only when their package is installed
+    if module == "curvature" and rest.split(".")[0] not in _expected_curvature():
+        pytest.skip(f"`{rest}` is not installed")
+
     sig = inspect.signature(resolve(qualname))
     params = list(sig.parameters.values())
 

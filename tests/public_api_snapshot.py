@@ -5,11 +5,14 @@ after adding a public callable. It appends the new entries and leaves existing o
 alone, so a breaking change still fails `tests/test_public_api.py`.
 """
 
+import enum
 import inspect
 import json
 from pathlib import Path
 
 import laplace
+import laplace.curvature
+import laplace.utils
 
 SNAPSHOT_PATH = Path(__file__).parent / "public_api_signatures.json"
 
@@ -30,8 +33,12 @@ CLASSES = [
 ]
 
 
+# Prefix of the snapshot keys for each module's exports
+MODULES = {"": laplace, "utils.": laplace.utils, "curvature.": laplace.curvature}
+
+
 def resolve(qualname: str) -> object:
-    """Look up `"Class.method"` or `"function"` on the `laplace` package."""
+    """Look up `"Class.method"`, `"function"` or `"utils.Class"` on `laplace`."""
     obj = laplace
 
     for part in qualname.split("."):
@@ -62,14 +69,20 @@ def snapshot() -> dict[str, list[dict]]:
     from tests.test_public_api import PUBLIC_COMMON, PUBLIC_EXTRA
 
     names = PUBLIC_COMMON.union(*PUBLIC_EXTRA.values())
-    result = {
-        q: _describe(resolve(q))
-        for q in ["Laplace", "marglik_training", "get_likelihood"]
-    }
+    result = {}
+
+    # Every exported function and constructor, except the enums
+    for prefix, module in MODULES.items():
+        for export in module.__all__:
+            obj = getattr(module, export)
+
+            if inspect.isfunction(obj):
+                result[prefix + export] = _describe(obj)
+            elif inspect.isclass(obj) and not issubclass(obj, enum.Enum):
+                result[f"{prefix}{export}.__init__"] = _describe(obj.__init__)
 
     for cls_name in CLASSES:
         cls = getattr(laplace, cls_name)
-        result[f"{cls_name}.__init__"] = _describe(cls.__init__)
 
         for name in sorted(names):
             static = inspect.getattr_static(cls, name, None)
