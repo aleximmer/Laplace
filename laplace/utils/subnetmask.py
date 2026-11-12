@@ -260,9 +260,10 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
     model : torch.nn.Module
     n_params_subnet : int
         number of parameters in the subnetwork (i.e. number of top-scoring parameters to select)
-    likelihood : Likelihood or str or torch.nn.Module
-        a likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.get_likelihood].
+    likelihood : Likelihood or str or torch.nn.Module, optional
+        a likelihood object or a torch criterion, see
+        [`get_likelihood`][laplace.get_likelihood]. Defaults to
+        `CategoricalLikelihood()`.
     swag_n_snapshots : int
         number of model snapshots to collect for SWAG
     swag_snapshot_freq : int
@@ -275,20 +276,26 @@ class LargestVarianceSWAGSubnetMask(ScoreBasedSubnetMask):
         self,
         model: nn.Module,
         n_params_subnet: int,
-        likelihood: Likelihood | str = "classification",
+        likelihood: Likelihood | str | torch.nn.Module | None = None,
         swag_n_snapshots: int = 40,
         swag_snapshot_freq: int = 1,
         swag_lr: float = 0.01,
     ):
         # Imported here since laplace.likelihoods imports laplace.utils.
-        from laplace.likelihoods import Likelihood, get_likelihood
+        from laplace.likelihoods import (
+            BradleyTerryLikelihood,
+            CategoricalLikelihood,
+            get_likelihood,
+        )
 
         try:
-            lik = get_likelihood(likelihood)
+            lik = get_likelihood(
+                CategoricalLikelihood() if likelihood is None else likelihood
+            )
         except ValueError:
             lik = None
 
-        if lik is None or lik.name == Likelihood.REWARD_MODELING.name:
+        if lik is None or lik.name == BradleyTerryLikelihood.name:
             raise ValueError("Only available for classification and regression!")
 
         super().__init__(model, n_params_subnet)

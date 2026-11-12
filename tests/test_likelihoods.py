@@ -25,26 +25,33 @@ from tests.utils import (
 
 
 @pytest.mark.parametrize(
-    "key,cls",
+    "cls",
     [
-        ("regression", GaussianLikelihood),
-        ("classification", CategoricalLikelihood),
-        ("reward_modeling", BradleyTerryLikelihood),
-        ("bernoulli", BernoulliLikelihood),
-        (Likelihood.REGRESSION, GaussianLikelihood),
-        (Likelihood.CLASSIFICATION, CategoricalLikelihood),
-        (Likelihood.REWARD_MODELING, BradleyTerryLikelihood),
-        (Likelihood.BERNOULLI, BernoulliLikelihood),
+        GaussianLikelihood,
+        CategoricalLikelihood,
+        BradleyTerryLikelihood,
+        BernoulliLikelihood,
     ],
 )
-def test_get_likelihood_from_str_and_enum(key, cls):
-    assert type(get_likelihood(key)) is cls
-
+def test_get_likelihood_returns_instances_as_is(cls):
     inst = cls()
     assert get_likelihood(inst) is inst
 
 
-@pytest.mark.parametrize("bad", ["foo", GaussianLikelihood, 3, None])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "foo",
+        "bernoulli",
+        "heteroscedastic_gaussian",
+        "gaussian",
+        "categorical",
+        "bradley_terry",
+        GaussianLikelihood,
+        3,
+        None,
+    ],
+)
 def test_get_likelihood_invalid(bad):
     with pytest.raises(ValueError, match="Invalid likelihood type"):
         get_likelihood(bad)
@@ -53,16 +60,11 @@ def test_get_likelihood_invalid(bad):
 def test_eq_and_hash():
     lik = GaussianLikelihood()
 
-    assert lik == "regression"
-    assert lik == Likelihood.REGRESSION
-    assert Likelihood.REGRESSION == lik
     assert lik == GaussianLikelihood()
-    assert lik != "classification"
     assert lik != CategoricalLikelihood()
     assert lik != 3
-    assert lik in {"regression"}
-    assert {lik: 1}["regression"] == 1
-    assert str(lik) == "regression"
+    assert hash(lik) == hash(GaussianLikelihood())
+    assert str(lik) == "gaussian"
 
 
 def test_loss_matches_torch():
@@ -452,48 +454,14 @@ def test_categorical_sample_matches_multinomial(shape):
 def test_reward_modeling_split():
     lik = BradleyTerryLikelihood()
 
-    assert lik.fit_likelihood == "classification"
-    assert lik.predictive_likelihood == "regression"
+    assert lik.fit_likelihood == CategoricalLikelihood()
+    assert lik.predictive_likelihood == GaussianLikelihood()
     assert lik.is_gaussian is False
-    assert lik.name == "reward_modeling"
+    assert lik.name == "bradley_terry"
 
 
-def test_builtin_members_replace_the_enum():
-    assert type(Likelihood.REGRESSION) is GaussianLikelihood
-    assert type(Likelihood.CLASSIFICATION) is CategoricalLikelihood
-    assert type(Likelihood.REWARD_MODELING) is BradleyTerryLikelihood
-    assert type(Likelihood.BERNOULLI) is BernoulliLikelihood
-
-    assert Likelihood.REGRESSION == "regression"
-    assert Likelihood.CLASSIFICATION.value == "classification"
-    assert hash(Likelihood.REWARD_MODELING) == hash("reward_modeling")
-
-
-def test_enum_lookup_iteration_and_membership():
-    assert Likelihood("regression") is Likelihood.REGRESSION
-    assert Likelihood(Likelihood.CLASSIFICATION) is Likelihood.CLASSIFICATION
-    assert Likelihood["REWARD_MODELING"] is Likelihood.REWARD_MODELING
-
-    custom = GaussianLikelihood()
-    assert Likelihood(custom) is custom
-
-    assert list(Likelihood) == [
-        Likelihood.REGRESSION,
-        Likelihood.CLASSIFICATION,
-        Likelihood.REWARD_MODELING,
-        Likelihood.BERNOULLI,
-    ]
-    assert len(Likelihood) == 4
-    assert "classification" in Likelihood
-    assert "foo" not in Likelihood
-
-    with pytest.raises(ValueError, match="Invalid likelihood type"):
-        Likelihood("foo")
-
-    with pytest.raises(KeyError):
-        Likelihood["FOO"]
-
-    # The enum API belongs to `Likelihood`, not to its subclasses
+def test_enum_api_is_not_inherited():
+    # The deprecated enum API belongs to `Likelihood`, not to its subclasses
     with pytest.raises(TypeError):
         len(GaussianLikelihood)
 
@@ -507,7 +475,7 @@ def test_base_class_stays_abstract():
 
     # Subclasses are constructed normally, not looked up by value
     with pytest.raises(TypeError):
-        GaussianLikelihood("regression")
+        GaussianLikelihood("gaussian")
 
 
 def test_old_enum_import_path_and_pickle():
@@ -515,11 +483,7 @@ def test_old_enum_import_path_and_pickle():
 
     assert EnumsLikelihood is Likelihood
 
-    # How a member of the old `Likelihood(str, Enum)` was pickled
-    old_member = b"claplace.utils.enums\nLikelihood\n(Vclassification\ntR."
-    assert pickle.loads(old_member) is Likelihood.CLASSIFICATION
-
-    assert pickle.loads(pickle.dumps(Likelihood.REGRESSION)) == Likelihood.REGRESSION
+    assert pickle.loads(pickle.dumps(GaussianLikelihood())) == GaussianLikelihood()
 
 
 def test_subclass_equals_its_builtin_by_name():
@@ -527,18 +491,17 @@ def test_subclass_equals_its_builtin_by_name():
         def output_hessian(self, f, y=None):
             return 2 * super().output_hessian(f, y)
 
-    assert Doubled() == Likelihood.CLASSIFICATION
-    assert Likelihood.CLASSIFICATION == Doubled()
-    assert Doubled() != Likelihood.REGRESSION
+    assert Doubled() == CategoricalLikelihood()
+    assert CategoricalLikelihood() == Doubled()
+    assert Doubled() != GaussianLikelihood()
     assert len({Doubled(), CategoricalLikelihood()}) == 1
 
 
 def test_equality_includes_hyperparameters():
     assert ScaledGaussian(1.0) != ScaledGaussian(2.0)
     assert ScaledGaussian(2.0) == ScaledGaussian(2.0)
-    assert ScaledGaussian(1.0) == "scaled_gaussian"
-    assert GaussianLikelihood() == Likelihood.REGRESSION
-    assert DoubledCategorical() == Likelihood.CLASSIFICATION
+    assert GaussianLikelihood() == GaussianLikelihood()
+    assert DoubledCategorical() == CategoricalLikelihood()
     assert GaussianLikelihood().hyperparameters() == {}
 
 
@@ -654,11 +617,10 @@ def test_categorical_hyperparameters_are_non_default():
     }
     assert CategoricalLikelihood(weight=w).hyperparameters()["weight"] is w
 
-    assert CategoricalLikelihood(ignore_index=1) != Likelihood.CLASSIFICATION
-    assert CategoricalLikelihood(ignore_index=1) == "classification"
+    assert CategoricalLikelihood(ignore_index=1) != CategoricalLikelihood()
     assert CategoricalLikelihood(weight=w) == CategoricalLikelihood(weight=w.clone())
     assert CategoricalLikelihood(weight=w) != CategoricalLikelihood(weight=2 * w)
-    assert BradleyTerryLikelihood().fit_likelihood == Likelihood.CLASSIFICATION
+    assert BradleyTerryLikelihood().fit_likelihood == CategoricalLikelihood()
 
     # Tensors on different devices compare by value instead of raising
     assert CategoricalLikelihood(weight=w) == CategoricalLikelihood(
@@ -702,11 +664,7 @@ def test_get_likelihood_from_criterion():
     assert type(lik) is CategoricalLikelihood
     assert lik == CategoricalLikelihood(weight=w, ignore_index=3, label_smoothing=0.2)
     assert type(get_likelihood(nn.CrossEntropyLoss())) is CategoricalLikelihood
-    assert get_likelihood(nn.CrossEntropyLoss()) == Likelihood.CLASSIFICATION
-
-    # The enum-style lookup accepts criteria too
-    assert Likelihood(nn.CrossEntropyLoss()) is Likelihood.CLASSIFICATION
-    assert Likelihood(criterion) == lik
+    assert get_likelihood(nn.CrossEntropyLoss()) == CategoricalLikelihood()
 
     with pytest.raises(ValueError, match="Invalid likelihood type"):
         get_likelihood(nn.L1Loss())
@@ -991,19 +949,16 @@ def test_bernoulli_hyperparameters_and_equality():
         "pos_weight",
     }
 
-    assert BernoulliLikelihood() == Likelihood.BERNOULLI
-    assert BernoulliLikelihood() == "bernoulli"
-    assert BernoulliLikelihood() != "classification"
+    assert BernoulliLikelihood() == BernoulliLikelihood()
     assert BernoulliLikelihood() != CategoricalLikelihood()
-    assert BernoulliLikelihood(pos_weight=pw) != Likelihood.BERNOULLI
-    assert BernoulliLikelihood(pos_weight=pw) == "bernoulli"
+    assert BernoulliLikelihood(pos_weight=pw) != BernoulliLikelihood()
     assert BernoulliLikelihood(pos_weight=pw) == BernoulliLikelihood(
         pos_weight=pw.clone()
     )
     assert BernoulliLikelihood(pos_weight=pw) != BernoulliLikelihood(weight=pw)
     assert BernoulliLikelihood(pos_weight=pw) != BernoulliLikelihood(pos_weight=2 * pw)
-    assert hash(Likelihood.BERNOULLI) == hash("bernoulli")
-    assert str(Likelihood.BERNOULLI) == Likelihood.BERNOULLI.value == "bernoulli"
+    assert hash(BernoulliLikelihood()) == hash("bernoulli")
+    assert str(BernoulliLikelihood()) == "bernoulli"
 
     assert "weight=tensor(shape=(2,))" in repr(BernoulliLikelihood(weight=w))
     assert repr(BernoulliLikelihood()) == "BernoulliLikelihood()"
@@ -1018,13 +973,7 @@ def test_get_bernoulli_likelihood_from_criterion():
 
     assert type(lik) is BernoulliLikelihood
     assert lik == BernoulliLikelihood(weight=w, pos_weight=pw)
-    assert get_likelihood(nn.BCEWithLogitsLoss()) == Likelihood.BERNOULLI
-
-    # The enum-style lookup accepts criteria and names too
-    assert Likelihood(nn.BCEWithLogitsLoss()) is Likelihood.BERNOULLI
-    assert Likelihood("bernoulli") is Likelihood.BERNOULLI
-    assert Likelihood["BERNOULLI"] is Likelihood.BERNOULLI
-    assert Likelihood(lik) == lik
+    assert get_likelihood(nn.BCEWithLogitsLoss()) == BernoulliLikelihood()
 
     # Not `nn.BCELoss`, which takes probabilities, and not subclasses
     with pytest.raises(ValueError, match="Invalid likelihood type"):
@@ -1053,7 +1002,7 @@ def test_bernoulli_is_pickleable():
     lik = BernoulliLikelihood(pos_weight=torch.tensor([2.0, 3.0]))
 
     assert pickle.loads(pickle.dumps(lik)) == lik
-    assert pickle.loads(pickle.dumps(Likelihood.BERNOULLI)) == Likelihood.BERNOULLI
+    assert pickle.loads(pickle.dumps(BernoulliLikelihood())) == BernoulliLikelihood()
 
 
 SIGMA = torch.tensor([0.5, 2.0, 1.3])
@@ -1093,9 +1042,6 @@ def test_gaussian_sigma_noise_is_a_hyperparameter():
     assert lik != GaussianLikelihood(sigma_noise=SIGMA * 2)
     assert lik != GaussianLikelihood()
     assert lik != GaussianLikelihood(sigma_noise=SIGMA[:2])
-
-    # A string names the type, so only the name counts
-    assert lik == "regression"
 
     assert "sigma_noise=tensor(shape=(3,))" in repr(lik)
 

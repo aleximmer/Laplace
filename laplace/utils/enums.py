@@ -61,9 +61,8 @@ class PredType(str, Enum):
 
 class LinkApprox(str, Enum):
     """Valid options for `link_approx`.
-    Works with `likelihood = Likelihood.CLASSIFICATION`. With
-    `Likelihood.BERNOULLI`, only `MC` and `PROBIT` work, since the Laplace bridge is
-    for the softmax.
+    Works with `CategoricalLikelihood`. With `BernoulliLikelihood`, only `MC` and
+    `PROBIT` work, since the Laplace bridge is for the softmax.
     """
 
     MC = "mc"

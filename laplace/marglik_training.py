@@ -21,13 +21,16 @@ from laplace.baselaplace import BaseLaplace
 from laplace.curvature import CurvlinopsGGN
 from laplace.curvature.curvature import CurvatureInterface
 from laplace.likelihoods import (
+    BernoulliLikelihood,
+    BradleyTerryLikelihood,
+    CategoricalLikelihood,
+    Likelihood,
     _is_heteroscedastic,
     _noise_per_output,
     get_likelihood,
 )
 from laplace.utils.enums import (
     HessianStructure,
-    Likelihood,
     PriorStructure,
     SubsetOfWeights,
 )
@@ -42,7 +45,7 @@ from laplace.utils.utils import (
 def marglik_training(
     model: torch.nn.Module,
     train_loader: DataLoader,
-    likelihood: Likelihood | str | torch.nn.Module = Likelihood.CLASSIFICATION,
+    likelihood: Likelihood | str | torch.nn.Module | None = None,
     hessian_structure: HessianStructure | str = HessianStructure.KRON,
     backend: Type[CurvatureInterface] = CurvlinopsGGN,
     optimizer_cls: Type[Optimizer] = Adam,
@@ -75,7 +78,7 @@ def marglik_training(
     The settings of standard training can be controlled by passing `train_loader`,
     `optimizer_cls`, `optimizer_kwargs`, `scheduler_cls`, `scheduler_kwargs`, and `n_epochs`.
     The `model` should return logits, i.e., no softmax should be applied.
-    `likelihood` is a name, a `Likelihood` member, or a likelihood object, e.g.
+    `likelihood` is a likelihood object or a torch criterion, e.g.
     `CategoricalLikelihood()` (CrossEntropyLoss) or `GaussianLikelihood()` (MSELoss).
     The data term sums the loss over each datum's outputs and averages it over the
     batch, so a Gaussian's squared error is not divided by the number of outputs.
@@ -116,9 +119,10 @@ def marglik_training(
         torch neural network model (needs to comply with Backend choice)
     train_loader : DataLoader
         pytorch dataloader that implements `len(train_loader.dataset)` to obtain number of data points
-    likelihood : Likelihood or str or torch.nn.Module, default=Likelihood.CLASSIFICATION
-        a likelihood object, its name, or a torch criterion, see
-        [`get_likelihood`][laplace.get_likelihood].
+    likelihood : Likelihood or str or torch.nn.Module, optional
+        a likelihood object or a torch criterion, see
+        [`get_likelihood`][laplace.get_likelihood]. Defaults to
+        `CategoricalLikelihood()`.
     hessian_structure : {'diag', 'kron', 'full'}, default='kron'
         structure of the Hessian approximation
     backend : Backend, default=CurvlinopsGGN
@@ -188,7 +192,7 @@ def marglik_training(
         warnings.warn("Weight decay is handled and optimized. Will be set to 0.")
         optimizer_kwargs["weight_decay"] = 0.0
 
-    lik = get_likelihood(likelihood)
+    lik = get_likelihood(CategoricalLikelihood() if likelihood is None else likelihood)
 
     # get device, data set size N, number of layers H, number of parameters P
     p = next(model.parameters())
@@ -209,7 +213,7 @@ def marglik_training(
     hyperparameters.append(log_prior_prec)
 
     # set up loss (and observation noise hyperparam)
-    if lik.name == Likelihood.REWARD_MODELING.name:
+    if lik.name == BradleyTerryLikelihood.name:
         raise ValueError(
             "Marginal-likelihood training does not support reward modeling."
         )
@@ -321,7 +325,7 @@ def marglik_training(
                 # Squared error of the mean, from the pair `(mean, var)`
                 mean = lik.inverse_link(as_joined_outputs(f).detach())
                 epoch_perf += (mean - y).square().sum()
-            elif lik.name == Likelihood.BERNOULLI.name:
+            elif lik.name == BernoulliLikelihood.name:
                 # Mean accuracy of the outputs of each datum, as the logits' sign
                 hits = (f.detach() > 0) == (y >= 0.5)
                 epoch_perf += hits.float().mean().item() * len(y)

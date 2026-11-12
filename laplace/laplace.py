@@ -28,9 +28,11 @@ def Laplace(
     model : torch.nn.Module
         Pretrained network around which to approximate the posterior.
     likelihood : Likelihood or str or torch.nn.Module
-        Likelihood used for fitting: a likelihood object, its name, or a torch
-        criterion whose options carry over, see
-        [`get_likelihood`][laplace.get_likelihood]. Reward
+        Likelihood used for fitting: a likelihood object such as
+        `CategoricalLikelihood()`, or a torch criterion whose options carry over, see
+        [`get_likelihood`][laplace.get_likelihood]. The task names
+        `'regression'`, `'classification'`, and `'reward_modeling'` still work but
+        are deprecated and will be removed in 0.9. Reward
         modeling requires an estimator that supports pairwise preferences, such as
         ELLA or VaLLA.
     subset_of_weights : SubsetOfWeights or {'last_layer', 'subnetwork', 'all'}, default=SubsetOfWeights.LAST_LAYER
