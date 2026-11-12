@@ -8,9 +8,11 @@ import torch
 from torch import nn
 
 from laplace import (
+    BernoulliLikelihood,
     BradleyTerryLikelihood,
     CategoricalLikelihood,
     GaussianLikelihood,
+    HeteroscedasticGaussianLikelihood,
     Laplace,
     Likelihood,
     get_likelihood,
@@ -20,6 +22,12 @@ LEGACY = [
     ("regression", GaussianLikelihood, "gaussian"),
     ("classification", CategoricalLikelihood, "categorical"),
     ("reward_modeling", BradleyTerryLikelihood, "bradley_terry"),
+    ("bernoulli", BernoulliLikelihood, "bernoulli"),
+    (
+        "heteroscedastic_gaussian",
+        HeteroscedasticGaussianLikelihood,
+        "heteroscedastic_gaussian",
+    ),
 ]
 
 MEMBERS = [
@@ -30,7 +38,7 @@ MEMBERS = [
 
 
 @pytest.mark.parametrize("name,cls,new_name", LEGACY)
-def test_get_likelihood_warns_for_task_names(name, cls, new_name):
+def test_get_likelihood_warns_for_legacy_names(name, cls, new_name):
     with pytest.warns(
         DeprecationWarning, match=f'"{name}" is deprecated.*{cls.__name__}'
     ):
@@ -41,7 +49,7 @@ def test_get_likelihood_warns_for_task_names(name, cls, new_name):
 
 
 @pytest.mark.parametrize("name,cls,_", LEGACY)
-def test_laplace_factory_warns_for_task_names(name, cls, _):
+def test_laplace_factory_warns_for_legacy_names(name, cls, _):
     model = nn.Linear(2, 2)
 
     with pytest.warns(DeprecationWarning, match="is deprecated"):
@@ -53,8 +61,6 @@ def test_laplace_factory_warns_for_task_names(name, cls, _):
 @pytest.mark.parametrize(
     "name",
     [
-        "bernoulli",
-        "heteroscedastic_gaussian",
         "gaussian",
         "categorical",
         "bradley_terry",

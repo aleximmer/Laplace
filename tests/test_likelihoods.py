@@ -42,8 +42,6 @@ def test_get_likelihood_returns_instances_as_is(cls):
     "bad",
     [
         "foo",
-        "bernoulli",
-        "heteroscedastic_gaussian",
         "gaussian",
         "categorical",
         "bradley_terry",

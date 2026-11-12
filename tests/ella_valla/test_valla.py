@@ -22,7 +22,7 @@ from laplace.likelihoods import (
 )
 from laplace.utils.functional_utils import draw_gaussian
 from tests.ella_valla.helpers import RewardModel
-from tests.utils import AsdlGGN, BackPackGGN, lik_id
+from tests.utils import AsdlGGN, BackPackGGN
 
 
 def make_valla(model, likelihood=CategoricalLikelihood(), **kwargs):
@@ -654,63 +654,6 @@ def test_seeded_valla_regression_reference():
         covariance, torch.tensor([[[0.4]], [[0.6]]]), rtol=0.0001, atol=1e-05
     )
     assert estimator.fit_history_["objective"] == pytest.approx([3.631515], rel=0.0001)
-
-
-@pytest.mark.parametrize(
-    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
-)
-def test_valla_likelihood_object_equivalence(data, likelihood):
-    x, loader, model = data
-    if isinstance(likelihood, GaussianLikelihood):
-        model = torch.nn.Sequential(torch.nn.Linear(2, 1))
-        loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
-        as_object = GaussianLikelihood()
-    else:
-        as_object = CategoricalLikelihood()
-
-    estimators = []
-    for lik in (likelihood, as_object):
-        torch.manual_seed(3)
-        estimator = make_valla(
-            deepcopy(model), lik, inducing_locations=x[:2].clone(), seed=1
-        )
-        estimator.fit(loader, iterations=2, lr=0.1)
-        estimators.append(estimator)
-
-    by_name, by_object = estimators
-    mean_name, cov_name = by_name.predictive_moments(x)
-    mean_object, cov_object = by_object.predictive_moments(x)
-
-    torch.testing.assert_close(mean_name, mean_object)
-    torch.testing.assert_close(cov_name, cov_object)
-    torch.testing.assert_close(by_name(x), by_object(x))
-
-
-def test_valla_reward_likelihood_object_equivalence():
-    torch.manual_seed(10)
-    pairs = torch.randn(6, 2, 2)
-    labels = torch.randint(0, 2, (6,))
-    loader = DataLoader(TensorDataset(pairs, labels), batch_size=2)
-    model = RewardModel()
-
-    estimators = []
-    for lik in (BradleyTerryLikelihood(), BradleyTerryLikelihood()):
-        torch.manual_seed(3)
-        estimator = make_valla(
-            deepcopy(model), lik, inducing_locations=pairs[:2, 0].clone(), seed=1
-        )
-        estimator.fit(loader, iterations=2, lr=0.1)
-        estimators.append(estimator)
-
-    by_name, by_object = estimators
-    mean_name, cov_name = by_name(pairs[:2, 0])
-    mean_object, cov_object = by_object(pairs[:2, 0])
-
-    torch.testing.assert_close(mean_name, mean_object)
-    torch.testing.assert_close(cov_name, cov_object)
-    torch.testing.assert_close(
-        by_name(pairs[:2], fitting=True), by_object(pairs[:2], fitting=True)
-    )
 
 
 def test_valla_checkpoint_likelihood_is_str(data):

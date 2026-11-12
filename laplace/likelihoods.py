@@ -20,11 +20,14 @@ from torch import nn
 from laplace.utils.heteroscedastic_utils import HeteroscedasticGaussianNLLLoss
 from laplace.utils.utils import _float_dtype, _zero_like, hyperparameters_equal
 
-# Task names that `get_likelihood` still accepts, with the name of their likelihood
+# Deprecated strings that `get_likelihood` still accepts, with the name of their
+# likelihood
 _LEGACY_NAMES = {
     "regression": "gaussian",
     "classification": "categorical",
     "reward_modeling": "bradley_terry",
+    "bernoulli": "bernoulli",
+    "heteroscedastic_gaussian": "heteroscedastic_gaussian",
 }
 
 # Keys of the old `Likelihood` enum, whose values were the keys in lowercase
@@ -204,13 +207,15 @@ class Likelihood(metaclass=_LikelihoodMeta):
     it does not equal `CategoricalLikelihood()`.
 
     The built-in names are `"gaussian"`, `"categorical"`, `"bradley_terry"`,
-    `"bernoulli"`, and `"heteroscedastic_gaussian"`. The task names `"regression"`,
-    `"classification"`, and `"reward_modeling"` are deprecated, as are the enum-style
-    members `Likelihood.REGRESSION`, `Likelihood.CLASSIFICATION`,
-    `Likelihood.REWARD_MODELING`, and `Likelihood.BERNOULLI`, lookups such as
-    `Likelihood("regression")`, comparing a likelihood with a string, and `value`.
-    They warn and will be removed in 0.9. Instantiate the likelihood class instead,
-    e.g. `CategoricalLikelihood()`. Old checkpoints that store a task name still load.
+    `"bernoulli"`, and `"heteroscedastic_gaussian"`. Passing a likelihood as a string
+    is deprecated, both the task names `"regression"`, `"classification"`, and
+    `"reward_modeling"` and the strings `"bernoulli"` and `"heteroscedastic_gaussian"`.
+    So are the enum-style members `Likelihood.REGRESSION`,
+    `Likelihood.CLASSIFICATION`, `Likelihood.REWARD_MODELING`, and
+    `Likelihood.BERNOULLI`, lookups such as `Likelihood("regression")`, comparing a
+    likelihood with a string, and `value`. They warn and will be removed in 0.9.
+    Instantiate the likelihood class instead, e.g. `CategoricalLikelihood()`. Old
+    checkpoints that store a task name still load.
 
     Weight-space Laplace fits a custom likelihood with the `diag` or `full`
     structure and a GGN or EF backend, which use its `output_hessian` and `loss_fn`.
@@ -1603,10 +1608,10 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     Parameters
     ----------
     likelihood : Likelihood or str or nn.Module
-        an instance, which is returned as is, a deprecated task name (`'regression'`,
-        `'classification'`, or `'reward_modeling'`), or a torch criterion. A task
-        name warns and gives a `GaussianLikelihood`, `CategoricalLikelihood`, or
-        `BradleyTerryLikelihood`. `nn.MSELoss` becomes a
+        an instance, which is returned as is, a deprecated name (`'regression'`,
+        `'classification'`, `'reward_modeling'`, `'bernoulli'`, or
+        `'heteroscedastic_gaussian'`), or a torch criterion. A name warns and gives
+        the matching likelihood object. `nn.MSELoss` becomes a
         `GaussianLikelihood`, `nn.CrossEntropyLoss` a `CategoricalLikelihood` with the
         criterion's `weight`, `ignore_index`, and `label_smoothing`,
         `nn.BCEWithLogitsLoss` a `BernoulliLikelihood` with its `weight` and
@@ -1621,7 +1626,7 @@ def get_likelihood(likelihood: Likelihood | str | nn.Module) -> Likelihood:
     Raises
     ------
     ValueError
-        if `likelihood` is neither a likelihood instance, a task name, nor one of
+        if `likelihood` is neither a likelihood instance, a deprecated name, nor one of
         the four criteria above. Subclasses of the criteria are not accepted. Also
         if the `weight` or `pos_weight` of a `nn.BCEWithLogitsLoss` has more than one
         dim.

@@ -1,7 +1,5 @@
 """Factory and cross-estimator function-space contracts."""
 
-from copy import deepcopy
-
 import pytest
 import torch
 from torch.utils.data import (
@@ -13,10 +11,7 @@ from laplace import ELLA, FunctionalLaplace, Laplace, VaLLA
 from laplace.likelihoods import (
     BernoulliLikelihood,
     CategoricalLikelihood,
-    GaussianLikelihood,
-    Likelihood,
 )
-from tests.utils import lik_id
 
 
 @pytest.fixture
@@ -113,39 +108,9 @@ def test_predictive_alias_preserves_argument_order_for_weight_space(data):
 
 
 @pytest.mark.parametrize(
-    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
-)
-def test_functional_factory_likelihood_object_equivalence(data, likelihood):
-    x, loader, model = data
-    if isinstance(likelihood, GaussianLikelihood):
-        model = torch.nn.Sequential(torch.nn.Linear(2, 1))
-        loader = DataLoader(TensorDataset(x, x.sum(-1, keepdim=True)), batch_size=2)
-        as_object = GaussianLikelihood()
-    else:
-        as_object = CategoricalLikelihood()
-
-    by_name = make_ella(deepcopy(model), likelihood)
-    by_object = make_ella(deepcopy(model), as_object)
-
-    assert type(by_name) is type(by_object)
-    assert by_name.likelihood == by_object.likelihood
-    assert isinstance(by_object.likelihood, Likelihood)
-
-    by_name.fit(loader)
-    by_object.fit(loader)
-
-    torch.testing.assert_close(by_name(x), by_object(x))
-
-
-@pytest.mark.parametrize(
     "likelihood",
-    [
-        BernoulliLikelihood(),
-        BernoulliLikelihood(),
-        BernoulliLikelihood(),
-        torch.nn.BCEWithLogitsLoss(),
-    ],
-    ids=["name", "member", "object", "criterion"],
+    [BernoulliLikelihood(), torch.nn.BCEWithLogitsLoss()],
+    ids=["object", "criterion"],
 )
 @pytest.mark.parametrize("subset_of_weights", ["all", "last_layer"])
 def test_function_space_methods_accept_bernoulli(data, likelihood, subset_of_weights):

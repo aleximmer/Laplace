@@ -294,42 +294,6 @@ def test_frozen_parameters_match_fixed_features(likelihood):
         assert torch.allclose(out_frozen, out_fixed)
 
 
-@pytest.mark.parametrize(
-    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
-)
-def test_functional_likelihood_object_equivalence(likelihood):
-    if isinstance(likelihood, GaussianLikelihood):
-        X_train, y_train, train_loader, X_test = toy_regression_dataset_1d(
-            sigma=true_sigma_noise, batch_size=60
-        )
-        model = toy_model(train_loader)
-        as_object = GaussianLikelihood()
-    else:
-        X_train, y_train, train_loader, X_test = toy_classification_dataset(
-            batch_size=60, in_dim=4, out_dim=2
-        )
-        model = toy_model(train_loader, in_dim=4, out_dim=2, regression=False)
-        as_object = CategoricalLikelihood()
-
-    kwargs = dict(n_subset=len(X_train), prior_precision=2.0)
-    la_str = FunctionalLaplace(model, likelihood, **kwargs)
-    la_obj = FunctionalLaplace(model, as_object, **kwargs)
-    la_str.fit(train_loader)
-    la_obj.fit(train_loader)
-
-    mean_str, var_str = la_str._glm_predictive_distribution(X_test)
-    mean_obj, var_obj = la_obj._glm_predictive_distribution(X_test)
-
-    assert torch.allclose(mean_str, mean_obj)
-    assert torch.allclose(var_str, var_obj)
-    assert torch.allclose(la_str.loss, la_obj.loss)
-
-    if isinstance(likelihood, GaussianLikelihood):
-        assert torch.allclose(
-            la_str.log_marginal_likelihood(), la_obj.log_marginal_likelihood()
-        )
-
-
 def test_functional_uses_likelihood_output_hessian():
     X_train, y_train, train_loader, X_test = toy_classification_dataset(
         batch_size=60, in_dim=4, out_dim=2

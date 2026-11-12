@@ -922,45 +922,6 @@ def test_joint_functional_samples_match_joint_covariance(laplace, model, reg_loa
 
 
 @pytest.mark.parametrize("laplace", flavors)
-@pytest.mark.parametrize(
-    "likelihood", [GaussianLikelihood(), CategoricalLikelihood()], ids=lik_id
-)
-def test_lllaplace_likelihood_object_equivalence(laplace, likelihood):
-    objects = {
-        GaussianLikelihood(): GaussianLikelihood(),
-        CategoricalLikelihood(): CategoricalLikelihood(),
-    }
-    outs = []
-
-    for lik in (likelihood, objects[likelihood]):
-        torch.manual_seed(0)
-        model = torch.nn.Sequential(nn.Linear(3, 20), nn.Linear(20, 2))
-        setattr(model, "output_size", 2)
-        X = torch.randn(10, 3)
-        y = (
-            torch.randn(10, 2)
-            if isinstance(likelihood, GaussianLikelihood)
-            else torch.randint(2, (10,))
-        )
-        loader = DataLoader(TensorDataset(X, y), batch_size=3)
-
-        lap = laplace(model, lik)
-        lap.fit(loader)
-
-        outs.append(
-            (
-                lap(X, pred_type="glm"),
-                lap(X, pred_type="nn", link_approx="mc", n_samples=5),
-            )
-        )
-
-    for a, b in zip(outs[0], outs[1]):
-        a = a if isinstance(a, torch.Tensor) else a[0]
-        b = b if isinstance(b, torch.Tensor) else b[0]
-        assert torch.allclose(a, b)
-
-
-@pytest.mark.parametrize("laplace", flavors)
 def test_lllaplace_custom_categorical_nn_predictive_is_softmaxed(laplace, model):
     lap = laplace(model, CategoricalLikelihood())
     X = torch.randn(10, 3)

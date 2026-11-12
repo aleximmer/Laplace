@@ -112,7 +112,7 @@ pred = la(x, pred_type="glm", link_approx="probit")
 The `likelihood` argument takes a likelihood object or a PyTorch criterion, see the [likelihoods API](api_reference/likelihoods.md).
 The built-in ones are `GaussianLikelihood()`, `CategoricalLikelihood()`, `BernoulliLikelihood()`, `HeteroscedasticGaussianLikelihood()`, and `BradleyTerryLikelihood()` for reward modeling.
 Passing a `nn.CrossEntropyLoss()` gives the same result as `CategoricalLikelihood()`.
-The task names `"regression"`, `"classification"`, and `"reward_modeling"` are deprecated and will be removed in 0.9, as are `Likelihood.REGRESSION` and the other enum-style members.
+Passing a likelihood as a string, such as the task names `"regression"`, `"classification"`, and `"reward_modeling"` or the names `"bernoulli"` and `"heteroscedastic_gaussian"`, is deprecated and will be removed in 0.9. So are `Likelihood.REGRESSION` and the other enum-style members.
 `BernoulliLikelihood()` is for binary and multi-label targets: every output is a logit with its own sigmoid, and `nn.BCEWithLogitsLoss` is its loss.
 The targets are floats with the shape of the outputs, and they may be soft labels in $[0, 1]$.
 It takes the parametric structures (`diag`, `kron`, `full`) and the GLM and NN predictives.
