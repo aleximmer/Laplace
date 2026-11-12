@@ -163,8 +163,7 @@ student = train(get_model(width=16), student_loader)
 # %% [markdown]
 # Then we fit `Laplace` on the student with the same loader. This time we tune the
 # prior precision with a grid search on validation data. The validation targets can be
-# soft too, and the default loss of the grid search, the negative log predictive
-# density, takes them.
+# soft too, and the default loss of the grid search, `RunningNLLMetric`, takes them.
 
 # %%
 val_loader = DataLoader(TensorDataset(X_val, teacher_targets(X_val)), batch_size=100)

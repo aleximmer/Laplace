@@ -142,9 +142,9 @@ print(f"largest difference: {(probs_probit - probs_mc).abs().max().item():.3f}")
 # ## Tuning on validation data
 #
 # If you have validation data, grid search tunes the prior precision directly for the
-# predictive. The default loss is the negative log predictive density of the
-# validation targets, which for the Bernoulli likelihood sums over the labels and
-# averages over the points:
+# predictive. For the Bernoulli likelihood, the default loss is the NLL from
+# `RunningBernoulliNLLMetric`, which sums over the labels and averages over the
+# points:
 
 # %%
 la.optimize_prior_precision(method="gridsearch", val_loader=val_loader, grid_size=20)
